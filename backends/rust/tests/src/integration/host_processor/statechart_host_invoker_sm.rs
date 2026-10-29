@@ -88,67 +88,435 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StatechartHostInvokerState {
-    Done,
-    Evaluating,
-    Failing,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Invoking,
-    Locating,
-    Passing,
-    Refusing,
-    Timed,
-    Typed,
+    Invoking = 0,
+    Evaluating = 1,
+    Done = 2,
+    Locating = 3,
+    Timed = 4,
+    Typed = 5,
+    Failing = 6,
+    Refusing = 7,
+    Passing = 8,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StatechartHostInvokerEvent {
-    Again,
-    DoneInvoke,
-    DoneInvokeGate,
-    DoneInvokeJob,
-    DoneInvokePerm,
-    DoneInvokeProbe,
-    DoneInvokeProbe2,
-    DoneInvokeSlow,
-    ErrorExecution,
-    ErrorInvoke,
-    ErrorInvokeJob,
-    ErrorInvokeSlow,
-    Evaluate,
-    Fail,
-    Forget,
-    Leak,
-    Leave,
-    Locate,
-    Pass,
-    Ping,
-    Refuse,
-    Retype,
-    Time,
-    Type,
+    Again = 0,
+    DoneInvoke = 1,
+    DoneInvokeGate = 2,
+    DoneInvokeJob = 3,
+    DoneInvokePerm = 4,
+    DoneInvokeProbe = 5,
+    DoneInvokeProbe2 = 6,
+    DoneInvokeSlow = 7,
+    ErrorExecution = 8,
+    ErrorInvoke = 9,
+    ErrorInvokeJob = 10,
+    ErrorInvokeSlow = 11,
+    Evaluate = 12,
+    Fail = 13,
+    Forget = 14,
+    Leak = 15,
+    Leave = 16,
+    Locate = 17,
+    Pass = 18,
+    Ping = 19,
+    Refuse = 20,
+    Retype = 21,
+    Time = 22,
+    Type = 23,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 24,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StatechartHostInvokerConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StatechartHostInvokerState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StatechartHostInvokerState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATECHART_HOST_INVOKER_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: invoking
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: evaluating
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 2: done
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 3: locating
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 4: timed
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 5: typed
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(5),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 6: failing
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(6),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 7: refusing
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(7),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 8: passing
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(8),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: invoking, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 1: invoking, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 2: invoking, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 3: invoking, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: invoking, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: invoking, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 6: invoking, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 7: invoking, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 8: invoking, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 9: invoking, transition 9
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 10: invoking, transition 10
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 11: evaluating, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 8, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 12: done, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 8, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 13: done, transition 1
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 14: locating, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 15: locating, transition 1
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 16: locating, transition 2
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 17: locating, transition 3
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 18: timed, transition 0
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 19: timed, transition 1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 9, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 20: timed, transition 2
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 21: timed, transition 3
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 10, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 22: timed, transition 4
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 10, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 23: typed, transition 0
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 10, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 24: typed, transition 1
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 10, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 25: typed, transition 2
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 10, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 26: typed, transition 3
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 27: failing, transition 0
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 11, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 28: failing, transition 1
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 11, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 29: refusing, transition 0
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 11, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 30: refusing, transition 1
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 11, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 31: passing, transition 0
+            TransitionRow {
+                source: Some(StateId(8)),
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 32: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 12, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(2)),
+            Target::State(StateId(1)),
+            Target::State(StateId(3)),
+            Target::State(StateId(4)),
+            Target::State(StateId(5)),
+            Target::State(StateId(8)),
+            Target::State(StateId(6)),
+            Target::State(StateId(7)),
+            Target::State(StateId(0)),
+            Target::State(StateId(2)),
+            Target::State(StateId(5)),
+            Target::State(StateId(2)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(32),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -2828,30 +3196,81 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // `String`, whatever the number.
     type ScheduledSendId = ::sce_rust_runtime::SendIdString<31>;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATECHART_HOST_INVOKER_TABLES;
+    const STATES: &'static [Self::State] = &[
+        StatechartHostInvokerState::Invoking,
+        StatechartHostInvokerState::Evaluating,
+        StatechartHostInvokerState::Done,
+        StatechartHostInvokerState::Locating,
+        StatechartHostInvokerState::Timed,
+        StatechartHostInvokerState::Typed,
+        StatechartHostInvokerState::Failing,
+        StatechartHostInvokerState::Refusing,
+        StatechartHostInvokerState::Passing,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StatechartHostInvokerEvent::Again,
+        StatechartHostInvokerEvent::DoneInvoke,
+        StatechartHostInvokerEvent::DoneInvokeGate,
+        StatechartHostInvokerEvent::DoneInvokeJob,
+        StatechartHostInvokerEvent::DoneInvokePerm,
+        StatechartHostInvokerEvent::DoneInvokeProbe,
+        StatechartHostInvokerEvent::DoneInvokeProbe2,
+        StatechartHostInvokerEvent::DoneInvokeSlow,
+        StatechartHostInvokerEvent::ErrorExecution,
+        StatechartHostInvokerEvent::ErrorInvoke,
+        StatechartHostInvokerEvent::ErrorInvokeJob,
+        StatechartHostInvokerEvent::ErrorInvokeSlow,
+        StatechartHostInvokerEvent::Evaluate,
+        StatechartHostInvokerEvent::Fail,
+        StatechartHostInvokerEvent::Forget,
+        StatechartHostInvokerEvent::Leak,
+        StatechartHostInvokerEvent::Leave,
+        StatechartHostInvokerEvent::Locate,
+        StatechartHostInvokerEvent::Pass,
+        StatechartHostInvokerEvent::Ping,
+        StatechartHostInvokerEvent::Refuse,
+        StatechartHostInvokerEvent::Retype,
+        StatechartHostInvokerEvent::Time,
+        StatechartHostInvokerEvent::Type,
+        StatechartHostInvokerEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StatechartHostInvokerConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -2881,77 +3300,10 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         StatechartHostInvokerState::Invoking
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StatechartHostInvokerState::Invoking,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StatechartHostInvokerState::Done => 2,
-            StatechartHostInvokerState::Evaluating => 1,
-            StatechartHostInvokerState::Failing => 6,
-            StatechartHostInvokerState::Invoking => 0,
-            StatechartHostInvokerState::Locating => 3,
-            StatechartHostInvokerState::Passing => 8,
-            StatechartHostInvokerState::Refusing => 7,
-            StatechartHostInvokerState::Timed => 4,
-            StatechartHostInvokerState::Typed => 5,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -3066,16 +3418,6 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     fn null_event() -> Self::Event {
         StatechartHostInvokerEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -3603,11 +3945,12 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -3823,8 +4166,9 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: statechart_host_invoker.scxml:133 :: _machine"]
     // SCE-MAP: statechart_host_invoker.scxml:133 :: _machine
     fn first_enabled_transition(
@@ -3832,7 +4176,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StatechartHostInvokerState::Done => {
                 if event == StatechartHostInvokerEvent::DoneInvoke
@@ -3844,26 +4188,14 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     || event == StatechartHostInvokerEvent::DoneInvokeSlow
                 {
                     if self.safe_evaluate_guard("(_event.invokeid == doneId)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // done, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Again {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Invoking,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // done, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 None
@@ -3871,13 +4203,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Evaluating => {
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // evaluating, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 None
@@ -3885,24 +4212,14 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Failing => {
                 if event == StatechartHostInvokerEvent::ErrorInvokeJob {
                     if self.safe_evaluate_guard("((((_event.invokeid == \"job\") and (_event.data == \"no\")) and (_event.origin == \"host://job\")) and (_event.origintype == \"x-sce-host\"))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // failing, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(27));
                     }
                 }
                 if event == StatechartHostInvokerEvent::DoneInvokeJob {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // failing, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(28));
                     }
                 }
                 None
@@ -3910,139 +4227,68 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Invoking => {
                 if event == StatechartHostInvokerEvent::DoneInvokeProbe {
                     if self.safe_evaluate_guard("(_event.invokeid == \"probe\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // invoking, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StatechartHostInvokerEvent::DoneInvokeProbe2 {
                     if self.safe_evaluate_guard("(_event.invokeid == \"probe2\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // invoking, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // invoking, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Leave {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Done,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Evaluate {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Evaluating,
-                            )],
-                            transition_index: 4,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Locate {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Locating,
-                            )],
-                            transition_index: 5,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Time {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Timed,
-                            )],
-                            transition_index: 6,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Type {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Typed,
-                            )],
-                            transition_index: 7,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Pass {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Passing,
-                            )],
-                            transition_index: 8,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Fail {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Failing,
-                            )],
-                            transition_index: 9,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Refuse {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Refusing,
-                            )],
-                            transition_index: 10,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // invoking, transition 10
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 None
@@ -4057,46 +4303,26 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     || event == StatechartHostInvokerEvent::DoneInvokeSlow
                 {
                     if self.safe_evaluate_guard("(_event.invokeid == slot.id)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // locating, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Ping {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // locating, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Leak {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // locating, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // locating, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 None
@@ -4104,15 +4330,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Passing => {
                 if event == StatechartHostInvokerEvent::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Done,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // passing, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(31));
                     }
                 }
                 None
@@ -4120,24 +4339,14 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Refusing => {
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     if self.safe_evaluate_guard("(_event.data.reason == \"NOT_HERE\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // refusing, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(29));
                     }
                 }
                 if event == StatechartHostInvokerEvent::DoneInvokeGate {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // refusing, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(30));
                     }
                 }
                 None
@@ -4145,37 +4354,20 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Timed => {
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // timed, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Forget {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // timed, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Leave {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Done,
-                            )],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // timed, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(20));
                     }
                 }
                 if event == StatechartHostInvokerEvent::ErrorInvokeSlow {
@@ -4183,24 +4375,14 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         "((_event.invokeid == \"slow\") and (_event.data == \"deadline\"))",
                         engine,
                     ) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // timed, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == StatechartHostInvokerEvent::DoneInvokeSlow {
                     if self.safe_evaluate_guard("(_event.invokeid == \"slow\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // timed, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 None
@@ -4209,49 +4391,27 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 if event == StatechartHostInvokerEvent::DoneInvokePerm {
                     if matches!(&self.pending_payload, StatechartHostInvokerPayload::DoneInvokePerm(ev) if ev.granted == true)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // typed, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
                 if event == StatechartHostInvokerEvent::DoneInvokePerm {
                     if matches!(&self.pending_payload, StatechartHostInvokerPayload::DoneInvokePerm(ev) if ev.granted == false)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // typed, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(24));
                     }
                 }
                 if event == StatechartHostInvokerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // typed, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(25));
                     }
                 }
                 if event == StatechartHostInvokerEvent::Retype {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StatechartHostInvokerState::Typed,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // typed, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(26));
                     }
                 }
                 None
@@ -4261,771 +4421,692 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: statechart_host_invoker.scxml:133 :: _machine"]
     // SCE-MAP: statechart_host_invoker.scxml:133 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StatechartHostInvokerState::Done => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:226 :: done :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="matched">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(matched, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "matched", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'matched': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'matched' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+        match transition.0 {
+            // done, transition 0
+            12 => {
+                // SCE-MAP: statechart_host_invoker.scxml:226 :: done :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="matched">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(matched, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "matched", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'matched': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'matched' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Evaluating => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:216 :: evaluating :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="dropped">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(dropped, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "dropped", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'dropped': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'dropped' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // evaluating, transition 0
+            11 => {
+                // SCE-MAP: statechart_host_invoker.scxml:216 :: evaluating :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="dropped">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(dropped, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "dropped", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'dropped': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'dropped' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Failing => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:309 :: failing :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="failed">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(failed, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "failed", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'failed': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'failed' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // failing, transition 0
+            27 => {
+                // SCE-MAP: statechart_host_invoker.scxml:309 :: failing :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="failed">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(failed, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "failed", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'failed': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'failed' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:313 :: failing :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="overturned">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(overturned, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "overturned", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'overturned': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'overturned' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Invoking => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:184 :: invoking :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="started">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(started, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "started", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'started': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'started' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // failing, transition 1
+            28 => {
+                // SCE-MAP: statechart_host_invoker.scxml:313 :: failing :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="overturned">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(overturned, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "overturned", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'overturned': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'overturned' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:187 :: invoking :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="started2">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(started2, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "started2", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'started2': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'started2' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:190 :: invoking :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="refused">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(refused, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "refused", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'refused': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'refused' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Locating => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:240 :: locating :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="slotted">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(slotted, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "slotted", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'slotted': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'slotted' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // invoking, transition 0
+            0 => {
+                // SCE-MAP: statechart_host_invoker.scxml:184 :: invoking :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="started">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(started, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "started", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'started': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'started' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:243 :: locating :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="pinged">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(pinged, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "pinged", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'pinged': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'pinged' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:246 :: locating :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="leaked">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(leaked, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "leaked", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'leaked': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'leaked' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:249 :: locating :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="lost">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(lost, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "lost", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'lost': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'lost' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Refusing => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:320 :: refusing :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="unstarted">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(unstarted, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "unstarted", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'unstarted': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'unstarted' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // invoking, transition 1
+            1 => {
+                // SCE-MAP: statechart_host_invoker.scxml:187 :: invoking :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="started2">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(started2, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "started2", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'started2': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'started2' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:323 :: refusing :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="revived">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(revived, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "revived", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'revived': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'revived' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Timed => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:261 :: timed :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="misdated">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(misdated, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "misdated", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'misdated': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'misdated' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+            // invoking, transition 2
+            2 => {
+                // SCE-MAP: statechart_host_invoker.scxml:190 :: invoking :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="refused">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(refused, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "refused", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'refused': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'refused' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:267 :: timed :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 6.3: <cancel sendidexpr="''">
-                            {
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                match se.evaluate_expression(&sid, "\"\"") {
-                                    Ok(sce_rust_runtime::ScriptValue::String(send_id_val)) => {
-                                        engine.cancel_event(&send_id_val);
-                                    }
-                                    // A value that is not a string names no pending send; cancelling a
-                                    // send that does not exist is not an error.
-                                    Ok(_) => {}
-                                    Err(_) => {
-                                        // W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
-                                        // and (W3C SCXML 4.9) the error ends the block.
-                                        ::sce_rust_runtime::sce_log_error!(
-                                            "Cancel: failed to evaluate sendidexpr '{}'",
-                                            "''"
-                                        );
-                                        engine.raise(
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                StatechartHostInvokerEvent::ErrorExecution,
-                                                "<cancel> sendidexpr failed to evaluate",
-                                            ),
-                                        );
-                                        break 'action_block;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:274 :: timed :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="expired">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(expired, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "expired", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'expired': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'expired' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:278 :: timed :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="finished">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(finished, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "finished", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'finished': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'finished' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StatechartHostInvokerState::Typed => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:293 :: typed :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="granted">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(granted, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "granted", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'granted': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'granted' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
+            // locating, transition 0
+            14 => {
+                // SCE-MAP: statechart_host_invoker.scxml:240 :: locating :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="slotted">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(slotted, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "slotted", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'slotted': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'slotted' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // locating, transition 1
+            15 => {
+                // SCE-MAP: statechart_host_invoker.scxml:243 :: locating :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="pinged">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(pinged, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "pinged", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'pinged': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'pinged' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // locating, transition 2
+            16 => {
+                // SCE-MAP: statechart_host_invoker.scxml:246 :: locating :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="leaked">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(leaked, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "leaked", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'leaked': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'leaked' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // locating, transition 3
+            17 => {
+                // SCE-MAP: statechart_host_invoker.scxml:249 :: locating :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="lost">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(lost, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "lost", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'lost': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'lost' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // refusing, transition 0
+            29 => {
+                // SCE-MAP: statechart_host_invoker.scxml:320 :: refusing :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="unstarted">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(unstarted, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "unstarted", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'unstarted': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'unstarted' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // refusing, transition 1
+            30 => {
+                // SCE-MAP: statechart_host_invoker.scxml:323 :: refusing :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="revived">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(revived, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "revived", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'revived': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'revived' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // timed, transition 0
+            18 => {
+                // SCE-MAP: statechart_host_invoker.scxml:261 :: timed :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="misdated">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(misdated, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "misdated", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'misdated': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'misdated' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // timed, transition 1
+            19 => {
+                // SCE-MAP: statechart_host_invoker.scxml:267 :: timed :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 6.3: <cancel sendidexpr="''">
+                    {
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        match se.evaluate_expression(&sid, "\"\"") {
+                            Ok(sce_rust_runtime::ScriptValue::String(send_id_val)) => {
+                                engine.cancel_event(&send_id_val);
+                            }
+                            // A value that is not a string names no pending send; cancelling a
+                            // send that does not exist is not an error.
+                            Ok(_) => {}
+                            Err(_) => {
+                                // W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
+                                // and (W3C SCXML 4.9) the error ends the block.
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Cancel: failed to evaluate sendidexpr '{}'",
+                                    "''"
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<cancel> sendidexpr failed to evaluate",
+                                ));
+                                break 'action_block;
                             }
                         }
                     }
-                    1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:296 :: typed :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="denied">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(denied, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "denied", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'denied': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'denied' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+                }
+            }
+            // timed, transition 3
+            21 => {
+                // SCE-MAP: statechart_host_invoker.scxml:274 :: timed :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="expired">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(expired, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "expired", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'expired': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'expired' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:299 :: typed :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="unreadable">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(unreadable, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "unreadable", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'unreadable': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'unreadable' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+                }
+            }
+            // timed, transition 4
+            22 => {
+                // SCE-MAP: statechart_host_invoker.scxml:278 :: timed :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="finished">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(finished, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "finished", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'finished': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'finished' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:302 :: typed :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="level">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "\"high\"";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "level", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'level': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            StatechartHostInvokerEvent::ErrorExecution,
-                                            "<assign> to 'level' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+                }
+            }
+            // typed, transition 0
+            23 => {
+                // SCE-MAP: statechart_host_invoker.scxml:293 :: typed :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="granted">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(granted, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "granted", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'granted': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'granted' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    _ => {}
+                }
+            }
+            // typed, transition 1
+            24 => {
+                // SCE-MAP: statechart_host_invoker.scxml:296 :: typed :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="denied">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(denied, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "denied", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'denied': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'denied' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // typed, transition 2
+            25 => {
+                // SCE-MAP: statechart_host_invoker.scxml:299 :: typed :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="unreadable">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(unreadable, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "unreadable", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'unreadable': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'unreadable' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
+                }
+            }
+            // typed, transition 3
+            26 => {
+                // SCE-MAP: statechart_host_invoker.scxml:302 :: typed :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="level">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "\"high\"";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "level", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'level': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<assign> to 'level' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
+                        }
+                    }
                 }
             }
             _ => {}

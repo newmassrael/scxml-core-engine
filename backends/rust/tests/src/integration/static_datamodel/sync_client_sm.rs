@@ -92,44 +92,265 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum SyncClientState {
-    Client,
-    Deleting,
+    Client = 0,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Idle,
-    Listing,
-    Uploading,
+    Idle = 1,
+    Deleting = 2,
+    Uploading = 3,
+    Listing = 4,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum SyncClientEvent {
-    ErrorExecution,
-    SyncPage,
-    SyncPhaseDone,
-    SyncResponse,
-    SyncStart,
+    ErrorExecution = 0,
+    SyncPage = 1,
+    SyncPhaseDone = 2,
+    SyncResponse = 3,
+    SyncStart = 4,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 5,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 2, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 2, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type SyncClientConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<SyncClientState, 2>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `SyncClientState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const SYNC_CLIENT_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: client
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(4),
+                children: Span { start: 0, len: 4 },
+                initial: Some(TransitionId(15)),
+            },
+            // 1: idle
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 4, len: 0 },
+                initial: None,
+            },
+            // 2: deleting
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 4, len: 0 },
+                initial: None,
+            },
+            // 3: uploading
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 4, len: 0 },
+                initial: None,
+            },
+            // 4: listing
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 4, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[StateId(1), StateId(2), StateId(3), StateId(4)],
+        histories: &[],
+        transitions: &[
+            // 0: client, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: idle, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 2: deleting, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 1, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: deleting, transition 1
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 1, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: deleting, transition 2
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 5: deleting, transition 3
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 6: uploading, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 7: uploading, transition 1
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 4, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: uploading, transition 2
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 4, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 9: uploading, transition 3
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 10: uploading, transition 4
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 11: listing, transition 0
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 6, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 12: listing, transition 1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 13: listing, transition 2
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 7, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 14: listing, transition 3
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 15: client, initial
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 16: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(2)),
+            Target::State(StateId(1)),
+            Target::State(StateId(3)),
+            Target::State(StateId(1)),
+            Target::State(StateId(1)),
+            Target::State(StateId(4)),
+            Target::State(StateId(1)),
+            Target::State(StateId(1)),
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(16),
+        history_records: 0,
+        max_configuration: 2,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 9,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -460,7 +681,8 @@ impl SyncClientPersist for Engine<SyncClientPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -835,30 +1057,58 @@ impl StatePolicy for SyncClientPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &SYNC_CLIENT_TABLES;
+    const STATES: &'static [Self::State] = &[
+        SyncClientState::Client,
+        SyncClientState::Idle,
+        SyncClientState::Deleting,
+        SyncClientState::Uploading,
+        SyncClientState::Listing,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        SyncClientEvent::ErrorExecution,
+        SyncClientEvent::SyncPage,
+        SyncClientEvent::SyncPhaseDone,
+        SyncClientEvent::SyncResponse,
+        SyncClientEvent::SyncStart,
+        SyncClientEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 2 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 2 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 2 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 9 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(2) }, 1, 9, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<2, 0, 0>;
     type Configuration = SyncClientConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 9 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        9,
-    >;
-    const MAX_CONFIGURATION: usize = 2;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 2;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -884,87 +1134,10 @@ impl StatePolicy for SyncClientPolicy {
         SyncClientState::Idle
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            SyncClientState::Deleting => Some(SyncClientState::Client),
-            SyncClientState::Idle => Some(SyncClientState::Client),
-            SyncClientState::Listing => Some(SyncClientState::Client),
-            SyncClientState::Uploading => Some(SyncClientState::Client),
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            SyncClientState::Client => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            SyncClientState::Client => &[
-                SyncClientState::Idle,
-                SyncClientState::Deleting,
-                SyncClientState::Uploading,
-                SyncClientState::Listing,
-            ],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            SyncClientState::Client => &[::sce_rust_runtime::EntryTarget::State(
-                SyncClientState::Idle,
-            )],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            SyncClientState::Client,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            SyncClientState::Client => 0,
-            SyncClientState::Deleting => 2,
-            SyncClientState::Idle => 1,
-            SyncClientState::Listing => 4,
-            SyncClientState::Uploading => 3,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1014,16 +1187,6 @@ impl StatePolicy for SyncClientPolicy {
 
     fn null_event() -> Self::Event {
         SyncClientEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1108,17 +1271,19 @@ impl StatePolicy for SyncClientPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: sync_client.scxml:35 :: _machine"]
     // SCE-MAP: sync_client.scxml:35 :: _machine
     fn first_enabled_transition(
@@ -1126,18 +1291,13 @@ impl StatePolicy for SyncClientPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             SyncClientState::Client => {
                 if event == SyncClientEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // client, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 None
@@ -1153,13 +1313,8 @@ impl StatePolicy for SyncClientPolicy {
                             false
                         }
                     }) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // deleting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
@@ -1172,39 +1327,20 @@ impl StatePolicy for SyncClientPolicy {
                             false
                         }
                     }) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // deleting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Idle,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // deleting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == SyncClientEvent::SyncPhaseDone {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Uploading,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // deleting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 None
@@ -1212,15 +1348,8 @@ impl StatePolicy for SyncClientPolicy {
             SyncClientState::Idle => {
                 if event == SyncClientEvent::SyncStart {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Deleting,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // idle, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 None
@@ -1228,51 +1357,27 @@ impl StatePolicy for SyncClientPolicy {
             SyncClientState::Listing => {
                 if event == SyncClientEvent::SyncPage {
                     if matches!(&self.pending_payload, SyncClientPayload::SyncPage(ev) if ev.more) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // listing, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == SyncClientEvent::SyncPage {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // listing, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
                     if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if self.by_token && ev.kind == 4 && ev.davError && (ev.status == 403 || ev.status == 409))
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // listing, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // listing, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 None
@@ -1281,15 +1386,8 @@ impl StatePolicy for SyncClientPolicy {
                 if event == SyncClientEvent::SyncResponse {
                     if matches!(&self.pending_payload, SyncClientPayload::SyncResponse(ev) if ev.kind != 4)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Idle,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // uploading, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
@@ -1302,13 +1400,8 @@ impl StatePolicy for SyncClientPolicy {
                             false
                         }
                     }) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // uploading, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
@@ -1321,39 +1414,20 @@ impl StatePolicy for SyncClientPolicy {
                             false
                         }
                     }) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // uploading, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == SyncClientEvent::SyncResponse {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // uploading, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == SyncClientEvent::SyncPhaseDone {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SyncClientState::Listing,
-                            )],
-                            transition_index: 4,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // uploading, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 None
@@ -1363,383 +1437,413 @@ impl StatePolicy for SyncClientPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: sync_client.scxml:35 :: _machine"]
     // SCE-MAP: sync_client.scxml:35 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            SyncClientState::Client => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sync_client.scxml:141 :: client :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+        match transition.0 {
+            // client, transition 0
+            0 => {
+                // SCE-MAP: sync_client.scxml:141 :: client :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
-            SyncClientState::Deleting => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sync_client.scxml:69 :: deleting :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="deleted">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.deleted = sce_forge_runtime::algorithm::add::<u32>(self.deleted, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='deleted'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+            // deleting, transition 0
+            2 => {
+                // SCE-MAP: sync_client.scxml:69 :: deleting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="deleted">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.deleted =
+                                sce_forge_runtime::algorithm::add::<u32>(self.deleted, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='deleted'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: sync_client.scxml:75 :: deleting :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="fullListing">
-                            self.full_listing = true;
-
-                            // W3C SCXML 5.3: <assign location="byToken">
-                            self.by_token = false;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: sync_client.scxml:80 :: deleting :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            SyncClientPayload::SyncResponse(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="retryAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
-            SyncClientState::Idle => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sync_client.scxml:58 :: idle :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            SyncClientPayload::SyncStart(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="byToken">
-                            self.by_token = ev.byToken && !self.full_listing;
+            // deleting, transition 1
+            3 => {
+                // SCE-MAP: sync_client.scxml:75 :: deleting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="fullListing">
+                    self.full_listing = true;
 
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            self.outcome = 0;
-
-                            // W3C SCXML 5.3: <assign location="deleted">
-                            self.deleted = 0;
-
-                            // W3C SCXML 5.3: <assign location="uploaded">
-                            self.uploaded = 0;
-
-                            // W3C SCXML 5.3: <assign location="discarded">
-                            self.discarded = 0;
-
-                            // W3C SCXML 5.3: <assign location="pages">
-                            self.pages = 0;
-                        }
-                    }
-                    _ => {}
+                    // W3C SCXML 5.3: <assign location="byToken">
+                    self.by_token = false;
                 }
             }
-            SyncClientState::Listing => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sync_client.scxml:117 :: listing :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="pages">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+            // deleting, transition 2
+            4 => {
+                // SCE-MAP: sync_client.scxml:80 :: deleting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    SyncClientPayload::SyncResponse(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: sync_client.scxml:122 :: listing :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="pages">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="fullListing">
-                            self.full_listing = false;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: sync_client.scxml:127 :: listing :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="byToken">
-                            self.by_token = false;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: sync_client.scxml:132 :: listing :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            SyncClientPayload::SyncResponse(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="retryAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
+
+                    // W3C SCXML 5.3: <assign location="retryAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.retry_at = sync_retry_at::sync_retry_at(
+                                self.retry_at,
+                                ev.kind,
+                                ev.status,
+                                ev.now,
+                                ev.retryAfter,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
                 }
             }
-            SyncClientState::Uploading => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sync_client.scxml:91 :: uploading :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            SyncClientPayload::SyncResponse(ev) => ev.clone(),
-                            _ => return,
+            // idle, transition 0
+            1 => {
+                // SCE-MAP: sync_client.scxml:58 :: idle :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    SyncClientPayload::SyncStart(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="byToken">
+                    self.by_token = ev.byToken && !self.full_listing;
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    self.outcome = 0;
+
+                    // W3C SCXML 5.3: <assign location="deleted">
+                    self.deleted = 0;
+
+                    // W3C SCXML 5.3: <assign location="uploaded">
+                    self.uploaded = 0;
+
+                    // W3C SCXML 5.3: <assign location="discarded">
+                    self.discarded = 0;
+
+                    // W3C SCXML 5.3: <assign location="pages">
+                    self.pages = 0;
+                }
+            }
+            // listing, transition 0
+            11 => {
+                // SCE-MAP: sync_client.scxml:117 :: listing :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="pages">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="retryAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, ev.kind, ev.status, ev.now, ev.retryAfter)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: sync_client.scxml:96 :: uploading :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="uploaded">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.uploaded = sce_forge_runtime::algorithm::add::<u32>(self.uploaded, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='uploaded'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // listing, transition 1
+            12 => {
+                // SCE-MAP: sync_client.scxml:122 :: listing :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="pages">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.pages = sce_forge_runtime::algorithm::add::<u32>(self.pages, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: sync_client.scxml:101 :: uploading :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="discarded">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.discarded = sce_forge_runtime::algorithm::add::<u32>(self.discarded, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='discarded'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="fullListing">
-                            self.full_listing = true;
-
-                            // W3C SCXML 5.3: <assign location="byToken">
-                            self.by_token = false;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: sync_client.scxml:108 :: uploading :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            SyncClientPayload::SyncResponse(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sync_failure::sync_failure(4, ev.status)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="retryAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.retry_at = sync_retry_at::sync_retry_at(self.retry_at, 4, ev.status, ev.now, ev.retryAfter)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
+
+                    // W3C SCXML 5.3: <assign location="fullListing">
+                    self.full_listing = false;
+                }
+            }
+            // listing, transition 2
+            13 => {
+                // SCE-MAP: sync_client.scxml:127 :: listing :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="byToken">
+                    self.by_token = false;
+                }
+            }
+            // listing, transition 3
+            14 => {
+                // SCE-MAP: sync_client.scxml:132 :: listing :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    SyncClientPayload::SyncResponse(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="retryAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.retry_at = sync_retry_at::sync_retry_at(
+                                self.retry_at,
+                                ev.kind,
+                                ev.status,
+                                ev.now,
+                                ev.retryAfter,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // uploading, transition 0
+            6 => {
+                // SCE-MAP: sync_client.scxml:91 :: uploading :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    SyncClientPayload::SyncResponse(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome = sync_failure::sync_failure(ev.kind, ev.status)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="retryAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.retry_at = sync_retry_at::sync_retry_at(
+                                self.retry_at,
+                                ev.kind,
+                                ev.status,
+                                ev.now,
+                                ev.retryAfter,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // uploading, transition 1
+            7 => {
+                // SCE-MAP: sync_client.scxml:96 :: uploading :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="uploaded">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.uploaded =
+                                sce_forge_runtime::algorithm::add::<u32>(self.uploaded, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='uploaded'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // uploading, transition 2
+            8 => {
+                // SCE-MAP: sync_client.scxml:101 :: uploading :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="discarded">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.discarded =
+                                sce_forge_runtime::algorithm::add::<u32>(self.discarded, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='discarded'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="fullListing">
+                    self.full_listing = true;
+
+                    // W3C SCXML 5.3: <assign location="byToken">
+                    self.by_token = false;
+                }
+            }
+            // uploading, transition 3
+            9 => {
+                // SCE-MAP: sync_client.scxml:108 :: uploading :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    SyncClientPayload::SyncResponse(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome = sync_failure::sync_failure(4, ev.status)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="retryAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.retry_at = sync_retry_at::sync_retry_at(
+                                self.retry_at,
+                                4,
+                                ev.status,
+                                ev.now,
+                                ev.retryAfter,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SyncClientEvent::ErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
                 }
             }
             _ => {}

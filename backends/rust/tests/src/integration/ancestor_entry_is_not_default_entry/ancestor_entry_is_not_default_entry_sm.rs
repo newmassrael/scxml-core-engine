@@ -88,53 +88,321 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum AncestorEntryIsNotDefaultEntryState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Away,
-    ByDefault,
-    Chosen,
-    Drive,
-    FailDefaulted,
-    FailIdled,
-    FailLobbied,
-    FailTargeted,
-    Idle,
-    Lobby,
-    Outer,
-    Run,
-    Settled,
-    Watch,
+    Away = 0,
+    Run = 1,
+    Drive = 2,
+    Lobby = 3,
+    Outer = 4,
+    ByDefault = 5,
+    Chosen = 6,
+    Watch = 7,
+    Idle = 8,
+    Settled = 9,
+    FailDefaulted = 10,
+    FailLobbied = 11,
+    FailIdled = 12,
+    FailTargeted = 13,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum AncestorEntryIsNotDefaultEntryEvent {
-    Again,
-    Back,
-    Check,
-    Cross,
-    ErrorExecution,
+    Again = 0,
+    Back = 1,
+    Check = 2,
+    Cross = 3,
+    ErrorExecution = 4,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 5,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 6, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 6, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type AncestorEntryIsNotDefaultEntryConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<AncestorEntryIsNotDefaultEntryState, 6>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `AncestorEntryIsNotDefaultEntryState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: away
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: run
+            StateRow {
+                parent: None,
+                kind: StateKind::Parallel,
+                last_descendant: StateId(8),
+                children: Span { start: 0, len: 2 },
+                initial: None,
+            },
+            // 2: drive
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(6),
+                children: Span { start: 2, len: 2 },
+                initial: Some(TransitionId(8)),
+            },
+            // 3: lobby
+            StateRow {
+                parent: Some(StateId(2)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 4, len: 0 },
+                initial: None,
+            },
+            // 4: outer
+            StateRow {
+                parent: Some(StateId(2)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(6),
+                children: Span { start: 4, len: 2 },
+                initial: Some(TransitionId(9)),
+            },
+            // 5: by_default
+            StateRow {
+                parent: Some(StateId(4)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(5),
+                children: Span { start: 6, len: 0 },
+                initial: None,
+            },
+            // 6: chosen
+            StateRow {
+                parent: Some(StateId(4)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(6),
+                children: Span { start: 6, len: 0 },
+                initial: None,
+            },
+            // 7: watch
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(8),
+                children: Span { start: 6, len: 1 },
+                initial: Some(TransitionId(10)),
+            },
+            // 8: idle
+            StateRow {
+                parent: Some(StateId(7)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(8),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+            // 9: settled
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(9),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+            // 10: failDefaulted
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(10),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+            // 11: failLobbied
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(11),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+            // 12: failIdled
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(12),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+            // 13: failTargeted
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(13),
+                children: Span { start: 7, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[
+            StateId(2),
+            StateId(7),
+            StateId(3),
+            StateId(4),
+            StateId(5),
+            StateId(6),
+            StateId(8),
+        ],
+        histories: &[],
+        transitions: &[
+            // 0: away, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 1: lobby, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 2: chosen, transition 0
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: chosen, transition 1
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: chosen, transition 2
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: chosen, transition 3
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 6: chosen, transition 4
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 7: chosen, transition 5
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 8: drive, initial
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 9: outer, initial
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 10: watch, initial
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 11: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(6)),
+            Target::State(StateId(6)),
+            Target::State(StateId(3)),
+            Target::State(StateId(10)),
+            Target::State(StateId(11)),
+            Target::State(StateId(12)),
+            Target::State(StateId(13)),
+            Target::State(StateId(9)),
+            Target::State(StateId(3)),
+            Target::State(StateId(5)),
+            Target::State(StateId(8)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(11),
+        history_records: 0,
+        max_configuration: 6,
+        max_enabled: 2,
+        max_history_defaults: 0,
+        max_walk: 15,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -165,13 +433,6 @@ impl AncestorEntryIsNotDefaultEntryEvent {
 // ======================================================================
 
 pub struct AncestorEntryIsNotDefaultEntryPolicy {
-    // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
-    // `AncestorEntryIsNotDefaultEntryConfiguration` — `Vec<S>` under std, a `heapless::Vec` of exactly
-    // the most states one configuration holds under no_std. The std alias preserves
-    // the existing ABI; the no_std alias keeps the generated code allocator-free.
-    active_states: AncestorEntryIsNotDefaultEntryConfiguration,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
@@ -210,7 +471,10 @@ pub struct AncestorEntryIsNotDefaultEntryPolicy {
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
     basic_http_access_uri: String,
     // W3C SCXML 5.9.2: the configuration as the script engine's In() reads it —
-    // a copy of `active_states` by name, republished on every change to it.
+    // a copy by name of the engine's, which the engine's own test cannot be
+    // asked from inside the script engine's callback. Republished from the
+    // engine as each hook that can run a script begins
+    // (`publish_in_predicate_states`).
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -302,7 +566,6 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
     ) -> Self {
         Self {
             script_engine,
-            active_states: AncestorEntryIsNotDefaultEntryConfiguration::new(),
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -367,44 +630,21 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
         Self::build(session_id, script_engine)
     }
 
-    // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
-    fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states
-            .iter()
-            .any(|&s| Self::get_state_name(s) == state_id)
-    }
-
-    // §scxml-3.4: add `state` to the configuration this machine keeps; false
-    // when it was already there.
-    fn activate(&mut self, state: AncestorEntryIsNotDefaultEntryState) -> bool {
-        if self.active_states.contains(&state) {
-            return false;
-        }
-        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        self.publish_in_predicate_states();
-        true
-    }
-
-    // §scxml-3.4: remove `state` from the configuration this machine keeps.
-    fn deactivate(&mut self, state: AncestorEntryIsNotDefaultEntryState) {
-        self.active_states.retain(|&s| s != state);
-        self.publish_in_predicate_states();
-    }
-
-    // W3C SCXML 5.9.2: the script engine's In() reads a copy of the
-    // configuration, so the copy is refreshed on every change to it rather than
-    // once per selection. In() is asked inside executable content as well as in
+    // W3C SCXML 5.9.2: the script engine's In() is a callback it holds, which
+    // cannot reach the engine, so it reads a copy of the configuration by
+    // name. The copy is refreshed from the engine as each hook that can run a
+    // script begins — the engine adds a state before its onentry and removes it
+    // after its onexit, so between two hooks the configuration does not change
+    // under a script. In() is asked inside executable content as well as in
     // guards — `<if cond="In('s')">` in an <onentry> runs halfway through a
-    // microstep — and must see the configuration as it stands at that point.
-    fn publish_in_predicate_states(&self) {
+    // microstep — and sees the configuration as it stands at that point.
+    fn publish_in_predicate_states(&self, engine: &Engine<Self>) {
         if let Some(ref shared) = self.in_predicate_states {
             let mut states = shared.lock().unwrap();
             states.clear();
-            states.extend(
-                self.active_states
-                    .iter()
-                    .map(|&s| Self::get_state_name(s).to_string()),
-            );
+            for state in engine.get_active_states() {
+                states.push(Self::get_state_name(state).to_string());
+            }
         }
     }
 
@@ -467,9 +707,8 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
-            // Seeded with the configuration as it stands now; every later change
-            // to it republishes (`activate` / `deactivate` / `set_active_states`).
-            self.publish_in_predicate_states();
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -559,9 +798,8 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
-            // Seeded with the configuration as it stands now; every later change
-            // to it republishes (`activate` / `deactivate` / `set_active_states`).
-            self.publish_in_predicate_states();
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -574,6 +812,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
             );
         }
 
+        self.publish_in_predicate_states(engine);
         self.script_engine_initialized = true;
     }
 
@@ -748,30 +987,68 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+        &ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_TABLES;
+    const STATES: &'static [Self::State] = &[
+        AncestorEntryIsNotDefaultEntryState::Away,
+        AncestorEntryIsNotDefaultEntryState::Run,
+        AncestorEntryIsNotDefaultEntryState::Drive,
+        AncestorEntryIsNotDefaultEntryState::Lobby,
+        AncestorEntryIsNotDefaultEntryState::Outer,
+        AncestorEntryIsNotDefaultEntryState::ByDefault,
+        AncestorEntryIsNotDefaultEntryState::Chosen,
+        AncestorEntryIsNotDefaultEntryState::Watch,
+        AncestorEntryIsNotDefaultEntryState::Idle,
+        AncestorEntryIsNotDefaultEntryState::Settled,
+        AncestorEntryIsNotDefaultEntryState::FailDefaulted,
+        AncestorEntryIsNotDefaultEntryState::FailLobbied,
+        AncestorEntryIsNotDefaultEntryState::FailIdled,
+        AncestorEntryIsNotDefaultEntryState::FailTargeted,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        AncestorEntryIsNotDefaultEntryEvent::Again,
+        AncestorEntryIsNotDefaultEntryEvent::Back,
+        AncestorEntryIsNotDefaultEntryEvent::Check,
+        AncestorEntryIsNotDefaultEntryEvent::Cross,
+        AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+        AncestorEntryIsNotDefaultEntryEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 6 state(s) at
-    // most; a selection enables 2 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 4 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 6 state(s) at most; a selection enables 2 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 15 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(6) }, 2, 15, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<6, 0, 0>;
     type Configuration = AncestorEntryIsNotDefaultEntryConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        2,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 15 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        15,
-    >;
-    const MAX_CONFIGURATION: usize = 6;
-    const MAX_ENABLED: usize = 2;
-    const MAX_DEPTH: usize = 4;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = true;
@@ -784,7 +1061,6 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
     const NEEDS_EVENT_SCHEDULER: bool = false;
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     const NEEDS_PARENT: bool = false;
-    const HAS_ACTIVE_STATES: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -798,148 +1074,10 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         AncestorEntryIsNotDefaultEntryState::Away
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::FailDefaulted => true,
-            AncestorEntryIsNotDefaultEntryState::FailIdled => true,
-            AncestorEntryIsNotDefaultEntryState::FailLobbied => true,
-            AncestorEntryIsNotDefaultEntryState::FailTargeted => true,
-            AncestorEntryIsNotDefaultEntryState::Settled => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::ByDefault => {
-                Some(AncestorEntryIsNotDefaultEntryState::Outer)
-            }
-            AncestorEntryIsNotDefaultEntryState::Chosen => {
-                Some(AncestorEntryIsNotDefaultEntryState::Outer)
-            }
-            AncestorEntryIsNotDefaultEntryState::Drive => {
-                Some(AncestorEntryIsNotDefaultEntryState::Run)
-            }
-            AncestorEntryIsNotDefaultEntryState::Idle => {
-                Some(AncestorEntryIsNotDefaultEntryState::Watch)
-            }
-            AncestorEntryIsNotDefaultEntryState::Lobby => {
-                Some(AncestorEntryIsNotDefaultEntryState::Drive)
-            }
-            AncestorEntryIsNotDefaultEntryState::Outer => {
-                Some(AncestorEntryIsNotDefaultEntryState::Drive)
-            }
-            AncestorEntryIsNotDefaultEntryState::Watch => {
-                Some(AncestorEntryIsNotDefaultEntryState::Run)
-            }
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::Drive => true,
-            AncestorEntryIsNotDefaultEntryState::Outer => true,
-            AncestorEntryIsNotDefaultEntryState::Watch => true,
-            _ => false,
-        }
-    }
-
-    fn is_parallel_state(state: Self::State) -> bool {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::Run => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::Drive => &[
-                AncestorEntryIsNotDefaultEntryState::Lobby,
-                AncestorEntryIsNotDefaultEntryState::Outer,
-            ],
-            AncestorEntryIsNotDefaultEntryState::Outer => &[
-                AncestorEntryIsNotDefaultEntryState::ByDefault,
-                AncestorEntryIsNotDefaultEntryState::Chosen,
-            ],
-            AncestorEntryIsNotDefaultEntryState::Run => &[
-                AncestorEntryIsNotDefaultEntryState::Drive,
-                AncestorEntryIsNotDefaultEntryState::Watch,
-            ],
-            AncestorEntryIsNotDefaultEntryState::Watch => {
-                &[AncestorEntryIsNotDefaultEntryState::Idle]
-            }
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::Drive => {
-                &[::sce_rust_runtime::EntryTarget::State(
-                    AncestorEntryIsNotDefaultEntryState::Lobby,
-                )]
-            }
-            AncestorEntryIsNotDefaultEntryState::Outer => {
-                &[::sce_rust_runtime::EntryTarget::State(
-                    AncestorEntryIsNotDefaultEntryState::ByDefault,
-                )]
-            }
-            AncestorEntryIsNotDefaultEntryState::Watch => {
-                &[::sce_rust_runtime::EntryTarget::State(
-                    AncestorEntryIsNotDefaultEntryState::Idle,
-                )]
-            }
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            AncestorEntryIsNotDefaultEntryState::Away,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            AncestorEntryIsNotDefaultEntryState::Away => 0,
-            AncestorEntryIsNotDefaultEntryState::ByDefault => 5,
-            AncestorEntryIsNotDefaultEntryState::Chosen => 6,
-            AncestorEntryIsNotDefaultEntryState::Drive => 2,
-            AncestorEntryIsNotDefaultEntryState::FailDefaulted => 10,
-            AncestorEntryIsNotDefaultEntryState::FailIdled => 12,
-            AncestorEntryIsNotDefaultEntryState::FailLobbied => 11,
-            AncestorEntryIsNotDefaultEntryState::FailTargeted => 13,
-            AncestorEntryIsNotDefaultEntryState::Idle => 8,
-            AncestorEntryIsNotDefaultEntryState::Lobby => 3,
-            AncestorEntryIsNotDefaultEntryState::Outer => 4,
-            AncestorEntryIsNotDefaultEntryState::Run => 1,
-            AncestorEntryIsNotDefaultEntryState::Settled => 9,
-            AncestorEntryIsNotDefaultEntryState::Watch => 7,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1009,37 +1147,6 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         AncestorEntryIsNotDefaultEntryEvent::Null
     }
 
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `Self::Configuration`; this override matches that signature
-    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
-    // both resolve correctly.
-    fn get_active_states(&self) -> Self::Configuration {
-        self.active_states.clone()
-    }
-
-    // §scxml-3.4: the write half of the pair above, for `Engine::enter_at`.
-    // Emitted under the same condition as the read half because the same fact
-    // decides both — this machine keeps its own active set, so this machine is
-    // the one that can be handed one back. The trait default is a tripwire, so
-    // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(&mut self, states: &[Self::State]) {
-        self.active_states.clear();
-        for &state in states {
-            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        }
-        self.publish_in_predicate_states();
-    }
-
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
@@ -1079,10 +1186,9 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
-        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        if !self.activate(state) {
-            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
-        }
+        // W3C SCXML 3.8: the engine has added `state` to the configuration
+        // already, so an In() its onentry asks sees it.
+        self.publish_in_predicate_states(engine);
         match state {
             AncestorEntryIsNotDefaultEntryState::ByDefault => {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:116 :: by_default :: _state_body
@@ -1226,14 +1332,13 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
-        // §scxml-D-exitStates: out of the configuration only after its onexit
-        // and invoke cancellation — the configuration.delete(s) step.
-        self.deactivate(state);
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
+        self.publish_in_predicate_states(engine);
     }
 
     // §scxml-5.10: the event whose transitions are about to be selected is the
@@ -1248,6 +1353,9 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
     ) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
+        // A selection does not change the configuration, so the guards it
+        // runs read the one published here.
+        self.publish_in_predicate_states(engine);
         if event != Self::null_event() {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
             // its member's when a name the document does not write was matched
@@ -1290,8 +1398,9 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine"]
     // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine
     fn first_enabled_transition(
@@ -1299,20 +1408,13 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             AncestorEntryIsNotDefaultEntryState::Away => {
                 if event == AncestorEntryIsNotDefaultEntryEvent::Cross {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::Chosen,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // away, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 None
@@ -1320,80 +1422,38 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
             AncestorEntryIsNotDefaultEntryState::Chosen => {
                 if event == AncestorEntryIsNotDefaultEntryEvent::Back {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::Lobby,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == AncestorEntryIsNotDefaultEntryEvent::Check {
                     if self.safe_evaluate_guard("(not _scxml_eq(defaulted, 0))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::FailDefaulted,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == AncestorEntryIsNotDefaultEntryEvent::Check {
                     if self.safe_evaluate_guard("(not _scxml_eq(lobbied, 1))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::FailLobbied,
-                            )],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == AncestorEntryIsNotDefaultEntryEvent::Check {
                     if self.safe_evaluate_guard("(not _scxml_eq(idled, 1))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::FailIdled,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == AncestorEntryIsNotDefaultEntryEvent::Check {
                     if self.safe_evaluate_guard("(not _scxml_eq(targeted, 2))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::FailTargeted,
-                            )],
-                            transition_index: 4,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == AncestorEntryIsNotDefaultEntryEvent::Check {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::Settled,
-                            )],
-                            transition_index: 5,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // chosen, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1401,15 +1461,8 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
             AncestorEntryIsNotDefaultEntryState::Lobby => {
                 if event == AncestorEntryIsNotDefaultEntryEvent::Again {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AncestorEntryIsNotDefaultEntryState::Chosen,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // lobby, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 None
@@ -1419,17 +1472,18 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine"]
     // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
+        self.publish_in_predicate_states(engine);
         // W3C SCXML 3.13: no transition in this document has content.
-        let _ = (source, transition_index, engine);
+        let _ = (transition, engine);
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)

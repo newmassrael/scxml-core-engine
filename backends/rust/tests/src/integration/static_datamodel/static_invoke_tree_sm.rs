@@ -88,50 +88,191 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticInvokeTreeState {
-    Resting,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Working,
+    Working = 0,
+    Resting = 1,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticInvokeTreeEvent {
-    Answer,
-    Arm,
-    Ask,
-    Back,
-    DoneInvoke,
-    ErrorCommunication,
-    ErrorExecution,
-    Go,
-    Nudge,
-    Question,
-    Report,
-    Rest,
-    Stamped,
-    Swap,
+    Answer = 0,
+    Arm = 1,
+    Ask = 2,
+    Back = 3,
+    DoneInvoke = 4,
+    ErrorCommunication = 5,
+    ErrorExecution = 6,
+    Go = 7,
+    Nudge = 8,
+    Question = 9,
+    Report = 10,
+    Rest = 11,
+    Stamped = 12,
+    Swap = 13,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 14,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticInvokeTreeConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticInvokeTreeState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticInvokeTreeState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_INVOKE_TREE_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: working
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: resting
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: working, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: false,
+            },
+            // 1: working, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: false,
+            },
+            // 2: working, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: working, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: working, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: working, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: working, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: working, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 8: resting, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 9: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(9),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -351,7 +492,8 @@ impl StaticInvokeTreePersist for Engine<StaticInvokeTreePolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.stamps),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             // docs/adr/0045: each running child, with its whole state.
             self.policy().saved_children(wall_now_ms)?,
             wall_now_ms,
@@ -907,30 +1049,64 @@ impl StatePolicy for StaticInvokeTreePolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_INVOKE_TREE_TABLES;
+    const STATES: &'static [Self::State] = &[
+        StaticInvokeTreeState::Working,
+        StaticInvokeTreeState::Resting,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticInvokeTreeEvent::Answer,
+        StaticInvokeTreeEvent::Arm,
+        StaticInvokeTreeEvent::Ask,
+        StaticInvokeTreeEvent::Back,
+        StaticInvokeTreeEvent::DoneInvoke,
+        StaticInvokeTreeEvent::ErrorCommunication,
+        StaticInvokeTreeEvent::ErrorExecution,
+        StaticInvokeTreeEvent::Go,
+        StaticInvokeTreeEvent::Nudge,
+        StaticInvokeTreeEvent::Question,
+        StaticInvokeTreeEvent::Report,
+        StaticInvokeTreeEvent::Rest,
+        StaticInvokeTreeEvent::Stamped,
+        StaticInvokeTreeEvent::Swap,
+        StaticInvokeTreeEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticInvokeTreeConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -963,70 +1139,10 @@ impl StatePolicy for StaticInvokeTreePolicy {
         StaticInvokeTreeState::Working
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticInvokeTreeState::Working,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticInvokeTreeState::Resting => 1,
-            StaticInvokeTreeState::Working => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1091,16 +1207,6 @@ impl StatePolicy for StaticInvokeTreePolicy {
     }
 
     // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
@@ -1138,11 +1244,12 @@ impl StatePolicy for StaticInvokeTreePolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -1185,8 +1292,9 @@ impl StatePolicy for StaticInvokeTreePolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_invoke_tree.scxml:23 :: _machine"]
     // SCE-MAP: static_invoke_tree.scxml:23 :: _machine
     fn first_enabled_transition(
@@ -1194,20 +1302,13 @@ impl StatePolicy for StaticInvokeTreePolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticInvokeTreeState::Resting => {
                 if event == StaticInvokeTreeEvent::Back {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticInvokeTreeState::Working,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // resting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 None
@@ -1215,92 +1316,50 @@ impl StatePolicy for StaticInvokeTreePolicy {
             StaticInvokeTreeState::Working => {
                 if event == StaticInvokeTreeEvent::Go {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // working, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Swap {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // working, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Ask {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // working, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Arm {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // working, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Answer {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // working, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Report {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // working, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Stamped {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // working, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StaticInvokeTreeEvent::Rest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticInvokeTreeState::Resting,
-                            )],
-                            transition_index: 7,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // working, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1310,166 +1369,177 @@ impl StatePolicy for StaticInvokeTreePolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_invoke_tree.scxml:23 :: _machine"]
     // SCE-MAP: static_invoke_tree.scxml:23 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticInvokeTreeState::Working => {
-                match transition_index {
-                    2 => {
-                        // SCE-MAP: static_invoke_tree.scxml:85 :: working :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_0";
+        match transition.0 {
+            // working, transition 2
+            2 => {
+                // SCE-MAP: static_invoke_tree.scxml:85 :: working :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_0";
 
-                                let event_data: &str = "";
+                        let event_data: &str = "";
 
-                                // W3C SCXML 6.4: Send to child invoke 'worker' via #_worker.
-                                // A child whose session has reached its final state has ended, and is not
-                                // there to address.
-                                if self
-                                    .child_worker
-                                    .as_ref()
-                                    .is_some_and(|child| !child.is_in_final_state())
-                                {
-                                    if let Some(ref mut child) = self.child_worker {
-                                        child.deliver_by_name("question", &event_data);
-                                    }
-                                    // docs/adr/0045: what the child sent its parent as it took the event,
-                                    // and its ending, reach this session within the delivery.
-                                    self.settle_child_worker(engine);
-                                } else {
-                                    // W3C SCXML C.1: the invocation is not running, so the session the
-                                    // target names is not there to reach.
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorCommunication, "<send target='#_worker'> names an invocation that is not running");
-                                    engine.raise(err_meta);
-                                    break 'action_block;
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                        // W3C SCXML 6.4: Send to child invoke 'worker' via #_worker.
+                        // A child whose session has reached its final state has ended, and is not
+                        // there to address.
+                        if self
+                            .child_worker
+                            .as_ref()
+                            .is_some_and(|child| !child.is_in_final_state())
+                        {
+                            if let Some(ref mut child) = self.child_worker {
+                                child.deliver_by_name("question", &event_data);
                             }
+                            // docs/adr/0045: what the child sent its parent as it took the event,
+                            // and its ending, reach this session within the delivery.
+                            self.settle_child_worker(engine);
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                StaticInvokeTreeEvent::ErrorCommunication,
+                                "<send target='#_worker'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
                         }
-                    }
-                    3 => {
-                        // SCE-MAP: static_invoke_tree.scxml:88 :: working :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // The id is text and stays text: a literal is borrowed, and the engine builds
-                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
-                                // std), so no buffer of the string bound sits in this action's frame for it.
-                                let send_id: &str = "poke";
 
-                                let event_data: &str = "";
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // working, transition 3
+            3 => {
+                // SCE-MAP: static_invoke_tree.scxml:88 :: working :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // The id is text and stays text: a literal is borrowed, and the engine builds
+                        // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                        // std), so no buffer of the string bound sits in this action's frame for it.
+                        let send_id: &str = "poke";
 
-                                // W3C SCXML 6.4: Send to child invoke 'worker' via #_worker.
-                                // A child whose session has reached its final state has ended, and is not
-                                // there to address.
-                                if self
-                                    .child_worker
-                                    .as_ref()
-                                    .is_some_and(|child| !child.is_in_final_state())
-                                {
-                                    // W3C SCXML 6.2: named now, reached when the delay has elapsed — or
-                                    // reported then, if the invocation has ended by that time (C.1).
-                                    engine.schedule_routed_event(
-                                        None,
-                                        core::time::Duration::from_millis(5000_u64),
-                                        &send_id,
-                                        event_data,
-                                        &self.session_id.as_deref().unwrap_or(""),
-                                        sce_rust_runtime::ScheduledRoute::Invocation {
-                                            invoke_id: "worker".to_string(),
-                                            event_name: "nudge".to_string(),
-                                        },
-                                    );
-                                } else {
-                                    // W3C SCXML C.1: the invocation is not running, so the session the
-                                    // target names is not there to reach.
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorCommunication, "<send target='#_worker'> names an invocation that is not running");
-                                    engine.raise(err_meta);
-                                    break 'action_block;
-                                }
+                        let event_data: &str = "";
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        // W3C SCXML 6.4: Send to child invoke 'worker' via #_worker.
+                        // A child whose session has reached its final state has ended, and is not
+                        // there to address.
+                        if self
+                            .child_worker
+                            .as_ref()
+                            .is_some_and(|child| !child.is_in_final_state())
+                        {
+                            // W3C SCXML 6.2: named now, reached when the delay has elapsed — or
+                            // reported then, if the invocation has ended by that time (C.1).
+                            engine.schedule_routed_event(
+                                None,
+                                core::time::Duration::from_millis(5000_u64),
+                                &send_id,
+                                event_data,
+                                &self.session_id.as_deref().unwrap_or(""),
+                                sce_rust_runtime::ScheduledRoute::Invocation {
+                                    invoke_id: "worker".to_string(),
+                                    event_name: "nudge".to_string(),
+                                },
+                            );
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                StaticInvokeTreeEvent::ErrorCommunication,
+                                "<send target='#_worker'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    4 => {
-                        // SCE-MAP: static_invoke_tree.scxml:91 :: working :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="answers">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.answers = sce_forge_runtime::algorithm::add::<u32>(self.answers, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='answers'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // working, transition 4
+            4 => {
+                // SCE-MAP: static_invoke_tree.scxml:91 :: working :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="answers">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.answers =
+                                sce_forge_runtime::algorithm::add::<u32>(self.answers, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='answers'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    5 => {
-                        // SCE-MAP: static_invoke_tree.scxml:94 :: working :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="reports">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.reports = sce_forge_runtime::algorithm::add::<u32>(self.reports, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='reports'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // working, transition 5
+            5 => {
+                // SCE-MAP: static_invoke_tree.scxml:94 :: working :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="reports">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.reports =
+                                sce_forge_runtime::algorithm::add::<u32>(self.reports, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='reports'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    6 => {
-                        // SCE-MAP: static_invoke_tree.scxml:97 :: working :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="stamps">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.stamps = sce_forge_runtime::algorithm::add::<u32>(self.stamps, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='stamps'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // working, transition 6
+            6 => {
+                // SCE-MAP: static_invoke_tree.scxml:97 :: working :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="stamps">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.stamps = sce_forge_runtime::algorithm::add::<u32>(self.stamps, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeEvent::ErrorExecution, "<assign location='stamps'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
             _ => {}

@@ -88,44 +88,158 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum AutoforwardInternalQueueState {
-    Fail,
-    Pass,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Phase,
+    Phase = 0,
+    Pass = 1,
+    Fail = 2,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum AutoforwardInternalQueueEvent {
-    Boom,
-    DoneInvoke,
-    ErrorExecution,
-    Probe,
-    Ready,
-    SawInternal,
-    SawProbeOnly,
+    Boom = 0,
+    DoneInvoke = 1,
+    ErrorExecution = 2,
+    Probe = 3,
+    Ready = 4,
+    SawInternal = 5,
+    SawProbeOnly = 6,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 7,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type AutoforwardInternalQueueConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<AutoforwardInternalQueueState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `AutoforwardInternalQueueState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const AUTOFORWARD_INTERNAL_QUEUE_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: phase
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: pass
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 2: fail
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: phase, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 1: phase, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 2: phase, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: phase, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(2)),
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(4),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -483,30 +597,58 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &AUTOFORWARD_INTERNAL_QUEUE_TABLES;
+    const STATES: &'static [Self::State] = &[
+        AutoforwardInternalQueueState::Phase,
+        AutoforwardInternalQueueState::Pass,
+        AutoforwardInternalQueueState::Fail,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        AutoforwardInternalQueueEvent::Boom,
+        AutoforwardInternalQueueEvent::DoneInvoke,
+        AutoforwardInternalQueueEvent::ErrorExecution,
+        AutoforwardInternalQueueEvent::Probe,
+        AutoforwardInternalQueueEvent::Ready,
+        AutoforwardInternalQueueEvent::SawInternal,
+        AutoforwardInternalQueueEvent::SawProbeOnly,
+        AutoforwardInternalQueueEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = AutoforwardInternalQueueConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -539,73 +681,10 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
         AutoforwardInternalQueueState::Phase
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            AutoforwardInternalQueueState::Fail => true,
-            AutoforwardInternalQueueState::Pass => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            AutoforwardInternalQueueState::Phase,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            AutoforwardInternalQueueState::Fail => 2,
-            AutoforwardInternalQueueState::Pass => 1,
-            AutoforwardInternalQueueState::Phase => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -658,16 +737,6 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
     }
 
     // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
@@ -705,11 +774,12 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -752,8 +822,9 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine"]
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     fn first_enabled_transition(
@@ -761,55 +832,31 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             AutoforwardInternalQueueState::Phase => {
                 if event == AutoforwardInternalQueueEvent::Ready {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // phase, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == AutoforwardInternalQueueEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // phase, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == AutoforwardInternalQueueEvent::SawInternal {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AutoforwardInternalQueueState::Fail,
-                            )],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // phase, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == AutoforwardInternalQueueEvent::SawProbeOnly {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                AutoforwardInternalQueueState::Pass,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // phase, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -819,66 +866,63 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine"]
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            AutoforwardInternalQueueState::Phase => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_0";
+        match transition.0 {
+            // phase, transition 0
+            0 => {
+                // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_0";
 
-                                // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
-                                {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
-                                    engine.raise(err_meta);
-                                }
-                                let _ = send_id; // the refusal may carry no error event to name it
-                                break 'action_block;
-                            }
+                        // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
+                        {
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
+                            engine.raise(err_meta);
                         }
+                        let _ = send_id; // the refusal may carry no error event to name it
+                        break 'action_block;
                     }
-                    1 => {
-                        // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_1";
+                }
+            }
+            // phase, transition 1
+            1 => {
+                // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_1";
 
-                                let event_data: &str = "";
+                        let event_data: &str = "";
 
-                                // W3C SCXML 6.2: Default send (no target = external event)
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        AutoforwardInternalQueueEvent::Probe,
-                                    );
-                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id,
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise_external_with_meta(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                AutoforwardInternalQueueEvent::Probe,
+                            );
+                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                            meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    _ => {}
                 }
             }
             _ => {}

@@ -105,64 +105,319 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum RecordListParentSceSynthInvokeListState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Open,
+    Open = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum RecordListParentSceSynthInvokeListEvent {
-    ErrorCommunication,
-    ErrorExecution,
-    RecordListAck,
-    RecordListAnnounce,
-    RecordListArrive,
-    RecordListClear,
-    RecordListClose,
-    RecordListCompact,
-    RecordListEdit,
-    RecordListFloor,
-    RecordListJoin,
-    RecordListKeep,
-    RecordListNode,
-    RecordListPass,
-    RecordListPropose,
-    RecordListRefused,
-    RecordListRegister,
-    RecordListResync,
-    RecordListRetire,
-    RecordListRole,
-    RecordListRoom,
-    RecordListSettle,
-    RecordListShare,
-    RecordListSupersede,
-    RecordListTake,
-    RecordListTell,
-    RecordListValue,
-    RecordListVisit,
-    RecordListWrite,
+    ErrorCommunication = 0,
+    ErrorExecution = 1,
+    RecordListAck = 2,
+    RecordListAnnounce = 3,
+    RecordListArrive = 4,
+    RecordListClear = 5,
+    RecordListClose = 6,
+    RecordListCompact = 7,
+    RecordListEdit = 8,
+    RecordListFloor = 9,
+    RecordListJoin = 10,
+    RecordListKeep = 11,
+    RecordListNode = 12,
+    RecordListPass = 13,
+    RecordListPropose = 14,
+    RecordListRefused = 15,
+    RecordListRegister = 16,
+    RecordListResync = 17,
+    RecordListRetire = 18,
+    RecordListRole = 19,
+    RecordListRoom = 20,
+    RecordListSettle = 21,
+    RecordListShare = 22,
+    RecordListSupersede = 23,
+    RecordListTake = 24,
+    RecordListTell = 25,
+    RecordListValue = 26,
+    RecordListVisit = 27,
+    RecordListWrite = 28,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 29,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type RecordListParentSceSynthInvokeListConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<RecordListParentSceSynthInvokeListState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `RecordListParentSceSynthInvokeListState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const RECORD_LIST_PARENT_SCE_SYNTH_INVOKE_LIST_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: open
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: open, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: open, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: open, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: open, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: open, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: open, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: open, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: open, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: open, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 9: open, transition 9
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 10: open, transition 10
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 11: open, transition 11
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 12: open, transition 12
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 13: open, transition 13
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 14: open, transition 14
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 15: open, transition 15
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 16: open, transition 16
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 17: open, transition 17
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 18: open, transition 18
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 19: open, transition 19
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 20: open, transition 20
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 21: open, transition 21
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 22: open, transition 22
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 23: open, transition 23
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 24: open, transition 24
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 25: open, transition 25
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 26: open, transition 26
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 27: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(27),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -2355,7 +2610,8 @@ impl RecordListParentSceSynthInvokeListPersist
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.count),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -3645,30 +3901,77 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+        &RECORD_LIST_PARENT_SCE_SYNTH_INVOKE_LIST_TABLES;
+    const STATES: &'static [Self::State] = &[RecordListParentSceSynthInvokeListState::Open];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        RecordListParentSceSynthInvokeListEvent::ErrorCommunication,
+        RecordListParentSceSynthInvokeListEvent::ErrorExecution,
+        RecordListParentSceSynthInvokeListEvent::RecordListAck,
+        RecordListParentSceSynthInvokeListEvent::RecordListAnnounce,
+        RecordListParentSceSynthInvokeListEvent::RecordListArrive,
+        RecordListParentSceSynthInvokeListEvent::RecordListClear,
+        RecordListParentSceSynthInvokeListEvent::RecordListClose,
+        RecordListParentSceSynthInvokeListEvent::RecordListCompact,
+        RecordListParentSceSynthInvokeListEvent::RecordListEdit,
+        RecordListParentSceSynthInvokeListEvent::RecordListFloor,
+        RecordListParentSceSynthInvokeListEvent::RecordListJoin,
+        RecordListParentSceSynthInvokeListEvent::RecordListKeep,
+        RecordListParentSceSynthInvokeListEvent::RecordListNode,
+        RecordListParentSceSynthInvokeListEvent::RecordListPass,
+        RecordListParentSceSynthInvokeListEvent::RecordListPropose,
+        RecordListParentSceSynthInvokeListEvent::RecordListRefused,
+        RecordListParentSceSynthInvokeListEvent::RecordListRegister,
+        RecordListParentSceSynthInvokeListEvent::RecordListResync,
+        RecordListParentSceSynthInvokeListEvent::RecordListRetire,
+        RecordListParentSceSynthInvokeListEvent::RecordListRole,
+        RecordListParentSceSynthInvokeListEvent::RecordListRoom,
+        RecordListParentSceSynthInvokeListEvent::RecordListSettle,
+        RecordListParentSceSynthInvokeListEvent::RecordListShare,
+        RecordListParentSceSynthInvokeListEvent::RecordListSupersede,
+        RecordListParentSceSynthInvokeListEvent::RecordListTake,
+        RecordListParentSceSynthInvokeListEvent::RecordListTell,
+        RecordListParentSceSynthInvokeListEvent::RecordListValue,
+        RecordListParentSceSynthInvokeListEvent::RecordListVisit,
+        RecordListParentSceSynthInvokeListEvent::RecordListWrite,
+        RecordListParentSceSynthInvokeListEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = RecordListParentSceSynthInvokeListConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -3694,69 +3997,10 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         RecordListParentSceSynthInvokeListState::Open
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            RecordListParentSceSynthInvokeListState::Open,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            RecordListParentSceSynthInvokeListState::Open => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -3860,16 +4104,6 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
     fn null_event() -> Self::Event {
         RecordListParentSceSynthInvokeListEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -4147,17 +4381,19 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
     // SCE-MAP: record_list.scxml:209 :: _machine
     fn first_enabled_transition(
@@ -4165,306 +4401,171 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             RecordListParentSceSynthInvokeListState::Open => {
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListJoin {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListRoom {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListRole {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListEdit {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListClear {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListRetire {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListClose {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListTake {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListPass {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 8,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListWrite {
                     if matches!(&self.pending_payload, RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) if self.floor > 0 && ev.wallTime <= self.floor)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 9,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListWrite {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 10,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 10
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListSupersede {
                     if matches!(&self.pending_payload, RecordListParentSceSynthInvokeListPayload::RecordListSupersede(ev) if self.floor > 0 && ev.parts > 1 && ev.atWallTime <= self.floor)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 11,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 11
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListSupersede {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 12,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 12
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListArrive {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 13,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 13
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListAnnounce {
                     if self.announce {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 14,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 14
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListTell {
                     if self.announce {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 15,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 15
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListKeep {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 16,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 16
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListCompact {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 17,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 17
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListSettle {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 18,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 18
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListPropose {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 19,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 19
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListAck {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 20,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 20
+                        return Some(::sce_rust_runtime::TransitionId(20));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListFloor {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 21,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 21
+                        return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListResync {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 22,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 22
+                        return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListVisit {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 23,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 23
+                        return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListNode {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 24,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 24
+                        return Some(::sce_rust_runtime::TransitionId(24));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::RecordListShare {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 25,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 25
+                        return Some(::sce_rust_runtime::TransitionId(25));
                     }
                 }
                 if event == RecordListParentSceSynthInvokeListEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 26,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 26
+                        return Some(::sce_rust_runtime::TransitionId(26));
                     }
                 }
                 None
@@ -4474,119 +4575,116 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
     // SCE-MAP: record_list.scxml:209 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            RecordListParentSceSynthInvokeListState::Open => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListJoin(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="node">
-                            self.node = ev.node;
+        match transition.0 {
+            // open, transition 0
+            0 => {
+                // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListJoin(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="node">
+                    self.node = ev.node;
 
-                            // W3C SCXML 5.3: <assign location="hub">
-                            self.hub = ev.hub;
-                        }
+                    // W3C SCXML 5.3: <assign location="hub">
+                    self.hub = ev.hub;
+                }
+            }
+            // open, transition 1
+            1 => {
+                // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListRoom(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="roomValues">
+                    self.room_values = ev.values;
+
+                    // W3C SCXML 5.3: <assign location="roomHistory">
+                    self.room_history = ev.history;
+
+                    // W3C SCXML 5.3: <assign location="roomDigest">
+                    self.room_digest = ev.digest;
+                }
+            }
+            // open, transition 2
+            2 => {
+                // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListRole(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="roster">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.roster = sce_forge_runtime::algorithm::within(
+                                (call_RecordRoster__v(&self.roster, ev.node, ev.role)?).as_slice(),
+                                64,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListRoom(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="roomValues">
-                            self.room_values = ev.values;
+                }
+            }
+            // open, transition 3
+            3 => {
+                // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListEdit(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holding">
+                    self.holding = ev.more;
 
-                            // W3C SCXML 5.3: <assign location="roomHistory">
-                            self.room_history = ev.history;
+                    // W3C SCXML 5.9: cond="!spoiled"
+                    if !self.spoiled {
+                        // W3C SCXML 5.3: <assign location="namedId">
+                        self.named_id = ev.id;
 
-                            // W3C SCXML 5.3: <assign location="roomDigest">
-                            self.room_digest = ev.digest;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListRole(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="roster">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.roster = sce_forge_runtime::algorithm::within((call_RecordRoster__v(&self.roster, ev.node, ev.role)?).as_slice(), 64)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListEdit(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holding">
-                            self.holding = ev.more;
+                        // W3C SCXML 5.3: <assign location="namedField">
+                        self.named_field = ev.field;
 
-                            // W3C SCXML 5.9: cond="!spoiled"
-                            if !self.spoiled {
-                                // W3C SCXML 5.3: <assign location="namedId">
-                                self.named_id = ev.id;
+                        // W3C SCXML 5.3: <assign location="namedKind">
+                        self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Edit;
 
-                                // W3C SCXML 5.3: <assign location="namedField">
-                                self.named_field = ev.field;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = true;
 
-                                // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind =
-                                    RecordListParentSceSynthInvokeListCommandEnum::Edit;
+                        // W3C SCXML 5.3: <assign location="probe">
+                        self.probe = RecordListParentSceSynthInvokeListRefusalEnum::TextTooLong;
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = true;
-
-                                // W3C SCXML 5.3: <assign location="probe">
-                                self.probe =
-                                    RecordListParentSceSynthInvokeListRefusalEnum::TextTooLong;
-
-                                // W3C SCXML 5.3: <assign location="typed">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="typed">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.typed = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 32)?;
     Ok(())
 })() {
@@ -4596,24 +4694,24 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="part.kind">
-                                self.part.kind = 0;
+                        // W3C SCXML 5.3: <assign location="part.kind">
+                        self.part.kind = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.id">
-                                self.part.id = ev.id;
+                        // W3C SCXML 5.3: <assign location="part.id">
+                        self.part.id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="part.field">
-                                self.part.field = ev.field;
+                        // W3C SCXML 5.3: <assign location="part.field">
+                        self.part.field = ev.field;
 
-                                // W3C SCXML 5.3: <assign location="part.value">
-                                self.part.value = ev.value;
+                        // W3C SCXML 5.3: <assign location="part.value">
+                        self.part.value = ev.value;
 
-                                // W3C SCXML 5.3: <assign location="part.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="part.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.part.text = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
     Ok(())
 })() {
@@ -4623,101 +4721,99 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="probe">
-                                self.probe =
-                                    RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
+                        // W3C SCXML 5.3: <assign location="probe">
+                        self.probe = RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
 
-                                // SCE Accepted Subset §2.15: <sce:append target="staged">
-                                let sce_failed = if self.staged.len() < 32 {
-                                    self.staged.push(self.part.clone());
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        // SCE Accepted Subset §2.15: <sce:append target="staged">
+                        let sce_failed = if self.staged.len() < 32 {
+                            self.staged.push(self.part.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = false;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = false;
+                    }
+
+                    // W3C SCXML 5.9: cond="!holding"
+                    if !self.holding {
+                        // W3C SCXML 5.3: <assign location="closingNow">
+                        self.closing_now = ev.now;
+
+                        {
+                            let send_id: &str = "__send_0";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListClose,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
 
-                            // W3C SCXML 5.9: cond="!holding"
-                            if !self.holding {
-                                // W3C SCXML 5.3: <assign location="closingNow">
-                                self.closing_now = ev.now;
-
-                                {
-                                    let send_id: &str = "__send_0";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListClose);
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    4 => {
-                        // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListClear(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holding">
-                            self.holding = ev.more;
+                }
+            }
+            // open, transition 4
+            4 => {
+                // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListClear(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holding">
+                    self.holding = ev.more;
 
-                            // W3C SCXML 5.9: cond="!spoiled"
-                            if !self.spoiled {
-                                // W3C SCXML 5.3: <assign location="namedId">
-                                self.named_id = ev.id;
+                    // W3C SCXML 5.9: cond="!spoiled"
+                    if !self.spoiled {
+                        // W3C SCXML 5.3: <assign location="namedId">
+                        self.named_id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="namedField">
-                                self.named_field = ev.field;
+                        // W3C SCXML 5.3: <assign location="namedField">
+                        self.named_field = ev.field;
 
-                                // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind =
-                                    RecordListParentSceSynthInvokeListCommandEnum::Clear;
+                        // W3C SCXML 5.3: <assign location="namedKind">
+                        self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Clear;
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = true;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = true;
 
-                                // W3C SCXML 5.3: <assign location="probe">
-                                self.probe =
-                                    RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
+                        // W3C SCXML 5.3: <assign location="probe">
+                        self.probe = RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
 
-                                // W3C SCXML 5.3: <assign location="part.kind">
-                                self.part.kind = 1;
+                        // W3C SCXML 5.3: <assign location="part.kind">
+                        self.part.kind = 1;
 
-                                // W3C SCXML 5.3: <assign location="part.id">
-                                self.part.id = ev.id;
+                        // W3C SCXML 5.3: <assign location="part.id">
+                        self.part.id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="part.field">
-                                self.part.field = ev.field;
+                        // W3C SCXML 5.3: <assign location="part.field">
+                        self.part.field = ev.field;
 
-                                // W3C SCXML 5.3: <assign location="part.value">
-                                self.part.value = 0;
+                        // W3C SCXML 5.3: <assign location="part.value">
+                        self.part.value = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="part.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
     Ok(())
 })() {
@@ -4727,97 +4823,96 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // SCE Accepted Subset §2.15: <sce:append target="staged">
-                                let sce_failed = if self.staged.len() < 32 {
-                                    self.staged.push(self.part.clone());
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        // SCE Accepted Subset §2.15: <sce:append target="staged">
+                        let sce_failed = if self.staged.len() < 32 {
+                            self.staged.push(self.part.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = false;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = false;
+                    }
+
+                    // W3C SCXML 5.9: cond="!holding"
+                    if !self.holding {
+                        // W3C SCXML 5.3: <assign location="closingNow">
+                        self.closing_now = ev.now;
+
+                        {
+                            let send_id: &str = "__send_1";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListClose,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
 
-                            // W3C SCXML 5.9: cond="!holding"
-                            if !self.holding {
-                                // W3C SCXML 5.3: <assign location="closingNow">
-                                self.closing_now = ev.now;
-
-                                {
-                                    let send_id: &str = "__send_1";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListClose);
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    5 => {
-                        // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListRetire(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holding">
-                            self.holding = ev.more;
+                }
+            }
+            // open, transition 5
+            5 => {
+                // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListRetire(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holding">
+                    self.holding = ev.more;
 
-                            // W3C SCXML 5.9: cond="!spoiled"
-                            if !self.spoiled {
-                                // W3C SCXML 5.3: <assign location="namedId">
-                                self.named_id = ev.id;
+                    // W3C SCXML 5.9: cond="!spoiled"
+                    if !self.spoiled {
+                        // W3C SCXML 5.3: <assign location="namedId">
+                        self.named_id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="namedField">
-                                self.named_field = 0;
+                        // W3C SCXML 5.3: <assign location="namedField">
+                        self.named_field = 0;
 
-                                // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind =
-                                    RecordListParentSceSynthInvokeListCommandEnum::Retire;
+                        // W3C SCXML 5.3: <assign location="namedKind">
+                        self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Retire;
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = true;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = true;
 
-                                // W3C SCXML 5.3: <assign location="probe">
-                                self.probe =
-                                    RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
+                        // W3C SCXML 5.3: <assign location="probe">
+                        self.probe = RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
 
-                                // W3C SCXML 5.3: <assign location="part.kind">
-                                self.part.kind = 2;
+                        // W3C SCXML 5.3: <assign location="part.kind">
+                        self.part.kind = 2;
 
-                                // W3C SCXML 5.3: <assign location="part.id">
-                                self.part.id = ev.id;
+                        // W3C SCXML 5.3: <assign location="part.id">
+                        self.part.id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="part.field">
-                                self.part.field = 0;
+                        // W3C SCXML 5.3: <assign location="part.field">
+                        self.part.field = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.value">
-                                self.part.value = 0;
+                        // W3C SCXML 5.3: <assign location="part.value">
+                        self.part.value = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="part.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
     Ok(())
 })() {
@@ -4827,74 +4922,77 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // SCE Accepted Subset §2.15: <sce:append target="staged">
-                                let sce_failed = if self.staged.len() < 32 {
-                                    self.staged.push(self.part.clone());
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        // SCE Accepted Subset §2.15: <sce:append target="staged">
+                        let sce_failed = if self.staged.len() < 32 {
+                            self.staged.push(self.part.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = false;
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = false;
+                    }
+
+                    // W3C SCXML 5.9: cond="!holding"
+                    if !self.holding {
+                        // W3C SCXML 5.3: <assign location="closingNow">
+                        self.closing_now = ev.now;
+
+                        {
+                            let send_id: &str = "__send_2";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListClose,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
 
-                            // W3C SCXML 5.9: cond="!holding"
-                            if !self.holding {
-                                // W3C SCXML 5.3: <assign location="closingNow">
-                                self.closing_now = ev.now;
-
-                                {
-                                    let send_id: &str = "__send_2";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListClose);
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    6 => {
-                        // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="!spoiled && len(roster) > 0"
-                            if !self.spoiled && (self.roster).len() as u32 > 0 {
+                }
+            }
+            // open, transition 6
+            6 => {
+                // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="!spoiled && len(roster) > 0"
+                    if !self.spoiled && (self.roster).len() as u32 > 0 {
+                        // W3C SCXML 5.3: <assign location="forbidden">
+                        self.forbidden = true;
+
+                        for m in self.roster.clone() {
+                            let _ = &m;
+
+                            // W3C SCXML 5.9: cond="m.node === node && m.role >= 2"
+                            if m.node == self.node && m.role >= 2 {
                                 // W3C SCXML 5.3: <assign location="forbidden">
-                                self.forbidden = true;
+                                self.forbidden = false;
+                            }
+                        }
 
-                                for m in self.roster.clone() {
-                                    let _ = &m;
-
-                                    // W3C SCXML 5.9: cond="m.node === node && m.role >= 2"
-                                    if m.node == self.node && m.role >= 2 {
-                                        // W3C SCXML 5.3: <assign location="forbidden">
-                                        self.forbidden = false;
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="forbidden"
-                                if self.forbidden {
-                                    // W3C SCXML 5.3: <assign location="denied">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.9: cond="forbidden"
+                        if self.forbidden {
+                            // W3C SCXML 5.3: <assign location="denied">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.denied = sce_forge_runtime::algorithm::add::<u32>(self.denied, 1)?;
     Ok(())
 })() {
@@ -4904,87 +5002,89 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
 
+                            // W3C SCXML 5.3: <assign location="spoiled">
+                            self.spoiled = true;
+
+                            // W3C SCXML 5.3: <assign location="spoiledFor">
+                            self.spoiled_for =
+                                RecordListParentSceSynthInvokeListRefusalEnum::NotWriter;
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="!spoiled"
+                    if !self.spoiled {
+                        for (sce_position_of_earlier_at, earlier) in
+                            self.staged.clone().into_iter().enumerate()
+                        {
+                            let earlier_at = sce_position_of_earlier_at as u32;
+                            let _ = (&earlier, &earlier_at);
+
+                            for (sce_position_of_later_at, later) in
+                                self.staged.clone().into_iter().enumerate()
+                            {
+                                let later_at = sce_position_of_later_at as u32;
+                                let _ = (&later, &later_at);
+
+                                // W3C SCXML 5.9: cond="!spoiled && laterAt > earlierAt && earlier.kind !== 2 && later.kind !== 2 && earlier.id === later.id && earlier.field === later.field"
+                                if !self.spoiled
+                                    && later_at > earlier_at
+                                    && earlier.kind != 2
+                                    && later.kind != 2
+                                    && earlier.id == later.id
+                                    && earlier.field == later.field
+                                {
                                     // W3C SCXML 5.3: <assign location="spoiled">
                                     self.spoiled = true;
 
                                     // W3C SCXML 5.3: <assign location="spoiledFor">
-                                    self.spoiled_for =
-                                        RecordListParentSceSynthInvokeListRefusalEnum::NotWriter;
-                                }
-                            }
+                                    self.spoiled_for = RecordListParentSceSynthInvokeListRefusalEnum::RegisterNamedTwice;
 
-                            // W3C SCXML 5.9: cond="!spoiled"
-                            if !self.spoiled {
-                                for (sce_position_of_earlier_at, earlier) in
-                                    self.staged.clone().into_iter().enumerate()
-                                {
-                                    let earlier_at = sce_position_of_earlier_at as u32;
-                                    let _ = (&earlier, &earlier_at);
+                                    // W3C SCXML 5.3: <assign location="namedId">
+                                    self.named_id = later.id;
 
-                                    for (sce_position_of_later_at, later) in
-                                        self.staged.clone().into_iter().enumerate()
-                                    {
-                                        let later_at = sce_position_of_later_at as u32;
-                                        let _ = (&later, &later_at);
+                                    // W3C SCXML 5.3: <assign location="namedField">
+                                    self.named_field = later.field;
 
-                                        // W3C SCXML 5.9: cond="!spoiled && laterAt > earlierAt && earlier.kind !== 2 && later.kind !== 2 && earlier.id === later.id && earlier.field === later.field"
-                                        if !self.spoiled
-                                            && later_at > earlier_at
-                                            && earlier.kind != 2
-                                            && later.kind != 2
-                                            && earlier.id == later.id
-                                            && earlier.field == later.field
-                                        {
-                                            // W3C SCXML 5.3: <assign location="spoiled">
-                                            self.spoiled = true;
-
-                                            // W3C SCXML 5.3: <assign location="spoiledFor">
-                                            self.spoiled_for = RecordListParentSceSynthInvokeListRefusalEnum::RegisterNamedTwice;
-
-                                            // W3C SCXML 5.3: <assign location="namedId">
-                                            self.named_id = later.id;
-
-                                            // W3C SCXML 5.3: <assign location="namedField">
-                                            self.named_field = later.field;
-
-                                            // W3C SCXML 5.9: cond="later.kind === 1"
-                                            if later.kind == 1 {
-                                                // W3C SCXML 5.3: <assign location="namedKind">
-                                                self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Clear;
-                                            } else {
-                                                // W3C SCXML 5.3: <assign location="namedKind">
-                                                self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Edit;
-                                            }
-                                        }
+                                    // W3C SCXML 5.9: cond="later.kind === 1"
+                                    if later.kind == 1 {
+                                        // W3C SCXML 5.3: <assign location="namedKind">
+                                        self.named_kind =
+                                            RecordListParentSceSynthInvokeListCommandEnum::Clear;
+                                    } else {
+                                        // W3C SCXML 5.3: <assign location="namedKind">
+                                        self.named_kind =
+                                            RecordListParentSceSynthInvokeListCommandEnum::Edit;
                                     }
                                 }
                             }
+                        }
+                    }
 
-                            // W3C SCXML 5.3: <assign location="gone">
-                            self.gone = 0;
+                    // W3C SCXML 5.3: <assign location="gone">
+                    self.gone = 0;
 
-                            // W3C SCXML 5.3: <assign location="writes">
-                            self.writes = 0;
+                    // W3C SCXML 5.3: <assign location="writes">
+                    self.writes = 0;
 
-                            // W3C SCXML 5.9: cond="!spoiled"
-                            if !self.spoiled {
-                                for a in self.adds.clone() {
-                                    let _ = &a;
+                    // W3C SCXML 5.9: cond="!spoiled"
+                    if !self.spoiled {
+                        for a in self.adds.clone() {
+                            let _ = &a;
 
-                                    // W3C SCXML 5.3: <assign location="covered">
-                                    self.covered = false;
+                            // W3C SCXML 5.3: <assign location="covered">
+                            self.covered = false;
 
-                                    for s in self.staged.clone() {
-                                        let _ = &s;
+                            for s in self.staged.clone() {
+                                let _ = &s;
 
-                                        {
-                                            let mut if_cond_failed = false;
-                                            // W3C SCXML 5.9: cond="a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)"
-                                            if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                                {
+                                    let mut if_cond_failed = false;
+                                    // W3C SCXML 5.9: cond="a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)"
+                                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(sce_forge_runtime::algorithm::div::<u64>(a.element, 65536)? == s.id as u64 && (s.kind == 2 || sce_forge_runtime::algorithm::rem::<u64>(a.element, 65536)? == s.field as u64))
 })() {
     Ok(sce_value) => sce_value,
@@ -4999,16 +5099,16 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 self.covered = true;
 
 }
-                                            if if_cond_failed {
-                                                break 'action_block;
-                                            }
-                                        }
+                                    if if_cond_failed {
+                                        break 'action_block;
                                     }
+                                }
+                            }
 
-                                    // W3C SCXML 5.9: cond="covered"
-                                    if self.covered {
-                                        // W3C SCXML 5.3: <assign location="gone">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.9: cond="covered"
+                            if self.covered {
+                                // W3C SCXML 5.3: <assign location="gone">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.gone = sce_forge_runtime::algorithm::add::<u32>(self.gone, 1)?;
     Ok(())
 })() {
@@ -5018,19 +5118,19 @@ self.covered = true;
         true
     }
 };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 }
+                            }
+                        }
 
-                                for s in self.staged.clone() {
-                                    let _ = &s;
+                        for s in self.staged.clone() {
+                            let _ = &s;
 
-                                    // W3C SCXML 5.9: cond="s.kind === 0"
-                                    if s.kind == 0 {
-                                        // W3C SCXML 5.3: <assign location="writes">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.9: cond="s.kind === 0"
+                            if s.kind == 0 {
+                                // W3C SCXML 5.3: <assign location="writes">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.writes = sce_forge_runtime::algorithm::add::<u32>(self.writes, 1)?;
     Ok(())
 })() {
@@ -5040,17 +5140,17 @@ self.covered = true;
         true
     }
 };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 }
                             }
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(!self.spoiled && sce_forge_runtime::algorithm::add::<u32>(self.gone, self.writes)? > 0 && self.room_values > 0 && self.writes > self.gone && sce_forge_runtime::algorithm::add::<u32>((self.values).len() as u32, self.writes)? > sce_forge_runtime::algorithm::add::<u32>(self.room_values, self.gone)?)
 })() {
     Ok(sce_value) => sce_value,
@@ -5085,15 +5185,15 @@ self.spoiled = true;
 self.spoiled_for = RecordListParentSceSynthInvokeListRefusalEnum::NoRoomForValue;
 
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(!self.spoiled && sce_forge_runtime::algorithm::add::<u32>(self.gone, self.writes)? > 0 && self.room_history > 0 && (self.tombstones).len() as u32 >= self.room_history)
 })() {
     Ok(sce_value) => sce_value,
@@ -5128,15 +5228,15 @@ self.spoiled = true;
 self.spoiled_for = RecordListParentSceSynthInvokeListRefusalEnum::NoRoomForHistory;
 
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(!self.spoiled && sce_forge_runtime::algorithm::add::<u32>(self.gone, self.writes)? > 0 && self.room_digest > 0 && (self.digest).len() as u32 >= self.room_digest)
 })() {
     Ok(sce_value) => sce_value,
@@ -5171,15 +5271,15 @@ self.spoiled = true;
 self.spoiled_for = RecordListParentSceSynthInvokeListRefusalEnum::NoRoomForDigest;
 
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="!spoiled && gone + writes > 0"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(!self.spoiled && sce_forge_runtime::algorithm::add::<u32>(self.gone, self.writes)? > 0)
 })() {
     Ok(sce_value) => sce_value,
@@ -5541,15 +5641,15 @@ for t in self.passing.clone() {
     let _ = send_id;  // suppress unused warning when no send operation
 }}
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="!spoiled && gone + writes === 0"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="!spoiled && gone + writes === 0"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(!self.spoiled && sce_forge_runtime::algorithm::add::<u32>(self.gone, self.writes)? == 0)
 })() {
     Ok(sce_value) => sce_value,
@@ -5562,126 +5662,117 @@ for t in self.passing.clone() {
 
 // SCE Accepted Subset §2.15: <sce:clear target="staged">
 self.staged.clear();}
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="spoiled"
-                            if self.spoiled {
-                                // SCE Accepted Subset §2.15: <sce:clear target="staged">
-                                self.staged.clear();
-                                // W3C SCXML 5.3: <assign location="spoiled">
-                                self.spoiled = false;
+                    // W3C SCXML 5.9: cond="spoiled"
+                    if self.spoiled {
+                        // SCE Accepted Subset §2.15: <sce:clear target="staged">
+                        self.staged.clear();
+                        // W3C SCXML 5.3: <assign location="spoiled">
+                        self.spoiled = false;
 
-                                // W3C SCXML 5.9: cond="announce"
-                                if self.announce {
-                                    {
-                                        let send_id: &str = "__send_5";
+                        // W3C SCXML 5.9: cond="announce"
+                        if self.announce {
+                            {
+                                let send_id: &str = "__send_5";
 
-                                        let mut _send_arg_error: Option<&'static str> = None;
-                                        // docs/adr/0005, decision 3: the target is a string computed from the machine's
-                                        // fields now, and the send goes only by a route the document declared as
-                                        // `sce:targets`. A value in none of them names no route this send may take —
-                                        // an address nobody answers at, which the resolution below reports as
-                                        // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
-                                        // evaluated, the argument error.
-                                        let _send_target_text: Option<String> =
-                                            if _send_arg_error.is_none() {
-                                                Some("#_parent".to_string())
-                                            } else {
-                                                None
-                                            }
-                                            .filter(|route| matches!(route.as_str(), "#_parent"));
-                                        if let Some(__sce_why) = _send_arg_error {
-                                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                            err_meta.metadata.send_id =
-                                                ::sce_rust_runtime::sce_string_from_str(send_id);
-                                            engine.raise(err_meta);
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        } else {
-                                            // §scxml-C-1: the route is read as text, and text that names nothing
-                                            // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
-                                            // value the send did not declare was already taken for none above.
-                                            let _resolved_target: Option<String> = _send_target_text
+                                let mut _send_arg_error: Option<&'static str> = None;
+                                // docs/adr/0005, decision 3: the target is a string computed from the machine's
+                                // fields now, and the send goes only by a route the document declared as
+                                // `sce:targets`. A value in none of them names no route this send may take —
+                                // an address nobody answers at, which the resolution below reports as
+                                // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+                                // evaluated, the argument error.
+                                let _send_target_text: Option<String> =
+                                    if _send_arg_error.is_none() {
+                                        Some("#_parent".to_string())
+                                    } else {
+                                        None
+                                    }
+                                    .filter(|route| matches!(route.as_str(), "#_parent"));
+                                if let Some(__sce_why) = _send_arg_error {
+                                    ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                    let mut err_meta =
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            RecordListParentSceSynthInvokeListEvent::ErrorExecution,
+                                            __sce_why,
+                                        );
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
+                                    engine.raise(err_meta);
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                } else {
+                                    // §scxml-C-1: the route is read as text, and text that names nothing
+                                    // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
+                                    // value the send did not declare was already taken for none above.
+                                    let _resolved_target: Option<String> = _send_target_text
         .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t));
-                                            if _resolved_target.is_none() {
-                                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
-                                                // error.communication.
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                err_meta.metadata.send_id =
-                                                    ::sce_rust_runtime::sce_string_from_str(
-                                                        send_id,
-                                                    );
-                                                engine.raise(err_meta);
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                            if let Some(ref _rt) = _resolved_target {
-                                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                                // delivered, so each name carries a vector. The typed value is kept
-                                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                                // finds the string "42" unequal.
-                                                //
-                                                // Declared out here rather than inside the payload block because
-                                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                                // below are renderings of that one evaluation: the BasicHTTP and
-                                                // host-served arms read this map instead of asking the data model again.
-                                                let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
-        ::std::collections::BTreeMap::new();
-                                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                                let event_data_string: String = {
-                                                    let wire_params = &mut _send_wire_params;
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("id".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.named_id),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("field".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.named_field),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("kind".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                (self.named_kind)
-                                                                    .sce_name()
-                                                                    .to_string(),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("reason".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                (self.spoiled_for)
-                                                                    .sce_name()
-                                                                    .to_string(),
-                                                            ),
-                                                        );
-                                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                                };
-                                                let event_data: &str = &event_data_string;
+                                    if _resolved_target.is_none() {
+                                        // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                        // error.communication.
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                    if let Some(ref _rt) = _resolved_target {
+                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                        // delivered, so each name carries a vector. The typed value is kept
+                                        // rather than its text — a receiver reading `_event.data.value === 42`
+                                        // finds the string "42" unequal.
+                                        //
+                                        // Declared out here rather than inside the payload block because
+                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                        // below are renderings of that one evaluation: the BasicHTTP and
+                                        // host-served arms read this map instead of asking the data model again.
+                                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                                            String,
+                                            Vec<::sce_rust_runtime::ScriptValue>,
+                                        > = ::std::collections::BTreeMap::new();
+                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                        let event_data_string: String = {
+                                            let wire_params = &mut _send_wire_params;
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params.entry("id".to_string()).or_default().push(
+                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                    self.named_id,
+                                                )),
+                                            );
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("field".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::Int(
+                                                    i64::from(self.named_field),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("kind".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    (self.named_kind).sce_name().to_string(),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("reason".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    (self.spoiled_for).sce_name().to_string(),
+                                                ));
+                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                        };
+                                        let event_data: &str = &event_data_string;
 
-                                                // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
-                                                // the same value written in `target` is, at once or after the delay, by
-                                                // the table `helpers::send::classify_target` holds (C++
-                                                // `SendHelper::classifyTarget`).
-                                                {
-                                                    let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                        // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                        // the same value written in `target` is, at once or after the delay, by
+                                        // the table `helpers::send::classify_target` holds (C++
+                                        // `SendHelper::classifyTarget`).
+                                        {
+                                            let __sce_routed = sce_rust_runtime::Engine::send_to_target(
             self,
             engine,
             Some(RecordListParentSceSynthInvokeListEvent::RecordListRefused),
@@ -5693,36 +5784,47 @@ None,
             &event_data,
             &::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")),
         );
-                                                    if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
-            engine.raise(err_meta);
-            break 'action_block;  // W3C SCXML 4.9: the error ends the block
-        }
-                                                    if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
-            engine.raise(err_meta);
-            break 'action_block;  // W3C SCXML 4.9: the error ends the block
-        }
-                                                }
+                                            if __sce_routed
+                                                == sce_rust_runtime::TargetSendOutcome::Unsupported
+                                            {
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
+                                                engine.raise(err_meta);
+                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                            }
+                                            if __sce_routed
+                                                == sce_rust_runtime::TargetSendOutcome::Unreachable
+                                            {
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
+                                                engine.raise(err_meta);
+                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                            }
+                                        }
 
-                                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                            } // end of if let Some(ref _rt) = _resolved_target
-                                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
+                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    } // end of if let Some(ref _rt) = _resolved_target
+                                } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
-                    7 => {
-                        // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="op">
-                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                }
+            }
+            // open, transition 7
+            7 => {
+                // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="op">
+                    let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.op.kind = sce_forge_runtime::algorithm::at_ref(&self.taking, self.took)?.kind;
     Ok(())
 })() {
@@ -5831,29 +5933,30 @@ None,
         true
     }
 });
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="took">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.took = sce_forge_runtime::algorithm::add::<u32>(self.took, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='took'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="took">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.took = sce_forge_runtime::algorithm::add::<u32>(self.took, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='took'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.9: cond="op.kind === 0"
-                            if self.op.kind == 0 {
-                                // W3C SCXML 5.3: <assign location="held.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="op.kind === 0"
+                    if self.op.kind == 0 {
+                        // W3C SCXML 5.3: <assign location="held.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.held.text = sce_forge_runtime::algorithm::bounded(self.op.text.to_string(), 96)?;
     Ok(())
 })() {
@@ -5863,23 +5966,23 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.9: cond="op.nodeId !== node"
-                                if self.op.nodeId != self.node {
-                                    // W3C SCXML 5.3: <assign location="stamp.wallTime">
-                                    self.stamp.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.9: cond="op.nodeId !== node"
+                        if self.op.nodeId != self.node {
+                            // W3C SCXML 5.3: <assign location="stamp.wallTime">
+                            self.stamp.wallTime = self.op.wallTime;
 
-                                    // W3C SCXML 5.3: <assign location="stamp.counter">
-                                    self.stamp.counter = self.op.counter;
+                            // W3C SCXML 5.3: <assign location="stamp.counter">
+                            self.stamp.counter = self.op.counter;
 
-                                    // W3C SCXML 5.3: <assign location="stamp.nodeId">
-                                    self.stamp.nodeId = self.op.nodeId;
+                            // W3C SCXML 5.3: <assign location="stamp.nodeId">
+                            self.stamp.nodeId = self.op.nodeId;
 
-                                    // W3C SCXML 5.3: <assign location="clock">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.3: <assign location="clock">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.clock = call_HlcReceive__vv(&self.clock, &self.stamp, self.clock.wallTime, self.node)?;
     Ok(())
 })() {
@@ -5889,29 +5992,29 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
 
-                                // W3C SCXML 5.9: cond="op.nodeId === node && (op.wallTime > clock.wallTime || (op.wallTime === clock.wallTime && op.counter > clock.counter))"
-                                if self.op.nodeId == self.node
-                                    && (self.op.wallTime > self.clock.wallTime
-                                        || self.op.wallTime == self.clock.wallTime
-                                            && self.op.counter > self.clock.counter)
-                                {
-                                    // W3C SCXML 5.3: <assign location="clock.wallTime">
-                                    self.clock.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.9: cond="op.nodeId === node && (op.wallTime > clock.wallTime || (op.wallTime === clock.wallTime && op.counter > clock.counter))"
+                        if self.op.nodeId == self.node
+                            && (self.op.wallTime > self.clock.wallTime
+                                || self.op.wallTime == self.clock.wallTime
+                                    && self.op.counter > self.clock.counter)
+                        {
+                            // W3C SCXML 5.3: <assign location="clock.wallTime">
+                            self.clock.wallTime = self.op.wallTime;
 
-                                    // W3C SCXML 5.3: <assign location="clock.counter">
-                                    self.clock.counter = self.op.counter;
-                                }
+                            // W3C SCXML 5.3: <assign location="clock.counter">
+                            self.clock.counter = self.op.counter;
+                        }
 
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                self.entry.element = self.op.id as u64;
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        self.entry.element = self.op.id as u64;
 
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.entry.element = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.entry.element, 65536)?, self.op.field as u64)?;
     Ok(())
 })() {
@@ -5921,54 +6024,54 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="entry.wallTime">
-                                self.entry.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.3: <assign location="entry.wallTime">
+                        self.entry.wallTime = self.op.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="entry.counter">
-                                self.entry.counter = self.op.counter;
+                        // W3C SCXML 5.3: <assign location="entry.counter">
+                        self.entry.counter = self.op.counter;
 
-                                // W3C SCXML 5.3: <assign location="entry.nodeId">
-                                self.entry.nodeId = self.op.nodeId;
+                        // W3C SCXML 5.3: <assign location="entry.nodeId">
+                        self.entry.nodeId = self.op.nodeId;
 
+                        // W3C SCXML 5.3: <assign location="isLive">
+                        self.is_live = true;
+
+                        for t in self.tombstones.clone() {
+                            let _ = &t;
+
+                            // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
+                            if t.element == self.entry.element
+                                && t.wallTime == self.entry.wallTime
+                                && t.counter == self.entry.counter
+                                && t.nodeId == self.entry.nodeId
+                            {
                                 // W3C SCXML 5.3: <assign location="isLive">
-                                self.is_live = true;
+                                self.is_live = false;
+                            }
+                        }
 
-                                for t in self.tombstones.clone() {
-                                    let _ = &t;
+                        // W3C SCXML 5.9: cond="isLive"
+                        if self.is_live {
+                            // SCE Accepted Subset §2.15: <sce:clear target="one">
+                            self.one.clear();
+                            // SCE Accepted Subset §2.15: <sce:append target="one">
+                            let sce_failed = if self.one.len() < 1024 {
+                                self.one.push(self.entry);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
 
-                                    // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
-                                    if t.element == self.entry.element
-                                        && t.wallTime == self.entry.wallTime
-                                        && t.counter == self.entry.counter
-                                        && t.nodeId == self.entry.nodeId
-                                    {
-                                        // W3C SCXML 5.3: <assign location="isLive">
-                                        self.is_live = false;
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="isLive"
-                                if self.is_live {
-                                    // SCE Accepted Subset §2.15: <sce:clear target="one">
-                                    self.one.clear();
-                                    // SCE Accepted Subset §2.15: <sce:append target="one">
-                                    let sce_failed = if self.one.len() < 1024 {
-                                        self.one.push(self.entry);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="adds">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.3: <assign location="adds">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.adds = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
@@ -5978,36 +6081,36 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
 
-                                // W3C SCXML 5.3: <assign location="held.id">
-                                self.held.id = self.op.id as u64;
+                        // W3C SCXML 5.3: <assign location="held.id">
+                        self.held.id = self.op.id as u64;
 
-                                // W3C SCXML 5.3: <assign location="held.field">
-                                self.held.field = self.op.field as u64;
+                        // W3C SCXML 5.3: <assign location="held.field">
+                        self.held.field = self.op.field as u64;
 
-                                // W3C SCXML 5.3: <assign location="held.value">
-                                self.held.value = self.op.value;
+                        // W3C SCXML 5.3: <assign location="held.value">
+                        self.held.value = self.op.value;
 
-                                // W3C SCXML 5.3: <assign location="held.wallTime">
-                                self.held.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.3: <assign location="held.wallTime">
+                        self.held.wallTime = self.op.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="held.counter">
-                                self.held.counter = self.op.counter;
+                        // W3C SCXML 5.3: <assign location="held.counter">
+                        self.held.counter = self.op.counter;
 
-                                // W3C SCXML 5.3: <assign location="held.nodeId">
-                                self.held.nodeId = self.op.nodeId;
+                        // W3C SCXML 5.3: <assign location="held.nodeId">
+                        self.held.nodeId = self.op.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="present">
-                                self.present = call_MvValueHolds__vv(&self.values, &self.held);
+                        // W3C SCXML 5.3: <assign location="present">
+                        self.present = call_MvValueHolds__vv(&self.values, &self.held);
 
-                                // W3C SCXML 5.9: cond="isLive && !present"
-                                if self.is_live && !self.present {
-                                    // W3C SCXML 5.3: <assign location="values">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.9: cond="isLive && !present"
+                        if self.is_live && !self.present {
+                            // W3C SCXML 5.3: <assign location="values">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.values = sce_forge_runtime::algorithm::within((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
     Ok(())
 })() {
@@ -6017,148 +6120,143 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
-                                    {
-                                        let send_id: &str = "__send_6";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("kind".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(0),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("element".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.entry.element).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("wallTime".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.wallTime).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("counter".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.op.counter),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("nodeId".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.nodeId).to_string(),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListKeep);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="isLive && !present && announce"
-                                if self.is_live && !self.present && self.announce {
-                                    {
-                                        let send_id: &str = "__send_7";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("id".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                    self.op.id,
-                                                )),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("field".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.op.field),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListAnnounce);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
-                            // W3C SCXML 5.9: cond="op.kind === 1"
-                            if self.op.kind == 1 {
-                                // W3C SCXML 5.9: cond="op.atWallTime > 0 && op.by !== node"
-                                if self.op.atWallTime > 0 && self.op.by != self.node {
-                                    // W3C SCXML 5.3: <assign location="stamp.wallTime">
-                                    self.stamp.wallTime = self.op.atWallTime;
+                            {
+                                let send_id: &str = "__send_6";
 
-                                    // W3C SCXML 5.3: <assign location="stamp.counter">
-                                    self.stamp.counter = self.op.atCounter;
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("kind".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("element".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.entry.element).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("wallTime".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.wallTime).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("counter".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.op.counter,
+                                        )),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("nodeId".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.nodeId).to_string(),
+                                        ),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                    // W3C SCXML 5.3: <assign location="stamp.nodeId">
-                                    self.stamp.nodeId = self.op.by;
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListKeep,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
 
-                                    // W3C SCXML 5.3: <assign location="clock">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="isLive && !present && announce"
+                        if self.is_live && !self.present && self.announce {
+                            {
+                                let send_id: &str = "__send_7";
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("id".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("field".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.op.field,
+                                        )),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListAnnounce,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="op.kind === 1"
+                    if self.op.kind == 1 {
+                        // W3C SCXML 5.9: cond="op.atWallTime > 0 && op.by !== node"
+                        if self.op.atWallTime > 0 && self.op.by != self.node {
+                            // W3C SCXML 5.3: <assign location="stamp.wallTime">
+                            self.stamp.wallTime = self.op.atWallTime;
+
+                            // W3C SCXML 5.3: <assign location="stamp.counter">
+                            self.stamp.counter = self.op.atCounter;
+
+                            // W3C SCXML 5.3: <assign location="stamp.nodeId">
+                            self.stamp.nodeId = self.op.by;
+
+                            // W3C SCXML 5.3: <assign location="clock">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.clock = call_HlcReceive__vv(&self.clock, &self.stamp, self.clock.wallTime, self.node)?;
     Ok(())
 })() {
@@ -6168,16 +6266,16 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
 
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                self.entry.element = self.op.id as u64;
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        self.entry.element = self.op.id as u64;
 
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.entry.element = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.entry.element, 65536)?, self.op.field as u64)?;
     Ok(())
 })() {
@@ -6187,52 +6285,52 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="entry.wallTime">
-                                self.entry.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.3: <assign location="entry.wallTime">
+                        self.entry.wallTime = self.op.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="entry.counter">
-                                self.entry.counter = self.op.counter;
+                        // W3C SCXML 5.3: <assign location="entry.counter">
+                        self.entry.counter = self.op.counter;
 
-                                // W3C SCXML 5.3: <assign location="entry.nodeId">
-                                self.entry.nodeId = self.op.nodeId;
+                        // W3C SCXML 5.3: <assign location="entry.nodeId">
+                        self.entry.nodeId = self.op.nodeId;
 
+                        // W3C SCXML 5.3: <assign location="known">
+                        self.known = false;
+
+                        for t in self.tombstones.clone() {
+                            let _ = &t;
+
+                            // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
+                            if t.element == self.entry.element
+                                && t.wallTime == self.entry.wallTime
+                                && t.counter == self.entry.counter
+                                && t.nodeId == self.entry.nodeId
+                            {
                                 // W3C SCXML 5.3: <assign location="known">
-                                self.known = false;
+                                self.known = true;
+                            }
+                        }
 
-                                for t in self.tombstones.clone() {
-                                    let _ = &t;
+                        // SCE Accepted Subset §2.15: <sce:clear target="one">
+                        self.one.clear();
+                        // SCE Accepted Subset §2.15: <sce:append target="one">
+                        let sce_failed = if self.one.len() < 1024 {
+                            self.one.push(self.entry);
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                    // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
-                                    if t.element == self.entry.element
-                                        && t.wallTime == self.entry.wallTime
-                                        && t.counter == self.entry.counter
-                                        && t.nodeId == self.entry.nodeId
-                                    {
-                                        // W3C SCXML 5.3: <assign location="known">
-                                        self.known = true;
-                                    }
-                                }
-
-                                // SCE Accepted Subset §2.15: <sce:clear target="one">
-                                self.one.clear();
-                                // SCE Accepted Subset §2.15: <sce:append target="one">
-                                let sce_failed = if self.one.len() < 1024 {
-                                    self.one.push(self.entry);
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                // W3C SCXML 5.3: <assign location="tombstones">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="tombstones">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
@@ -6242,12 +6340,12 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="adds">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="adds">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.adds = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
@@ -6257,30 +6355,30 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="held.id">
-                                self.held.id = self.op.id as u64;
+                        // W3C SCXML 5.3: <assign location="held.id">
+                        self.held.id = self.op.id as u64;
 
-                                // W3C SCXML 5.3: <assign location="held.field">
-                                self.held.field = self.op.field as u64;
+                        // W3C SCXML 5.3: <assign location="held.field">
+                        self.held.field = self.op.field as u64;
 
-                                // W3C SCXML 5.3: <assign location="held.wallTime">
-                                self.held.wallTime = self.op.wallTime;
+                        // W3C SCXML 5.3: <assign location="held.wallTime">
+                        self.held.wallTime = self.op.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="held.counter">
-                                self.held.counter = self.op.counter;
+                        // W3C SCXML 5.3: <assign location="held.counter">
+                        self.held.counter = self.op.counter;
 
-                                // W3C SCXML 5.3: <assign location="held.nodeId">
-                                self.held.nodeId = self.op.nodeId;
+                        // W3C SCXML 5.3: <assign location="held.nodeId">
+                        self.held.nodeId = self.op.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="wasLive">
-                                self.was_live = call_MvValueHolds__vv(&self.values, &self.held);
+                        // W3C SCXML 5.3: <assign location="wasLive">
+                        self.was_live = call_MvValueHolds__vv(&self.values, &self.held);
 
-                                // W3C SCXML 5.3: <assign location="values">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="values">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.values = sce_forge_runtime::algorithm::within((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
     Ok(())
 })() {
@@ -6290,216 +6388,208 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        // W3C SCXML 5.9: cond="!known"
+                        if !self.known {
+                            {
+                                let send_id: &str = "__send_8";
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("kind".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(1)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("element".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.entry.element).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("wallTime".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.wallTime).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("counter".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.op.counter,
+                                        )),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("nodeId".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.nodeId).to_string(),
+                                        ),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListKeep,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
-                                // W3C SCXML 5.9: cond="!known"
-                                if !self.known {
-                                    {
-                                        let send_id: &str = "__send_8";
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("kind".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(1),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("element".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.entry.element).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("wallTime".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.wallTime).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("counter".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.op.counter),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("nodeId".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.nodeId).to_string(),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                        // W3C SCXML 5.9: cond="wasLive"
+                        if self.was_live {
+                            {
+                                let send_id: &str = "__send_9";
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListKeep);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("kind".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("element".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.entry.element).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("wallTime".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.wallTime).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("counter".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.op.counter,
+                                        )),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("nodeId".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.op.nodeId).to_string(),
+                                        ),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListKeep,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
-                                // W3C SCXML 5.9: cond="wasLive"
-                                if self.was_live {
-                                    {
-                                        let send_id: &str = "__send_9";
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("kind".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(0),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("element".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.entry.element).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("wallTime".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.wallTime).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("counter".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.op.counter),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("nodeId".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.op.nodeId).to_string(),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                        // W3C SCXML 5.9: cond="wasLive && announce"
+                        if self.was_live && self.announce {
+                            {
+                                let send_id: &str = "__send_10";
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListKeep);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("id".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("field".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.op.field,
+                                        )),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListAnnounce,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
-                                // W3C SCXML 5.9: cond="wasLive && announce"
-                                if self.was_live && self.announce {
-                                    {
-                                        let send_id: &str = "__send_10";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("id".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                    self.op.id,
-                                                )),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("field".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.op.field),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListAnnounce);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
-                    8 => {
-                        // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="op">
-                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                }
+            }
+            // open, transition 8
+            8 => {
+                // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="op">
+                    let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.op.kind = sce_forge_runtime::algorithm::at_ref(&self.passing, self.passed)?.kind;
     Ok(())
 })() {
@@ -6608,927 +6698,871 @@ None,
         true
     }
 });
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="passed">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.passed = sce_forge_runtime::algorithm::add::<u32>(self.passed, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='passed'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="passed">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.passed = sce_forge_runtime::algorithm::add::<u32>(self.passed, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='passed'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && !hub"
-                            if self.op.kind == 0 && self.op.parts <= 1 && !self.hub {
+                    // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && !hub"
+                    if self.op.kind == 0 && self.op.parts <= 1 && !self.hub {
+                        {
+                            let send_id: &str = "__send_11";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.value).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("text".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        self.op.text.to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.write".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let send_id: &str = "__send_11";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("text".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                self.op.text.to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.write".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
                                 }
                             }
 
-                            // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && !hub"
-                            if self.op.kind == 0 && self.op.parts > 1 && !self.hub {
-                                {
-                                    let send_id: &str = "__send_12";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("text".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                self.op.text.to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("parts".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.parts,
-                                            )),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.write".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && hub"
-                            if self.op.kind == 0 && self.op.parts <= 1 && self.hub {
-                                {
-                                    let send_id: &str = "__send_13";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("text".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                self.op.text.to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.write".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && hub"
-                            if self.op.kind == 0 && self.op.parts > 1 && self.hub {
-                                {
-                                    let send_id: &str = "__send_14";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("text".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                self.op.text.to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("parts".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.parts,
-                                            )),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.write".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && !hub"
-                            if self.op.kind == 1 && self.op.parts <= 1 && !self.hub {
-                                {
-                                    let send_id: &str = "__send_15";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.supersede".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && !hub"
-                            if self.op.kind == 1 && self.op.parts > 1 && !self.hub {
-                                {
-                                    let send_id: &str = "__send_16";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.by).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("parts".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.parts,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("atWallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.atWallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("atCounter".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.atCounter,
-                                            )));
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.supersede".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && hub"
-                            if self.op.kind == 1 && self.op.parts <= 1 && self.hub {
-                                {
-                                    let send_id: &str = "__send_17";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.supersede".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && hub"
-                            if self.op.kind == 1 && self.op.parts > 1 && self.hub {
-                                {
-                                    let send_id: &str = "__send_18";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("id".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.id,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("field".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.field,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.by).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("parts".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.parts,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("atWallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (self.op.atWallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("atCounter".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.op.atCounter,
-                                            )));
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.supersede".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    9 => {
-                        // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => {
-                                ev.clone()
+
+                    // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && !hub"
+                    if self.op.kind == 0 && self.op.parts > 1 && !self.hub {
+                        {
+                            let send_id: &str = "__send_12";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.value).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("text".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        self.op.text.to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("parts".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.parts)),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.write".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
                             }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="held.id">
-                            self.held.id = ev.id as u64;
 
-                            // W3C SCXML 5.3: <assign location="held.field">
-                            self.held.field = ev.field as u64;
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
 
-                            // W3C SCXML 5.3: <assign location="held.wallTime">
-                            self.held.wallTime = ev.wallTime;
+                    // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && hub"
+                    if self.op.kind == 0 && self.op.parts <= 1 && self.hub {
+                        {
+                            let send_id: &str = "__send_13";
 
-                            // W3C SCXML 5.3: <assign location="held.counter">
-                            self.held.counter = ev.counter;
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.value).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("text".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        self.op.text.to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 5.3: <assign location="held.nodeId">
-                            self.held.nodeId = ev.nodeId;
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.write".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
 
-                            // W3C SCXML 5.3: <assign location="present">
-                            self.present = call_MvValueHolds__vv(&self.values, &self.held);
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="!present"
-                            if !self.present {
-                                // W3C SCXML 5.3: <assign location="late">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && hub"
+                    if self.op.kind == 0 && self.op.parts > 1 && self.hub {
+                        {
+                            let send_id: &str = "__send_14";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.value).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("text".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        self.op.text.to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("parts".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.parts)),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.write".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && !hub"
+                    if self.op.kind == 1 && self.op.parts <= 1 && !self.hub {
+                        {
+                            let send_id: &str = "__send_15";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.by).to_string(),
+                                    ),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.supersede".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && !hub"
+                    if self.op.kind == 1 && self.op.parts > 1 && !self.hub {
+                        {
+                            let send_id: &str = "__send_16";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.by).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("parts".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.parts)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("atWallTime".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.atWallTime).to_string(),
+                                    ));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("atCounter".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.atCounter,
+                                    )));
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.supersede".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && hub"
+                    if self.op.kind == 1 && self.op.parts <= 1 && self.hub {
+                        {
+                            let send_id: &str = "__send_17";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.by).to_string(),
+                                    ),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.supersede".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && hub"
+                    if self.op.kind == 1 && self.op.parts > 1 && self.hub {
+                        {
+                            let send_id: &str = "__send_18";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("id".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.id)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("field".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.field)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.counter,
+                                    )),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.by).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("parts".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.op.parts)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("atWallTime".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                        (self.op.atWallTime).to_string(),
+                                    ));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("atCounter".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.op.atCounter,
+                                    )));
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.supersede".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 9
+            9 => {
+                // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="held.id">
+                    self.held.id = ev.id as u64;
+
+                    // W3C SCXML 5.3: <assign location="held.field">
+                    self.held.field = ev.field as u64;
+
+                    // W3C SCXML 5.3: <assign location="held.wallTime">
+                    self.held.wallTime = ev.wallTime;
+
+                    // W3C SCXML 5.3: <assign location="held.counter">
+                    self.held.counter = ev.counter;
+
+                    // W3C SCXML 5.3: <assign location="held.nodeId">
+                    self.held.nodeId = ev.nodeId;
+
+                    // W3C SCXML 5.3: <assign location="present">
+                    self.present = call_MvValueHolds__vv(&self.values, &self.held);
+
+                    // W3C SCXML 5.9: cond="!present"
+                    if !self.present {
+                        // W3C SCXML 5.3: <assign location="late">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.late = sce_forge_runtime::algorithm::add::<u32>(self.late, 1)?;
     Ok(())
 })() {
@@ -7538,46 +7572,45 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+                }
+            }
+            // open, transition 10
+            10 => {
+                // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="authorized">
+                    self.authorized = true;
+
+                    // W3C SCXML 5.9: cond="hub && len(roster) > 0"
+                    if self.hub && (self.roster).len() as u32 > 0 {
+                        // W3C SCXML 5.3: <assign location="authorized">
+                        self.authorized = false;
+
+                        for m in self.roster.clone() {
+                            let _ = &m;
+
+                            // W3C SCXML 5.9: cond="m.node === _event.data.nodeId && m.role >= 2"
+                            if m.node == ev.nodeId && m.role >= 2 {
+                                // W3C SCXML 5.3: <assign location="authorized">
+                                self.authorized = true;
                             }
                         }
                     }
-                    10 => {
-                        // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="authorized">
-                            self.authorized = true;
 
-                            // W3C SCXML 5.9: cond="hub && len(roster) > 0"
-                            if self.hub && (self.roster).len() as u32 > 0 {
-                                // W3C SCXML 5.3: <assign location="authorized">
-                                self.authorized = false;
-
-                                for m in self.roster.clone() {
-                                    let _ = &m;
-
-                                    // W3C SCXML 5.9: cond="m.node === _event.data.nodeId && m.role >= 2"
-                                    if m.node == ev.nodeId && m.role >= 2 {
-                                        // W3C SCXML 5.3: <assign location="authorized">
-                                        self.authorized = true;
-                                    }
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="!authorized"
-                            if !self.authorized {
-                                // W3C SCXML 5.3: <assign location="denied">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="!authorized"
+                    if !self.authorized {
+                        // W3C SCXML 5.3: <assign location="denied">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.denied = sce_forge_runtime::algorithm::add::<u32>(self.denied, 1)?;
     Ok(())
 })() {
@@ -7587,15 +7620,15 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="authorized"
-                            if self.authorized {
-                                // W3C SCXML 5.3: <assign location="part.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="authorized"
+                    if self.authorized {
+                        // W3C SCXML 5.3: <assign location="part.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.part.text = sce_forge_runtime::algorithm::bounded(ev.text.to_string(), 96)?;
     Ok(())
 })() {
@@ -7605,117 +7638,122 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="part.kind">
-                                self.part.kind = 0;
+                        // W3C SCXML 5.3: <assign location="part.kind">
+                        self.part.kind = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.id">
-                                self.part.id = ev.id;
+                        // W3C SCXML 5.3: <assign location="part.id">
+                        self.part.id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="part.field">
-                                self.part.field = ev.field;
+                        // W3C SCXML 5.3: <assign location="part.field">
+                        self.part.field = ev.field;
 
-                                // W3C SCXML 5.3: <assign location="part.value">
-                                self.part.value = ev.value;
+                        // W3C SCXML 5.3: <assign location="part.value">
+                        self.part.value = ev.value;
 
-                                // W3C SCXML 5.3: <assign location="part.wallTime">
-                                self.part.wallTime = ev.wallTime;
+                        // W3C SCXML 5.3: <assign location="part.wallTime">
+                        self.part.wallTime = ev.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="part.counter">
-                                self.part.counter = ev.counter;
+                        // W3C SCXML 5.3: <assign location="part.counter">
+                        self.part.counter = ev.counter;
 
-                                // W3C SCXML 5.3: <assign location="part.nodeId">
-                                self.part.nodeId = ev.nodeId;
+                        // W3C SCXML 5.3: <assign location="part.nodeId">
+                        self.part.nodeId = ev.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="part.by">
-                                self.part.by = ev.nodeId;
+                        // W3C SCXML 5.3: <assign location="part.by">
+                        self.part.by = ev.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="part.atWallTime">
-                                self.part.atWallTime = ev.wallTime;
+                        // W3C SCXML 5.3: <assign location="part.atWallTime">
+                        self.part.atWallTime = ev.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="part.atCounter">
-                                self.part.atCounter = ev.counter;
+                        // W3C SCXML 5.3: <assign location="part.atCounter">
+                        self.part.atCounter = ev.counter;
 
-                                // W3C SCXML 5.3: <assign location="part.parts">
-                                self.part.parts = ev.parts;
+                        // W3C SCXML 5.3: <assign location="part.parts">
+                        self.part.parts = ev.parts;
 
-                                {
-                                    let send_id: &str = "__send_19";
+                        {
+                            let send_id: &str = "__send_19";
 
-                                    let event_data: &str = "";
+                            let event_data: &str = "";
 
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListArrive);
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListArrive,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    11 => {
-                        // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="late">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.late = sce_forge_runtime::algorithm::add::<u32>(self.late, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='late'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // open, transition 11
+            11 => {
+                // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="late">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.late = sce_forge_runtime::algorithm::add::<u32>(self.late, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='late'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    12 => {
-                        // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListSupersede(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="authorized">
-                            self.authorized = true;
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // open, transition 12
+            12 => {
+                // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
+                // W3C SCXML 3.13: Transition 12 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListSupersede(ev) => {
+                        ev.clone()
+                    }
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="authorized">
+                    self.authorized = true;
 
-                            // W3C SCXML 5.9: cond="hub && len(roster) > 0"
-                            if self.hub && (self.roster).len() as u32 > 0 {
+                    // W3C SCXML 5.9: cond="hub && len(roster) > 0"
+                    if self.hub && (self.roster).len() as u32 > 0 {
+                        // W3C SCXML 5.3: <assign location="authorized">
+                        self.authorized = false;
+
+                        for m in self.roster.clone() {
+                            let _ = &m;
+
+                            // W3C SCXML 5.9: cond="m.node === _event.data.by && m.role >= 2"
+                            if m.node == ev.by && m.role >= 2 {
                                 // W3C SCXML 5.3: <assign location="authorized">
-                                self.authorized = false;
-
-                                for m in self.roster.clone() {
-                                    let _ = &m;
-
-                                    // W3C SCXML 5.9: cond="m.node === _event.data.by && m.role >= 2"
-                                    if m.node == ev.by && m.role >= 2 {
-                                        // W3C SCXML 5.3: <assign location="authorized">
-                                        self.authorized = true;
-                                    }
-                                }
+                                self.authorized = true;
                             }
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="!authorized"
-                            if !self.authorized {
-                                // W3C SCXML 5.3: <assign location="denied">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="!authorized"
+                    if !self.authorized {
+                        // W3C SCXML 5.3: <assign location="denied">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.denied = sce_forge_runtime::algorithm::add::<u32>(self.denied, 1)?;
     Ok(())
 })() {
@@ -7725,27 +7763,27 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="authorized"
-                            if self.authorized {
-                                // W3C SCXML 5.3: <assign location="part.kind">
-                                self.part.kind = 1;
+                    // W3C SCXML 5.9: cond="authorized"
+                    if self.authorized {
+                        // W3C SCXML 5.3: <assign location="part.kind">
+                        self.part.kind = 1;
 
-                                // W3C SCXML 5.3: <assign location="part.id">
-                                self.part.id = ev.id;
+                        // W3C SCXML 5.3: <assign location="part.id">
+                        self.part.id = ev.id;
 
-                                // W3C SCXML 5.3: <assign location="part.field">
-                                self.part.field = ev.field;
+                        // W3C SCXML 5.3: <assign location="part.field">
+                        self.part.field = ev.field;
 
-                                // W3C SCXML 5.3: <assign location="part.value">
-                                self.part.value = 0;
+                        // W3C SCXML 5.3: <assign location="part.value">
+                        self.part.value = 0;
 
-                                // W3C SCXML 5.3: <assign location="part.text">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="part.text">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.part.text = sce_forge_runtime::algorithm::bounded("".to_string(), 96)?;
     Ok(())
 })() {
@@ -7755,62 +7793,65 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="part.wallTime">
-                                self.part.wallTime = ev.wallTime;
+                        // W3C SCXML 5.3: <assign location="part.wallTime">
+                        self.part.wallTime = ev.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="part.counter">
-                                self.part.counter = ev.counter;
+                        // W3C SCXML 5.3: <assign location="part.counter">
+                        self.part.counter = ev.counter;
 
-                                // W3C SCXML 5.3: <assign location="part.nodeId">
-                                self.part.nodeId = ev.nodeId;
+                        // W3C SCXML 5.3: <assign location="part.nodeId">
+                        self.part.nodeId = ev.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="part.by">
-                                self.part.by = ev.by;
+                        // W3C SCXML 5.3: <assign location="part.by">
+                        self.part.by = ev.by;
 
-                                // W3C SCXML 5.3: <assign location="part.atWallTime">
-                                self.part.atWallTime = ev.atWallTime;
+                        // W3C SCXML 5.3: <assign location="part.atWallTime">
+                        self.part.atWallTime = ev.atWallTime;
 
-                                // W3C SCXML 5.3: <assign location="part.atCounter">
-                                self.part.atCounter = ev.atCounter;
+                        // W3C SCXML 5.3: <assign location="part.atCounter">
+                        self.part.atCounter = ev.atCounter;
 
-                                // W3C SCXML 5.3: <assign location="part.parts">
-                                self.part.parts = ev.parts;
+                        // W3C SCXML 5.3: <assign location="part.parts">
+                        self.part.parts = ev.parts;
 
-                                {
-                                    let send_id: &str = "__send_20";
+                        {
+                            let send_id: &str = "__send_20";
 
-                                    let event_data: &str = "";
+                            let event_data: &str = "";
 
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListArrive);
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListArrive,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    13 => {
-                        // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
-                        // W3C SCXML 3.13: Transition 13 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="part.parts > 1"
-                            if self.part.parts > 1 {
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                self.entry.element = self.part.id as u64;
+                }
+            }
+            // open, transition 13
+            13 => {
+                // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
+                // W3C SCXML 3.13: Transition 13 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="part.parts > 1"
+                    if self.part.parts > 1 {
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        self.entry.element = self.part.id as u64;
 
-                                // W3C SCXML 5.3: <assign location="entry.element">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="entry.element">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.entry.element = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.entry.element, 65536)?, self.part.field as u64)?;
     Ok(())
 })() {
@@ -7820,110 +7861,110 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="entry.wallTime">
-                                self.entry.wallTime = self.part.wallTime;
+                        // W3C SCXML 5.3: <assign location="entry.wallTime">
+                        self.entry.wallTime = self.part.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="entry.counter">
-                                self.entry.counter = self.part.counter;
+                        // W3C SCXML 5.3: <assign location="entry.counter">
+                        self.entry.counter = self.part.counter;
 
-                                // W3C SCXML 5.3: <assign location="entry.nodeId">
-                                self.entry.nodeId = self.part.nodeId;
+                        // W3C SCXML 5.3: <assign location="entry.nodeId">
+                        self.entry.nodeId = self.part.nodeId;
 
+                        // W3C SCXML 5.3: <assign location="already">
+                        self.already = false;
+
+                        for t in self.tombstones.clone() {
+                            let _ = &t;
+
+                            // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
+                            if t.element == self.entry.element
+                                && t.wallTime == self.entry.wallTime
+                                && t.counter == self.entry.counter
+                                && t.nodeId == self.entry.nodeId
+                            {
                                 // W3C SCXML 5.3: <assign location="already">
-                                self.already = false;
+                                self.already = true;
+                            }
+                        }
 
-                                for t in self.tombstones.clone() {
-                                    let _ = &t;
+                        // W3C SCXML 5.9: cond="part.kind === 0"
+                        if self.part.kind == 0 {
+                            // W3C SCXML 5.3: <assign location="held.id">
+                            self.held.id = self.part.id as u64;
 
-                                    // W3C SCXML 5.9: cond="t.element === entry.element && t.wallTime === entry.wallTime && t.counter === entry.counter && t.nodeId === entry.nodeId"
-                                    if t.element == self.entry.element
-                                        && t.wallTime == self.entry.wallTime
-                                        && t.counter == self.entry.counter
-                                        && t.nodeId == self.entry.nodeId
-                                    {
-                                        // W3C SCXML 5.3: <assign location="already">
-                                        self.already = true;
-                                    }
-                                }
+                            // W3C SCXML 5.3: <assign location="held.field">
+                            self.held.field = self.part.field as u64;
 
-                                // W3C SCXML 5.9: cond="part.kind === 0"
-                                if self.part.kind == 0 {
-                                    // W3C SCXML 5.3: <assign location="held.id">
-                                    self.held.id = self.part.id as u64;
+                            // W3C SCXML 5.3: <assign location="held.wallTime">
+                            self.held.wallTime = self.part.wallTime;
 
-                                    // W3C SCXML 5.3: <assign location="held.field">
-                                    self.held.field = self.part.field as u64;
+                            // W3C SCXML 5.3: <assign location="held.counter">
+                            self.held.counter = self.part.counter;
 
-                                    // W3C SCXML 5.3: <assign location="held.wallTime">
-                                    self.held.wallTime = self.part.wallTime;
+                            // W3C SCXML 5.3: <assign location="held.nodeId">
+                            self.held.nodeId = self.part.nodeId;
 
-                                    // W3C SCXML 5.3: <assign location="held.counter">
-                                    self.held.counter = self.part.counter;
+                            // W3C SCXML 5.3: <assign location="present">
+                            self.present = call_MvValueHolds__vv(&self.values, &self.held);
 
-                                    // W3C SCXML 5.3: <assign location="held.nodeId">
-                                    self.held.nodeId = self.part.nodeId;
+                            // W3C SCXML 5.9: cond="present"
+                            if self.present {
+                                // W3C SCXML 5.3: <assign location="already">
+                                self.already = true;
+                            }
+                        }
 
-                                    // W3C SCXML 5.3: <assign location="present">
-                                    self.present = call_MvValueHolds__vv(&self.values, &self.held);
+                        // W3C SCXML 5.3: <assign location="listed">
+                        self.listed = false;
 
-                                    // W3C SCXML 5.9: cond="present"
-                                    if self.present {
-                                        // W3C SCXML 5.3: <assign location="already">
-                                        self.already = true;
-                                    }
-                                }
+                        for w in self.waiting.clone() {
+                            let _ = &w;
 
+                            // W3C SCXML 5.9: cond="w.kind === part.kind && w.id === part.id && w.field === part.field && w.wallTime === part.wallTime && w.counter === part.counter && w.nodeId === part.nodeId"
+                            if w.kind == self.part.kind
+                                && w.id == self.part.id
+                                && w.field == self.part.field
+                                && w.wallTime == self.part.wallTime
+                                && w.counter == self.part.counter
+                                && w.nodeId == self.part.nodeId
+                            {
                                 // W3C SCXML 5.3: <assign location="listed">
-                                self.listed = false;
+                                self.listed = true;
+                            }
+                        }
 
-                                for w in self.waiting.clone() {
-                                    let _ = &w;
+                        // W3C SCXML 5.9: cond="!already && !listed"
+                        if !self.already && !self.listed {
+                            // SCE Accepted Subset §2.15: <sce:append target="waiting">
+                            let sce_failed = if self.waiting.len() < 64 {
+                                self.waiting.push(self.part.clone());
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
 
-                                    // W3C SCXML 5.9: cond="w.kind === part.kind && w.id === part.id && w.field === part.field && w.wallTime === part.wallTime && w.counter === part.counter && w.nodeId === part.nodeId"
-                                    if w.kind == self.part.kind
-                                        && w.id == self.part.id
-                                        && w.field == self.part.field
-                                        && w.wallTime == self.part.wallTime
-                                        && w.counter == self.part.counter
-                                        && w.nodeId == self.part.nodeId
-                                    {
-                                        // W3C SCXML 5.3: <assign location="listed">
-                                        self.listed = true;
-                                    }
-                                }
+                        // W3C SCXML 5.3: <assign location="count">
+                        self.count = 0;
 
-                                // W3C SCXML 5.9: cond="!already && !listed"
-                                if !self.already && !self.listed {
-                                    // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                                    let sce_failed = if self.waiting.len() < 64 {
-                                        self.waiting.push(self.part.clone());
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
+                        for w in self.waiting.clone() {
+                            let _ = &w;
 
+                            // W3C SCXML 5.9: cond="w.atWallTime === part.atWallTime && w.atCounter === part.atCounter && w.by === part.by"
+                            if w.atWallTime == self.part.atWallTime
+                                && w.atCounter == self.part.atCounter
+                                && w.by == self.part.by
+                            {
                                 // W3C SCXML 5.3: <assign location="count">
-                                self.count = 0;
-
-                                for w in self.waiting.clone() {
-                                    let _ = &w;
-
-                                    // W3C SCXML 5.9: cond="w.atWallTime === part.atWallTime && w.atCounter === part.atCounter && w.by === part.by"
-                                    if w.atWallTime == self.part.atWallTime
-                                        && w.atCounter == self.part.atCounter
-                                        && w.by == self.part.by
-                                    {
-                                        // W3C SCXML 5.3: <assign location="count">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.count = sce_forge_runtime::algorithm::add::<u32>(self.count, 1)?;
     Ok(())
 })() {
@@ -7933,123 +7974,84 @@ None,
         true
     }
 };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="already || count >= part.parts"
+                        if self.already || self.count >= self.part.parts {
+                            // SCE Accepted Subset §2.15: <sce:clear target="taking">
+                            self.taking.clear();
+                            // W3C SCXML 5.3: <assign location="took">
+                            self.took = 0;
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="kept">
+                            self.kept.clear();
+                            for w in self.waiting.clone() {
+                                let _ = &w;
+
+                                // W3C SCXML 5.9: cond="w.atWallTime === part.atWallTime && w.atCounter === part.atCounter && w.by === part.by"
+                                if w.atWallTime == self.part.atWallTime
+                                    && w.atCounter == self.part.atCounter
+                                    && w.by == self.part.by
+                                {
+                                    // SCE Accepted Subset §2.15: <sce:append target="taking">
+                                    let sce_failed = if self.taking.len() < 64 {
+                                        self.taking.push(w.clone());
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
                                 }
 
-                                // W3C SCXML 5.9: cond="already || count >= part.parts"
-                                if self.already || self.count >= self.part.parts {
-                                    // SCE Accepted Subset §2.15: <sce:clear target="taking">
-                                    self.taking.clear();
-                                    // W3C SCXML 5.3: <assign location="took">
-                                    self.took = 0;
-
-                                    // SCE Accepted Subset §2.15: <sce:clear target="kept">
-                                    self.kept.clear();
-                                    for w in self.waiting.clone() {
-                                        let _ = &w;
-
-                                        // W3C SCXML 5.9: cond="w.atWallTime === part.atWallTime && w.atCounter === part.atCounter && w.by === part.by"
-                                        if w.atWallTime == self.part.atWallTime
-                                            && w.atCounter == self.part.atCounter
-                                            && w.by == self.part.by
-                                        {
-                                            // SCE Accepted Subset §2.15: <sce:append target="taking">
-                                            let sce_failed = if self.taking.len() < 64 {
-                                                self.taking.push(w.clone());
-                                                false
-                                            } else {
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
-                                                true
-                                            };
-                                            if sce_failed {
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                        }
-
-                                        // W3C SCXML 5.9: cond="w.atWallTime !== part.atWallTime || w.atCounter !== part.atCounter || w.by !== part.by"
-                                        if w.atWallTime != self.part.atWallTime
-                                            || w.atCounter != self.part.atCounter
-                                            || w.by != self.part.by
-                                        {
-                                            // SCE Accepted Subset §2.15: <sce:append target="kept">
-                                            let sce_failed = if self.kept.len() < 64 {
-                                                self.kept.push(w.clone());
-                                                false
-                                            } else {
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
-                                                true
-                                            };
-                                            if sce_failed {
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                        }
-                                    }
-
-                                    // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-                                    self.waiting.clear();
-                                    for k in self.kept.clone() {
-                                        let _ = &k;
-
-                                        // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                                        let sce_failed = if self.waiting.len() < 64 {
-                                            self.waiting.push(k.clone());
-                                            false
-                                        } else {
-                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
-                                            true
-                                        };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
-
-                                    for t in self.taking.clone() {
-                                        let _ = &t;
-
-                                        {
-                                            let send_id: &str = "__send_21";
-
-                                            let event_data: &str = "";
-
-                                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                            // A delay postpones it and does not change the queue.
-                                            {
-                                                let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListTake);
-                                                meta.set_event_data(event_data);
-                                                engine.raise(meta);
-                                            }
-
-                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                            let _ = send_id; // suppress unused warning when no send operation
-                                        }
+                                // W3C SCXML 5.9: cond="w.atWallTime !== part.atWallTime || w.atCounter !== part.atCounter || w.by !== part.by"
+                                if w.atWallTime != self.part.atWallTime
+                                    || w.atCounter != self.part.atCounter
+                                    || w.by != self.part.by
+                                {
+                                    // SCE Accepted Subset §2.15: <sce:append target="kept">
+                                    let sce_failed = if self.kept.len() < 64 {
+                                        self.kept.push(w.clone());
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
                                 }
                             }
 
-                            // W3C SCXML 5.9: cond="part.parts <= 1"
-                            if self.part.parts <= 1 {
-                                // SCE Accepted Subset §2.15: <sce:clear target="taking">
-                                self.taking.clear();
-                                // W3C SCXML 5.3: <assign location="took">
-                                self.took = 0;
+                            // SCE Accepted Subset §2.15: <sce:clear target="waiting">
+                            self.waiting.clear();
+                            for k in self.kept.clone() {
+                                let _ = &k;
 
-                                // SCE Accepted Subset §2.15: <sce:append target="taking">
-                                let sce_failed = if self.taking.len() < 64 {
-                                    self.taking.push(self.part.clone());
+                                // SCE Accepted Subset §2.15: <sce:append target="waiting">
+                                let sce_failed = if self.waiting.len() < 64 {
+                                    self.waiting.push(k.clone());
                                     false
                                 } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
                                     true
                                 };
                                 if sce_failed {
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 }
+                            }
+
+                            for t in self.taking.clone() {
+                                let _ = &t;
 
                                 {
-                                    let send_id: &str = "__send_22";
+                                    let send_id: &str = "__send_21";
 
                                     let event_data: &str = "";
 
@@ -8067,137 +8069,185 @@ None,
                                     let _ = send_id; // suppress unused warning when no send operation
                                 }
                             }
-
-                            // W3C SCXML 5.9: cond="hub"
-                            if self.hub {
-                                // SCE Accepted Subset §2.15: <sce:clear target="passing">
-                                self.passing.clear();
-                                // W3C SCXML 5.3: <assign location="passed">
-                                self.passed = 0;
-
-                                // SCE Accepted Subset §2.15: <sce:append target="passing">
-                                let sce_failed = if self.passing.len() < 64 {
-                                    self.passing.push(self.part.clone());
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                {
-                                    let send_id: &str = "__send_23";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                            RecordListParentSceSynthInvokeListEvent::RecordListPass,
-                                        );
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
                         }
                     }
-                    14 => {
-                        // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
-                        // W3C SCXML 3.13: Transition 14 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListAnnounce(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
+
+                    // W3C SCXML 5.9: cond="part.parts <= 1"
+                    if self.part.parts <= 1 {
+                        // SCE Accepted Subset §2.15: <sce:clear target="taking">
+                        self.taking.clear();
+                        // W3C SCXML 5.3: <assign location="took">
+                        self.took = 0;
+
+                        // SCE Accepted Subset §2.15: <sce:append target="taking">
+                        let sce_failed = if self.taking.len() < 64 {
+                            self.taking.push(self.part.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+                            true
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="entry.element">
-                            self.entry.element = ev.id as u64;
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                            // W3C SCXML 5.3: <assign location="entry.element">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.entry.element = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.entry.element, 65536)?, ev.field as u64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        {
+                            let send_id: &str = "__send_22";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListTake,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
                             }
 
-                            // W3C SCXML 5.3: <assign location="listed">
-                            self.listed = false;
-
-                            for named in self.moved.clone() {
-                                let _ = &named;
-
-                                // W3C SCXML 5.9: cond="named === entry.element"
-                                if named == self.entry.element {
-                                    // W3C SCXML 5.3: <assign location="listed">
-                                    self.listed = true;
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="len(moved) === 0"
-                            if (self.moved).len() as u32 == 0 {
-                                {
-                                    let send_id: &str = "__send_24";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                            RecordListParentSceSynthInvokeListEvent::RecordListTell,
-                                        );
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="!listed"
-                            if !self.listed {
-                                // SCE Accepted Subset §2.15: <sce:append target="moved">
-                                let sce_failed = if self.moved.len() < 64 {
-                                    self.moved.push(self.entry.element);
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='moved'>: the list already holds its capacity of 64"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    15 => {
-                        // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
-                        // W3C SCXML 3.13: Transition 15 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            for named in self.moved.clone() {
-                                let _ = &named;
 
-                                // W3C SCXML 5.3: <assign location="shareId">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="hub"
+                    if self.hub {
+                        // SCE Accepted Subset §2.15: <sce:clear target="passing">
+                        self.passing.clear();
+                        // W3C SCXML 5.3: <assign location="passed">
+                        self.passed = 0;
+
+                        // SCE Accepted Subset §2.15: <sce:append target="passing">
+                        let sce_failed = if self.passing.len() < 64 {
+                            self.passing.push(self.part.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        {
+                            let send_id: &str = "__send_23";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListPass,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 14
+            14 => {
+                // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
+                // W3C SCXML 3.13: Transition 14 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListAnnounce(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="entry.element">
+                    self.entry.element = ev.id as u64;
+
+                    // W3C SCXML 5.3: <assign location="entry.element">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.entry.element = sce_forge_runtime::algorithm::add::<u64>(
+                                sce_forge_runtime::algorithm::mul::<u64>(
+                                    self.entry.element,
+                                    65536,
+                                )?,
+                                ev.field as u64,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="listed">
+                    self.listed = false;
+
+                    for named in self.moved.clone() {
+                        let _ = &named;
+
+                        // W3C SCXML 5.9: cond="named === entry.element"
+                        if named == self.entry.element {
+                            // W3C SCXML 5.3: <assign location="listed">
+                            self.listed = true;
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="len(moved) === 0"
+                    if (self.moved).len() as u32 == 0 {
+                        {
+                            let send_id: &str = "__send_24";
+
+                            let event_data: &str = "";
+
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListTell,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="!listed"
+                    if !self.listed {
+                        // SCE Accepted Subset §2.15: <sce:append target="moved">
+                        let sce_failed = if self.moved.len() < 64 {
+                            self.moved.push(self.entry.element);
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='moved'>: the list already holds its capacity of 64"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+                }
+            }
+            // open, transition 15
+            15 => {
+                // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
+                // W3C SCXML 3.13: Transition 15 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    for named in self.moved.clone() {
+                        let _ = &named;
+
+                        // W3C SCXML 5.3: <assign location="shareId">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.share_id = sce_forge_runtime::algorithm::narrow::<u32, u64>(sce_forge_runtime::algorithm::div::<u64>(named, 65536)?)?;
     Ok(())
 })() {
@@ -8207,12 +8257,12 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="shareField">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="shareField">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.share_field = sce_forge_runtime::algorithm::narrow::<u16, u64>(sce_forge_runtime::algorithm::rem::<u64>(named, 65536)?)?;
     Ok(())
 })() {
@@ -8222,12 +8272,12 @@ None,
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
 
-                                // W3C SCXML 5.3: <assign location="live">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="live">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.live = sce_forge_runtime::algorithm::within((call_RegisterValues__v(&self.values, self.share_id as u64, self.share_field as u64)?).as_slice(), 512)?.to_vec();
     Ok(())
 })() {
@@ -8237,150 +8287,137 @@ None,
         true
     }
 };
-                                if sce_failed {
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        // W3C SCXML 5.9: cond="len(live) === 0"
+                        if (self.live).len() as u32 == 0 {
+                            {
+                                let send_id: &str = "__send_25";
+
+                                let mut _send_arg_error: Option<&'static str> = None;
+                                // docs/adr/0005, decision 3: the target is a string computed from the machine's
+                                // fields now, and the send goes only by a route the document declared as
+                                // `sce:targets`. A value in none of them names no route this send may take —
+                                // an address nobody answers at, which the resolution below reports as
+                                // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+                                // evaluated, the argument error.
+                                let _send_target_text: Option<String> =
+                                    if _send_arg_error.is_none() {
+                                        Some("#_parent".to_string())
+                                    } else {
+                                        None
+                                    }
+                                    .filter(|route| matches!(route.as_str(), "#_parent"));
+                                if let Some(__sce_why) = _send_arg_error {
+                                    ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                    let mut err_meta =
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            RecordListParentSceSynthInvokeListEvent::ErrorExecution,
+                                            __sce_why,
+                                        );
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
+                                    engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                // W3C SCXML 5.9: cond="len(live) === 0"
-                                if (self.live).len() as u32 == 0 {
-                                    {
-                                        let send_id: &str = "__send_25";
-
-                                        let mut _send_arg_error: Option<&'static str> = None;
-                                        // docs/adr/0005, decision 3: the target is a string computed from the machine's
-                                        // fields now, and the send goes only by a route the document declared as
-                                        // `sce:targets`. A value in none of them names no route this send may take —
-                                        // an address nobody answers at, which the resolution below reports as
-                                        // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
-                                        // evaluated, the argument error.
-                                        let _send_target_text: Option<String> =
-                                            if _send_arg_error.is_none() {
-                                                Some("#_parent".to_string())
-                                            } else {
-                                                None
-                                            }
-                                            .filter(|route| matches!(route.as_str(), "#_parent"));
-                                        if let Some(__sce_why) = _send_arg_error {
-                                            ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                            err_meta.metadata.send_id =
-                                                ::sce_rust_runtime::sce_string_from_str(send_id);
-                                            engine.raise(err_meta);
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        } else {
-                                            // §scxml-C-1: the route is read as text, and text that names nothing
-                                            // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
-                                            // value the send did not declare was already taken for none above.
-                                            let _resolved_target: Option<String> = _send_target_text
+                                } else {
+                                    // §scxml-C-1: the route is read as text, and text that names nothing
+                                    // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
+                                    // value the send did not declare was already taken for none above.
+                                    let _resolved_target: Option<String> = _send_target_text
         .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t));
-                                            if _resolved_target.is_none() {
-                                                // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
-                                                // error.communication.
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                err_meta.metadata.send_id =
-                                                    ::sce_rust_runtime::sce_string_from_str(
-                                                        send_id,
-                                                    );
-                                                engine.raise(err_meta);
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                            if let Some(ref _rt) = _resolved_target {
-                                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                                // delivered, so each name carries a vector. The typed value is kept
-                                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                                // finds the string "42" unequal.
-                                                //
-                                                // Declared out here rather than inside the payload block because
-                                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                                // below are renderings of that one evaluation: the BasicHTTP and
-                                                // host-served arms read this map instead of asking the data model again.
-                                                let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
-        ::std::collections::BTreeMap::new();
-                                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                                let event_data_string: String = {
-                                                    let wire_params = &mut _send_wire_params;
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("id".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.share_id),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("field".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.share_field),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("count".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(0),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("value".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                (self.empty.value).to_string(),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("text".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                self.empty.text.to_string(),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("wallTime".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                (self.empty.wallTime).to_string(),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("counter".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.empty.counter),
-                                                            ),
-                                                        );
-                                                    // The value is read from the machine's field as it stands now.
-                                                    wire_params
-                                                        .entry("nodeId".to_string())
-                                                        .or_default()
-                                                        .push(
-                                                            ::sce_rust_runtime::ScriptValue::String(
-                                                                (self.empty.nodeId).to_string(),
-                                                            ),
-                                                        );
-                                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                                };
-                                                let event_data: &str = &event_data_string;
+                                    if _resolved_target.is_none() {
+                                        // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                        // error.communication.
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                    if let Some(ref _rt) = _resolved_target {
+                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                        // delivered, so each name carries a vector. The typed value is kept
+                                        // rather than its text — a receiver reading `_event.data.value === 42`
+                                        // finds the string "42" unequal.
+                                        //
+                                        // Declared out here rather than inside the payload block because
+                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                        // below are renderings of that one evaluation: the BasicHTTP and
+                                        // host-served arms read this map instead of asking the data model again.
+                                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                                            String,
+                                            Vec<::sce_rust_runtime::ScriptValue>,
+                                        > = ::std::collections::BTreeMap::new();
+                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                        let event_data_string: String = {
+                                            let wire_params = &mut _send_wire_params;
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params.entry("id".to_string()).or_default().push(
+                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                    self.share_id,
+                                                )),
+                                            );
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("field".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::Int(
+                                                    i64::from(self.share_field),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("count".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::Int(
+                                                    i64::from(0),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("value".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    (self.empty.value).to_string(),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("text".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    self.empty.text.to_string(),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("wallTime".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    (self.empty.wallTime).to_string(),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("counter".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::Int(
+                                                    i64::from(self.empty.counter),
+                                                ));
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params
+                                                .entry("nodeId".to_string())
+                                                .or_default()
+                                                .push(::sce_rust_runtime::ScriptValue::String(
+                                                    (self.empty.nodeId).to_string(),
+                                                ));
+                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                        };
+                                        let event_data: &str = &event_data_string;
 
-                                                // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
-                                                // the same value written in `target` is, at once or after the delay, by
-                                                // the table `helpers::send::classify_target` holds (C++
-                                                // `SendHelper::classifyTarget`).
-                                                {
-                                                    let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                        // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                        // the same value written in `target` is, at once or after the delay, by
+                                        // the table `helpers::send::classify_target` holds (C++
+                                        // `SendHelper::classifyTarget`).
+                                        {
+                                            let __sce_routed = sce_rust_runtime::Engine::send_to_target(
             self,
             engine,
             Some(RecordListParentSceSynthInvokeListEvent::RecordListRegister),
@@ -8392,27 +8429,37 @@ None,
             &event_data,
             &::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")),
         );
-                                                    if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
-            engine.raise(err_meta);
-            break 'action_block;  // W3C SCXML 4.9: the error ends the block
-        }
-                                                    if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
-            engine.raise(err_meta);
-            break 'action_block;  // W3C SCXML 4.9: the error ends the block
-        }
-                                                }
+                                            if __sce_routed
+                                                == sce_rust_runtime::TargetSendOutcome::Unsupported
+                                            {
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
+                                                engine.raise(err_meta);
+                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                            }
+                                            if __sce_routed
+                                                == sce_rust_runtime::TargetSendOutcome::Unreachable
+                                            {
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
+                                                engine.raise(err_meta);
+                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                            }
+                                        }
 
-                                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                            } // end of if let Some(ref _rt) = _resolved_target
-                                        } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                    // W3C SCXML 5.3: <assign location="announced">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    } // end of if let Some(ref _rt) = _resolved_target
+                                } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                            // W3C SCXML 5.3: <assign location="announced">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.announced = sce_forge_runtime::algorithm::add::<u32>(self.announced, 1)?;
     Ok(())
 })() {
@@ -8422,105 +8469,139 @@ None,
         true
     }
 };
-                                    if sce_failed {
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+
+                        // W3C SCXML 5.3: <assign location="ordinal">
+                        self.ordinal = 0;
+
+                        for r in self.live.clone() {
+                            let _ = &r;
+
+                            // W3C SCXML 5.9: cond="ordinal === 0"
+                            if self.ordinal == 0 {
+                                {
+                                    let send_id: &str = "__send_26";
+
+                                    let mut _send_arg_error: Option<&'static str> = None;
+                                    // docs/adr/0005, decision 3: the target is a string computed from the machine's
+                                    // fields now, and the send goes only by a route the document declared as
+                                    // `sce:targets`. A value in none of them names no route this send may take —
+                                    // an address nobody answers at, which the resolution below reports as
+                                    // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+                                    // evaluated, the argument error.
+                                    let _send_target_text: Option<String> =
+                                        if _send_arg_error.is_none() {
+                                            Some("#_parent".to_string())
+                                        } else {
+                                            None
+                                        }
+                                        .filter(|route| matches!(route.as_str(), "#_parent"));
+                                    if let Some(__sce_why) = _send_arg_error {
+                                        ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
+                                        engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-
-                                // W3C SCXML 5.3: <assign location="ordinal">
-                                self.ordinal = 0;
-
-                                for r in self.live.clone() {
-                                    let _ = &r;
-
-                                    // W3C SCXML 5.9: cond="ordinal === 0"
-                                    if self.ordinal == 0 {
-                                        {
-                                            let send_id: &str = "__send_26";
-
-                                            let mut _send_arg_error: Option<&'static str> = None;
-                                            // docs/adr/0005, decision 3: the target is a string computed from the machine's
-                                            // fields now, and the send goes only by a route the document declared as
-                                            // `sce:targets`. A value in none of them names no route this send may take —
-                                            // an address nobody answers at, which the resolution below reports as
-                                            // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
-                                            // evaluated, the argument error.
-                                            let _send_target_text: Option<String> =
-                                                if _send_arg_error.is_none() {
-                                                    Some("#_parent".to_string())
-                                                } else {
-                                                    None
-                                                }
-                                                .filter(|route| {
-                                                    matches!(route.as_str(), "#_parent")
-                                                });
-                                            if let Some(__sce_why) = _send_arg_error {
-                                                ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                                err_meta.metadata.send_id =
-                                                    ::sce_rust_runtime::sce_string_from_str(
-                                                        send_id,
-                                                    );
-                                                engine.raise(err_meta);
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            } else {
-                                                // §scxml-C-1: the route is read as text, and text that names nothing
-                                                // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
-                                                // value the send did not declare was already taken for none above.
-                                                let _resolved_target: Option<String> = _send_target_text
+                                    } else {
+                                        // §scxml-C-1: the route is read as text, and text that names nothing
+                                        // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
+                                        // value the send did not declare was already taken for none above.
+                                        let _resolved_target: Option<String> = _send_target_text
         .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t));
-                                                if _resolved_target.is_none() {
-                                                    // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
-                                                    // error.communication.
-                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                    err_meta.metadata.send_id =
-                                                        ::sce_rust_runtime::sce_string_from_str(
-                                                            send_id,
-                                                        );
-                                                    engine.raise(err_meta);
-                                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                                }
-                                                if let Some(ref _rt) = _resolved_target {
-                                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                                    // delivered, so each name carries a vector. The typed value is kept
-                                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                                    // finds the string "42" unequal.
-                                                    //
-                                                    // Declared out here rather than inside the payload block because
-                                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                                    // host-served arms read this map instead of asking the data model again.
-                                                    let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+                                        if _resolved_target.is_none() {
+                                            // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                            // error.communication.
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                        if let Some(ref _rt) = _resolved_target {
+                                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                            // delivered, so each name carries a vector. The typed value is kept
+                                            // rather than its text — a receiver reading `_event.data.value === 42`
+                                            // finds the string "42" unequal.
+                                            //
+                                            // Declared out here rather than inside the payload block because
+                                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                            // below are renderings of that one evaluation: the BasicHTTP and
+                                            // host-served arms read this map instead of asking the data model again.
+                                            let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
         ::std::collections::BTreeMap::new();
-                                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                                    let event_data_string: String = {
-                                                        let wire_params = &mut _send_wire_params;
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("id".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.share_id)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("field".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.share_field)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("count".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from((self.live).len() as u32)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("value".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.value).to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("text".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String(r.text.to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("wallTime".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.wallTime).to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("counter".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(r.counter)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("nodeId".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.nodeId).to_string()));
-                                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                                    };
-                                                    let event_data: &str = &event_data_string;
+                                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                            let event_data_string: String = {
+                                                let wire_params = &mut _send_wire_params;
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("id".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(self.share_id),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("field".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(self.share_field),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("count".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from((self.live).len() as u32),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("value".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.value).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("text".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        r.text.to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("wallTime".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.wallTime).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("counter".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(r.counter),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("nodeId".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.nodeId).to_string(),
+                                                    ));
+                                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                            };
+                                            let event_data: &str = &event_data_string;
 
-                                                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
-                                                    // the same value written in `target` is, at once or after the delay, by
-                                                    // the table `helpers::send::classify_target` holds (C++
-                                                    // `SendHelper::classifyTarget`).
-                                                    {
-                                                        let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                            // the same value written in `target` is, at once or after the delay, by
+                                            // the table `helpers::send::classify_target` holds (C++
+                                            // `SendHelper::classifyTarget`).
+                                            {
+                                                let __sce_routed = sce_rust_runtime::Engine::send_to_target(
             self,
             engine,
             Some(RecordListParentSceSynthInvokeListEvent::RecordListRegister),
@@ -8532,115 +8613,149 @@ None,
             &event_data,
             &::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")),
         );
-                                                        if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
-                                                        if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
-                                                    }
+                                            }
 
-                                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                                } // end of if let Some(ref _rt) = _resolved_target
-                                            } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                                            let _ = send_id; // suppress unused warning when no send operation
+                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                        } // end of if let Some(ref _rt) = _resolved_target
+                                    } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                                    let _ = send_id; // suppress unused warning when no send operation
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="ordinal !== 0"
+                            if self.ordinal != 0 {
+                                {
+                                    let send_id: &str = "__send_27";
+
+                                    let mut _send_arg_error: Option<&'static str> = None;
+                                    // docs/adr/0005, decision 3: the target is a string computed from the machine's
+                                    // fields now, and the send goes only by a route the document declared as
+                                    // `sce:targets`. A value in none of them names no route this send may take —
+                                    // an address nobody answers at, which the resolution below reports as
+                                    // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+                                    // evaluated, the argument error.
+                                    let _send_target_text: Option<String> =
+                                        if _send_arg_error.is_none() {
+                                            Some("#_parent".to_string())
+                                        } else {
+                                            None
                                         }
-                                    }
-
-                                    // W3C SCXML 5.9: cond="ordinal !== 0"
-                                    if self.ordinal != 0 {
-                                        {
-                                            let send_id: &str = "__send_27";
-
-                                            let mut _send_arg_error: Option<&'static str> = None;
-                                            // docs/adr/0005, decision 3: the target is a string computed from the machine's
-                                            // fields now, and the send goes only by a route the document declared as
-                                            // `sce:targets`. A value in none of them names no route this send may take —
-                                            // an address nobody answers at, which the resolution below reports as
-                                            // error.communication (W3C SCXML C.1) — and an operation that fails cannot be
-                                            // evaluated, the argument error.
-                                            let _send_target_text: Option<String> =
-                                                if _send_arg_error.is_none() {
-                                                    Some("#_parent".to_string())
-                                                } else {
-                                                    None
-                                                }
-                                                .filter(|route| {
-                                                    matches!(route.as_str(), "#_parent")
-                                                });
-                                            if let Some(__sce_why) = _send_arg_error {
-                                                ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                                err_meta.metadata.send_id =
-                                                    ::sce_rust_runtime::sce_string_from_str(
-                                                        send_id,
-                                                    );
-                                                engine.raise(err_meta);
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            } else {
-                                                // §scxml-C-1: the route is read as text, and text that names nothing
-                                                // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
-                                                // value the send did not declare was already taken for none above.
-                                                let _resolved_target: Option<String> = _send_target_text
+                                        .filter(|route| matches!(route.as_str(), "#_parent"));
+                                    if let Some(__sce_why) = _send_arg_error {
+                                        ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
+                                        engine.raise(err_meta);
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    } else {
+                                        // §scxml-C-1: the route is read as text, and text that names nothing
+                                        // (`SendHelper::isUnreachableTarget`: empty or "undefined") is no target; a
+                                        // value the send did not declare was already taken for none above.
+                                        let _resolved_target: Option<String> = _send_target_text
         .filter(|t| !::sce_rust_runtime::helpers::send::is_unreachable_target(t));
-                                                if _resolved_target.is_none() {
-                                                    // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
-                                                    // error.communication.
-                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                    err_meta.metadata.send_id =
-                                                        ::sce_rust_runtime::sce_string_from_str(
-                                                            send_id,
-                                                        );
-                                                    engine.raise(err_meta);
-                                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                                }
-                                                if let Some(ref _rt) = _resolved_target {
-                                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                                    // delivered, so each name carries a vector. The typed value is kept
-                                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                                    // finds the string "42" unequal.
-                                                    //
-                                                    // Declared out here rather than inside the payload block because
-                                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                                    // host-served arms read this map instead of asking the data model again.
-                                                    let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+                                        if _resolved_target.is_none() {
+                                            // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
+                                            // error.communication.
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
+                                            engine.raise(err_meta);
+                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                        }
+                                        if let Some(ref _rt) = _resolved_target {
+                                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                            // delivered, so each name carries a vector. The typed value is kept
+                                            // rather than its text — a receiver reading `_event.data.value === 42`
+                                            // finds the string "42" unequal.
+                                            //
+                                            // Declared out here rather than inside the payload block because
+                                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                            // below are renderings of that one evaluation: the BasicHTTP and
+                                            // host-served arms read this map instead of asking the data model again.
+                                            let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
         ::std::collections::BTreeMap::new();
-                                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                                    let event_data_string: String = {
-                                                        let wire_params = &mut _send_wire_params;
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("id".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.share_id)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("field".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.share_field)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("ordinal".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.ordinal)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("value".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.value).to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("text".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String(r.text.to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("wallTime".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.wallTime).to_string()));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("counter".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::Int(i64::from(r.counter)));
-                                                        // The value is read from the machine's field as it stands now.
-                                                        wire_params.entry("nodeId".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String((r.nodeId).to_string()));
-                                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                                    };
-                                                    let event_data: &str = &event_data_string;
+                                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                            let event_data_string: String = {
+                                                let wire_params = &mut _send_wire_params;
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("id".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(self.share_id),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("field".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(self.share_field),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("ordinal".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(self.ordinal),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("value".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.value).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("text".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        r.text.to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("wallTime".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.wallTime).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("counter".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(r.counter),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("nodeId".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (r.nodeId).to_string(),
+                                                    ));
+                                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                            };
+                                            let event_data: &str = &event_data_string;
 
-                                                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
-                                                    // the same value written in `target` is, at once or after the delay, by
-                                                    // the table `helpers::send::classify_target` holds (C++
-                                                    // `SendHelper::classifyTarget`).
-                                                    {
-                                                        let __sce_routed = sce_rust_runtime::Engine::send_to_target(
+                                            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                                            // the same value written in `target` is, at once or after the delay, by
+                                            // the table `helpers::send::classify_target` holds (C++
+                                            // `SendHelper::classifyTarget`).
+                                            {
+                                                let __sce_routed = sce_rust_runtime::Engine::send_to_target(
             self,
             engine,
             Some(RecordListParentSceSynthInvokeListEvent::RecordListValue),
@@ -8652,29 +8767,29 @@ None,
             &event_data,
             &::sce_rust_runtime::sce_string_from_str(self.session_id.as_deref().unwrap_or("")),
         );
-                                                        if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
-                                                        if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
+                                                if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
-                                                    }
+                                            }
 
-                                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                                } // end of if let Some(ref _rt) = _resolved_target
-                                            } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                                            let _ = send_id; // suppress unused warning when no send operation
-                                        }
-                                    }
+                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                        } // end of if let Some(ref _rt) = _resolved_target
+                                    } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                                    let _ = send_id; // suppress unused warning when no send operation
+                                }
+                            }
 
-                                    // W3C SCXML 5.3: <assign location="announced">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.3: <assign location="announced">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.announced = sce_forge_runtime::algorithm::add::<u32>(self.announced, 1)?;
     Ok(())
 })() {
@@ -8684,12 +8799,12 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
 
-                                    // W3C SCXML 5.3: <assign location="ordinal">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.3: <assign location="ordinal">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.ordinal = sce_forge_runtime::algorithm::add::<u32>(self.ordinal, 1)?;
     Ok(())
 })() {
@@ -8699,42 +8814,116 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
-
-                            // SCE Accepted Subset §2.15: <sce:clear target="moved">
-                            self.moved.clear();
                         }
                     }
-                    16 => {
-                        // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
-                        // W3C SCXML 3.13: Transition 16 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListKeep(ev) => {
-                                ev.clone()
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="moved">
+                    self.moved.clear();
+                }
+            }
+            // open, transition 16
+            16 => {
+                // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
+                // W3C SCXML 3.13: Transition 16 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListKeep(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="entry.element">
+                    self.entry.element = ev.element;
+
+                    // W3C SCXML 5.3: <assign location="entry.wallTime">
+                    self.entry.wallTime = ev.wallTime;
+
+                    // W3C SCXML 5.3: <assign location="entry.counter">
+                    self.entry.counter = ev.counter;
+
+                    // W3C SCXML 5.3: <assign location="entry.nodeId">
+                    self.entry.nodeId = ev.nodeId;
+
+                    // W3C SCXML 5.3: <assign location="mine">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.mine = call_MerkleChangeHash__v(&self.entry, ev.kind)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed"));
+                                true
                             }
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="entry.element">
-                            self.entry.element = ev.element;
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="entry.wallTime">
-                            self.entry.wallTime = ev.wallTime;
+                    // W3C SCXML 5.3: <assign location="digest">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.digest = sce_forge_runtime::algorithm::within(
+                                (call_MerkleInsert__v(
+                                    &self.digest,
+                                    sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?,
+                                    self.mine,
+                                )?)
+                                .as_slice(),
+                                2048,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // open, transition 17
+            17 => {
+                // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
+                // W3C SCXML 3.13: Transition 17 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListCompact(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="stable">
+                    self.stable.clear();
 
-                            // W3C SCXML 5.3: <assign location="entry.counter">
-                            self.entry.counter = ev.counter;
+                    // W3C SCXML 5.3: <assign location="frozenFor">
+                    self.frozen_for = -1;
 
-                            // W3C SCXML 5.3: <assign location="entry.nodeId">
-                            self.entry.nodeId = ev.nodeId;
+                    for t in self.tombstones.clone() {
+                        let _ = &t;
+
+                        // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
+                        if t.wallTime <= ev.before {
+                            // SCE Accepted Subset §2.15: <sce:append target="stable">
+                            let sce_failed = if self.stable.len() < 1024 {
+                                self.stable.push(t);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
 
                             // W3C SCXML 5.3: <assign location="mine">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.mine = call_MerkleChangeHash__v(&self.entry, ev.kind)?;
+    self.mine = call_MerkleChangeHash__i(&t, 1)?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -8749,7 +8938,7 @@ None,
 
                             // W3C SCXML 5.3: <assign location="digest">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -8763,23 +8952,658 @@ None,
                             }
                         }
                     }
-                    17 => {
-                        // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
-                        // W3C SCXML 3.13: Transition 17 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListCompact(ev) => {
-                                ev.clone()
+
+                    // W3C SCXML 5.3: <assign location="tombstones">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tombstones = sce_forge_runtime::algorithm::within(
+                                (call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(),
+                                1024,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed"));
+                                true
                             }
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.9: cond="_event.data.before > floor"
+                    if ev.before > self.floor {
+                        // W3C SCXML 5.3: <assign location="floor">
+                        self.floor = ev.before;
+                    }
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="kept">
+                    self.kept.clear();
+
+                    for w in self.waiting.clone() {
+                        let _ = &w;
+
+                        // W3C SCXML 5.9: cond="w.atWallTime > _event.data.before"
+                        if w.atWallTime > ev.before {
+                            // SCE Accepted Subset §2.15: <sce:append target="kept">
+                            let sce_failed = if self.kept.len() < 64 {
+                                self.kept.push(w.clone());
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="waiting">
+                    self.waiting.clear();
+
+                    for k in self.kept.clone() {
+                        let _ = &k;
+
+                        // SCE Accepted Subset §2.15: <sce:append target="waiting">
+                        let sce_failed = if self.waiting.len() < 64 {
+                            self.waiting.push(k.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+                }
+            }
+            // open, transition 18
+            18 => {
+                // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
+                // W3C SCXML 3.13: Transition 18 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListSettle(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="hub && _event.data.before > floor"
+                    if self.hub && ev.before > self.floor {
+                        // W3C SCXML 5.3: <assign location="pending">
+                        self.pending = ev.before;
+
+                        // W3C SCXML 5.3: <assign location="members">
+                        self.members = ev.members;
+
+                        // SCE Accepted Subset §2.15: <sce:clear target="answers">
+                        self.answers.clear();
+                        // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
+                        if self.clock.wallTime <= ev.before {
+                            // W3C SCXML 5.3: <assign location="clock.wallTime">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="clock.counter">
+                            self.clock.counter = 0;
+                        }
+
+                        {
+                            let send_id: &str = "__send_28";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("before".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.before).to_string(),
+                                    ),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.propose".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 19
+            19 => {
+                // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
+                // W3C SCXML 3.13: Transition 19 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListPropose(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="!hub && _event.data.before > floor"
+                    if !self.hub && ev.before > self.floor {
+                        // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
+                        if self.clock.wallTime <= ev.before {
+                            // W3C SCXML 5.3: <assign location="clock.wallTime">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="clock.counter">
+                            self.clock.counter = 0;
+                        }
+
+                        // SCE Accepted Subset §2.15: <sce:clear target="stable">
+                        self.stable.clear();
+                        for t in self.tombstones.clone() {
+                            let _ = &t;
+
+                            // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
+                            if t.wallTime <= ev.before {
+                                // SCE Accepted Subset §2.15: <sce:append target="stable">
+                                let sce_failed = if self.stable.len() < 1024 {
+                                    self.stable.push(t);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
+                        }
+
+                        // W3C SCXML 5.3: <assign location="frozenFor">
+                        self.frozen_for = ev.before;
+
+                        // W3C SCXML 5.3: <assign location="frozenHash">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.frozen_hash = call_RecordSettled__vv(&self.adds, &self.tombstones, ev.before)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        {
+                            let send_id: &str = "__send_29";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("sender".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.node).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("before".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.before).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("hash".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                        self.frozen_hash,
+                                    )),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.ack".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 20
+            20 => {
+                // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
+                // W3C SCXML 3.13: Transition 20 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListAck(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="hub && _event.data.before === pending"
+                    if self.hub && ev.before == self.pending {
+                        // W3C SCXML 5.3: <assign location="mine">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.mine = call_RecordSettled__vv(&self.adds, &self.tombstones, self.pending)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        // W3C SCXML 5.3: <assign location="known">
+                        self.known = false;
+
+                        for a in self.answers.clone() {
+                            let _ = &a;
+
+                            // W3C SCXML 5.9: cond="a.sender === _event.data.sender && a.hash === _event.data.hash"
+                            if a.sender == ev.sender && a.hash == ev.hash {
+                                // W3C SCXML 5.3: <assign location="known">
+                                self.known = true;
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="!known"
+                        if !self.known {
+                            // W3C SCXML 5.3: <assign location="answer.sender">
+                            self.answer.sender = ev.sender;
+
+                            // W3C SCXML 5.3: <assign location="answer.hash">
+                            self.answer.hash = ev.hash;
+
+                            // SCE Accepted Subset §2.15: <sce:append target="answers">
+                            let sce_failed = if self.answers.len() < 512 {
+                                self.answers.push(self.answer);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='answers'>: the list already holds its capacity of 512"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+
+                        // W3C SCXML 5.3: <assign location="agreeing">
+                        self.agreeing = 0;
+
+                        for a in self.answers.clone() {
+                            let _ = &a;
+
+                            // W3C SCXML 5.9: cond="a.hash === mine"
+                            if a.hash == self.mine {
+                                // W3C SCXML 5.3: <assign location="agreeing">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.agreeing = sce_forge_runtime::algorithm::add::<u32>(self.agreeing, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='agreeing'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="members > 0 && agreeing >= members"
+                        if self.members > 0 && self.agreeing >= self.members {
                             // SCE Accepted Subset §2.15: <sce:clear target="stable">
                             self.stable.clear();
+                            for t in self.tombstones.clone() {
+                                let _ = &t;
+
+                                // W3C SCXML 5.9: cond="t.wallTime <= pending"
+                                if t.wallTime <= self.pending {
+                                    // SCE Accepted Subset §2.15: <sce:append target="stable">
+                                    let sce_failed = if self.stable.len() < 1024 {
+                                        self.stable.push(t);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
 
                             // W3C SCXML 5.3: <assign location="frozenFor">
-                            self.frozen_for = -1;
+                            self.frozen_for = self.pending;
 
+                            // W3C SCXML 5.3: <assign location="frozenHash">
+                            self.frozen_hash = self.mine;
+
+                            {
+                                let send_id: &str = "__send_30";
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("before".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.pending).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("hash".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(self.mine)),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListFloor,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                            // W3C SCXML 5.3: <assign location="pending">
+                            self.pending = -1;
+
+                            {
+                                let send_id: &str = "__send_31";
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("before".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.frozen_for).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("hash".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(self.mine)),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                // which declared it to this build. Dispatch rather than refuse.
+                                {
+                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                    let __sce_request = sce_rust_runtime::HostSendRequest {
+                                        processor_type: "sce:mesh".to_string(),
+                                        event_name: "record_list.floor".to_string(),
+                                        target: "#people".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                        event_data: event_data.to_string(),
+                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                        // processed now, carried back out as a W3C child's send to its
+                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                        // every machine with a host-served send.
+                                        invoke_id: self.pending_event_invokeid.to_string(),
+                                    };
+                                    let __sce_served = engine.perform_host_send(__sce_request);
+                                    // W3C SCXML 6.2: a declared type with no handler registered is,
+                                    // from the document's side, a processor the platform does not
+                                    // support — the act it asked for was performed by nobody. Same
+                                    // event, so a wiring mistake cannot read as success.
+                                    if __sce_served.is_none()
+                                        && !engine.has_event_processor("sce:mesh")
+                                    {
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                        engine.raise(err_meta);
+                                    }
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="_event.data.hash !== mine && floor > 0"
+                        if ev.hash != self.mine && self.floor > 0 {
+                            {
+                                let send_id: &str = "__send_32";
+
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("before".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (self.floor).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("hash".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.agreed,
+                                        )),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                // which declared it to this build. Dispatch rather than refuse.
+                                {
+                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                    let __sce_request = sce_rust_runtime::HostSendRequest {
+                                        processor_type: "sce:mesh".to_string(),
+                                        event_name: "record_list.floor".to_string(),
+                                        target: "#people".to_string(),
+                                        content: "".to_string(),
+                                        params: host_params,
+                                        send_id: send_id.to_string(),
+                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                        event_data: event_data.to_string(),
+                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                        // processed now, carried back out as a W3C child's send to its
+                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                        // every machine with a host-served send.
+                                        invoke_id: self.pending_event_invokeid.to_string(),
+                                    };
+                                    let __sce_served = engine.perform_host_send(__sce_request);
+                                    // W3C SCXML 6.2: a declared type with no handler registered is,
+                                    // from the document's side, a processor the platform does not
+                                    // support — the act it asked for was performed by nobody. Same
+                                    // event, so a wiring mistake cannot read as success.
+                                    if __sce_served.is_none()
+                                        && !engine.has_event_processor("sce:mesh")
+                                    {
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                        engine.raise(err_meta);
+                                    }
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
+                    }
+                }
+            }
+            // open, transition 21
+            21 => {
+                // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
+                // W3C SCXML 3.13: Transition 21 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListFloor(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="_event.data.before > floor"
+                    if ev.before > self.floor {
+                        // W3C SCXML 5.9: cond="frozenFor !== _event.data.before"
+                        if self.frozen_for != ev.before {
+                            // SCE Accepted Subset §2.15: <sce:clear target="stable">
+                            self.stable.clear();
                             for t in self.tombstones.clone() {
                                 let _ = &t;
 
@@ -8796,9 +9620,56 @@ None,
                                     if sce_failed {
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
+                                }
+                            }
 
-                                    // W3C SCXML 5.3: <assign location="mine">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.3: <assign location="frozenFor">
+                            self.frozen_for = ev.before;
+
+                            // W3C SCXML 5.3: <assign location="frozenHash">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.frozen_hash = call_RecordSettled__vv(&self.adds, &self.tombstones, ev.before)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="frozenHash === _event.data.hash"
+                        if self.frozen_hash == ev.hash {
+                            // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
+                            if self.clock.wallTime <= ev.before {
+                                // W3C SCXML 5.3: <assign location="clock.wallTime">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                // W3C SCXML 5.3: <assign location="clock.counter">
+                                self.clock.counter = 0;
+                            }
+
+                            for t in self.stable.clone() {
+                                let _ = &t;
+
+                                // W3C SCXML 5.3: <assign location="mine">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.mine = call_MerkleChangeHash__i(&t, 1)?;
     Ok(())
 })() {
@@ -8808,12 +9679,12 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
 
-                                    // W3C SCXML 5.3: <assign location="digest">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                                // W3C SCXML 5.3: <assign location="digest">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
     Ok(())
 })() {
@@ -8823,9 +9694,8 @@ None,
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 }
                             }
 
@@ -8844,15 +9714,20 @@ None,
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
-                            // W3C SCXML 5.9: cond="_event.data.before > floor"
-                            if ev.before > self.floor {
-                                // W3C SCXML 5.3: <assign location="floor">
-                                self.floor = ev.before;
-                            }
+                            // W3C SCXML 5.3: <assign location="floor">
+                            self.floor = ev.before;
+
+                            // W3C SCXML 5.3: <assign location="agreed">
+                            self.agreed = ev.hash;
+
+                            // W3C SCXML 5.3: <assign location="stale">
+                            self.stale = false;
+
+                            // W3C SCXML 5.3: <assign location="frozenFor">
+                            self.frozen_for = -1;
 
                             // SCE Accepted Subset §2.15: <sce:clear target="kept">
                             self.kept.clear();
-
                             for w in self.waiting.clone() {
                                 let _ = &w;
 
@@ -8874,7 +9749,6 @@ None,
 
                             // SCE Accepted Subset §2.15: <sce:clear target="waiting">
                             self.waiting.clear();
-
                             for k in self.kept.clone() {
                                 let _ = &k;
 
@@ -8891,831 +9765,365 @@ None,
                                 }
                             }
                         }
-                    }
-                    18 => {
-                        // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
-                        // W3C SCXML 3.13: Transition 18 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListSettle(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="hub && _event.data.before > floor"
-                            if self.hub && ev.before > self.floor {
-                                // W3C SCXML 5.3: <assign location="pending">
-                                self.pending = ev.before;
 
-                                // W3C SCXML 5.3: <assign location="members">
-                                self.members = ev.members;
-
-                                // SCE Accepted Subset §2.15: <sce:clear target="answers">
-                                self.answers.clear();
-                                // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
-                                if self.clock.wallTime <= ev.before {
-                                    // W3C SCXML 5.3: <assign location="clock.wallTime">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="clock.counter">
-                                    self.clock.counter = 0;
-                                }
-
-                                {
-                                    let send_id: &str = "__send_28";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("before".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.before).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.propose".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                        // W3C SCXML 5.9: cond="frozenHash !== _event.data.hash"
+                        if self.frozen_hash != ev.hash {
+                            // W3C SCXML 5.3: <assign location="stale">
+                            self.stale = true;
                         }
                     }
-                    19 => {
-                        // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
-                        // W3C SCXML 3.13: Transition 19 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListPropose(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
+                }
+            }
+            // open, transition 22
+            22 => {
+                // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
+                // W3C SCXML 3.13: Transition 22 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="taking">
+                    self.taking.clear();
+
+                    // W3C SCXML 5.3: <assign location="took">
+                    self.took = 0;
+
+                    for w in self.waiting.clone() {
+                        let _ = &w;
+
+                        // SCE Accepted Subset §2.15: <sce:append target="taking">
+                        let sce_failed = if self.taking.len() < 64 {
+                            self.taking.push(w.clone());
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+                            true
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="!hub && _event.data.before > floor"
-                            if !self.hub && ev.before > self.floor {
-                                // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
-                                if self.clock.wallTime <= ev.before {
-                                    // W3C SCXML 5.3: <assign location="clock.wallTime">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="clock.counter">
-                                    self.clock.counter = 0;
-                                }
-
-                                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-                                self.stable.clear();
-                                for t in self.tombstones.clone() {
-                                    let _ = &t;
-
-                                    // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
-                                    if t.wallTime <= ev.before {
-                                        // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                        let sce_failed = if self.stable.len() < 1024 {
-                                            self.stable.push(t);
-                                            false
-                                        } else {
-                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
-                                            true
-                                        };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
-                                }
-
-                                // W3C SCXML 5.3: <assign location="frozenFor">
-                                self.frozen_for = ev.before;
-
-                                // W3C SCXML 5.3: <assign location="frozenHash">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.frozen_hash = call_RecordSettled__vv(&self.adds, &self.tombstones, ev.before)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                {
-                                    let send_id: &str = "__send_29";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("sender".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.node).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("before".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.before).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("hash".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.frozen_hash,
-                                            )),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.ack".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    20 => {
-                        // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
-                        // W3C SCXML 3.13: Transition 20 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListAck(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="hub && _event.data.before === pending"
-                            if self.hub && ev.before == self.pending {
-                                // W3C SCXML 5.3: <assign location="mine">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.mine = call_RecordSettled__vv(&self.adds, &self.tombstones, self.pending)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
 
-                                // W3C SCXML 5.3: <assign location="known">
-                                self.known = false;
+                    // SCE Accepted Subset §2.15: <sce:clear target="waiting">
+                    self.waiting.clear();
 
-                                for a in self.answers.clone() {
-                                    let _ = &a;
+                    for t in self.taking.clone() {
+                        let _ = &t;
 
-                                    // W3C SCXML 5.9: cond="a.sender === _event.data.sender && a.hash === _event.data.hash"
-                                    if a.sender == ev.sender && a.hash == ev.hash {
-                                        // W3C SCXML 5.3: <assign location="known">
-                                        self.known = true;
-                                    }
-                                }
+                        {
+                            let send_id: &str = "__send_33";
 
-                                // W3C SCXML 5.9: cond="!known"
-                                if !self.known {
-                                    // W3C SCXML 5.3: <assign location="answer.sender">
-                                    self.answer.sender = ev.sender;
+                            let event_data: &str = "";
 
-                                    // W3C SCXML 5.3: <assign location="answer.hash">
-                                    self.answer.hash = ev.hash;
-
-                                    // SCE Accepted Subset §2.15: <sce:append target="answers">
-                                    let sce_failed = if self.answers.len() < 512 {
-                                        self.answers.push(self.answer);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='answers'>: the list already holds its capacity of 512"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-
-                                // W3C SCXML 5.3: <assign location="agreeing">
-                                self.agreeing = 0;
-
-                                for a in self.answers.clone() {
-                                    let _ = &a;
-
-                                    // W3C SCXML 5.9: cond="a.hash === mine"
-                                    if a.hash == self.mine {
-                                        // W3C SCXML 5.3: <assign location="agreeing">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.agreeing = sce_forge_runtime::algorithm::add::<u32>(self.agreeing, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='agreeing'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="members > 0 && agreeing >= members"
-                                if self.members > 0 && self.agreeing >= self.members {
-                                    // SCE Accepted Subset §2.15: <sce:clear target="stable">
-                                    self.stable.clear();
-                                    for t in self.tombstones.clone() {
-                                        let _ = &t;
-
-                                        // W3C SCXML 5.9: cond="t.wallTime <= pending"
-                                        if t.wallTime <= self.pending {
-                                            // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                            let sce_failed = if self.stable.len() < 1024 {
-                                                self.stable.push(t);
-                                                false
-                                            } else {
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
-                                                true
-                                            };
-                                            if sce_failed {
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                        }
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="frozenFor">
-                                    self.frozen_for = self.pending;
-
-                                    // W3C SCXML 5.3: <assign location="frozenHash">
-                                    self.frozen_hash = self.mine;
-
-                                    {
-                                        let send_id: &str = "__send_30";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("before".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.pending).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("hash".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.mine),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListFloor);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                    // W3C SCXML 5.3: <assign location="pending">
-                                    self.pending = -1;
-
-                                    {
-                                        let send_id: &str = "__send_31";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("before".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.frozen_for).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("hash".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.mine),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                        // which declared it to this build. Dispatch rather than refuse.
-                                        {
-                                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                            let __sce_request = sce_rust_runtime::HostSendRequest {
-                                                processor_type: "sce:mesh".to_string(),
-                                                event_name: "record_list.floor".to_string(),
-                                                target: "#people".to_string(),
-                                                content: "".to_string(),
-                                                params: host_params,
-                                                send_id: send_id.to_string(),
-                                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                                event_data: event_data.to_string(),
-                                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                                // processed now, carried back out as a W3C child's send to its
-                                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                                // every machine with a host-served send.
-                                                invoke_id: self.pending_event_invokeid.to_string(),
-                                            };
-                                            let __sce_served =
-                                                engine.perform_host_send(__sce_request);
-                                            // W3C SCXML 6.2: a declared type with no handler registered is,
-                                            // from the document's side, a processor the platform does not
-                                            // support — the act it asked for was performed by nobody. Same
-                                            // event, so a wiring mistake cannot read as success.
-                                            if __sce_served.is_none()
-                                                && !engine.has_event_processor("sce:mesh")
-                                            {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                engine.raise(err_meta);
-                                            }
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="_event.data.hash !== mine && floor > 0"
-                                if ev.hash != self.mine && self.floor > 0 {
-                                    {
-                                        let send_id: &str = "__send_32";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("before".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.floor).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("hash".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.agreed),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                        // which declared it to this build. Dispatch rather than refuse.
-                                        {
-                                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                            let __sce_request = sce_rust_runtime::HostSendRequest {
-                                                processor_type: "sce:mesh".to_string(),
-                                                event_name: "record_list.floor".to_string(),
-                                                target: "#people".to_string(),
-                                                content: "".to_string(),
-                                                params: host_params,
-                                                send_id: send_id.to_string(),
-                                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                                event_data: event_data.to_string(),
-                                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                                // processed now, carried back out as a W3C child's send to its
-                                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                                // every machine with a host-served send.
-                                                invoke_id: self.pending_event_invokeid.to_string(),
-                                            };
-                                            let __sce_served =
-                                                engine.perform_host_send(__sce_request);
-                                            // W3C SCXML 6.2: a declared type with no handler registered is,
-                                            // from the document's side, a processor the platform does not
-                                            // support — the act it asked for was performed by nobody. Same
-                                            // event, so a wiring mistake cannot read as success.
-                                            if __sce_served.is_none()
-                                                && !engine.has_event_processor("sce:mesh")
-                                            {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                engine.raise(err_meta);
-                                            }
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    21 => {
-                        // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
-                        // W3C SCXML 3.13: Transition 21 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListFloor(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="_event.data.before > floor"
-                            if ev.before > self.floor {
-                                // W3C SCXML 5.9: cond="frozenFor !== _event.data.before"
-                                if self.frozen_for != ev.before {
-                                    // SCE Accepted Subset §2.15: <sce:clear target="stable">
-                                    self.stable.clear();
-                                    for t in self.tombstones.clone() {
-                                        let _ = &t;
-
-                                        // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
-                                        if t.wallTime <= ev.before {
-                                            // SCE Accepted Subset §2.15: <sce:append target="stable">
-                                            let sce_failed = if self.stable.len() < 1024 {
-                                                self.stable.push(t);
-                                                false
-                                            } else {
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
-                                                true
-                                            };
-                                            if sce_failed {
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                        }
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="frozenFor">
-                                    self.frozen_for = ev.before;
-
-                                    // W3C SCXML 5.3: <assign location="frozenHash">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.frozen_hash = call_RecordSettled__vv(&self.adds, &self.tombstones, ev.before)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="frozenHash === _event.data.hash"
-                                if self.frozen_hash == ev.hash {
-                                    // W3C SCXML 5.9: cond="clock.wallTime <= _event.data.before"
-                                    if self.clock.wallTime <= ev.before {
-                                        // W3C SCXML 5.3: <assign location="clock.wallTime">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock.wallTime = sce_forge_runtime::algorithm::add::<i64>(ev.before, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-
-                                        // W3C SCXML 5.3: <assign location="clock.counter">
-                                        self.clock.counter = 0;
-                                    }
-
-                                    for t in self.stable.clone() {
-                                        let _ = &t;
-
-                                        // W3C SCXML 5.3: <assign location="mine">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.mine = call_MerkleChangeHash__i(&t, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-
-                                        // W3C SCXML 5.3: <assign location="digest">
-                                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="tombstones">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(), 1024)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
-                                    // W3C SCXML 5.3: <assign location="floor">
-                                    self.floor = ev.before;
-
-                                    // W3C SCXML 5.3: <assign location="agreed">
-                                    self.agreed = ev.hash;
-
-                                    // W3C SCXML 5.3: <assign location="stale">
-                                    self.stale = false;
-
-                                    // W3C SCXML 5.3: <assign location="frozenFor">
-                                    self.frozen_for = -1;
-
-                                    // SCE Accepted Subset §2.15: <sce:clear target="kept">
-                                    self.kept.clear();
-                                    for w in self.waiting.clone() {
-                                        let _ = &w;
-
-                                        // W3C SCXML 5.9: cond="w.atWallTime > _event.data.before"
-                                        if w.atWallTime > ev.before {
-                                            // SCE Accepted Subset §2.15: <sce:append target="kept">
-                                            let sce_failed = if self.kept.len() < 64 {
-                                                self.kept.push(w.clone());
-                                                false
-                                            } else {
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64"));
-                                                true
-                                            };
-                                            if sce_failed {
-                                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                            }
-                                        }
-                                    }
-
-                                    // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-                                    self.waiting.clear();
-                                    for k in self.kept.clone() {
-                                        let _ = &k;
-
-                                        // SCE Accepted Subset §2.15: <sce:append target="waiting">
-                                        let sce_failed = if self.waiting.len() < 64 {
-                                            self.waiting.push(k.clone());
-                                            false
-                                        } else {
-                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64"));
-                                            true
-                                        };
-                                        if sce_failed {
-                                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                        }
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="frozenHash !== _event.data.hash"
-                                if self.frozen_hash != ev.hash {
-                                    // W3C SCXML 5.3: <assign location="stale">
-                                    self.stale = true;
-                                }
-                            }
-                        }
-                    }
-                    22 => {
-                        // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
-                        // W3C SCXML 3.13: Transition 22 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="taking">
-                            self.taking.clear();
-
-                            // W3C SCXML 5.3: <assign location="took">
-                            self.took = 0;
-
-                            for w in self.waiting.clone() {
-                                let _ = &w;
-
-                                // SCE Accepted Subset §2.15: <sce:append target="taking">
-                                let sce_failed = if self.taking.len() < 64 {
-                                    self.taking.push(w.clone());
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
-
-                            // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-                            self.waiting.clear();
-
-                            for t in self.taking.clone() {
-                                let _ = &t;
-
-                                {
-                                    let send_id: &str = "__send_33";
-
-                                    let event_data: &str = "";
-
-                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                    // A delay postpones it and does not change the queue.
-                                    {
-                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                            RecordListParentSceSynthInvokeListEvent::RecordListTake,
-                                        );
-                                        meta.set_event_data(event_data);
-                                        engine.raise(meta);
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
+                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                            // A delay postpones it and does not change the queue.
                             {
-                                let send_id: &str = "__send_34";
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    RecordListParentSceSynthInvokeListEvent::RecordListTake,
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise(meta);
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    {
+                        let send_id: &str = "__send_34";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("to".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("depth".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("prefix".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("reply".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                RecordListParentSceSynthInvokeListEvent::RecordListVisit,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 23
+            23 => {
+                // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
+                // W3C SCXML 3.13: Transition 23 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListVisit(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="mine">
+                    self.mine = 0;
+
+                    for n in self.digest.clone() {
+                        let _ = &n;
+
+                        // W3C SCXML 5.9: cond="n.depth === _event.data.depth && n.prefix === _event.data.prefix"
+                        if n.depth == ev.depth && n.prefix == ev.prefix {
+                            // W3C SCXML 5.3: <assign location="mine">
+                            self.mine = n.hash;
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="!hub"
+                    if !self.hub {
+                        {
+                            let send_id: &str = "__send_35";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("sender".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.node).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("to".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("depth".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.depth)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("prefix".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.prefix).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("hash".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.mine)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("reply".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.reply));
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.node".to_string(),
+                                    target: "#hub".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="hub"
+                    if self.hub {
+                        {
+                            let send_id: &str = "__send_36";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("sender".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (self.node).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("to".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.to).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("depth".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.depth)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("prefix".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.prefix).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("hash".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(self.mine)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("reply".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.reply));
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "record_list.node".to_string(),
+                                    target: "#people".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 24
+            24 => {
+                // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
+                // W3C SCXML 3.13: Transition 24 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListNode(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="hub || _event.data.to === 0 || _event.data.to === node"
+                    if self.hub || ev.to == 0 || ev.to == self.node {
+                        // W3C SCXML 5.3: <assign location="mine">
+                        self.mine = 0;
+
+                        for n in self.digest.clone() {
+                            let _ = &n;
+
+                            // W3C SCXML 5.9: cond="n.depth === _event.data.depth && n.prefix === _event.data.prefix"
+                            if n.depth == ev.depth && n.prefix == ev.prefix {
+                                // W3C SCXML 5.3: <assign location="mine">
+                                self.mine = n.hash;
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth < 30"
+                        if self.mine != ev.hash && ev.depth < 30 {
+                            {
+                                let send_id: &str = "__send_37";
+
+                                let mut _param_failed = false;
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -9734,20 +10142,41 @@ None,
                                 let event_data_string: String = {
                                     let wire_params = &mut _send_wire_params;
                                     // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("to".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("depth".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("prefix".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    wire_params.entry("to".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.sender).to_string(),
+                                        ),
+                                    );
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::add::<u8>(ev.depth, 1)?)))
+        })() {
+            Ok(val) => {
+                wire_params.entry("depth".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                ::sce_rust_runtime::sce_log_error!("send param 'depth' overflowed or failed");
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> <param name='depth'> could not be read"));
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok(::sce_rust_runtime::ScriptValue::String((sce_forge_runtime::algorithm::mul::<u64>(ev.prefix, 3)?).to_string()))
+        })() {
+            Ok(val) => {
+                wire_params.entry("prefix".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                ::sce_rust_runtime::sce_log_error!("send param 'prefix' overflowed or failed");
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> <param name='prefix'> could not be read"));
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
                                     // The value is read from the machine's field as it stands now.
                                     wire_params
                                         .entry("reply".to_string())
@@ -9767,286 +10196,46 @@ None,
                                     engine.raise(meta);
                                 }
 
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
                                 let _ = send_id; // suppress unused warning when no send operation
                             }
-                        }
-                    }
-                    23 => {
-                        // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
-                        // W3C SCXML 3.13: Transition 23 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListVisit(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="mine">
-                            self.mine = 0;
 
-                            for n in self.digest.clone() {
-                                let _ = &n;
+                            {
+                                let send_id: &str = "__send_38";
 
-                                // W3C SCXML 5.9: cond="n.depth === _event.data.depth && n.prefix === _event.data.prefix"
-                                if n.depth == ev.depth && n.prefix == ev.prefix {
-                                    // W3C SCXML 5.3: <assign location="mine">
-                                    self.mine = n.hash;
-                                }
-                            }
+                                let mut _param_failed = false;
 
-                            // W3C SCXML 5.9: cond="!hub"
-                            if !self.hub {
-                                {
-                                    let send_id: &str = "__send_35";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("sender".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.node).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("to".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(0)),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("depth".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                ev.depth,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("prefix".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.prefix).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("hash".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.mine,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("reply".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.reply));
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.node".to_string(),
-                                            target: "#hub".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="hub"
-                            if self.hub {
-                                {
-                                    let send_id: &str = "__send_36";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("sender".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (self.node).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("to".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.to).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("depth".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                ev.depth,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("prefix".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.prefix).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("hash".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                self.mine,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("reply".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.reply));
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "record_list.node".to_string(),
-                                            target: "#people".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-                        }
-                    }
-                    24 => {
-                        // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
-                        // W3C SCXML 3.13: Transition 24 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListNode(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="hub || _event.data.to === 0 || _event.data.to === node"
-                            if self.hub || ev.to == 0 || ev.to == self.node {
-                                // W3C SCXML 5.3: <assign location="mine">
-                                self.mine = 0;
-
-                                for n in self.digest.clone() {
-                                    let _ = &n;
-
-                                    // W3C SCXML 5.9: cond="n.depth === _event.data.depth && n.prefix === _event.data.prefix"
-                                    if n.depth == ev.depth && n.prefix == ev.prefix {
-                                        // W3C SCXML 5.3: <assign location="mine">
-                                        self.mine = n.hash;
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth < 30"
-                                if self.mine != ev.hash && ev.depth < 30 {
-                                    {
-                                        let send_id: &str = "__send_37";
-
-                                        let mut _param_failed = false;
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("to".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.sender).to_string(),
-                                                ),
-                                            );
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("to".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.sender).to_string(),
+                                        ),
+                                    );
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::add::<u8>(ev.depth, 1)?)))
         })() {
             Ok(val) => {
@@ -10059,93 +10248,9 @@ None,
                 _param_failed = true;
             }
         }
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok(::sce_rust_runtime::ScriptValue::String((sce_forge_runtime::algorithm::mul::<u64>(ev.prefix, 3)?).to_string()))
-        })() {
-            Ok(val) => {
-                wire_params.entry("prefix".to_string()).or_default().push(val);
-            }
-            Err(_) => {
-                ::sce_rust_runtime::sce_log_error!("send param 'prefix' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> <param name='prefix'> could not be read"));
-                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                _param_failed = true;
-            }
-        }
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("reply".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListVisit);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                        // this element was processed, so the rest of the block does not run —
-                                        // from however deep a <foreach> it came.
-                                        if _param_failed {
-                                            break 'action_block;
-                                        }
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-
-                                    {
-                                        let send_id: &str = "__send_38";
-
-                                        let mut _param_failed = false;
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("to".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.sender).to_string(),
-                                                ),
-                                            );
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::add::<u8>(ev.depth, 1)?)))
-        })() {
-            Ok(val) => {
-                wire_params.entry("depth".to_string()).or_default().push(val);
-            }
-            Err(_) => {
-                ::sce_rust_runtime::sce_log_error!("send param 'depth' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> <param name='depth'> could not be read"));
-                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                _param_failed = true;
-            }
-        }
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::String((sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(ev.prefix, 3)?, 1)?).to_string()))
         })() {
             Ok(val) => {
@@ -10158,63 +10263,65 @@ None,
                 _param_failed = true;
             }
         }
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("reply".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("reply".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListVisit);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListVisit,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
 
-                                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                        // this element was processed, so the rest of the block does not run —
-                                        // from however deep a <foreach> it came.
-                                        if _param_failed {
-                                            break 'action_block;
-                                        }
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
 
-                                    {
-                                        let send_id: &str = "__send_39";
+                            {
+                                let send_id: &str = "__send_39";
 
-                                        let mut _param_failed = false;
+                                let mut _param_failed = false;
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("to".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.sender).to_string(),
-                                                ),
-                                            );
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("to".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.sender).to_string(),
+                                        ),
+                                    );
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::add::<u8>(ev.depth, 1)?)))
         })() {
             Ok(val) => {
@@ -10227,9 +10334,9 @@ None,
                 _param_failed = true;
             }
         }
-                                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                            // checked operation that overflows leaves the pair out and says so.
-                                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                                    // checked operation that overflows leaves the pair out and says so.
+                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::String((sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(ev.prefix, 3)?, 2)?).to_string()))
         })() {
             Ok(val) => {
@@ -10242,168 +10349,169 @@ None,
                 _param_failed = true;
             }
         }
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("reply".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("reply".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListVisit);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                        // this element was processed, so the rest of the block does not run —
-                                        // from however deep a <foreach> it came.
-                                        if _param_failed {
-                                            break 'action_block;
-                                        }
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListVisit,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
-                                // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30"
-                                if self.mine != ev.hash && ev.depth == 30 {
-                                    {
-                                        let send_id: &str = "__send_40";
+                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                                // this element was processed, so the rest of the block does not run —
+                                // from however deep a <foreach> it came.
+                                if _param_failed {
+                                    break 'action_block;
+                                }
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("to".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.sender).to_string(),
-                                                ),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("minute".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.prefix).to_string(),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                        // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30"
+                        if self.mine != ev.hash && ev.depth == 30 {
+                            {
+                                let send_id: &str = "__send_40";
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListShare);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("to".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.sender).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("minute".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.prefix).to_string(),
+                                        ),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListShare,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
-                                // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30 && !_event.data.reply"
-                                if self.mine != ev.hash && ev.depth == 30 && !ev.reply {
-                                    {
-                                        let send_id: &str = "__send_41";
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("to".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.sender).to_string(),
-                                                ),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("depth".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(30),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("prefix".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (ev.prefix).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("reply".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Bool(true));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                        // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30 && !_event.data.reply"
+                        if self.mine != ev.hash && ev.depth == 30 && !ev.reply {
+                            {
+                                let send_id: &str = "__send_41";
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListVisit);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("to".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.sender).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("depth".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(30)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("prefix".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.prefix).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("reply".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(true));
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListVisit,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
-                    25 => {
-                        // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
-                        // W3C SCXML 3.13: Transition 25 actions
-                        let ev = match &self.pending_payload {
-                            RecordListParentSceSynthInvokeListPayload::RecordListShare(ev) => {
-                                ev.clone()
-                            }
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            for v in self.values.clone() {
-                                let _ = &v;
+                }
+            }
+            // open, transition 25
+            25 => {
+                // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
+                // W3C SCXML 3.13: Transition 25 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentSceSynthInvokeListPayload::RecordListShare(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    for v in self.values.clone() {
+                        let _ = &v;
 
-                                {
-                                    let mut if_cond_failed = false;
-                                    // W3C SCXML 5.9: cond="v.wallTime / 60000 === _event.data.minute"
-                                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        {
+                            let mut if_cond_failed = false;
+                            // W3C SCXML 5.9: cond="v.wallTime / 60000 === _event.data.minute"
+                            if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(sce_forge_runtime::algorithm::div::<i64>(v.wallTime, 60000)? == ev.minute as i64)
 })() {
     Ok(sce_value) => sce_value,
@@ -10596,19 +10704,19 @@ if self.hub {
     let _ = send_id;  // suppress unused warning when no send operation
 }}
 }
-                                    if if_cond_failed {
-                                        break 'action_block;
-                                    }
-                                }
+                            if if_cond_failed {
+                                break 'action_block;
                             }
+                        }
+                    }
 
-                            for t in self.tombstones.clone() {
-                                let _ = &t;
+                    for t in self.tombstones.clone() {
+                        let _ = &t;
 
-                                {
-                                    let mut if_cond_failed = false;
-                                    // W3C SCXML 5.9: cond="t.wallTime / 60000 === _event.data.minute"
-                                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        {
+                            let mut if_cond_failed = false;
+                            // W3C SCXML 5.9: cond="t.wallTime / 60000 === _event.data.minute"
+                            if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)? == ev.minute as i64)
 })() {
     Ok(sce_value) => sce_value,
@@ -10797,67 +10905,69 @@ if self.hub {
     let _ = send_id;  // suppress unused warning when no send operation
 }}
 }
-                                    if if_cond_failed {
-                                        break 'action_block;
-                                    }
-                                }
+                            if if_cond_failed {
+                                break 'action_block;
                             }
                         }
                     }
-                    26 => {
-                        // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
-                        // W3C SCXML 3.13: Transition 26 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // open, transition 26
+            26 => {
+                // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
+                // W3C SCXML 3.13: Transition 26 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.9: cond="probing"
-                            if self.probing {
-                                // W3C SCXML 5.3: <assign location="probing">
-                                self.probing = false;
+                    // W3C SCXML 5.9: cond="probing"
+                    if self.probing {
+                        // W3C SCXML 5.3: <assign location="probing">
+                        self.probing = false;
 
-                                // W3C SCXML 5.3: <assign location="spoiled">
-                                self.spoiled = true;
+                        // W3C SCXML 5.3: <assign location="spoiled">
+                        self.spoiled = true;
 
-                                // W3C SCXML 5.3: <assign location="spoiledFor">
-                                self.spoiled_for = self.probe;
+                        // W3C SCXML 5.3: <assign location="spoiledFor">
+                        self.spoiled_for = self.probe;
 
-                                // W3C SCXML 5.9: cond="!holding"
-                                if !self.holding {
-                                    {
-                                        let send_id: &str = "__send_46";
+                        // W3C SCXML 5.9: cond="!holding"
+                        if !self.holding {
+                            {
+                                let send_id: &str = "__send_46";
 
-                                        let event_data: &str = "";
+                                let event_data: &str = "";
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
-                                        {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(RecordListParentSceSynthInvokeListEvent::RecordListClose);
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        RecordListParentSceSynthInvokeListEvent::RecordListClose,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
                         }
                     }
-                    _ => {}
                 }
             }
             _ => {}

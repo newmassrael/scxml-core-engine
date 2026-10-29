@@ -88,52 +88,244 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticRecordStringState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Idle,
+    Idle = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticRecordStringEvent {
-    ErrorExecution,
-    Fill,
-    Forget,
-    FromNote,
-    Isfirst,
-    Keep,
-    LabelledTaken,
-    LongNote,
-    Peek,
-    Peeklast,
-    Reset,
-    Take,
-    Takelast,
-    Tally,
-    ToNote,
-    Toowide,
-    Wide,
+    ErrorExecution = 0,
+    Fill = 1,
+    Forget = 2,
+    FromNote = 3,
+    Isfirst = 4,
+    Keep = 5,
+    LabelledTaken = 6,
+    LongNote = 7,
+    Peek = 8,
+    Peeklast = 9,
+    Reset = 10,
+    Take = 11,
+    Takelast = 12,
+    Tally = 13,
+    ToNote = 14,
+    Toowide = 15,
+    Wide = 16,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 17,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticRecordStringConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticRecordStringState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticRecordStringState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_RECORD_STRING_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: idle
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: idle, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: idle, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: idle, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: idle, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: idle, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: idle, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: idle, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: idle, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: idle, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 9: idle, transition 9
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 10: idle, transition 10
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 11: idle, transition 11
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 12: idle, transition 12
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 13: idle, transition 13
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 14: idle, transition 14
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 15: idle, transition 15
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 16: idle, transition 16
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 17: idle, transition 17
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 18: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(18),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -457,7 +649,8 @@ impl StaticRecordStringPersist for Engine<StaticRecordStringPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -710,30 +903,64 @@ impl StatePolicy for StaticRecordStringPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_RECORD_STRING_TABLES;
+    const STATES: &'static [Self::State] = &[StaticRecordStringState::Idle];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticRecordStringEvent::ErrorExecution,
+        StaticRecordStringEvent::Fill,
+        StaticRecordStringEvent::Forget,
+        StaticRecordStringEvent::FromNote,
+        StaticRecordStringEvent::Isfirst,
+        StaticRecordStringEvent::Keep,
+        StaticRecordStringEvent::LabelledTaken,
+        StaticRecordStringEvent::LongNote,
+        StaticRecordStringEvent::Peek,
+        StaticRecordStringEvent::Peeklast,
+        StaticRecordStringEvent::Reset,
+        StaticRecordStringEvent::Take,
+        StaticRecordStringEvent::Takelast,
+        StaticRecordStringEvent::Tally,
+        StaticRecordStringEvent::ToNote,
+        StaticRecordStringEvent::Toowide,
+        StaticRecordStringEvent::Wide,
+        StaticRecordStringEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticRecordStringConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -759,69 +986,10 @@ impl StatePolicy for StaticRecordStringPolicy {
         StaticRecordStringState::Idle
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticRecordStringState::Idle,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticRecordStringState::Idle => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -887,16 +1055,6 @@ impl StatePolicy for StaticRecordStringPolicy {
 
     fn null_event() -> Self::Event {
         StaticRecordStringEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -966,17 +1124,19 @@ impl StatePolicy for StaticRecordStringPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
     // SCE-MAP: static_record_string.scxml:25 :: _machine
     fn first_enabled_transition(
@@ -984,151 +1144,86 @@ impl StatePolicy for StaticRecordStringPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticRecordStringState::Idle => {
                 if event == StaticRecordStringEvent::Fill {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticRecordStringEvent::Wide {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticRecordStringEvent::Toowide {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticRecordStringEvent::Reset {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StaticRecordStringEvent::LongNote {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StaticRecordStringEvent::FromNote {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticRecordStringEvent::ToNote {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StaticRecordStringEvent::LabelledTaken {
                     if matches!(&self.pending_payload, StaticRecordStringPayload::LabelledTaken(ev) if ev.sensor >= 200)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == StaticRecordStringEvent::LabelledTaken {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 8,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == StaticRecordStringEvent::Keep {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 9,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == StaticRecordStringEvent::Tally {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 10,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 10
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == StaticRecordStringEvent::Peek {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 11,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 11
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == StaticRecordStringEvent::Peeklast {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 12,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 12
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == StaticRecordStringEvent::Isfirst {
@@ -1141,57 +1236,32 @@ impl StatePolicy for StaticRecordStringPolicy {
                             false
                         }
                     } {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 13,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 13
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == StaticRecordStringEvent::Take {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 14,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 14
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == StaticRecordStringEvent::Takelast {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 15,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 15
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 if event == StaticRecordStringEvent::Forget {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 16,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 16
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == StaticRecordStringEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 17,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 17
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 None
@@ -1201,269 +1271,312 @@ impl StatePolicy for StaticRecordStringPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
     // SCE-MAP: static_record_string.scxml:25 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticRecordStringState::Idle => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_record_string.scxml:38 :: idle :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded("abcdefgh".to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+        match transition.0 {
+            // idle, transition 0
+            0 => {
+                // SCE-MAP: static_record_string.scxml:38 :: idle :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded("abcdefgh".to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: static_record_string.scxml:41 :: idle :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded("é€é".to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: static_record_string.scxml:44 :: idle :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded("é€éé".to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: static_record_string.scxml:47 :: idle :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded("a".to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: static_record_string.scxml:50 :: idle :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="note">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded("abcdefghijklmnop".to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: static_record_string.scxml:53 :: idle :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded(self.note.to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    6 => {
-                        // SCE-MAP: static_record_string.scxml:56 :: idle :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="note">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded(self.last.label.to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    7 => {
-                        // SCE-MAP: static_record_string.scxml:62 :: idle :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        let ev = match &self.pending_payload {
-                            StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last = StaticRecordStringLabelledRecord { sensor: ev.sensor, label: sce_forge_runtime::algorithm::bounded(ev.label.to_string(), 8)? };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // SCE Accepted Subset §2.15: <sce:append target="labels">
-                            let sce_failed = match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
-    if self.labels.len() < 3 {
-        self.labels.push(StaticRecordStringLabelledRecord { sensor: ev.sensor, label: sce_forge_runtime::algorithm::bounded(ev.label.to_string(), 8)? });
-        Ok(false)
-    } else {
-        Ok(true)
-    }
-})() {
-    Ok(false) => false,
-    Ok(true) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
-        true
-    }
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    8 => {
-                        // SCE-MAP: static_record_string.scxml:66 :: idle :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
-                        let ev = match &self.pending_payload {
-                            StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // idle, transition 1
+            1 => {
+                // SCE-MAP: static_record_string.scxml:41 :: idle :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded("é€é".to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last.label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.last.label = sce_forge_runtime::algorithm::bounded(ev.label.to_string(), 8)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="last.sensor">
-                            self.last.sensor = ev.sensor;
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    9 => {
-                        // SCE-MAP: static_record_string.scxml:73 :: idle :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:append target="labels">
-                            let sce_failed = if self.labels.len() < 3 {
-                                self.labels.push(self.last.clone());
-                                false
+                }
+            }
+            // idle, transition 2
+            2 => {
+                // SCE-MAP: static_record_string.scxml:44 :: idle :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded("é€éé".to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_record_string.scxml:47 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded("a".to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 4
+            4 => {
+                // SCE-MAP: static_record_string.scxml:50 :: idle :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note = sce_forge_runtime::algorithm::bounded(
+                                "abcdefghijklmnop".to_string(),
+                                16,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 5
+            5 => {
+                // SCE-MAP: static_record_string.scxml:53 :: idle :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded(self.note.to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 6
+            6 => {
+                // SCE-MAP: static_record_string.scxml:56 :: idle :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note = sce_forge_runtime::algorithm::bounded(
+                                self.last.label.to_string(),
+                                16,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 7
+            7 => {
+                // SCE-MAP: static_record_string.scxml:62 :: idle :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                let ev = match &self.pending_payload {
+                    StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last = StaticRecordStringLabelledRecord {
+                                sensor: ev.sensor,
+                                label: sce_forge_runtime::algorithm::bounded(
+                                    ev.label.to_string(),
+                                    8,
+                                )?,
+                            };
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // SCE Accepted Subset §2.15: <sce:append target="labels">
+                    let sce_failed =
+                        match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                            if self.labels.len() < 3 {
+                                self.labels.push(StaticRecordStringLabelledRecord {
+                                    sensor: ev.sensor,
+                                    label: sce_forge_runtime::algorithm::bounded(
+                                        ev.label.to_string(),
+                                        8,
+                                    )?,
+                                });
+                                Ok(false)
                             } else {
+                                Ok(true)
+                            }
+                        })() {
+                            Ok(false) => false,
+                            Ok(true) => {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
                                 true
-                            };
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
-                        }
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    10 => {
-                        // SCE-MAP: static_record_string.scxml:76 :: idle :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            for l in self.labels.clone() {
-                                let _ = &l;
+                }
+            }
+            // idle, transition 8
+            8 => {
+                // SCE-MAP: static_record_string.scxml:66 :: idle :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
+                let ev = match &self.pending_payload {
+                    StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last.label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.last.label =
+                                sce_forge_runtime::algorithm::bounded(ev.label.to_string(), 8)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                                // W3C SCXML 5.3: <assign location="note">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.3: <assign location="last.sensor">
+                    self.last.sensor = ev.sensor;
+                }
+            }
+            // idle, transition 9
+            9 => {
+                // SCE-MAP: static_record_string.scxml:73 :: idle :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:append target="labels">
+                    let sce_failed = if self.labels.len() < 3 {
+                        self.labels.push(self.last.clone());
+                        false
+                    } else {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
+                        true
+                    };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 10
+            10 => {
+                // SCE-MAP: static_record_string.scxml:76 :: idle :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    for l in self.labels.clone() {
+                        let _ = &l;
+
+                        // W3C SCXML 5.3: <assign location="note">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.note = sce_forge_runtime::algorithm::bounded(l.label.to_string(), 16)?;
     Ok(())
 })() {
@@ -1473,82 +1586,106 @@ impl StatePolicy for StaticRecordStringPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    11 => {
-                        // SCE-MAP: static_record_string.scxml:86 :: idle :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="note">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label.to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // idle, transition 11
+            11 => {
+                // SCE-MAP: static_record_string.scxml:86 :: idle :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note = sce_forge_runtime::algorithm::bounded(
+                                sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?
+                                    .label
+                                    .to_string(),
+                                16,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    12 => {
-                        // SCE-MAP: static_record_string.scxml:89 :: idle :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="note">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, sce_forge_runtime::algorithm::sub::<u32>((self.labels).len() as u32, 1)?)?.label.to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // idle, transition 12
+            12 => {
+                // SCE-MAP: static_record_string.scxml:89 :: idle :: _transition_12
+                // W3C SCXML 3.13: Transition 12 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note = sce_forge_runtime::algorithm::bounded(
+                                sce_forge_runtime::algorithm::at_ref(
+                                    &self.labels,
+                                    sce_forge_runtime::algorithm::sub::<u32>(
+                                        (self.labels).len() as u32,
+                                        1,
+                                    )?,
+                                )?
+                                .label
+                                .to_string(),
+                                16,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    13 => {
-                        // SCE-MAP: static_record_string.scxml:92 :: idle :: _transition_13
-                        // W3C SCXML 3.13: Transition 13 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="note">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.note = sce_forge_runtime::algorithm::bounded("first".to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // idle, transition 13
+            13 => {
+                // SCE-MAP: static_record_string.scxml:92 :: idle :: _transition_13
+                // W3C SCXML 3.13: Transition 13 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note =
+                                sce_forge_runtime::algorithm::bounded("first".to_string(), 16)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    14 => {
-                        // SCE-MAP: static_record_string.scxml:99 :: idle :: _transition_14
-                        // W3C SCXML 3.13: Transition 14 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last">
-                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                }
+            }
+            // idle, transition 14
+            14 => {
+                // SCE-MAP: static_record_string.scxml:99 :: idle :: _transition_14
+                // W3C SCXML 3.13: Transition 14 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last">
+                    let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.last.sensor = sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.sensor;
     Ok(())
 })() {
@@ -1567,18 +1704,19 @@ impl StatePolicy for StaticRecordStringPolicy {
         true
     }
 });
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    15 => {
-                        // SCE-MAP: static_record_string.scxml:102 :: idle :: _transition_15
-                        // W3C SCXML 3.13: Transition 15 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="last">
-                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                }
+            }
+            // idle, transition 15
+            15 => {
+                // SCE-MAP: static_record_string.scxml:102 :: idle :: _transition_15
+                // W3C SCXML 3.13: Transition 15 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="last">
+                    let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.last.sensor = sce_forge_runtime::algorithm::at_ref(&self.labels, sce_forge_runtime::algorithm::sub::<u32>((self.labels).len() as u32, 1)?)?.sensor;
     Ok(())
 })() {
@@ -1597,42 +1735,42 @@ impl StatePolicy for StaticRecordStringPolicy {
         true
     }
 });
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 16
+            16 => {
+                // SCE-MAP: static_record_string.scxml:105 :: idle :: _transition_16
+                // W3C SCXML 3.13: Transition 16 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="labels">
+                    self.labels.clear();
+                }
+            }
+            // idle, transition 17
+            17 => {
+                // SCE-MAP: static_record_string.scxml:108 :: idle :: _transition_17
+                // W3C SCXML 3.13: Transition 17 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="errors">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    16 => {
-                        // SCE-MAP: static_record_string.scxml:105 :: idle :: _transition_16
-                        // W3C SCXML 3.13: Transition 16 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="labels">
-                            self.labels.clear();
-                        }
-                    }
-                    17 => {
-                        // SCE-MAP: static_record_string.scxml:108 :: idle :: _transition_17
-                        // W3C SCXML 3.13: Transition 17 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="errors">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
             _ => {}

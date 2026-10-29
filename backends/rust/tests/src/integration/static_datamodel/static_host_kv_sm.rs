@@ -88,53 +88,313 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticHostKvState {
-    Deleting,
-    Getting,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Idle,
-    Putting,
-    Walking,
+    Idle = 0,
+    Getting = 1,
+    Putting = 2,
+    Deleting = 3,
+    Walking = 4,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticHostKvEvent {
-    DoneInvoke,
-    DoneInvokeDel,
-    DoneInvokeGet,
-    DoneInvokePut,
-    DoneInvokeWalk,
-    ErrorExecution,
-    ErrorInvokeDel,
-    ErrorInvokeGet,
-    ErrorInvokePut,
-    ErrorInvokeWalk,
-    HostKvDeleteRequest,
-    HostKvGetRequest,
-    HostKvNextKeyRequest,
-    HostKvPutRequest,
+    DoneInvoke = 0,
+    DoneInvokeDel = 1,
+    DoneInvokeGet = 2,
+    DoneInvokePut = 3,
+    DoneInvokeWalk = 4,
+    ErrorExecution = 5,
+    ErrorInvokeDel = 6,
+    ErrorInvokeGet = 7,
+    ErrorInvokePut = 8,
+    ErrorInvokeWalk = 9,
+    HostKvDeleteRequest = 10,
+    HostKvGetRequest = 11,
+    HostKvNextKeyRequest = 12,
+    HostKvPutRequest = 13,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 14,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticHostKvConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticHostKvState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticHostKvState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_HOST_KV_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: idle
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: getting
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 2: putting
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 3: deleting
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 4: walking
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: idle, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 1: idle, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 2: idle, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 3: idle, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 4: getting, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 5: getting, transition 1
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 6: getting, transition 2
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 7: getting, transition 3
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 8: putting, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 9: putting, transition 1
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 10: putting, transition 2
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 11: putting, transition 3
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 12: deleting, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 12, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 13: deleting, transition 1
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 13, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 14: deleting, transition 2
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 14, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 15: deleting, transition 3
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 15, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 16: walking, transition 0
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 16, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 17: walking, transition 1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 17, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 18: walking, transition 2
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 18, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 19: walking, transition 3
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 19, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 20: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 20, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(1)),
+            Target::State(StateId(2)),
+            Target::State(StateId(3)),
+            Target::State(StateId(4)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(20),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -525,7 +785,8 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.next),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -1678,30 +1939,67 @@ impl StatePolicy for StaticHostKvPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_HOST_KV_TABLES;
+    const STATES: &'static [Self::State] = &[
+        StaticHostKvState::Idle,
+        StaticHostKvState::Getting,
+        StaticHostKvState::Putting,
+        StaticHostKvState::Deleting,
+        StaticHostKvState::Walking,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticHostKvEvent::DoneInvoke,
+        StaticHostKvEvent::DoneInvokeDel,
+        StaticHostKvEvent::DoneInvokeGet,
+        StaticHostKvEvent::DoneInvokePut,
+        StaticHostKvEvent::DoneInvokeWalk,
+        StaticHostKvEvent::ErrorExecution,
+        StaticHostKvEvent::ErrorInvokeDel,
+        StaticHostKvEvent::ErrorInvokeGet,
+        StaticHostKvEvent::ErrorInvokePut,
+        StaticHostKvEvent::ErrorInvokeWalk,
+        StaticHostKvEvent::HostKvDeleteRequest,
+        StaticHostKvEvent::HostKvGetRequest,
+        StaticHostKvEvent::HostKvNextKeyRequest,
+        StaticHostKvEvent::HostKvPutRequest,
+        StaticHostKvEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticHostKvConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -1731,73 +2029,10 @@ impl StatePolicy for StaticHostKvPolicy {
         StaticHostKvState::Idle
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticHostKvState::Idle,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticHostKvState::Deleting => 3,
-            StaticHostKvState::Getting => 1,
-            StaticHostKvState::Idle => 0,
-            StaticHostKvState::Putting => 2,
-            StaticHostKvState::Walking => 4,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1869,16 +2104,6 @@ impl StatePolicy for StaticHostKvPolicy {
 
     fn null_event() -> Self::Event {
         StaticHostKvEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -2092,11 +2317,12 @@ impl StatePolicy for StaticHostKvPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -2165,8 +2391,9 @@ impl StatePolicy for StaticHostKvPolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
     // SCE-MAP: static_host_kv.scxml:31 :: _machine
     fn first_enabled_transition(
@@ -2174,60 +2401,32 @@ impl StatePolicy for StaticHostKvPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticHostKvState::Deleting => {
                 if event == StaticHostKvEvent::DoneInvokeDel {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeDel(ev) if ev.error == "")
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // deleting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeDel {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // deleting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeDel {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // deleting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // deleting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 None
@@ -2236,54 +2435,26 @@ impl StatePolicy for StaticHostKvPolicy {
                 if event == StaticHostKvEvent::DoneInvokeGet {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeGet(ev) if ev.error == "")
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // getting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeGet {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // getting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeGet {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // getting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // getting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -2291,54 +2462,26 @@ impl StatePolicy for StaticHostKvPolicy {
             StaticHostKvState::Idle => {
                 if event == StaticHostKvEvent::HostKvGetRequest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Getting,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // idle, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticHostKvEvent::HostKvPutRequest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Putting,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // idle, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticHostKvEvent::HostKvDeleteRequest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Deleting,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // idle, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticHostKvEvent::HostKvNextKeyRequest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Walking,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // idle, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -2347,54 +2490,26 @@ impl StatePolicy for StaticHostKvPolicy {
                 if event == StaticHostKvEvent::DoneInvokePut {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokePut(ev) if ev.error == "")
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // putting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokePut {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // putting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokePut {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // putting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // putting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 None
@@ -2403,54 +2518,26 @@ impl StatePolicy for StaticHostKvPolicy {
                 if event == StaticHostKvEvent::DoneInvokeWalk {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeWalk(ev) if ev.error == "")
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // walking, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeWalk {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // walking, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeWalk {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // walking, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticHostKvState::Idle,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // walking, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 None
@@ -2460,579 +2547,622 @@ impl StatePolicy for StaticHostKvPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
     // SCE-MAP: static_host_kv.scxml:31 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticHostKvState::Deleting => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_host_kv.scxml:116 :: deleting :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="existed">
-                            self.existed = ev.existed;
+        match transition.0 {
+            // deleting, transition 0
+            12 => {
+                // SCE-MAP: static_host_kv.scxml:116 :: deleting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="existed">
+                    self.existed = ev.existed;
 
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: static_host_kv.scxml:120 :: deleting :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    2 => {
-                        // SCE-MAP: static_host_kv.scxml:123 :: deleting :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: static_host_kv.scxml:126 :: deleting :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StaticHostKvState::Getting => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_host_kv.scxml:76 :: getting :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
-                            _ => return,
+            // deleting, transition 1
+            13 => {
+                // SCE-MAP: static_host_kv.scxml:120 :: deleting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="found">
-                            self.found = ev.found;
-
-                            // W3C SCXML 5.3: <assign location="got">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.got = sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='got'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: static_host_kv.scxml:81 :: getting :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: static_host_kv.scxml:84 :: getting :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: static_host_kv.scxml:87 :: getting :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StaticHostKvState::Idle => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_host_kv.scxml:56 :: idle :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::HostKvGetRequest(ev) => ev.clone(),
-                            _ => return,
+            // deleting, transition 2
+            14 => {
+                // SCE-MAP: static_host_kv.scxml:123 :: deleting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="key">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.key = sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: static_host_kv.scxml:59 :: idle :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::HostKvPutRequest(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="key">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.key = sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="value">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.value = sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='value'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::HostKvDeleteRequest(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="key">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.key = sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::HostKvNextKeyRequest(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="after">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.after = sce_forge_runtime::algorithm::bounded(ev.after.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='after'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="prefix">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.prefix = sce_forge_runtime::algorithm::bounded(ev.prefix.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='prefix'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StaticHostKvState::Putting => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_host_kv.scxml:97 :: putting :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
-                            _ => return,
+            // deleting, transition 3
+            15 => {
+                // SCE-MAP: static_host_kv.scxml:126 :: deleting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="replaced">
-                            self.replaced = ev.replaced;
-
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: static_host_kv.scxml:101 :: putting :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: static_host_kv.scxml:104 :: putting :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: static_host_kv.scxml:107 :: putting :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-            StaticHostKvState::Walking => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_host_kv.scxml:136 :: walking :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="next_found">
-                            self.next_found = ev.found;
+            // getting, transition 0
+            4 => {
+                // SCE-MAP: static_host_kv.scxml:76 :: getting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="found">
+                    self.found = ev.found;
 
-                            // W3C SCXML 5.3: <assign location="next">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.next = sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='next'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="got">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.got =
+                                sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='got'>: an integer operation overflowed or failed"));
+                                true
                             }
-
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: static_host_kv.scxml:141 :: walking :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    2 => {
-                        // SCE-MAP: static_host_kv.scxml:144 :: walking :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    3 => {
-                        // SCE-MAP: static_host_kv.scxml:147 :: walking :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                }
+            }
+            // getting, transition 1
+            5 => {
+                // SCE-MAP: static_host_kv.scxml:81 :: getting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
+                }
+            }
+            // getting, transition 2
+            6 => {
+                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // getting, transition 3
+            7 => {
+                // SCE-MAP: static_host_kv.scxml:87 :: getting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 0
+            0 => {
+                // SCE-MAP: static_host_kv.scxml:56 :: idle :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::HostKvGetRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key =
+                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 1
+            1 => {
+                // SCE-MAP: static_host_kv.scxml:59 :: idle :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::HostKvPutRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key =
+                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="value">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.value =
+                                sce_forge_runtime::algorithm::bounded(ev.value.to_string(), 4096)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='value'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 2
+            2 => {
+                // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::HostKvDeleteRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key =
+                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::HostKvNextKeyRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="after">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.after =
+                                sce_forge_runtime::algorithm::bounded(ev.after.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='after'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="prefix">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.prefix =
+                                sce_forge_runtime::algorithm::bounded(ev.prefix.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='prefix'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting, transition 0
+            8 => {
+                // SCE-MAP: static_host_kv.scxml:97 :: putting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="replaced">
+                    self.replaced = ev.replaced;
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting, transition 1
+            9 => {
+                // SCE-MAP: static_host_kv.scxml:101 :: putting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting, transition 2
+            10 => {
+                // SCE-MAP: static_host_kv.scxml:104 :: putting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting, transition 3
+            11 => {
+                // SCE-MAP: static_host_kv.scxml:107 :: putting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // walking, transition 0
+            16 => {
+                // SCE-MAP: static_host_kv.scxml:136 :: walking :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="next_found">
+                    self.next_found = ev.found;
+
+                    // W3C SCXML 5.3: <assign location="next">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.next =
+                                sce_forge_runtime::algorithm::bounded(ev.key.to_string(), 256)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='next'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("done".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // walking, transition 1
+            17 => {
+                // SCE-MAP: static_host_kv.scxml:141 :: walking :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.error.to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // walking, transition 2
+            18 => {
+                // SCE-MAP: static_host_kv.scxml:144 :: walking :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("deadline".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // walking, transition 3
+            19 => {
+                // SCE-MAP: static_host_kv.scxml:147 :: walking :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded("refused".to_string(), 24)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
                 }
             }
             _ => {}

@@ -88,43 +88,165 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum PresencePeerState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Open,
+    Open = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum PresencePeerEvent {
-    ErrorCommunication,
-    ErrorExecution,
-    PresenceAlive,
-    PresenceBeat,
-    PresenceExpire,
-    PresenceJoin,
-    PresenceLeft,
-    PresenceSeen,
+    ErrorCommunication = 0,
+    ErrorExecution = 1,
+    PresenceAlive = 2,
+    PresenceBeat = 3,
+    PresenceExpire = 4,
+    PresenceJoin = 5,
+    PresenceLeft = 6,
+    PresenceSeen = 7,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 8,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type PresencePeerConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PresencePeerState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `PresencePeerState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const PRESENCE_PEER_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: open
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: open, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: open, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: open, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: open, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: open, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: open, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: open, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: open, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(8),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -592,7 +714,8 @@ impl PresencePeerPersist for Engine<PresencePeerPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -988,30 +1111,55 @@ impl StatePolicy for PresencePeerPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &PRESENCE_PEER_TABLES;
+    const STATES: &'static [Self::State] = &[PresencePeerState::Open];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        PresencePeerEvent::ErrorCommunication,
+        PresencePeerEvent::ErrorExecution,
+        PresencePeerEvent::PresenceAlive,
+        PresencePeerEvent::PresenceBeat,
+        PresencePeerEvent::PresenceExpire,
+        PresencePeerEvent::PresenceJoin,
+        PresencePeerEvent::PresenceLeft,
+        PresencePeerEvent::PresenceSeen,
+        PresencePeerEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = PresencePeerConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -1037,69 +1185,10 @@ impl StatePolicy for PresencePeerPolicy {
         PresencePeerState::Open
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            PresencePeerState::Open,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            PresencePeerState::Open => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1147,16 +1236,6 @@ impl StatePolicy for PresencePeerPolicy {
 
     fn null_event() -> Self::Event {
         PresencePeerEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1278,17 +1357,19 @@ impl StatePolicy for PresencePeerPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
     // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn first_enabled_transition(
@@ -1296,95 +1377,55 @@ impl StatePolicy for PresencePeerPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             PresencePeerState::Open => {
                 if event == PresencePeerEvent::PresenceJoin {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == PresencePeerEvent::PresenceBeat {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == PresencePeerEvent::PresenceAlive {
                     if self.hub {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == PresencePeerEvent::PresenceSeen {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == PresencePeerEvent::PresenceExpire {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == PresencePeerEvent::PresenceLeft {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == PresencePeerEvent::ErrorCommunication {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == PresencePeerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1394,43 +1435,42 @@ impl StatePolicy for PresencePeerPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
     // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            PresencePeerState::Open => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: presence_peer.scxml:79 :: open :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceJoin(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="node">
-                            self.node = ev.node;
+        match transition.0 {
+            // open, transition 0
+            0 => {
+                // SCE-MAP: presence_peer.scxml:79 :: open :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceJoin(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="node">
+                    self.node = ev.node;
 
-                            // W3C SCXML 5.3: <assign location="hub">
-                            self.hub = ev.hub;
+                    // W3C SCXML 5.3: <assign location="hub">
+                    self.hub = ev.hub;
 
-                            // W3C SCXML 5.3: <assign location="ttl">
-                            self.ttl = ev.ttl;
+                    // W3C SCXML 5.3: <assign location="ttl">
+                    self.ttl = ev.ttl;
 
-                            // W3C SCXML 5.3: <assign location="lease">
-                            self.lease = ev.ttl;
+                    // W3C SCXML 5.3: <assign location="lease">
+                    self.lease = ev.ttl;
 
-                            // W3C SCXML 5.9: cond="!_event.data.hub"
-                            if !ev.hub {
-                                // W3C SCXML 5.3: <assign location="lease">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="!_event.data.hub"
+                    if !ev.hub {
+                        // W3C SCXML 5.3: <assign location="lease">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.lease = sce_forge_runtime::algorithm::add::<u32>(ev.ttl, ev.slack)?;
     Ok(())
 })() {
@@ -1440,23 +1480,484 @@ impl StatePolicy for PresencePeerPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+                }
+            }
+            // open, transition 1
+            1 => {
+                // SCE-MAP: presence_peer.scxml:93 :: open :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceBeat(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_0";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("client".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(self.node)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("at".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.now).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "presence.alive".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 2
+            2 => {
+                // SCE-MAP: presence_peer.scxml:103 :: open :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceAlive(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_1";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("client".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.client)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("last".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::String((ev.at).to_string()));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("gen".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                PresencePeerEvent::PresenceSeen,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id: &str = "__send_2";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("client".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.client)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("last".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::String((ev.at).to_string()));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("gen".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "presence.seen".to_string(),
+                                target: "#room".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 3
+            3 => {
+                // SCE-MAP: presence_peer.scxml:119 :: open :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceSeen(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="fresh">
+                    self.fresh = true;
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
+                    self.rebuilt.clear();
+
+                    for m in self.online.clone() {
+                        let _ = &m;
+
+                        // W3C SCXML 5.9: cond="m.client === _event.data.client && _event.data.last <= m.last"
+                        if m.client == ev.client && ev.last <= m.last {
+                            // W3C SCXML 5.3: <assign location="fresh">
+                            self.fresh = false;
+                        }
+
+                        // W3C SCXML 5.9: cond="m.client !== _event.data.client"
+                        if m.client != ev.client {
+                            // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
+                            let sce_failed = if self.rebuilt.len() < 128 {
+                                self.rebuilt.push(m);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
-                    1 => {
-                        // SCE-MAP: presence_peer.scxml:93 :: open :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceBeat(ev) => ev.clone(),
-                            _ => return,
+
+                    // W3C SCXML 5.9: cond="fresh"
+                    if self.fresh {
+                        // W3C SCXML 5.3: <assign location="entry.client">
+                        self.entry.client = ev.client;
+
+                        // W3C SCXML 5.3: <assign location="entry.last">
+                        self.entry.last = ev.last;
+
+                        // W3C SCXML 5.3: <assign location="entry.gen">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.entry.gen = sce_forge_runtime::algorithm::add::<u32>(self.serial, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='entry.gen'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
+                        let sce_failed = if self.rebuilt.len() < 128 {
+                            self.rebuilt.push(self.entry);
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                            true
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        // SCE Accepted Subset §2.15: <sce:clear target="online">
+                        self.online.clear();
+                        for r in self.rebuilt.clone() {
+                            let _ = &r;
+
+                            // SCE Accepted Subset §2.15: <sce:append target="online">
+                            let sce_failed = if self.online.len() < 128 {
+                                self.online.push(r);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+
+                        // W3C SCXML 5.3: <assign location="serial">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.serial = sce_forge_runtime::algorithm::add::<u32>(self.serial, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='serial'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+
+                        {
+                            let send_id: &str = "__send_3";
+
+                            let mut _send_arg_error: Option<&'static str> = None;
+                            // The delay is a string computed from the machine's fields now, and read as
+                            // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
+                            // fails, or a value that is no time, is the argument error, and the message
+                            // is not scheduled under some default wait.
+                            let _send_delay_ms: u64 = if _send_arg_error.is_none() {
+                                let s: String = (format!("{}{}", self.lease, "ms")).to_string();
+                                sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
+                                    .unwrap_or_else(|| {
+                                        _send_arg_error =
+                                            Some("<send> delayexpr is not a CSS2 time");
+                                        0
+                                    })
+                            } else {
+                                0
+                            };
+                            if let Some(__sce_why) = _send_arg_error {
+                                ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
+                                let mut err_meta =
+                                    sce_rust_runtime::EventWithMetadata::platform_error(
+                                        PresencePeerEvent::ErrorExecution,
+                                        __sce_why,
+                                    );
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
+                                engine.raise(err_meta);
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            } else {
+                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                // delivered, so each name carries a vector. The typed value is kept
+                                // rather than its text — a receiver reading `_event.data.value === 42`
+                                // finds the string "42" unequal.
+                                //
+                                // Declared out here rather than inside the payload block because
+                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                // below are renderings of that one evaluation: the BasicHTTP and
+                                // host-served arms read this map instead of asking the data model again.
+                                let mut _send_wire_params: ::std::collections::BTreeMap<
+                                    String,
+                                    Vec<::sce_rust_runtime::ScriptValue>,
+                                > = ::std::collections::BTreeMap::new();
+                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                let event_data_string: String = {
+                                    let wire_params = &mut _send_wire_params;
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("gen".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.serial,
+                                        )),
+                                    );
+                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                };
+                                let event_data: &str = &event_data_string;
+
+                                // W3C SCXML 6.2: Default send (no target = external event)
+                                // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
+                                // origin is this session, as on the immediate path.
+                                // The id is known here, so it is handed over and none is handed back: the
+                                // returned owned string was a buffer of the string bound to drop.
+                                engine.schedule_event_as(
+                                    PresencePeerEvent::PresenceExpire,
+                                    core::time::Duration::from_millis(_send_delay_ms),
+                                    &send_id,
+                                    event_data,
+                                    &self.session_id.as_deref().unwrap_or(""),
+                                );
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 4
+            4 => {
+                // SCE-MAP: presence_peer.scxml:151 :: open :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceExpire(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="known">
+                    self.known = false;
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
+                    self.rebuilt.clear();
+
+                    for m in self.online.clone() {
+                        let _ = &m;
+
+                        // W3C SCXML 5.9: cond="m.gen === _event.data.gen"
+                        if m.gen == ev.gen {
+                            // W3C SCXML 5.3: <assign location="known">
+                            self.known = true;
+
+                            // W3C SCXML 5.3: <assign location="entry">
+                            self.entry = m;
+                        }
+
+                        // W3C SCXML 5.9: cond="m.gen !== _event.data.gen"
+                        if m.gen != ev.gen {
+                            // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
+                            let sce_failed = if self.rebuilt.len() < 128 {
+                                self.rebuilt.push(m);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="known"
+                    if self.known {
+                        // SCE Accepted Subset §2.15: <sce:clear target="online">
+                        self.online.clear();
+                        for r in self.rebuilt.clone() {
+                            let _ = &r;
+
+                            // SCE Accepted Subset §2.15: <sce:append target="online">
+                            let sce_failed = if self.online.len() < 128 {
+                                self.online.push(r);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+
+                        // W3C SCXML 5.9: cond="hub"
+                        if self.hub {
                             {
-                                let send_id: &str = "__send_0";
+                                let send_id: &str = "__send_4";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -1476,12 +1977,14 @@ impl StatePolicy for PresencePeerPolicy {
                                     let wire_params = &mut _send_wire_params;
                                     // The value is read from the machine's field as it stands now.
                                     wire_params.entry("client".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(self.node)),
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                            self.entry.client,
+                                        )),
                                     );
                                     // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("at".to_string()).or_default().push(
+                                    wire_params.entry("last".to_string()).or_default().push(
                                         ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.now).to_string(),
+                                            (self.entry.last).to_string(),
                                         ),
                                     );
                                     ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
@@ -1494,143 +1997,7 @@ impl StatePolicy for PresencePeerPolicy {
                                     let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
                                     let __sce_request = sce_rust_runtime::HostSendRequest {
                                         processor_type: "sce:mesh".to_string(),
-                                        event_name: "presence.alive".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: presence_peer.scxml:103 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceAlive(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_1";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("client".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.client)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("last".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.at).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("gen".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        PresencePeerEvent::PresenceSeen,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            {
-                                let send_id: &str = "__send_2";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("client".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.client)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("last".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.at).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("gen".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "presence.seen".to_string(),
+                                        event_name: "presence.left".to_string(),
                                         target: "#room".to_string(),
                                         content: "".to_string(),
                                         params: host_params,
@@ -1661,428 +2028,105 @@ impl StatePolicy for PresencePeerPolicy {
                             }
                         }
                     }
-                    3 => {
-                        // SCE-MAP: presence_peer.scxml:119 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceSeen(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="fresh">
-                            self.fresh = true;
+                }
+            }
+            // open, transition 5
+            5 => {
+                // SCE-MAP: presence_peer.scxml:179 :: open :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    PresencePeerPayload::PresenceLeft(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
+                    self.rebuilt.clear();
 
-                            // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
-                            self.rebuilt.clear();
+                    for m in self.online.clone() {
+                        let _ = &m;
 
-                            for m in self.online.clone() {
-                                let _ = &m;
-
-                                // W3C SCXML 5.9: cond="m.client === _event.data.client && _event.data.last <= m.last"
-                                if m.client == ev.client && ev.last <= m.last {
-                                    // W3C SCXML 5.3: <assign location="fresh">
-                                    self.fresh = false;
-                                }
-
-                                // W3C SCXML 5.9: cond="m.client !== _event.data.client"
-                                if m.client != ev.client {
-                                    // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                                    let sce_failed = if self.rebuilt.len() < 128 {
-                                        self.rebuilt.push(m);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="fresh"
-                            if self.fresh {
-                                // W3C SCXML 5.3: <assign location="entry.client">
-                                self.entry.client = ev.client;
-
-                                // W3C SCXML 5.3: <assign location="entry.last">
-                                self.entry.last = ev.last;
-
-                                // W3C SCXML 5.3: <assign location="entry.gen">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.entry.gen = sce_forge_runtime::algorithm::add::<u32>(self.serial, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='entry.gen'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                                let sce_failed = if self.rebuilt.len() < 128 {
-                                    self.rebuilt.push(self.entry);
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                // SCE Accepted Subset §2.15: <sce:clear target="online">
-                                self.online.clear();
-                                for r in self.rebuilt.clone() {
-                                    let _ = &r;
-
-                                    // SCE Accepted Subset §2.15: <sce:append target="online">
-                                    let sce_failed = if self.online.len() < 128 {
-                                        self.online.push(r);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-
-                                // W3C SCXML 5.3: <assign location="serial">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.serial = sce_forge_runtime::algorithm::add::<u32>(self.serial, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='serial'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                {
-                                    let send_id: &str = "__send_3";
-
-                                    let mut _send_arg_error: Option<&'static str> = None;
-                                    // The delay is a string computed from the machine's fields now, and read as
-                                    // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
-                                    // fails, or a value that is no time, is the argument error, and the message
-                                    // is not scheduled under some default wait.
-                                    let _send_delay_ms: u64 = if _send_arg_error.is_none() {
-                                        let s: String =
-                                            (format!("{}{}", self.lease, "ms")).to_string();
-                                        sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
-                                            .unwrap_or_else(|| {
-                                                _send_arg_error =
-                                                    Some("<send> delayexpr is not a CSS2 time");
-                                                0
-                                            })
-                                    } else {
-                                        0
-                                    };
-                                    if let Some(__sce_why) = _send_arg_error {
-                                        ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                                        let mut err_meta =
-                                            sce_rust_runtime::EventWithMetadata::platform_error(
-                                                PresencePeerEvent::ErrorExecution,
-                                                __sce_why,
-                                            );
-                                        err_meta.metadata.send_id =
-                                            ::sce_rust_runtime::sce_string_from_str(send_id);
-                                        engine.raise(err_meta);
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    } else {
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("gen".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                    self.serial,
-                                                )),
-                                            );
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2: Default send (no target = external event)
-                                        // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-                                        // origin is this session, as on the immediate path.
-                                        // The id is known here, so it is handed over and none is handed back: the
-                                        // returned owned string was a buffer of the string bound to drop.
-                                        engine.schedule_event_as(
-                                            PresencePeerEvent::PresenceExpire,
-                                            core::time::Duration::from_millis(_send_delay_ms),
-                                            &send_id,
-                                            event_data,
-                                            &self.session_id.as_deref().unwrap_or(""),
-                                        );
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: presence_peer.scxml:151 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceExpire(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="known">
-                            self.known = false;
-
-                            // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
-                            self.rebuilt.clear();
-
-                            for m in self.online.clone() {
-                                let _ = &m;
-
-                                // W3C SCXML 5.9: cond="m.gen === _event.data.gen"
-                                if m.gen == ev.gen {
-                                    // W3C SCXML 5.3: <assign location="known">
-                                    self.known = true;
-
-                                    // W3C SCXML 5.3: <assign location="entry">
-                                    self.entry = m;
-                                }
-
-                                // W3C SCXML 5.9: cond="m.gen !== _event.data.gen"
-                                if m.gen != ev.gen {
-                                    // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                                    let sce_failed = if self.rebuilt.len() < 128 {
-                                        self.rebuilt.push(m);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="known"
-                            if self.known {
-                                // SCE Accepted Subset §2.15: <sce:clear target="online">
-                                self.online.clear();
-                                for r in self.rebuilt.clone() {
-                                    let _ = &r;
-
-                                    // SCE Accepted Subset §2.15: <sce:append target="online">
-                                    let sce_failed = if self.online.len() < 128 {
-                                        self.online.push(r);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-
-                                // W3C SCXML 5.9: cond="hub"
-                                if self.hub {
-                                    {
-                                        let send_id: &str = "__send_4";
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("client".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(self.entry.client),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("last".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (self.entry.last).to_string(),
-                                                ));
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                        // which declared it to this build. Dispatch rather than refuse.
-                                        {
-                                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                            let __sce_request = sce_rust_runtime::HostSendRequest {
-                                                processor_type: "sce:mesh".to_string(),
-                                                event_name: "presence.left".to_string(),
-                                                target: "#room".to_string(),
-                                                content: "".to_string(),
-                                                params: host_params,
-                                                send_id: send_id.to_string(),
-                                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                                event_data: event_data.to_string(),
-                                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                                // processed now, carried back out as a W3C child's send to its
-                                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                                // every machine with a host-served send.
-                                                invoke_id: self.pending_event_invokeid.to_string(),
-                                            };
-                                            let __sce_served =
-                                                engine.perform_host_send(__sce_request);
-                                            // W3C SCXML 6.2: a declared type with no handler registered is,
-                                            // from the document's side, a processor the platform does not
-                                            // support — the act it asked for was performed by nobody. Same
-                                            // event, so a wiring mistake cannot read as success.
-                                            if __sce_served.is_none()
-                                                && !engine.has_event_processor("sce:mesh")
-                                            {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                engine.raise(err_meta);
-                                            }
-                                        }
-
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: presence_peer.scxml:179 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        let ev = match &self.pending_payload {
-                            PresencePeerPayload::PresenceLeft(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
-                            self.rebuilt.clear();
-
-                            for m in self.online.clone() {
-                                let _ = &m;
-
-                                // W3C SCXML 5.9: cond="m.client !== _event.data.client || m.last > _event.data.last"
-                                if m.client != ev.client || m.last > ev.last {
-                                    // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
-                                    let sce_failed = if self.rebuilt.len() < 128 {
-                                        self.rebuilt.push(m);
-                                        false
-                                    } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
-                                        true
-                                    };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                }
-                            }
-
-                            // SCE Accepted Subset §2.15: <sce:clear target="online">
-                            self.online.clear();
-
-                            for r in self.rebuilt.clone() {
-                                let _ = &r;
-
-                                // SCE Accepted Subset §2.15: <sce:append target="online">
-                                let sce_failed = if self.online.len() < 128 {
-                                    self.online.push(r);
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
-                        }
-                    }
-                    6 => {
-                        // SCE-MAP: presence_peer.scxml:193 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="lost">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.lost = sce_forge_runtime::algorithm::add::<u32>(self.lost, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='lost'>: an integer operation overflowed or failed"));
-        true
-    }
-};
+                        // W3C SCXML 5.9: cond="m.client !== _event.data.client || m.last > _event.data.last"
+                        if m.client != ev.client || m.last > ev.last {
+                            // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
+                            let sce_failed = if self.rebuilt.len() < 128 {
+                                self.rebuilt.push(m);
+                                false
+                            } else {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                true
+                            };
                             if sce_failed {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                         }
                     }
-                    7 => {
-                        // SCE-MAP: presence_peer.scxml:197 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+
+                    // SCE Accepted Subset §2.15: <sce:clear target="online">
+                    self.online.clear();
+
+                    for r in self.rebuilt.clone() {
+                        let _ = &r;
+
+                        // SCE Accepted Subset §2.15: <sce:append target="online">
+                        let sce_failed = if self.online.len() < 128 {
+                            self.online.push(r);
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    _ => {}
+                }
+            }
+            // open, transition 6
+            6 => {
+                // SCE-MAP: presence_peer.scxml:193 :: open :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="lost">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.lost = sce_forge_runtime::algorithm::add::<u32>(self.lost, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='lost'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // open, transition 7
+            7 => {
+                // SCE-MAP: presence_peer.scxml:197 :: open :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
                 }
             }
             _ => {}

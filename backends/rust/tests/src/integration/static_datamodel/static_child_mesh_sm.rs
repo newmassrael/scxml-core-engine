@@ -88,44 +88,175 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticChildMeshState {
+    Working = 0,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Alone,
-    Idle,
-    Joined,
-    Working,
+    Alone = 1,
+    Joined = 2,
+    Idle = 3,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticChildMeshEvent {
-    Again,
-    Back,
-    DoneInvoke,
-    DoneInvokeList,
-    ErrorExecution,
-    Open,
+    Again = 0,
+    Back = 1,
+    DoneInvoke = 2,
+    DoneInvokeList = 3,
+    ErrorExecution = 4,
+    Open = 5,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 6,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 2, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 2, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticChildMeshConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticChildMeshState, 2>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticChildMeshState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_CHILD_MESH_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: working
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 2 },
+                initial: Some(TransitionId(4)),
+            },
+            // 1: alone
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 2, len: 0 },
+                initial: None,
+            },
+            // 2: joined
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 2, len: 0 },
+                initial: None,
+            },
+            // 3: idle
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 2, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[StateId(1), StateId(2)],
+        histories: &[],
+        transitions: &[
+            // 0: working, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 1: working, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 2: alone, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: idle, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: working, initial
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(3)),
+            Target::State(StateId(2)),
+            Target::State(StateId(0)),
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(5),
+        history_records: 0,
+        max_configuration: 2,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 9,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -331,7 +462,8 @@ impl StaticChildMeshPersist for Engine<StaticChildMeshPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             // docs/adr/0045: each running child, with its whole state.
             self.policy().saved_children(wall_now_ms)?,
             wall_now_ms,
@@ -1095,30 +1227,58 @@ impl StatePolicy for StaticChildMeshPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_CHILD_MESH_TABLES;
+    const STATES: &'static [Self::State] = &[
+        StaticChildMeshState::Working,
+        StaticChildMeshState::Alone,
+        StaticChildMeshState::Joined,
+        StaticChildMeshState::Idle,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticChildMeshEvent::Again,
+        StaticChildMeshEvent::Back,
+        StaticChildMeshEvent::DoneInvoke,
+        StaticChildMeshEvent::DoneInvokeList,
+        StaticChildMeshEvent::ErrorExecution,
+        StaticChildMeshEvent::Open,
+        StaticChildMeshEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 2 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 2 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 2 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 9 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(2) }, 1, 9, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<2, 0, 0>;
     type Configuration = StaticChildMeshConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 9 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        9,
-    >;
-    const MAX_CONFIGURATION: usize = 2;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 2;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -1150,81 +1310,10 @@ impl StatePolicy for StaticChildMeshPolicy {
         StaticChildMeshState::Alone
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            StaticChildMeshState::Alone => Some(StaticChildMeshState::Working),
-            StaticChildMeshState::Joined => Some(StaticChildMeshState::Working),
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            StaticChildMeshState::Working => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            StaticChildMeshState::Working => {
-                &[StaticChildMeshState::Alone, StaticChildMeshState::Joined]
-            }
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            StaticChildMeshState::Working => &[::sce_rust_runtime::EntryTarget::State(
-                StaticChildMeshState::Alone,
-            )],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticChildMeshState::Working,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticChildMeshState::Alone => 1,
-            StaticChildMeshState::Idle => 3,
-            StaticChildMeshState::Joined => 2,
-            StaticChildMeshState::Working => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1277,16 +1366,6 @@ impl StatePolicy for StaticChildMeshPolicy {
     }
 
     // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
@@ -1332,11 +1411,12 @@ impl StatePolicy for StaticChildMeshPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -1395,8 +1475,9 @@ impl StatePolicy for StaticChildMeshPolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_child_mesh.scxml:29 :: _machine"]
     // SCE-MAP: static_child_mesh.scxml:29 :: _machine
     fn first_enabled_transition(
@@ -1404,20 +1485,13 @@ impl StatePolicy for StaticChildMeshPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticChildMeshState::Alone => {
                 if event == StaticChildMeshEvent::Open {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticChildMeshState::Joined,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // alone, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 None
@@ -1425,15 +1499,8 @@ impl StatePolicy for StaticChildMeshPolicy {
             StaticChildMeshState::Idle => {
                 if event == StaticChildMeshEvent::Back {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticChildMeshState::Working,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // idle, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -1441,26 +1508,14 @@ impl StatePolicy for StaticChildMeshPolicy {
             StaticChildMeshState::Working => {
                 if event == StaticChildMeshEvent::DoneInvokeList {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // working, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticChildMeshEvent::Again {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticChildMeshState::Idle,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // working, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 None
@@ -1470,40 +1525,38 @@ impl StatePolicy for StaticChildMeshPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_child_mesh.scxml:29 :: _machine"]
     // SCE-MAP: static_child_mesh.scxml:29 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticChildMeshState::Working => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_child_mesh.scxml:54 :: working :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticChildMeshEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+        match transition.0 {
+            // working, transition 0
+            0 => {
+                // SCE-MAP: static_child_mesh.scxml:54 :: working :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticChildMeshEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
             _ => {}

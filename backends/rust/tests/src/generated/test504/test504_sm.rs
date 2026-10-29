@@ -88,47 +88,299 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum Test504State {
-    Fail,
-    P,
-    Pass,
-    Ps1,
-    Ps2,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    S1,
-    S2,
-    S3,
-    S4,
-    S5,
-    S6,
+    S1 = 0,
+    S2 = 1,
+    P = 2,
+    Ps1 = 3,
+    Ps2 = 4,
+    S3 = 5,
+    S4 = 6,
+    S5 = 7,
+    S6 = 8,
+    Pass = 9,
+    Fail = 10,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum Test504Event {
-    Bar,
-    ErrorExecution,
-    Foo,
+    Bar = 0,
+    ErrorExecution = 1,
+    Foo = 2,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 3,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 4, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 4, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type Test504Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<Test504State, 4>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `Test504State`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const TEST504_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: s1
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: s2
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(4),
+                children: Span { start: 0, len: 1 },
+                initial: Some(TransitionId(12)),
+            },
+            // 2: p
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Parallel,
+                last_descendant: StateId(4),
+                children: Span { start: 1, len: 2 },
+                initial: None,
+            },
+            // 3: ps1
+            StateRow {
+                parent: Some(StateId(2)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 4: ps2
+            StateRow {
+                parent: Some(StateId(2)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 5: s3
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(5),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 6: s4
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(6),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 7: s5
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(7),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 8: s6
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(8),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 9: pass
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(9),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 10: fail
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(10),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[StateId(2), StateId(3), StateId(4)],
+        histories: &[],
+        transitions: &[
+            // 0: s1, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 1: p, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 2: p, transition 1
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: p, transition 2
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: s3, transition 0
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: s3, transition 1
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 6: s4, transition 0
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 7: s4, transition 1
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 8: s5, transition 0
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 9: s5, transition 1
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 10: s6, transition 0
+            TransitionRow {
+                source: Some(StateId(8)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 11: s6, transition 1
+            TransitionRow {
+                source: Some(StateId(8)),
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 12: s2, initial
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 12, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 13: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 13, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(2)),
+            Target::State(StateId(3)),
+            Target::State(StateId(5)),
+            Target::State(StateId(10)),
+            Target::State(StateId(6)),
+            Target::State(StateId(10)),
+            Target::State(StateId(7)),
+            Target::State(StateId(10)),
+            Target::State(StateId(8)),
+            Target::State(StateId(10)),
+            Target::State(StateId(9)),
+            Target::State(StateId(10)),
+            Target::State(StateId(2)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(13),
+        history_records: 0,
+        max_configuration: 4,
+        max_enabled: 2,
+        max_history_defaults: 0,
+        max_walk: 12,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -154,13 +406,6 @@ impl Test504Event {
 // ======================================================================
 
 pub struct Test504Policy {
-    // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
-    // `Test504Configuration` — `Vec<S>` under std, a `heapless::Vec` of exactly
-    // the most states one configuration holds under no_std. The std alias preserves
-    // the existing ABI; the no_std alias keeps the generated code allocator-free.
-    active_states: Test504Configuration,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
@@ -199,7 +444,10 @@ pub struct Test504Policy {
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
     basic_http_access_uri: String,
     // W3C SCXML 5.9.2: the configuration as the script engine's In() reads it —
-    // a copy of `active_states` by name, republished on every change to it.
+    // a copy by name of the engine's, which the engine's own test cannot be
+    // asked from inside the script engine's callback. Republished from the
+    // engine as each hook that can run a script begins
+    // (`publish_in_predicate_states`).
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -306,7 +554,6 @@ impl Test504Policy {
     ) -> Self {
         Self {
             script_engine,
-            active_states: Test504Configuration::new(),
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -371,44 +618,21 @@ impl Test504Policy {
         Self::build(session_id, script_engine)
     }
 
-    // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
-    fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states
-            .iter()
-            .any(|&s| Self::get_state_name(s) == state_id)
-    }
-
-    // §scxml-3.4: add `state` to the configuration this machine keeps; false
-    // when it was already there.
-    fn activate(&mut self, state: Test504State) -> bool {
-        if self.active_states.contains(&state) {
-            return false;
-        }
-        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        self.publish_in_predicate_states();
-        true
-    }
-
-    // §scxml-3.4: remove `state` from the configuration this machine keeps.
-    fn deactivate(&mut self, state: Test504State) {
-        self.active_states.retain(|&s| s != state);
-        self.publish_in_predicate_states();
-    }
-
-    // W3C SCXML 5.9.2: the script engine's In() reads a copy of the
-    // configuration, so the copy is refreshed on every change to it rather than
-    // once per selection. In() is asked inside executable content as well as in
+    // W3C SCXML 5.9.2: the script engine's In() is a callback it holds, which
+    // cannot reach the engine, so it reads a copy of the configuration by
+    // name. The copy is refreshed from the engine as each hook that can run a
+    // script begins — the engine adds a state before its onentry and removes it
+    // after its onexit, so between two hooks the configuration does not change
+    // under a script. In() is asked inside executable content as well as in
     // guards — `<if cond="In('s')">` in an <onentry> runs halfway through a
-    // microstep — and must see the configuration as it stands at that point.
-    fn publish_in_predicate_states(&self) {
+    // microstep — and sees the configuration as it stands at that point.
+    fn publish_in_predicate_states(&self, engine: &Engine<Self>) {
         if let Some(ref shared) = self.in_predicate_states {
             let mut states = shared.lock().unwrap();
             states.clear();
-            states.extend(
-                self.active_states
-                    .iter()
-                    .map(|&s| Self::get_state_name(s).to_string()),
-            );
+            for state in engine.get_active_states() {
+                states.push(Self::get_state_name(state).to_string());
+            }
         }
     }
 
@@ -473,9 +697,8 @@ impl Test504Policy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
-            // Seeded with the configuration as it stands now; every later change
-            // to it republishes (`activate` / `deactivate` / `set_active_states`).
-            self.publish_in_predicate_states();
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -571,9 +794,8 @@ impl Test504Policy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
-            // Seeded with the configuration as it stands now; every later change
-            // to it republishes (`activate` / `deactivate` / `set_active_states`).
-            self.publish_in_predicate_states();
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -586,6 +808,7 @@ impl Test504Policy {
             );
         }
 
+        self.publish_in_predicate_states(engine);
         self.script_engine_initialized = true;
     }
 
@@ -760,30 +983,62 @@ impl StatePolicy for Test504Policy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &TEST504_TABLES;
+    const STATES: &'static [Self::State] = &[
+        Test504State::S1,
+        Test504State::S2,
+        Test504State::P,
+        Test504State::Ps1,
+        Test504State::Ps2,
+        Test504State::S3,
+        Test504State::S4,
+        Test504State::S5,
+        Test504State::S6,
+        Test504State::Pass,
+        Test504State::Fail,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        Test504Event::Bar,
+        Test504Event::ErrorExecution,
+        Test504Event::Foo,
+        Test504Event::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 4 state(s) at
-    // most; a selection enables 2 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 3 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 4 state(s) at most; a selection enables 2 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 12 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(4) }, 2, 12, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<4, 0, 0>;
     type Configuration = Test504Configuration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        2,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 12 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        12,
-    >;
-    const MAX_CONFIGURATION: usize = 4;
-    const MAX_ENABLED: usize = 2;
-    const MAX_DEPTH: usize = 3;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = true;
@@ -796,7 +1051,6 @@ impl StatePolicy for Test504Policy {
     const NEEDS_EVENT_SCHEDULER: bool = false;
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     const NEEDS_PARENT: bool = false;
-    const HAS_ACTIVE_STATES: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -810,93 +1064,10 @@ impl StatePolicy for Test504Policy {
         Test504State::S1
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            Test504State::Fail => true,
-            Test504State::Pass => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            Test504State::P => Some(Test504State::S2),
-            Test504State::Ps1 => Some(Test504State::P),
-            Test504State::Ps2 => Some(Test504State::P),
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            Test504State::S2 => true,
-            _ => false,
-        }
-    }
-
-    fn is_parallel_state(state: Self::State) -> bool {
-        match state {
-            Test504State::P => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            Test504State::P => &[Test504State::Ps1, Test504State::Ps2],
-            Test504State::S2 => &[Test504State::P],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            Test504State::S2 => &[::sce_rust_runtime::EntryTarget::State(Test504State::P)],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(Test504State::S1)]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            Test504State::Fail => 10,
-            Test504State::P => 2,
-            Test504State::Pass => 9,
-            Test504State::Ps1 => 3,
-            Test504State::Ps2 => 4,
-            Test504State::S1 => 0,
-            Test504State::S2 => 1,
-            Test504State::S3 => 5,
-            Test504State::S4 => 6,
-            Test504State::S5 => 7,
-            Test504State::S6 => 8,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -956,37 +1127,6 @@ impl StatePolicy for Test504Policy {
         Test504Event::Null
     }
 
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `Self::Configuration`; this override matches that signature
-    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
-    // both resolve correctly.
-    fn get_active_states(&self) -> Self::Configuration {
-        self.active_states.clone()
-    }
-
-    // §scxml-3.4: the write half of the pair above, for `Engine::enter_at`.
-    // Emitted under the same condition as the read half because the same fact
-    // decides both — this machine keeps its own active set, so this machine is
-    // the one that can be handed one back. The trait default is a tripwire, so
-    // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(&mut self, states: &[Self::State]) {
-        self.active_states.clear();
-        for &state in states {
-            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        }
-        self.publish_in_predicate_states();
-    }
-
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
@@ -1026,10 +1166,9 @@ impl StatePolicy for Test504Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
-        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        if !self.activate(state) {
-            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
-        }
+        // W3C SCXML 3.8: the engine has added `state` to the configuration
+        // already, so an In() its onentry asks sees it.
+        self.publish_in_predicate_states(engine);
         match state {
             Test504State::S1 => {
                 // SCE-MAP: test504.scxml:14 :: s1 :: _state_body
@@ -1060,11 +1199,13 @@ impl StatePolicy for Test504Policy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
+        self.publish_in_predicate_states(engine);
         match state {
             Test504State::P => {
                 // SCE-MAP: test504.scxml:27 :: p :: _state_body
@@ -1184,9 +1325,6 @@ impl StatePolicy for Test504Policy {
             }
             _ => {}
         }
-        // §scxml-D-exitStates: out of the configuration only after its onexit
-        // and invoke cancellation — the configuration.delete(s) step.
-        self.deactivate(state);
     }
 
     // §scxml-5.10: the event whose transitions are about to be selected is the
@@ -1201,6 +1339,9 @@ impl StatePolicy for Test504Policy {
     ) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
+        // A selection does not change the configuration, so the guards it
+        // runs read the one published here.
+        self.publish_in_predicate_states(engine);
         if event != Self::null_event() {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
             // its member's when a name the document does not write was matched
@@ -1243,8 +1384,9 @@ impl StatePolicy for Test504Policy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
     // SCE-MAP: test504.scxml:5 :: _machine
     fn first_enabled_transition(
@@ -1252,40 +1394,25 @@ impl StatePolicy for Test504Policy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             Test504State::P => {
                 if event == Test504Event::Foo {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Ps1)],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // p, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == Test504Event::Bar {
                     if self.safe_evaluate_guard("_scxml_eq(Var4, 1)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::S3)],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // p, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == Test504Event::Bar {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Fail)],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // p, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -1293,13 +1420,8 @@ impl StatePolicy for Test504Policy {
             Test504State::S1 => {
                 if event == Test504Event::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::P)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s1, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 None
@@ -1307,24 +1429,14 @@ impl StatePolicy for Test504Policy {
             Test504State::S3 => {
                 if event == Test504Event::Null {
                     if self.safe_evaluate_guard("_scxml_eq(Var1, 2)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::S4)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s3, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == Test504Event::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Fail)],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s3, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 None
@@ -1332,24 +1444,14 @@ impl StatePolicy for Test504Policy {
             Test504State::S4 => {
                 if event == Test504Event::Null {
                     if self.safe_evaluate_guard("_scxml_eq(Var2, 2)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::S5)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s4, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == Test504Event::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Fail)],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s4, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1357,24 +1459,14 @@ impl StatePolicy for Test504Policy {
             Test504State::S5 => {
                 if event == Test504Event::Null {
                     if self.safe_evaluate_guard("_scxml_eq(Var3, 2)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::S6)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s5, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == Test504Event::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Fail)],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s5, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 None
@@ -1382,24 +1474,14 @@ impl StatePolicy for Test504Policy {
             Test504State::S6 => {
                 if event == Test504Event::Null {
                     if self.safe_evaluate_guard("_scxml_eq(Var5, 1)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Pass)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s6, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == Test504Event::Null {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test504State::Fail)],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s6, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 None
@@ -1409,53 +1491,45 @@ impl StatePolicy for Test504Policy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
     // SCE-MAP: test504.scxml:5 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            Test504State::P => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: test504.scxml:31 :: p :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="Var4">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "_scxml_add(Var4, 1)";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "Var4", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'Var4': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            Test504Event::ErrorExecution,
-                                            "<assign> to 'Var4' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+        self.publish_in_predicate_states(engine);
+        match transition.0 {
+            // p, transition 0
+            1 => {
+                // SCE-MAP: test504.scxml:31 :: p :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="Var4">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "_scxml_add(Var4, 1)";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "Var4", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var4': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                Test504Event::ErrorExecution,
+                                "<assign> to 'Var4' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    _ => {}
                 }
             }
             _ => {}

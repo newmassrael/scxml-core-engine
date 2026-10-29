@@ -88,42 +88,157 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticRecordListState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Collecting,
+    Collecting = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticRecordListEvent {
-    Clear,
-    Copy,
-    DayPicked,
-    ErrorExecution,
-    Latest,
-    Reuse,
-    Sum,
+    Clear = 0,
+    Copy = 1,
+    DayPicked = 2,
+    ErrorExecution = 3,
+    Latest = 4,
+    Reuse = 5,
+    Sum = 6,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 7,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticRecordListConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticRecordListState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticRecordListState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_RECORD_LIST_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: collecting
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: collecting, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: collecting, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: collecting, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: collecting, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: collecting, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: collecting, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: collecting, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(7),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -463,7 +578,8 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -755,30 +871,54 @@ impl StatePolicy for StaticRecordListPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_RECORD_LIST_TABLES;
+    const STATES: &'static [Self::State] = &[StaticRecordListState::Collecting];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticRecordListEvent::Clear,
+        StaticRecordListEvent::Copy,
+        StaticRecordListEvent::DayPicked,
+        StaticRecordListEvent::ErrorExecution,
+        StaticRecordListEvent::Latest,
+        StaticRecordListEvent::Reuse,
+        StaticRecordListEvent::Sum,
+        StaticRecordListEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticRecordListConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -804,69 +944,10 @@ impl StatePolicy for StaticRecordListPolicy {
         StaticRecordListState::Collecting
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticRecordListState::Collecting,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticRecordListState::Collecting => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -912,16 +993,6 @@ impl StatePolicy for StaticRecordListPolicy {
 
     fn null_event() -> Self::Event {
         StaticRecordListEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -991,17 +1062,19 @@ impl StatePolicy for StaticRecordListPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_record_list.scxml:16 :: _machine"]
     // SCE-MAP: static_record_list.scxml:16 :: _machine
     fn first_enabled_transition(
@@ -1009,84 +1082,49 @@ impl StatePolicy for StaticRecordListPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticRecordListState::Collecting => {
                 if event == StaticRecordListEvent::DayPicked {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticRecordListEvent::Sum {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticRecordListEvent::Copy {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticRecordListEvent::Latest {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StaticRecordListEvent::Reuse {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StaticRecordListEvent::Clear {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticRecordListEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // collecting, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 None
@@ -1096,62 +1134,65 @@ impl StatePolicy for StaticRecordListPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_record_list.scxml:16 :: _machine"]
     // SCE-MAP: static_record_list.scxml:16 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticRecordListState::Collecting => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_record_list.scxml:38 :: collecting :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticRecordListPayload::DayPicked(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="draft.year">
-                            self.draft.year = ev.year;
+        match transition.0 {
+            // collecting, transition 0
+            0 => {
+                // SCE-MAP: static_record_list.scxml:38 :: collecting :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticRecordListPayload::DayPicked(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="draft.year">
+                    self.draft.year = ev.year;
 
-                            // W3C SCXML 5.3: <assign location="draft.month">
-                            self.draft.month = ev.month;
+                    // W3C SCXML 5.3: <assign location="draft.month">
+                    self.draft.month = ev.month;
 
-                            // W3C SCXML 5.3: <assign location="draft.dayOfMonth">
-                            self.draft.dayOfMonth = ev.dayOfMonth;
+                    // W3C SCXML 5.3: <assign location="draft.dayOfMonth">
+                    self.draft.dayOfMonth = ev.dayOfMonth;
 
-                            // SCE Accepted Subset §2.15: <sce:append target="days">
-                            let sce_failed = if self.days.len() < 3 {
-                                self.days.push(self.draft);
-                                false
-                            } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<sce:append target='days'>: the list already holds its capacity of 3"));
-                                true
-                            };
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
+                    // SCE Accepted Subset §2.15: <sce:append target="days">
+                    let sce_failed = if self.days.len() < 3 {
+                        self.days.push(self.draft);
+                        false
+                    } else {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StaticRecordListEvent::ErrorExecution,
+                            "<sce:append target='days'>: the list already holds its capacity of 3",
+                        ));
+                        true
+                    };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: static_record_list.scxml:45 :: collecting :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="total">
-                            self.total = 0;
+                }
+            }
+            // collecting, transition 1
+            1 => {
+                // SCE-MAP: static_record_list.scxml:45 :: collecting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="total">
+                    self.total = 0;
 
-                            for d in self.days.clone() {
-                                let _ = &d;
+                    for d in self.days.clone() {
+                        let _ = &d;
 
-                                // W3C SCXML 5.3: <assign location="total">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="total">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.total = sce_forge_runtime::algorithm::add::<u32>(self.total, d.dayOfMonth as u32)?;
     Ok(())
 })() {
@@ -1161,92 +1202,94 @@ impl StatePolicy for StaticRecordListPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    2 => {
-                        // SCE-MAP: static_record_list.scxml:52 :: collecting :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="copies">
-                            self.copies.clear();
+                }
+            }
+            // collecting, transition 2
+            2 => {
+                // SCE-MAP: static_record_list.scxml:52 :: collecting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="copies">
+                    self.copies.clear();
 
-                            for (sce_position_of_i, d) in self.days.clone().into_iter().enumerate()
-                            {
-                                let i = sce_position_of_i as u32;
-                                let _ = (&d, &i);
+                    for (sce_position_of_i, d) in self.days.clone().into_iter().enumerate() {
+                        let i = sce_position_of_i as u32;
+                        let _ = (&d, &i);
 
-                                // SCE Accepted Subset §2.15: <sce:append target="copies">
-                                let sce_failed = if self.copies.len() < 3 {
-                                    self.copies.push(d);
-                                    false
-                                } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<sce:append target='copies'>: the list already holds its capacity of 3"));
-                                    true
-                                };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        // SCE Accepted Subset §2.15: <sce:append target="copies">
+                        let sce_failed = if self.copies.len() < 3 {
+                            self.copies.push(d);
+                            false
+                        } else {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<sce:append target='copies'>: the list already holds its capacity of 3"));
+                            true
+                        };
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    3 => {
-                        // SCE-MAP: static_record_list.scxml:60 :: collecting :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            for d in self.days.clone() {
-                                let _ = &d;
+                }
+            }
+            // collecting, transition 3
+            3 => {
+                // SCE-MAP: static_record_list.scxml:60 :: collecting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    for d in self.days.clone() {
+                        let _ = &d;
 
-                                // W3C SCXML 5.3: <assign location="last">
-                                self.last = d;
+                        // W3C SCXML 5.3: <assign location="last">
+                        self.last = d;
+                    }
+                }
+            }
+            // collecting, transition 4
+            4 => {
+                // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="draft">
+                    self.draft = self.last;
+                }
+            }
+            // collecting, transition 5
+            5 => {
+                // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // SCE Accepted Subset §2.15: <sce:clear target="days">
+                    self.days.clear();
+                }
+            }
+            // collecting, transition 6
+            6 => {
+                // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="errors">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    4 => {
-                        // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="draft">
-                            self.draft = self.last;
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="days">
-                            self.days.clear();
-                        }
-                    }
-                    6 => {
-                        // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="errors">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
             _ => {}

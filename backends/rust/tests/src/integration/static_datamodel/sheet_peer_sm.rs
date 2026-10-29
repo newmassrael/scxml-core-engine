@@ -101,49 +101,213 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum SheetPeerState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Open,
+    Open = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum SheetPeerEvent {
-    ErrorExecution,
-    SheetAddCol,
-    SheetAddRow,
-    SheetCell,
-    SheetCol,
-    SheetDropCol,
-    SheetDropRow,
-    SheetEdit,
-    SheetFormula,
-    SheetGone,
-    SheetGoneCol,
-    SheetJoin,
-    SheetRecompute,
-    SheetRow,
+    ErrorExecution = 0,
+    SheetAddCol = 1,
+    SheetAddRow = 2,
+    SheetCell = 3,
+    SheetCol = 4,
+    SheetDropCol = 5,
+    SheetDropRow = 6,
+    SheetEdit = 7,
+    SheetFormula = 8,
+    SheetGone = 9,
+    SheetGoneCol = 10,
+    SheetJoin = 11,
+    SheetRecompute = 12,
+    SheetRow = 13,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 14,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type SheetPeerConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<SheetPeerState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `SheetPeerState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const SHEET_PEER_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: open
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: open, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: open, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: open, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: open, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: open, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: open, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: open, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: open, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: open, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 9: open, transition 9
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 10: open, transition 10
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 11: open, transition 11
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 12: open, transition 12
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 13: open, transition 13
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 14: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(14),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -1376,7 +1540,8 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -1892,30 +2057,61 @@ impl StatePolicy for SheetPeerPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &SHEET_PEER_TABLES;
+    const STATES: &'static [Self::State] = &[SheetPeerState::Open];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        SheetPeerEvent::ErrorExecution,
+        SheetPeerEvent::SheetAddCol,
+        SheetPeerEvent::SheetAddRow,
+        SheetPeerEvent::SheetCell,
+        SheetPeerEvent::SheetCol,
+        SheetPeerEvent::SheetDropCol,
+        SheetPeerEvent::SheetDropRow,
+        SheetPeerEvent::SheetEdit,
+        SheetPeerEvent::SheetFormula,
+        SheetPeerEvent::SheetGone,
+        SheetPeerEvent::SheetGoneCol,
+        SheetPeerEvent::SheetJoin,
+        SheetPeerEvent::SheetRecompute,
+        SheetPeerEvent::SheetRow,
+        SheetPeerEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = SheetPeerConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -1941,67 +2137,10 @@ impl StatePolicy for SheetPeerPolicy {
         SheetPeerState::Open
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(SheetPeerState::Open)]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            SheetPeerState::Open => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -2061,16 +2200,6 @@ impl StatePolicy for SheetPeerPolicy {
 
     fn null_event() -> Self::Event {
         SheetPeerEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -2252,17 +2381,19 @@ impl StatePolicy for SheetPeerPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: sheet_peer.scxml:49 :: _machine"]
     // SCE-MAP: sheet_peer.scxml:49 :: _machine
     fn first_enabled_transition(
@@ -2270,161 +2401,91 @@ impl StatePolicy for SheetPeerPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             SheetPeerState::Open => {
                 if event == SheetPeerEvent::SheetJoin {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == SheetPeerEvent::SheetEdit {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == SheetPeerEvent::SheetFormula {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == SheetPeerEvent::SheetCell {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == SheetPeerEvent::SheetRecompute {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == SheetPeerEvent::SheetAddRow {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == SheetPeerEvent::SheetRow {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == SheetPeerEvent::SheetDropRow {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == SheetPeerEvent::SheetGone {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 8,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == SheetPeerEvent::SheetAddCol {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 9,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == SheetPeerEvent::SheetCol {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 10,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 10
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == SheetPeerEvent::SheetDropCol {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 11,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 11
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == SheetPeerEvent::SheetGoneCol {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 12,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 12
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == SheetPeerEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 13,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 13
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 None
@@ -2434,637 +2495,577 @@ impl StatePolicy for SheetPeerPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: sheet_peer.scxml:49 :: _machine"]
     // SCE-MAP: sheet_peer.scxml:49 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            SheetPeerState::Open => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetJoin(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="node">
-                            self.node = ev.node;
+        match transition.0 {
+            // open, transition 0
+            0 => {
+                // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetJoin(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="node">
+                    self.node = ev.node;
 
-                            // W3C SCXML 5.3: <assign location="hub">
-                            self.hub = ev.hub;
-                        }
+                    // W3C SCXML 5.3: <assign location="hub">
+                    self.hub = ev.hub;
+                }
+            }
+            // open, transition 1
+            1 => {
+                // SCE-MAP: sheet_peer.scxml:146 :: open :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetEdit(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="clock">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: sheet_peer.scxml:146 :: open :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetEdit(ev) => ev.clone(),
-                            _ => return,
+
+                    {
+                        let send_id: &str = "__send_0";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("row".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("col".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("value".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.value).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.clock.wallTime).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("counter".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Int(i64::from(self.clock.counter)),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("nodeId".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("op".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aRow".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aCol".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aVal".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bRow".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bCol".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bVal".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="clock">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                        let event_data: &str = &event_data_string;
 
-                            {
-                                let send_id: &str = "__send_0";
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta =
+                                sce_rust_runtime::EventWithMetadata::new(SheetPeerEvent::SheetCell);
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("row".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("col".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.value).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("op".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aRow".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aCol".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aVal".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bRow".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bCol".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bVal".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
 
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetCell,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                    {
+                        let send_id: &str = "__send_1";
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("row".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("col".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("value".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.value).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.clock.wallTime).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("counter".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Int(i64::from(self.clock.counter)),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("nodeId".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("op".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.no_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.no_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.no_number).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.no_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.no_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.no_number).to_string(),
+                                ),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                            {
-                                let send_id: &str = "__send_1";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("row".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("col".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.value).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("op".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_number).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_number).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.cell".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.cell".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
                             }
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    2 => {
-                        // SCE-MAP: sheet_peer.scxml:186 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetFormula(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // open, transition 2
+            2 => {
+                // SCE-MAP: sheet_peer.scxml:186 :: open :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetFormula(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="clock">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="clock">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            {
-                                let send_id: &str = "__send_2";
+                    {
+                        let send_id: &str = "__send_2";
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("row".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("col".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("value".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("op".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aRow).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aCol).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aVal).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bRow).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bCol).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bVal).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("row".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("col".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("value".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.clock.wallTime).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("counter".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Int(i64::from(self.clock.counter)),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("nodeId".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("op".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aRow).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aCol).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aVal).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bRow).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bCol).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bVal).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetCell,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta =
+                                sce_rust_runtime::EventWithMetadata::new(SheetPeerEvent::SheetCell);
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
 
-                            {
-                                let send_id: &str = "__send_3";
+                    {
+                        let send_id: &str = "__send_3";
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("row".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("col".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.no_number).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("op".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("aRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aRow).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aCol).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("aVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.aVal).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params
-                                        .entry("bRef".to_string())
-                                        .or_default()
-                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bRow".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bRow).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bCol".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bCol).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("bVal".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.bVal).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("row".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("col".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("value".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.no_number).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (self.clock.wallTime).to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("counter".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Int(i64::from(self.clock.counter)),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("nodeId".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("op".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("aRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aRow).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aCol).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("aVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.aVal).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("bRef".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bRow".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bRow).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bCol".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bCol).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("bVal".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.bVal).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.cell".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.cell".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
                             }
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    3 => {
-                        // SCE-MAP: sheet_peer.scxml:225 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetCell(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.9: cond="_event.data.nodeId !== node"
-                            if ev.nodeId != self.node {
-                                // W3C SCXML 5.3: <assign location="stamp.wallTime">
-                                self.stamp.wallTime = ev.wallTime;
+                }
+            }
+            // open, transition 3
+            3 => {
+                // SCE-MAP: sheet_peer.scxml:225 :: open :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetCell(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.9: cond="_event.data.nodeId !== node"
+                    if ev.nodeId != self.node {
+                        // W3C SCXML 5.3: <assign location="stamp.wallTime">
+                        self.stamp.wallTime = ev.wallTime;
 
-                                // W3C SCXML 5.3: <assign location="stamp.counter">
-                                self.stamp.counter = ev.counter;
+                        // W3C SCXML 5.3: <assign location="stamp.counter">
+                        self.stamp.counter = ev.counter;
 
-                                // W3C SCXML 5.3: <assign location="stamp.nodeId">
-                                self.stamp.nodeId = ev.nodeId;
+                        // W3C SCXML 5.3: <assign location="stamp.nodeId">
+                        self.stamp.nodeId = ev.nodeId;
 
-                                // W3C SCXML 5.3: <assign location="clock">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 5.3: <assign location="clock">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.clock = call_HlcReceive__vv(&self.clock, &self.stamp, self.clock.wallTime, self.node)?;
     Ok(())
 })() {
@@ -3074,598 +3075,580 @@ impl StatePolicy for SheetPeerPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
-
-                            // W3C SCXML 5.3: <assign location="write.row">
-                            self.write.row = ev.row;
-
-                            // W3C SCXML 5.3: <assign location="write.col">
-                            self.write.col = ev.col;
-
-                            // W3C SCXML 5.3: <assign location="write.value">
-                            self.write.value = ev.value;
-
-                            // W3C SCXML 5.3: <assign location="write.wallTime">
-                            self.write.wallTime = ev.wallTime;
-
-                            // W3C SCXML 5.3: <assign location="write.counter">
-                            self.write.counter = ev.counter;
-
-                            // W3C SCXML 5.3: <assign location="write.nodeId">
-                            self.write.nodeId = ev.nodeId;
-
-                            // W3C SCXML 5.3: <assign location="write.op">
-                            self.write.op = ev.op;
-
-                            // W3C SCXML 5.3: <assign location="write.aRef">
-                            self.write.aRef = ev.aRef;
-
-                            // W3C SCXML 5.3: <assign location="write.aRow">
-                            self.write.aRow = ev.aRow;
-
-                            // W3C SCXML 5.3: <assign location="write.aCol">
-                            self.write.aCol = ev.aCol;
-
-                            // W3C SCXML 5.3: <assign location="write.aVal">
-                            self.write.aVal = ev.aVal;
-
-                            // W3C SCXML 5.3: <assign location="write.bRef">
-                            self.write.bRef = ev.bRef;
-
-                            // W3C SCXML 5.3: <assign location="write.bRow">
-                            self.write.bRow = ev.bRow;
-
-                            // W3C SCXML 5.3: <assign location="write.bCol">
-                            self.write.bCol = ev.bCol;
-
-                            // W3C SCXML 5.3: <assign location="write.bVal">
-                            self.write.bVal = ev.bVal;
-
-                            // W3C SCXML 5.3: <assign location="cells">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.cells = sce_forge_runtime::algorithm::within((call_LwwWrite__vv(&self.cells, &self.write)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            {
-                                let send_id: &str = "__send_4";
-
-                                let event_data: &str = "";
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRecompute,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 1"
-                            if self.hub && ev.nodeId != 1 {
-                                {
-                                    let send_id: &str = "__send_5";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("row".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.row).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("col".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.col).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (ev.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                ev.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("op".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("aRef".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aRow".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aRow).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aCol".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aCol).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aVal".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aVal).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("bRef".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bRow".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bRow).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bCol".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bCol).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bVal".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bVal).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.cell".to_string(),
-                                            target: "#alice".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
-
-                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 2"
-                            if self.hub && ev.nodeId != 2 {
-                                {
-                                    let send_id: &str = "__send_6";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("row".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.row).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("col".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.col).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (ev.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                ev.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.nodeId).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("op".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("aRef".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aRow".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aRow).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aCol".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aCol).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("aVal".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.aVal).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("bRef".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bRow".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bRow).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bCol".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bCol).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("bVal".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.bVal).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.cell".to_string(),
-                                            target: "#bob".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
-                    4 => {
-                        // SCE-MAP: sheet_peer.scxml:264 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="trail">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.trail = sce_forge_runtime::algorithm::within((call_SheetSettle__vvvvv(&self.cells, &self.rows, &self.gone, &self.cols, &self.gone_cols)?).as_slice(), 768)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
 
-                            // W3C SCXML 5.3: <assign location="shown">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.shown = sce_forge_runtime::algorithm::within((call_SheetShow__vv(&self.cells, &self.trail)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="write.row">
+                    self.write.row = ev.row;
+
+                    // W3C SCXML 5.3: <assign location="write.col">
+                    self.write.col = ev.col;
+
+                    // W3C SCXML 5.3: <assign location="write.value">
+                    self.write.value = ev.value;
+
+                    // W3C SCXML 5.3: <assign location="write.wallTime">
+                    self.write.wallTime = ev.wallTime;
+
+                    // W3C SCXML 5.3: <assign location="write.counter">
+                    self.write.counter = ev.counter;
+
+                    // W3C SCXML 5.3: <assign location="write.nodeId">
+                    self.write.nodeId = ev.nodeId;
+
+                    // W3C SCXML 5.3: <assign location="write.op">
+                    self.write.op = ev.op;
+
+                    // W3C SCXML 5.3: <assign location="write.aRef">
+                    self.write.aRef = ev.aRef;
+
+                    // W3C SCXML 5.3: <assign location="write.aRow">
+                    self.write.aRow = ev.aRow;
+
+                    // W3C SCXML 5.3: <assign location="write.aCol">
+                    self.write.aCol = ev.aCol;
+
+                    // W3C SCXML 5.3: <assign location="write.aVal">
+                    self.write.aVal = ev.aVal;
+
+                    // W3C SCXML 5.3: <assign location="write.bRef">
+                    self.write.bRef = ev.bRef;
+
+                    // W3C SCXML 5.3: <assign location="write.bRow">
+                    self.write.bRow = ev.bRow;
+
+                    // W3C SCXML 5.3: <assign location="write.bCol">
+                    self.write.bCol = ev.bCol;
+
+                    // W3C SCXML 5.3: <assign location="write.bVal">
+                    self.write.bVal = ev.bVal;
+
+                    // W3C SCXML 5.3: <assign location="cells">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.cells = sce_forge_runtime::algorithm::within(
+                                (call_LwwWrite__vv(&self.cells, &self.write)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: sheet_peer.scxml:271 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetAddRow(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="lamport">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.lamport = sce_forge_runtime::algorithm::add::<u64>(self.lamport, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="newKey">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.new_key = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.lamport, 256)?, self.node)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    {
+                        let send_id: &str = "__send_4";
 
+                        let event_data: &str = "";
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetRecompute,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 1"
+                    if self.hub && ev.nodeId != 1 {
+                        {
+                            let send_id: &str = "__send_5";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("row".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("col".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.value).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("op".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("aRef".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aRow".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aRow).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aCol".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aCol).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aVal".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aVal).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("bRef".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bRow".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bRow).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bCol".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bCol).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bVal".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bVal).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let send_id: &str = "__send_7";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.new_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("after".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.after).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.cell".to_string(),
+                                    target: "#alice".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
                                 };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRow,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
                                 }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
                             }
 
-                            {
-                                let send_id: &str = "__send_8";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.new_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("after".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.after).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.row".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    6 => {
-                        // SCE-MAP: sheet_peer.scxml:288 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetRow(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
+
+                    // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 2"
+                    if self.hub && ev.nodeId != 2 {
+                        {
+                            let send_id: &str = "__send_6";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("row".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("col".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("value".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.value).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("wallTime".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.wallTime).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("counter".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("nodeId".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String(
+                                        (ev.nodeId).to_string(),
+                                    ),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("op".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("aRef".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aRow".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aRow).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aCol".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aCol).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("aVal".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.aVal).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params
+                                    .entry("bRef".to_string())
+                                    .or_default()
+                                    .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bRow".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bRow).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bCol".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bCol).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("bVal".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.bVal).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="_event.data.key / 256 > lamport"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.cell".to_string(),
+                                    target: "#bob".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
+                            }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
+                        }
+                    }
+                }
+            }
+            // open, transition 4
+            4 => {
+                // SCE-MAP: sheet_peer.scxml:264 :: open :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="trail">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.trail = sce_forge_runtime::algorithm::within(
+                                (call_SheetSettle__vvvvv(
+                                    &self.cells,
+                                    &self.rows,
+                                    &self.gone,
+                                    &self.cols,
+                                    &self.gone_cols,
+                                )?)
+                                .as_slice(),
+                                768,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="shown">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.shown = sce_forge_runtime::algorithm::within(
+                                (call_SheetShow__vv(&self.cells, &self.trail)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // open, transition 5
+            5 => {
+                // SCE-MAP: sheet_peer.scxml:271 :: open :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetAddRow(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="lamport">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.lamport =
+                                sce_forge_runtime::algorithm::add::<u64>(self.lamport, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="newKey">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.new_key = sce_forge_runtime::algorithm::add::<u64>(
+                                sce_forge_runtime::algorithm::mul::<u64>(self.lamport, 256)?,
+                                self.node,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    {
+                        let send_id: &str = "__send_7";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.new_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("after".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.after).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta =
+                                sce_rust_runtime::EventWithMetadata::new(SheetPeerEvent::SheetRow);
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id: &str = "__send_8";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.new_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("after".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.after).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.row".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 6
+            6 => {
+                // SCE-MAP: sheet_peer.scxml:288 :: open :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetRow(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="_event.data.key / 256 > lamport"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(sce_forge_runtime::algorithm::div::<u64>(ev.key, 256)? > self.lamport)
 })() {
     Ok(sce_value) => sce_value,
@@ -3692,24 +3675,24 @@ if sce_failed {
 }
 
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            // W3C SCXML 5.3: <assign location="placed.key">
-                            self.placed.key = ev.key;
+                    // W3C SCXML 5.3: <assign location="placed.key">
+                    self.placed.key = ev.key;
 
-                            // W3C SCXML 5.3: <assign location="placed.after">
-                            self.placed.after = ev.after;
+                    // W3C SCXML 5.3: <assign location="placed.after">
+                    self.placed.after = ev.after;
 
-                            // W3C SCXML 5.9: cond="_event.data.after !== 0 && !RgaHolds(rows, _event.data.key) && !RgaHolds(rows, _event.data.after)"
-                            if ev.after != 0
-                                && !call_RgaHolds__v(&self.rows, ev.key)
-                                && !call_RgaHolds__v(&self.rows, ev.after)
-                            {
-                                // W3C SCXML 5.3: <assign location="orphans">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="_event.data.after !== 0 && !RgaHolds(rows, _event.data.key) && !RgaHolds(rows, _event.data.after)"
+                    if ev.after != 0
+                        && !call_RgaHolds__v(&self.rows, ev.key)
+                        && !call_RgaHolds__v(&self.rows, ev.after)
+                    {
+                        // W3C SCXML 5.3: <assign location="orphans">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.orphans = sce_forge_runtime::algorithm::add::<u32>(self.orphans, 1)?;
     Ok(())
 })() {
@@ -3719,49 +3702,54 @@ if sce_failed {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+
+                    // W3C SCXML 5.3: <assign location="rows">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.rows = sce_forge_runtime::algorithm::within(
+                                (call_RgaInsert__vv(&self.rows, &self.placed)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="rows">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.rows = sce_forge_runtime::algorithm::within((call_RgaInsert__vv(&self.rows, &self.placed)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    {
+                        let send_id: &str = "__send_9";
 
-                            {
-                                let send_id: &str = "__send_9";
+                        let event_data: &str = "";
 
-                                let event_data: &str = "";
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetRecompute,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
 
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRecompute,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(self.hub && sce_forge_runtime::algorithm::rem::<u64>(ev.key, 256)? != 1)
 })() {
     Ok(sce_value) => sce_value,
@@ -3833,15 +3821,15 @@ if sce_failed {
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
     let _ = send_id;  // suppress unused warning when no send operation
 }}
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 2"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 2"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(self.hub && sce_forge_runtime::algorithm::rem::<u64>(ev.key, 256)? != 2)
 })() {
     Ok(sce_value) => sce_value,
@@ -3913,513 +3901,504 @@ if sce_failed {
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
     let _ = send_id;  // suppress unused warning when no send operation
 }}
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
                         }
                     }
-                    7 => {
-                        // SCE-MAP: sheet_peer.scxml:314 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetDropRow(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // open, transition 7
+            7 => {
+                // SCE-MAP: sheet_peer.scxml:314 :: open :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetDropRow(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_12";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("by".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_12";
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("by".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta =
+                                sce_rust_runtime::EventWithMetadata::new(SheetPeerEvent::SheetGone);
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
 
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetGone,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                    {
+                        let send_id: &str = "__send_13";
 
-                            {
-                                let send_id: &str = "__send_13";
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.row).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("by".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.row).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("by".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.gone".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.gone".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
                             }
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    8 => {
-                        // SCE-MAP: sheet_peer.scxml:327 :: open :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetGone(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // open, transition 8
+            8 => {
+                // SCE-MAP: sheet_peer.scxml:327 :: open :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetGone(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="removal.key">
+                    self.removal.key = ev.key;
+
+                    // W3C SCXML 5.3: <assign location="removal.by">
+                    self.removal.by = ev.by;
+
+                    // W3C SCXML 5.3: <assign location="gone">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.gone = sce_forge_runtime::algorithm::within(
+                                (call_RgaRemove__vv(&self.gone, &self.removal)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="removal.key">
-                            self.removal.key = ev.key;
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="removal.by">
-                            self.removal.by = ev.by;
+                    {
+                        let send_id: &str = "__send_14";
 
-                            // W3C SCXML 5.3: <assign location="gone">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.gone = sce_forge_runtime::algorithm::within((call_RgaRemove__vv(&self.gone, &self.removal)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                        let event_data: &str = "";
 
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetRecompute,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
+                    if self.hub && ev.by != 1 {
+                        {
+                            let send_id: &str = "__send_15";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("key".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.key).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.by).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let send_id: &str = "__send_14";
-
-                                let event_data: &str = "";
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.gone".to_string(),
+                                    target: "#alice".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRecompute,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
-                            if self.hub && ev.by != 1 {
-                                {
-                                    let send_id: &str = "__send_15";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("key".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.key).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.gone".to_string(),
-                                            target: "#alice".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
                                 }
                             }
 
-                            // W3C SCXML 5.9: cond="hub && _event.data.by !== 2"
-                            if self.hub && ev.by != 2 {
-                                {
-                                    let send_id: &str = "__send_16";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("key".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.key).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.gone".to_string(),
-                                            target: "#bob".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    9 => {
-                        // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetAddCol(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="lamport">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.lamport = sce_forge_runtime::algorithm::add::<u64>(self.lamport, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
 
-                            // W3C SCXML 5.3: <assign location="newKey">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.new_key = sce_forge_runtime::algorithm::add::<u64>(sce_forge_runtime::algorithm::mul::<u64>(self.lamport, 256)?, self.node)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    // W3C SCXML 5.9: cond="hub && _event.data.by !== 2"
+                    if self.hub && ev.by != 2 {
+                        {
+                            let send_id: &str = "__send_16";
 
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("key".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.key).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.by).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let send_id: &str = "__send_17";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.new_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("after".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.after).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.gone".to_string(),
+                                    target: "#bob".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
                                 };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetCol,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
                                 }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
                             }
 
-                            {
-                                let send_id: &str = "__send_18";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.new_key).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("after".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.after).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.col".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    10 => {
-                        // SCE-MAP: sheet_peer.scxml:362 :: open :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetCol(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // open, transition 9
+            9 => {
+                // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetAddCol(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="lamport">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.lamport =
+                                sce_forge_runtime::algorithm::add::<u64>(self.lamport, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="_event.data.key / 256 > lamport"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="newKey">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.new_key = sce_forge_runtime::algorithm::add::<u64>(
+                                sce_forge_runtime::algorithm::mul::<u64>(self.lamport, 256)?,
+                                self.node,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    {
+                        let send_id: &str = "__send_17";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.new_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("after".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.after).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta =
+                                sce_rust_runtime::EventWithMetadata::new(SheetPeerEvent::SheetCol);
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id: &str = "__send_18";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.new_key).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("after".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.after).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.col".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 10
+            10 => {
+                // SCE-MAP: sheet_peer.scxml:362 :: open :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetCol(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="_event.data.key / 256 > lamport"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(sce_forge_runtime::algorithm::div::<u64>(ev.key, 256)? > self.lamport)
 })() {
     Ok(sce_value) => sce_value,
@@ -4446,24 +4425,24 @@ if sce_failed {
 }
 
 }
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            // W3C SCXML 5.3: <assign location="placed.key">
-                            self.placed.key = ev.key;
+                    // W3C SCXML 5.3: <assign location="placed.key">
+                    self.placed.key = ev.key;
 
-                            // W3C SCXML 5.3: <assign location="placed.after">
-                            self.placed.after = ev.after;
+                    // W3C SCXML 5.3: <assign location="placed.after">
+                    self.placed.after = ev.after;
 
-                            // W3C SCXML 5.9: cond="_event.data.after !== 0 && !RgaHolds(cols, _event.data.key) && !RgaHolds(cols, _event.data.after)"
-                            if ev.after != 0
-                                && !call_RgaHolds__v(&self.cols, ev.key)
-                                && !call_RgaHolds__v(&self.cols, ev.after)
-                            {
-                                // W3C SCXML 5.3: <assign location="orphans">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="_event.data.after !== 0 && !RgaHolds(cols, _event.data.key) && !RgaHolds(cols, _event.data.after)"
+                    if ev.after != 0
+                        && !call_RgaHolds__v(&self.cols, ev.key)
+                        && !call_RgaHolds__v(&self.cols, ev.after)
+                    {
+                        // W3C SCXML 5.3: <assign location="orphans">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.orphans = sce_forge_runtime::algorithm::add::<u32>(self.orphans, 1)?;
     Ok(())
 })() {
@@ -4473,49 +4452,54 @@ if sce_failed {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+
+                    // W3C SCXML 5.3: <assign location="cols">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.cols = sce_forge_runtime::algorithm::within(
+                                (call_RgaInsert__vv(&self.cols, &self.placed)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="cols">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.cols = sce_forge_runtime::algorithm::within((call_RgaInsert__vv(&self.cols, &self.placed)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    {
+                        let send_id: &str = "__send_19";
 
-                            {
-                                let send_id: &str = "__send_19";
+                        let event_data: &str = "";
 
-                                let event_data: &str = "";
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetRecompute,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
 
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRecompute,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(self.hub && sce_forge_runtime::algorithm::rem::<u64>(ev.key, 256)? != 1)
 })() {
     Ok(sce_value) => sce_value,
@@ -4587,15 +4571,15 @@ if sce_failed {
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
     let _ = send_id;  // suppress unused warning when no send operation
 }}
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
+                        }
+                    }
 
-                            {
-                                let mut if_cond_failed = false;
-                                // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 2"
-                                if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    {
+                        let mut if_cond_failed = false;
+                        // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 2"
+                        if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
     Ok(self.hub && sce_forge_runtime::algorithm::rem::<u64>(ev.key, 256)? != 2)
 })() {
     Ok(sce_value) => sce_value,
@@ -4667,362 +4651,353 @@ if sce_failed {
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
     let _ = send_id;  // suppress unused warning when no send operation
 }}
-                                if if_cond_failed {
-                                    break 'action_block;
-                                }
-                            }
+                        if if_cond_failed {
+                            break 'action_block;
                         }
                     }
-                    11 => {
-                        // SCE-MAP: sheet_peer.scxml:387 :: open :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetDropCol(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // open, transition 11
+            11 => {
+                // SCE-MAP: sheet_peer.scxml:387 :: open :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetDropCol(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_22";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("by".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_22";
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("by".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetGoneCol,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            {
-                                let send_id: &str = "__send_23";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("key".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.col).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("by".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.gone_col".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetGoneCol,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    12 => {
-                        // SCE-MAP: sheet_peer.scxml:398 :: open :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
-                        let ev = match &self.pending_payload {
-                            SheetPeerPayload::SheetGoneCol(ev) => ev.clone(),
-                            _ => return,
+
+                    {
+                        let send_id: &str = "__send_23";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("key".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.col).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("by".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((self.node).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="removal.key">
-                            self.removal.key = ev.key;
+                        let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 5.3: <assign location="removal.by">
-                            self.removal.by = ev.by;
-
-                            // W3C SCXML 5.3: <assign location="goneCols">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.gone_cols = sce_forge_runtime::algorithm::within((call_RgaRemove__vv(&self.gone_cols, &self.removal)?).as_slice(), 256)?.to_vec();
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+                                processor_type: "sce:mesh".to_string(),
+                                event_name: "sheet.gone_col".to_string(),
+                                target: "#server".to_string(),
+                                content: "".to_string(),
+                                params: host_params,
+                                send_id: send_id.to_string(),
+                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                event_data: event_data.to_string(),
+                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                // processed now, carried back out as a W3C child's send to its
+                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                // every machine with a host-served send.
+                                invoke_id: self.pending_event_invokeid.to_string(),
+                            };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
                             }
+                        }
 
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // open, transition 12
+            12 => {
+                // SCE-MAP: sheet_peer.scxml:398 :: open :: _transition_12
+                // W3C SCXML 3.13: Transition 12 actions
+                let ev = match &self.pending_payload {
+                    SheetPeerPayload::SheetGoneCol(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="removal.key">
+                    self.removal.key = ev.key;
+
+                    // W3C SCXML 5.3: <assign location="removal.by">
+                    self.removal.by = ev.by;
+
+                    // W3C SCXML 5.3: <assign location="goneCols">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.gone_cols = sce_forge_runtime::algorithm::within(
+                                (call_RgaRemove__vv(&self.gone_cols, &self.removal)?).as_slice(),
+                                256,
+                            )?
+                            .to_vec();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    {
+                        let send_id: &str = "__send_24";
+
+                        let event_data: &str = "";
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                SheetPeerEvent::SheetRecompute,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
+                    if self.hub && ev.by != 1 {
+                        {
+                            let send_id: &str = "__send_25";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("key".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.key).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.by).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
                             {
-                                let send_id: &str = "__send_24";
-
-                                let event_data: &str = "";
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.gone_col".to_string(),
+                                    target: "#alice".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        SheetPeerEvent::SheetRecompute,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
-                            if self.hub && ev.by != 1 {
-                                {
-                                    let send_id: &str = "__send_25";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("key".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.key).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.gone_col".to_string(),
-                                            target: "#alice".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
                                 }
                             }
 
-                            // W3C SCXML 5.9: cond="hub && _event.data.by !== 2"
-                            if self.hub && ev.by != 2 {
-                                {
-                                    let send_id: &str = "__send_26";
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("key".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.key).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("by".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.by).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.gone_col".to_string(),
-                                            target: "#bob".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
-                                }
-                            }
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    13 => {
-                        // SCE-MAP: sheet_peer.scxml:417 :: open :: _transition_13
-                        // W3C SCXML 3.13: Transition 13 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+
+                    // W3C SCXML 5.9: cond="hub && _event.data.by !== 2"
+                    if self.hub && ev.by != 2 {
+                        {
+                            let send_id: &str = "__send_26";
+
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            //
+                            // Declared out here rather than inside the payload block because
+                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                            // below are renderings of that one evaluation: the BasicHTTP and
+                            // host-served arms read this map instead of asking the data model again.
+                            let mut _send_wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
+                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                            let event_data_string: String = {
+                                let wire_params = &mut _send_wire_params;
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("key".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.key).to_string()),
+                                );
+                                // The value is read from the machine's field as it stands now.
+                                wire_params.entry("by".to_string()).or_default().push(
+                                    ::sce_rust_runtime::ScriptValue::String((ev.by).to_string()),
+                                );
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                            };
+                            let event_data: &str = &event_data_string;
+
+                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                            // which declared it to this build. Dispatch rather than refuse.
+                            {
+                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                let __sce_request = sce_rust_runtime::HostSendRequest {
+                                    processor_type: "sce:mesh".to_string(),
+                                    event_name: "sheet.gone_col".to_string(),
+                                    target: "#bob".to_string(),
+                                    content: "".to_string(),
+                                    params: host_params,
+                                    send_id: send_id.to_string(),
+                                    // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                    event_data: event_data.to_string(),
+                                    // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                    // processed now, carried back out as a W3C child's send to its
+                                    // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                    // every machine with a host-served send.
+                                    invoke_id: self.pending_event_invokeid.to_string(),
+                                };
+                                let __sce_served = engine.perform_host_send(__sce_request);
+                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                // from the document's side, a processor the platform does not
+                                // support — the act it asked for was performed by nobody. Same
+                                // event, so a wiring mistake cannot read as success.
+                                if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
+                                {
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    engine.raise(err_meta);
+                                }
                             }
+
+                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                            let _ = send_id; // suppress unused warning when no send operation
                         }
                     }
-                    _ => {}
+                }
+            }
+            // open, transition 13
+            13 => {
+                // SCE-MAP: sheet_peer.scxml:417 :: open :: _transition_13
+                // W3C SCXML 3.13: Transition 13 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
                 }
             }
             _ => {}

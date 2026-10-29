@@ -88,44 +88,192 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum Test232State {
-    Fail,
-    Pass,
-    S0,
+    S0 = 0,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    S01,
-    S02,
-    S03,
+    S01 = 1,
+    S02 = 2,
+    S03 = 3,
+    Pass = 4,
+    Fail = 5,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum Test232Event {
-    ChildToParent1,
-    ChildToParent2,
-    DoneInvoke,
-    ErrorExecution,
-    Timeout,
+    ChildToParent1 = 0,
+    ChildToParent2 = 1,
+    DoneInvoke = 2,
+    ErrorExecution = 3,
+    Timeout = 4,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 5,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 2, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 2, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type Test232Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<Test232State, 2>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `Test232State`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const TEST232_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: s0
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(3),
+                children: Span { start: 0, len: 3 },
+                initial: Some(TransitionId(4)),
+            },
+            // 1: s01
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 2: s02
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 3: s03
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 4: pass
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(4),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+            // 5: fail
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(5),
+                children: Span { start: 3, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[StateId(1), StateId(2), StateId(3)],
+        histories: &[],
+        transitions: &[
+            // 0: s0, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 1: s01, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 2: s02, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: s03, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: s0, initial
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(5)),
+            Target::State(StateId(2)),
+            Target::State(StateId(3)),
+            Target::State(StateId(4)),
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(5),
+        history_records: 0,
+        max_configuration: 2,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 9,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -463,30 +611,59 @@ impl StatePolicy for Test232Policy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &TEST232_TABLES;
+    const STATES: &'static [Self::State] = &[
+        Test232State::S0,
+        Test232State::S01,
+        Test232State::S02,
+        Test232State::S03,
+        Test232State::Pass,
+        Test232State::Fail,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        Test232Event::ChildToParent1,
+        Test232Event::ChildToParent2,
+        Test232Event::DoneInvoke,
+        Test232Event::ErrorExecution,
+        Test232Event::Timeout,
+        Test232Event::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 2 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 2 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 2 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 9 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(2) }, 1, 9, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<2, 0, 0>;
     type Configuration = Test232Configuration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 9 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        9,
-    >;
-    const MAX_CONFIGURATION: usize = 2;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 2;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -518,80 +695,10 @@ impl StatePolicy for Test232Policy {
         Test232State::S01
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            Test232State::Fail => true,
-            Test232State::Pass => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            Test232State::S01 => Some(Test232State::S0),
-            Test232State::S02 => Some(Test232State::S0),
-            Test232State::S03 => Some(Test232State::S0),
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            Test232State::S0 => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            Test232State::S0 => &[Test232State::S01, Test232State::S02, Test232State::S03],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            Test232State::S0 => &[::sce_rust_runtime::EntryTarget::State(Test232State::S01)],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(Test232State::S0)]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            Test232State::Fail => 5,
-            Test232State::Pass => 4,
-            Test232State::S0 => 0,
-            Test232State::S01 => 1,
-            Test232State::S02 => 2,
-            Test232State::S03 => 3,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -643,16 +750,6 @@ impl StatePolicy for Test232Policy {
 
     fn null_event() -> Self::Event {
         Test232Event::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // ======================================================================
@@ -718,11 +815,12 @@ impl StatePolicy for Test232Policy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -765,8 +863,9 @@ impl StatePolicy for Test232Policy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: test232.scxml:5 :: _machine"]
     // SCE-MAP: test232.scxml:5 :: _machine
     fn first_enabled_transition(
@@ -774,18 +873,13 @@ impl StatePolicy for Test232Policy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             Test232State::S0 => {
                 if event == Test232Event::Timeout {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test232State::Fail)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s0, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 None
@@ -793,13 +887,8 @@ impl StatePolicy for Test232Policy {
             Test232State::S01 => {
                 if event == Test232Event::ChildToParent1 {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test232State::S02)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s01, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 None
@@ -807,13 +896,8 @@ impl StatePolicy for Test232Policy {
             Test232State::S02 => {
                 if event == Test232Event::ChildToParent2 {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test232State::S03)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s02, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 None
@@ -821,13 +905,8 @@ impl StatePolicy for Test232Policy {
             Test232State::S03 => {
                 if event == Test232Event::DoneInvoke {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(Test232State::Pass)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // s03, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -837,17 +916,17 @@ impl StatePolicy for Test232Policy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: test232.scxml:5 :: _machine"]
     // SCE-MAP: test232.scxml:5 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // W3C SCXML 3.13: no transition in this document has content.
-        let _ = (source, transition_index, engine);
+        let _ = (transition, engine);
     }
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end

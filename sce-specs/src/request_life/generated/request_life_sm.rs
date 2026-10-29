@@ -88,52 +88,475 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum RequestLifeState {
-    Cancelled,
-    Completed,
-    Ended,
-    Failed,
-    Interrupted,
-    Open,
+    Request = 0,
+    Open = 1,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Queued,
-    Request,
-    Running,
-    Superseded,
+    Queued = 2,
+    Running = 3,
+    Interrupted = 4,
+    Ended = 5,
+    Completed = 6,
+    Failed = 7,
+    Cancelled = 8,
+    Superseded = 9,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum RequestLifeEvent {
-    Cancel,
-    Claim,
-    Fail,
-    Heartbeat,
-    Normalize,
-    Publish,
-    Supersede,
-    Write,
+    Cancel = 0,
+    Claim = 1,
+    Fail = 2,
+    Heartbeat = 3,
+    Normalize = 4,
+    Publish = 5,
+    Supersede = 6,
+    Write = 7,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 8,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 3, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 3, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type RequestLifeConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<RequestLifeState, 3>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `RequestLifeState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const REQUEST_LIFE_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: request
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(9),
+                children: Span { start: 0, len: 2 },
+                initial: Some(TransitionId(34)),
+            },
+            // 1: open
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(4),
+                children: Span { start: 2, len: 3 },
+                initial: Some(TransitionId(35)),
+            },
+            // 2: queued
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 5, len: 0 },
+                initial: None,
+            },
+            // 3: running
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 5, len: 0 },
+                initial: None,
+            },
+            // 4: interrupted
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 5, len: 0 },
+                initial: None,
+            },
+            // 5: ended
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(9),
+                children: Span { start: 5, len: 4 },
+                initial: Some(TransitionId(36)),
+            },
+            // 6: completed
+            StateRow {
+                parent: Some(StateId(5)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(6),
+                children: Span { start: 9, len: 0 },
+                initial: None,
+            },
+            // 7: failed
+            StateRow {
+                parent: Some(StateId(5)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(7),
+                children: Span { start: 9, len: 0 },
+                initial: None,
+            },
+            // 8: cancelled
+            StateRow {
+                parent: Some(StateId(5)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(8),
+                children: Span { start: 9, len: 0 },
+                initial: None,
+            },
+            // 9: superseded
+            StateRow {
+                parent: Some(StateId(5)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(9),
+                children: Span { start: 9, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[
+            StateId(1),
+            StateId(5),
+            StateId(2),
+            StateId(3),
+            StateId(4),
+            StateId(6),
+            StateId(7),
+            StateId(8),
+            StateId(9),
+        ],
+        histories: &[],
+        transitions: &[
+            // 0: request, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: request, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: request, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: request, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: request, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 2, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: request, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 2, len: 1 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: request, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: request, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: request, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 9: request, transition 9
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 10: open, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 11: open, transition 1
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 12: open, transition 2
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 13: open, transition 3
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 14: open, transition 4
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 15: open, transition 5
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 16: running, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 5, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 17: running, transition 1
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 18: running, transition 2
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 19: running, transition 3
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 7, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 20: running, transition 4
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 21: interrupted, transition 0
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 22: interrupted, transition 1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 23: interrupted, transition 2
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: true,
+            },
+            // 24: interrupted, transition 3
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 25: ended, transition 0
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 26: ended, transition 1
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 27: ended, transition 2
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 28: ended, transition 3
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 29: ended, transition 4
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 30: ended, transition 5
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 31: completed, transition 0
+            TransitionRow {
+                source: Some(StateId(6)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 32: failed, transition 0
+            TransitionRow {
+                source: Some(StateId(7)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 33: cancelled, transition 0
+            TransitionRow {
+                source: Some(StateId(8)),
+                targets: Span { start: 11, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 34: request, initial
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 35: open, initial
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 12, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 36: ended, initial
+            TransitionRow {
+                source: Some(StateId(5)),
+                targets: Span { start: 13, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 37: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 14, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(3)),
+            Target::State(StateId(3)),
+            Target::State(StateId(3)),
+            Target::State(StateId(8)),
+            Target::State(StateId(9)),
+            Target::State(StateId(6)),
+            Target::State(StateId(7)),
+            Target::State(StateId(4)),
+            Target::State(StateId(3)),
+            Target::State(StateId(6)),
+            Target::State(StateId(7)),
+            Target::State(StateId(1)),
+            Target::State(StateId(2)),
+            Target::State(StateId(6)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(37),
+        history_records: 0,
+        max_configuration: 3,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 12,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -644,7 +1067,8 @@ impl RequestLifePersist for Engine<RequestLifePolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.verdict),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -745,13 +1169,6 @@ pub struct RequestLifeInvokeParams {
 // ======================================================================
 
 pub struct RequestLifePolicy {
-    // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
-    // `RequestLifeConfiguration` — `Vec<S>` under std, a `heapless::Vec` of exactly
-    // the most states one configuration holds under no_std. The std alias preserves
-    // the existing ABI; the no_std alias keeps the generated code allocator-free.
-    active_states: RequestLifeConfiguration,
     // NL→IR Item C1 Path A: typed `_event.data` payload for the current
     // event, stored by `populate_event_payload` and read by native
     // transition guards (`matches!(&self.pending_payload, …)`).
@@ -793,7 +1210,6 @@ impl RequestLifePolicy {
         let outcome: String = "".to_string();
         let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
         Self {
-            active_states: RequestLifeConfiguration::new(),
             pending_payload: RequestLifePayload::default(),
             holder,
             attempt,
@@ -891,28 +1307,6 @@ impl RequestLifePolicy {
     pub fn verdict(&self) -> RequestLifeVerdictEnum {
         self.verdict
     }
-
-    // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
-    fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states
-            .iter()
-            .any(|&s| Self::get_state_name(s) == state_id)
-    }
-
-    // §scxml-3.4: add `state` to the configuration this machine keeps; false
-    // when it was already there.
-    fn activate(&mut self, state: RequestLifeState) -> bool {
-        if self.active_states.contains(&state) {
-            return false;
-        }
-        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        true
-    }
-
-    // §scxml-3.4: remove `state` from the configuration this machine keeps.
-    fn deactivate(&mut self, state: RequestLifeState) {
-        self.active_states.retain(|&s| s != state);
-    }
 }
 
 // docs/adr/0045: a machine built with no arguments draws its session id, so it
@@ -961,30 +1355,66 @@ impl StatePolicy for RequestLifePolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &REQUEST_LIFE_TABLES;
+    const STATES: &'static [Self::State] = &[
+        RequestLifeState::Request,
+        RequestLifeState::Open,
+        RequestLifeState::Queued,
+        RequestLifeState::Running,
+        RequestLifeState::Interrupted,
+        RequestLifeState::Ended,
+        RequestLifeState::Completed,
+        RequestLifeState::Failed,
+        RequestLifeState::Cancelled,
+        RequestLifeState::Superseded,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        RequestLifeEvent::Cancel,
+        RequestLifeEvent::Claim,
+        RequestLifeEvent::Fail,
+        RequestLifeEvent::Heartbeat,
+        RequestLifeEvent::Normalize,
+        RequestLifeEvent::Publish,
+        RequestLifeEvent::Supersede,
+        RequestLifeEvent::Write,
+        RequestLifeEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 3 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 3 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 3 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 12 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(3) }, 1, 12, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<3, 0, 0>;
     type Configuration = RequestLifeConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 12 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        12,
-    >;
-    const MAX_CONFIGURATION: usize = 3;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 3;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -997,7 +1427,6 @@ impl StatePolicy for RequestLifePolicy {
     const NEEDS_EVENT_SCHEDULER: bool = false;
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     const NEEDS_PARENT: bool = false;
-    const HAS_ACTIVE_STATES: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -1011,111 +1440,10 @@ impl StatePolicy for RequestLifePolicy {
         RequestLifeState::Queued
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            RequestLifeState::Cancelled => Some(RequestLifeState::Ended),
-            RequestLifeState::Completed => Some(RequestLifeState::Ended),
-            RequestLifeState::Ended => Some(RequestLifeState::Request),
-            RequestLifeState::Failed => Some(RequestLifeState::Ended),
-            RequestLifeState::Interrupted => Some(RequestLifeState::Open),
-            RequestLifeState::Open => Some(RequestLifeState::Request),
-            RequestLifeState::Queued => Some(RequestLifeState::Open),
-            RequestLifeState::Running => Some(RequestLifeState::Open),
-            RequestLifeState::Superseded => Some(RequestLifeState::Ended),
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            RequestLifeState::Ended => true,
-            RequestLifeState::Open => true,
-            RequestLifeState::Request => true,
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            RequestLifeState::Ended => &[
-                RequestLifeState::Completed,
-                RequestLifeState::Failed,
-                RequestLifeState::Cancelled,
-                RequestLifeState::Superseded,
-            ],
-            RequestLifeState::Open => &[
-                RequestLifeState::Queued,
-                RequestLifeState::Running,
-                RequestLifeState::Interrupted,
-            ],
-            RequestLifeState::Request => &[RequestLifeState::Open, RequestLifeState::Ended],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            RequestLifeState::Ended => &[::sce_rust_runtime::EntryTarget::State(
-                RequestLifeState::Completed,
-            )],
-            RequestLifeState::Open => &[::sce_rust_runtime::EntryTarget::State(
-                RequestLifeState::Queued,
-            )],
-            RequestLifeState::Request => &[::sce_rust_runtime::EntryTarget::State(
-                RequestLifeState::Open,
-            )],
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            RequestLifeState::Request,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            RequestLifeState::Cancelled => 8,
-            RequestLifeState::Completed => 6,
-            RequestLifeState::Ended => 5,
-            RequestLifeState::Failed => 7,
-            RequestLifeState::Interrupted => 4,
-            RequestLifeState::Open => 1,
-            RequestLifeState::Queued => 2,
-            RequestLifeState::Request => 0,
-            RequestLifeState::Running => 3,
-            RequestLifeState::Superseded => 9,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1181,36 +1509,6 @@ impl StatePolicy for RequestLifePolicy {
 
     fn null_event() -> Self::Event {
         RequestLifeEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `Self::Configuration`; this override matches that signature
-    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
-    // both resolve correctly.
-    fn get_active_states(&self) -> Self::Configuration {
-        self.active_states.clone()
-    }
-
-    // §scxml-3.4: the write half of the pair above, for `Engine::enter_at`.
-    // Emitted under the same condition as the read half because the same fact
-    // decides both — this machine keeps its own active set, so this machine is
-    // the one that can be handed one back. The trait default is a tripwire, so
-    // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(&mut self, states: &[Self::State]) {
-        self.active_states.clear();
-        for &state in states {
-            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        }
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1304,10 +1602,6 @@ impl StatePolicy for RequestLifePolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         is_default_entry: bool,
     ) {
-        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        if !self.activate(state) {
-            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
-        }
     }
 
     // §scxml-3.10.2: a <history>'s default transition content, run after its
@@ -1323,20 +1617,19 @@ impl StatePolicy for RequestLifePolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
-        // §scxml-D-exitStates: out of the configuration only after its onexit
-        // and invoke cancellation — the configuration.delete(s) step.
-        self.deactivate(state);
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: request_life.scxml:25 :: _machine"]
     // SCE-MAP: request_life.scxml:25 :: _machine
     fn first_enabled_transition(
@@ -1344,18 +1637,13 @@ impl StatePolicy for RequestLifePolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             RequestLifeState::Cancelled => {
                 if event == RequestLifeEvent::Cancel {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // cancelled, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(33));
                     }
                 }
                 None
@@ -1364,13 +1652,8 @@ impl StatePolicy for RequestLifePolicy {
                 if event == RequestLifeEvent::Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt && ev.bundle == self.outcome)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // completed, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(31));
                     }
                 }
                 None
@@ -1378,68 +1661,38 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Ended => {
                 if event == RequestLifeEvent::Heartbeat {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(25));
                     }
                 }
                 if event == RequestLifeEvent::Publish {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(26));
                     }
                 }
                 if event == RequestLifeEvent::Fail {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(27));
                     }
                 }
                 if event == RequestLifeEvent::Write {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(28));
                     }
                 }
                 if event == RequestLifeEvent::Cancel {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(29));
                     }
                 }
                 if event == RequestLifeEvent::Supersede {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // ended, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(30));
                     }
                 }
                 None
@@ -1448,13 +1701,8 @@ impl StatePolicy for RequestLifePolicy {
                 if event == RequestLifeEvent::Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // failed, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(32));
                     }
                 }
                 None
@@ -1463,55 +1711,29 @@ impl StatePolicy for RequestLifePolicy {
                 if event == RequestLifeEvent::Heartbeat {
                     if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Running,
-                            )],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // interrupted, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == RequestLifeEvent::Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Completed,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // interrupted, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 if event == RequestLifeEvent::Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Failed,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // interrupted, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
                 if event == RequestLifeEvent::Write {
                     if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // interrupted, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(24));
                     }
                 }
                 None
@@ -1519,72 +1741,38 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Open => {
                 if event == RequestLifeEvent::Heartbeat {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == RequestLifeEvent::Publish {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == RequestLifeEvent::Fail {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 if event == RequestLifeEvent::Write {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // open, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == RequestLifeEvent::Cancel {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Cancelled,
-                            )],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // open, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == RequestLifeEvent::Supersede {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Superseded,
-                            )],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // open, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 None
@@ -1593,122 +1781,66 @@ impl StatePolicy for RequestLifePolicy {
                 if event == RequestLifeEvent::Claim {
                     if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.offeredMatches)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.laneOpen && (self.is_state_active("queued") || self.is_state_active("interrupted") && ev.resume || self.is_state_active("running") && self.expires_at <= ev.now && ev.resume))
+                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if !ev.laneOpen && (engine.is_active(RequestLifeState::Queued) || engine.is_active(RequestLifeState::Interrupted) && ev.resume || engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume))
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if self.is_state_active("queued") {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Running,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                    if engine.is_active(RequestLifeState::Queued) {
+                        // request, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if self.is_state_active("interrupted") && ev.resume)
+                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Interrupted) && ev.resume)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Running,
-                            )],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if self.is_state_active("interrupted") {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                    if engine.is_active(RequestLifeState::Interrupted) {
+                        // request, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if self.is_state_active("running") && self.expires_at <= ev.now && ev.resume)
+                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now && ev.resume)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Running,
-                            )],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if self.is_state_active("running") && self.expires_at <= ev.now)
+                    if matches!(&self.pending_payload, RequestLifePayload::Claim(ev) if engine.is_active(RequestLifeState::Running) && self.expires_at <= ev.now)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
-                    if self.is_state_active("running") {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                    if engine.is_active(RequestLifeState::Running) {
+                        // request, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == RequestLifeEvent::Claim {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 8,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == RequestLifeEvent::Normalize {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 9,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // request, transition 9
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 None
@@ -1717,67 +1849,36 @@ impl StatePolicy for RequestLifePolicy {
                 if event == RequestLifeEvent::Heartbeat {
                     if matches!(&self.pending_payload, RequestLifePayload::Heartbeat(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // running, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 if event == RequestLifeEvent::Publish {
                     if matches!(&self.pending_payload, RequestLifePayload::Publish(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Completed,
-                            )],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // running, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 if event == RequestLifeEvent::Fail {
                     if matches!(&self.pending_payload, RequestLifePayload::Fail(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Failed,
-                            )],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // running, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == RequestLifeEvent::Write {
                     if matches!(&self.pending_payload, RequestLifePayload::Write(ev) if ev.holder == self.holder && ev.attempt == self.attempt)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // running, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == RequestLifeEvent::Normalize {
                     if matches!(&self.pending_payload, RequestLifePayload::Normalize(ev) if self.expires_at <= ev.now)
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                RequestLifeState::Interrupted,
-                            )],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // running, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(20));
                     }
                 }
                 None
@@ -1787,570 +1888,564 @@ impl StatePolicy for RequestLifePolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: request_life.scxml:25 :: _machine"]
     // SCE-MAP: request_life.scxml:25 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            RequestLifeState::Cancelled => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:191 :: cancelled :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    _ => {}
+        match transition.0 {
+            // cancelled, transition 0
+            33 => {
+                // SCE-MAP: request_life.scxml:191 :: cancelled :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
                 }
             }
-            RequestLifeState::Completed => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:181 :: completed :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    _ => {}
+            // completed, transition 0
+            31 => {
+                // SCE-MAP: request_life.scxml:181 :: completed :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
                 }
             }
-            RequestLifeState::Ended => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:160 :: ended :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: request_life.scxml:163 :: ended :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: request_life.scxml:166 :: ended :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: request_life.scxml:169 :: ended :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: request_life.scxml:172 :: ended :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: request_life.scxml:175 :: ended :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Nothing;
-                        }
-                    }
-                    _ => {}
+            // ended, transition 0
+            25 => {
+                // SCE-MAP: request_life.scxml:160 :: ended :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
                 }
             }
-            RequestLifeState::Failed => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:186 :: failed :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    _ => {}
+            // ended, transition 1
+            26 => {
+                // SCE-MAP: request_life.scxml:163 :: ended :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
                 }
             }
-            RequestLifeState::Interrupted => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:142 :: interrupted :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Heartbeat(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="expiresAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.expires_at = sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: request_life.scxml:146 :: interrupted :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Publish(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: request_life.scxml:150 :: interrupted :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: request_life.scxml:153 :: interrupted :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    _ => {}
+            // ended, transition 2
+            27 => {
+                // SCE-MAP: request_life.scxml:166 :: ended :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
                 }
             }
-            RequestLifeState::Open => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:96 :: open :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotHolder;
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: request_life.scxml:99 :: open :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotHolder;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: request_life.scxml:102 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotHolder;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: request_life.scxml:105 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotHolder;
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: request_life.scxml:108 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: request_life.scxml:111 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    _ => {}
+            // ended, transition 3
+            28 => {
+                // SCE-MAP: request_life.scxml:169 :: ended :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
                 }
             }
-            RequestLifeState::Request => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:48 :: request :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::WrongConnection;
-                        }
-                    }
-                    1 => {
-                        // SCE-MAP: request_life.scxml:54 :: request :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::LaneFull;
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: request_life.scxml:57 :: request :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Claim(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holder">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.holder = sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="attempt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.attempt = sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="expiresAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.expires_at = sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    3 => {
-                        // SCE-MAP: request_life.scxml:63 :: request :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Claim(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holder">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.holder = sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="attempt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.attempt = sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="expiresAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.expires_at = sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: request_life.scxml:69 :: request :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotResuming;
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: request_life.scxml:73 :: request :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Claim(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="holder">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.holder = sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="attempt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.attempt = sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="expiresAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.expires_at = sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
-                    }
-                    6 => {
-                        // SCE-MAP: request_life.scxml:79 :: request :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::NotResuming;
-                        }
-                    }
-                    7 => {
-                        // SCE-MAP: request_life.scxml:82 :: request :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Held;
-                        }
-                    }
-                    8 => {
-                        // SCE-MAP: request_life.scxml:85 :: request :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ended;
-                        }
-                    }
-                    9 => {
-                        // SCE-MAP: request_life.scxml:89 :: request :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Nothing;
-                        }
-                    }
-                    _ => {}
+            // ended, transition 4
+            29 => {
+                // SCE-MAP: request_life.scxml:172 :: ended :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
                 }
             }
-            RequestLifeState::Running => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: request_life.scxml:118 :: running :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Heartbeat(ev) => ev.clone(),
-                            _ => return,
+            // ended, transition 5
+            30 => {
+                // SCE-MAP: request_life.scxml:175 :: ended :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Nothing;
+                }
+            }
+            // failed, transition 0
+            32 => {
+                // SCE-MAP: request_life.scxml:186 :: failed :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // interrupted, transition 0
+            21 => {
+                // SCE-MAP: request_life.scxml:142 :: interrupted :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Heartbeat(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="expiresAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expires_at =
+                                sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="expiresAt">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.expires_at = sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: request_life.scxml:122 :: running :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        let ev = match &self.pending_payload {
-                            RequestLifePayload::Publish(ev) => ev.clone(),
-                            _ => return,
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // interrupted, transition 1
+            22 => {
+                // SCE-MAP: request_life.scxml:146 :: interrupted :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Publish(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="outcome">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.outcome = sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // interrupted, transition 2
+            23 => {
+                // SCE-MAP: request_life.scxml:150 :: interrupted :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // interrupted, transition 3
+            24 => {
+                // SCE-MAP: request_life.scxml:153 :: interrupted :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // open, transition 0
+            10 => {
+                // SCE-MAP: request_life.scxml:96 :: open :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotHolder;
+                }
+            }
+            // open, transition 1
+            11 => {
+                // SCE-MAP: request_life.scxml:99 :: open :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotHolder;
+                }
+            }
+            // open, transition 2
+            12 => {
+                // SCE-MAP: request_life.scxml:102 :: open :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotHolder;
+                }
+            }
+            // open, transition 3
+            13 => {
+                // SCE-MAP: request_life.scxml:105 :: open :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotHolder;
+                }
+            }
+            // open, transition 4
+            14 => {
+                // SCE-MAP: request_life.scxml:108 :: open :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // open, transition 5
+            15 => {
+                // SCE-MAP: request_life.scxml:111 :: open :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // request, transition 0
+            0 => {
+                // SCE-MAP: request_life.scxml:48 :: request :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::WrongConnection;
+                }
+            }
+            // request, transition 1
+            1 => {
+                // SCE-MAP: request_life.scxml:54 :: request :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::LaneFull;
+                }
+            }
+            // request, transition 2
+            2 => {
+                // SCE-MAP: request_life.scxml:57 :: request :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Claim(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holder">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.holder =
+                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    2 => {
-                        // SCE-MAP: request_life.scxml:126 :: running :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
+
+                    // W3C SCXML 5.3: <assign location="attempt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.attempt =
+                                sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    3 => {
-                        // SCE-MAP: request_life.scxml:129 :: running :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
+
+                    // W3C SCXML 5.3: <assign location="expiresAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expires_at =
+                                sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    4 => {
-                        // SCE-MAP: request_life.scxml:132 :: running :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="verdict">
-                            self.verdict = RequestLifeVerdictEnum::Ok;
-                        }
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // request, transition 3
+            3 => {
+                // SCE-MAP: request_life.scxml:63 :: request :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Claim(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holder">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.holder =
+                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
+
+                    // W3C SCXML 5.3: <assign location="attempt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.attempt =
+                                sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="expiresAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expires_at =
+                                sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // request, transition 4
+            4 => {
+                // SCE-MAP: request_life.scxml:69 :: request :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotResuming;
+                }
+            }
+            // request, transition 5
+            5 => {
+                // SCE-MAP: request_life.scxml:73 :: request :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Claim(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="holder">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.holder =
+                                sce_forge_runtime::algorithm::bounded(ev.holder.to_string(), 64)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="attempt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.attempt =
+                                sce_forge_runtime::algorithm::add::<u32>(self.attempt, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="expiresAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expires_at =
+                                sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // request, transition 6
+            6 => {
+                // SCE-MAP: request_life.scxml:79 :: request :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::NotResuming;
+                }
+            }
+            // request, transition 7
+            7 => {
+                // SCE-MAP: request_life.scxml:82 :: request :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Held;
+                }
+            }
+            // request, transition 8
+            8 => {
+                // SCE-MAP: request_life.scxml:85 :: request :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ended;
+                }
+            }
+            // request, transition 9
+            9 => {
+                // SCE-MAP: request_life.scxml:89 :: request :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Nothing;
+                }
+            }
+            // running, transition 0
+            16 => {
+                // SCE-MAP: request_life.scxml:118 :: running :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Heartbeat(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="expiresAt">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expires_at =
+                                sce_forge_runtime::algorithm::add::<u64>(ev.now, ev.ttl)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // running, transition 1
+            17 => {
+                // SCE-MAP: request_life.scxml:122 :: running :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    RequestLifePayload::Publish(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                sce_forge_runtime::algorithm::bounded(ev.bundle.to_string(), 64)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => true,
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // running, transition 2
+            18 => {
+                // SCE-MAP: request_life.scxml:126 :: running :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // running, transition 3
+            19 => {
+                // SCE-MAP: request_life.scxml:129 :: running :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
+                }
+            }
+            // running, transition 4
+            20 => {
+                // SCE-MAP: request_life.scxml:132 :: running :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="verdict">
+                    self.verdict = RequestLifeVerdictEnum::Ok;
                 }
             }
             _ => {}

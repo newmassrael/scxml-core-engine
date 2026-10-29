@@ -88,40 +88,141 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticSendParamsState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Idle,
+    Idle = 0,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticSendParamsEvent {
-    Bad,
-    Echo,
-    ErrorExecution,
-    Go,
-    Partial,
+    Bad = 0,
+    Echo = 1,
+    ErrorExecution = 2,
+    Go = 3,
+    Partial = 4,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 5,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticSendParamsConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticSendParamsState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticSendParamsState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_SEND_PARAMS_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: idle
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: idle, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: idle, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: idle, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: idle, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: idle, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(5),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -429,7 +530,8 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -768,30 +870,52 @@ impl StatePolicy for StaticSendParamsPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_SEND_PARAMS_TABLES;
+    const STATES: &'static [Self::State] = &[StaticSendParamsState::Idle];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticSendParamsEvent::Bad,
+        StaticSendParamsEvent::Echo,
+        StaticSendParamsEvent::ErrorExecution,
+        StaticSendParamsEvent::Go,
+        StaticSendParamsEvent::Partial,
+        StaticSendParamsEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticSendParamsConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -817,69 +941,10 @@ impl StatePolicy for StaticSendParamsPolicy {
         StaticSendParamsState::Idle
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticSendParamsState::Idle,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticSendParamsState::Idle => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -921,16 +986,6 @@ impl StatePolicy for StaticSendParamsPolicy {
 
     fn null_event() -> Self::Event {
         StaticSendParamsEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1007,17 +1062,19 @@ impl StatePolicy for StaticSendParamsPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
     // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn first_enabled_transition(
@@ -1025,62 +1082,37 @@ impl StatePolicy for StaticSendParamsPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticSendParamsState::Idle => {
                 if event == StaticSendParamsEvent::Go {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticSendParamsEvent::Bad {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticSendParamsEvent::Echo {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticSendParamsEvent::Partial {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StaticSendParamsEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // idle, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 None
@@ -1090,47 +1122,46 @@ impl StatePolicy for StaticSendParamsPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
     // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticSendParamsState::Idle => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_send_params.scxml:39 :: idle :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_0";
+        match transition.0 {
+            // idle, transition 0
+            0 => {
+                // SCE-MAP: static_send_params.scxml:39 :: idle :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_0";
 
-                                let mut _param_failed = false;
+                        let mut _param_failed = false;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                    // checked operation that overflows leaves the pair out and says so.
-                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                            // checked operation that overflows leaves the pair out and says so.
+                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2)?)))
         })() {
             Ok(val) => {
@@ -1143,74 +1174,76 @@ impl StatePolicy for StaticSendParamsPolicy {
                 _param_failed = true;
             }
         }
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("ok".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Bool(self.count > 2),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("tag".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            self.label.to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("ok".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Bool(self.count > 2));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("tag".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(self.label.to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2: Default send (no target = external event)
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        StaticSendParamsEvent::Echo,
-                                    );
-                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id,
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise_external_with_meta(meta);
-                                }
-
-                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                // this element was processed, so the rest of the block does not run —
-                                // from however deep a <foreach> it came.
-                                if _param_failed {
-                                    break 'action_block;
-                                }
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticSendParamsEvent::Echo,
+                            );
+                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                            meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
                         }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    1 => {
-                        // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_1";
+                }
+            }
+            // idle, transition 1
+            1 => {
+                // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_1";
 
-                                let mut _param_failed = false;
+                        let mut _param_failed = false;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                    // checked operation that overflows leaves the pair out and says so.
-                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                            // checked operation that overflows leaves the pair out and says so.
+                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2)?)))
         })() {
             Ok(val) => {
@@ -1223,9 +1256,9 @@ impl StatePolicy for StaticSendParamsPolicy {
                 _param_failed = true;
             }
         }
-                                    // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
-                                    // checked operation that overflows leaves the pair out and says so.
-                                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                            // checked operation that overflows leaves the pair out and says so.
+                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::add::<u8>(self.small, self.small)?)))
         })() {
             Ok(val) => {
@@ -1238,104 +1271,110 @@ impl StatePolicy for StaticSendParamsPolicy {
                 _param_failed = true;
             }
         }
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Default send (no target = external event)
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        StaticSendParamsEvent::Partial,
-                                    );
-                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id,
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise_external_with_meta(meta);
-                                }
-
-                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                // this element was processed, so the rest of the block does not run —
-                                // from however deep a <foreach> it came.
-                                if _param_failed {
-                                    break 'action_block;
-                                }
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-                        }
-                    }
-                    2 => {
-                        // SCE-MAP: static_send_params.scxml:52 :: idle :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        let ev = match &self.pending_payload {
-                            StaticSendParamsPayload::Echo(ev) => ev.clone(),
-                            _ => return,
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="total">
-                            self.total = ev.total;
+                        let event_data: &str = &event_data_string;
 
-                            // W3C SCXML 5.3: <assign location="ok">
-                            self.ok = ev.ok;
-
-                            // W3C SCXML 5.3: <assign location="tag">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tag = sce_forge_runtime::algorithm::bounded(ev.tag.to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendParamsEvent::ErrorExecution, "<assign location='tag'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticSendParamsEvent::Partial,
+                            );
+                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                            meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
                         }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    3 => {
-                        // SCE-MAP: static_send_params.scxml:57 :: idle :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        let ev = match &self.pending_payload {
-                            StaticSendParamsPayload::Partial(ev) => ev.clone(),
-                            _ => return,
+                }
+            }
+            // idle, transition 2
+            2 => {
+                // SCE-MAP: static_send_params.scxml:52 :: idle :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    StaticSendParamsPayload::Echo(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="total">
+                    self.total = ev.total;
+
+                    // W3C SCXML 5.3: <assign location="ok">
+                    self.ok = ev.ok;
+
+                    // W3C SCXML 5.3: <assign location="tag">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.tag =
+                                sce_forge_runtime::algorithm::bounded(ev.tag.to_string(), 16)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendParamsEvent::ErrorExecution, "<assign location='tag'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="partialPart">
-                            self.partial_part = ev.part;
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_send_params.scxml:57 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    StaticSendParamsPayload::Partial(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="partialPart">
+                    self.partial_part = ev.part;
 
-                            // W3C SCXML 5.3: <assign location="partialTotal">
-                            self.partial_total = ev.total;
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="refusals">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.refusals = sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendParamsEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    // W3C SCXML 5.3: <assign location="partialTotal">
+                    self.partial_total = ev.total;
+                }
+            }
+            // idle, transition 4
+            4 => {
+                // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="refusals">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.refusals =
+                                sce_forge_runtime::algorithm::add::<u32>(self.refusals, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendParamsEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
             _ => {}

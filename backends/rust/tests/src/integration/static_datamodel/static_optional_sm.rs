@@ -88,44 +88,181 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum StaticOptionalState {
-    Done,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Tracking,
+    Tracking = 0,
+    Done = 1,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum StaticOptionalEvent {
-    DueClear,
-    DueFallback,
-    DueRead,
-    DueSent,
-    DueSet,
-    ErrorExecution,
-    Finish,
-    Relay,
+    DueClear = 0,
+    DueFallback = 1,
+    DueRead = 2,
+    DueSent = 3,
+    DueSet = 4,
+    ErrorExecution = 5,
+    Finish = 6,
+    Relay = 7,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 8,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type StaticOptionalConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticOptionalState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `StaticOptionalState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const STATIC_OPTIONAL_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: tracking
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: done
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: tracking, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 1: tracking, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 2: tracking, transition 2
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 3: tracking, transition 3
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 4: tracking, transition 4
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 5: tracking, transition 5
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 6: tracking, transition 6
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 7: tracking, transition 7
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 0 },
+                internal: true,
+                has_content: true,
+            },
+            // 8: tracking, transition 8
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 9: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[Target::State(StateId(1)), Target::State(StateId(0))],
+        initial: TransitionId(9),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -739,7 +876,8 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.huge),
                 ),
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
         )
@@ -1413,30 +1551,56 @@ impl StatePolicy for StaticOptionalPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &STATIC_OPTIONAL_TABLES;
+    const STATES: &'static [Self::State] =
+        &[StaticOptionalState::Tracking, StaticOptionalState::Done];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        StaticOptionalEvent::DueClear,
+        StaticOptionalEvent::DueFallback,
+        StaticOptionalEvent::DueRead,
+        StaticOptionalEvent::DueSent,
+        StaticOptionalEvent::DueSet,
+        StaticOptionalEvent::ErrorExecution,
+        StaticOptionalEvent::Finish,
+        StaticOptionalEvent::Relay,
+        StaticOptionalEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = StaticOptionalConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -1462,71 +1626,10 @@ impl StatePolicy for StaticOptionalPolicy {
         StaticOptionalState::Tracking
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            StaticOptionalState::Done => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            StaticOptionalState::Tracking,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            StaticOptionalState::Done => 1,
-            StaticOptionalState::Tracking => 0,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1576,16 +1679,6 @@ impl StatePolicy for StaticOptionalPolicy {
 
     fn null_event() -> Self::Event {
         StaticOptionalEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1775,17 +1868,19 @@ impl StatePolicy for StaticOptionalPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
     }
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: static_optional.scxml:28 :: _machine"]
     // SCE-MAP: static_optional.scxml:28 :: _machine
     fn first_enabled_transition(
@@ -1793,109 +1888,62 @@ impl StatePolicy for StaticOptionalPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             StaticOptionalState::Tracking => {
                 if event == StaticOptionalEvent::DueSet {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == StaticOptionalEvent::DueClear {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 1,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 if event == StaticOptionalEvent::DueRead {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 2,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == StaticOptionalEvent::DueFallback {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 3,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 if event == StaticOptionalEvent::Relay {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 4,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == StaticOptionalEvent::DueSent {
                     if matches!(&self.pending_payload, StaticOptionalPayload::DueSent(ev) if ev.due.is_some())
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 5,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticOptionalEvent::DueSent {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 6,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StaticOptionalEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 7,
-                            has_actions: true,
-                            is_internal: true,
-                        });
+                        // tracking, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == StaticOptionalEvent::Finish {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                StaticOptionalState::Done,
-                            )],
-                            transition_index: 8,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // tracking, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 None
@@ -1905,133 +1953,162 @@ impl StatePolicy for StaticOptionalPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: static_optional.scxml:28 :: _machine"]
     // SCE-MAP: static_optional.scxml:28 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            StaticOptionalState::Tracking => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: static_optional.scxml:67 :: tracking :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        let ev = match &self.pending_payload {
-                            StaticOptionalPayload::DueSet(ev) => ev.clone(),
-                            _ => return,
-                        };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="due">
-                            self.due = ev.due;
+        match transition.0 {
+            // tracking, transition 0
+            0 => {
+                // SCE-MAP: static_optional.scxml:67 :: tracking :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticOptionalPayload::DueSet(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="due">
+                    self.due = ev.due;
 
-                            // W3C SCXML 5.3: <assign location="title">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.title = match ev.title.as_deref().map(str::to_string) { Some(sce_present) => Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?), None => None };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='title'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="status">
-                            self.status = ev.status;
-
-                            // W3C SCXML 5.3: <assign location="item">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.item = StaticOptionalDueRecord { id: ev.id, due: ev.due, title: match ev.title.as_deref().map(str::to_string) { Some(sce_present) => Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?), None => None }, status: ev.status };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='item'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // SCE Accepted Subset §2.15: <sce:append target="items">
-                            let sce_failed = if self.items.len() < 3 {
-                                self.items.push(self.item.clone());
-                                false
-                            } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<sce:append target='items'>: the list already holds its capacity of 3"));
-                                true
+                    // W3C SCXML 5.3: <assign location="title">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.title = match ev.title.as_deref().map(str::to_string) {
+                                Some(sce_present) => {
+                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                }
+                                None => None,
                             };
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='title'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    1 => {
-                        // SCE-MAP: static_optional.scxml:75 :: tracking :: _transition_1
-                        // W3C SCXML 3.13: Transition 1 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="due">
-                            self.due = None;
 
-                            // W3C SCXML 5.3: <assign location="other">
-                            self.other = None;
+                    // W3C SCXML 5.3: <assign location="status">
+                    self.status = ev.status;
 
-                            // W3C SCXML 5.3: <assign location="status">
-                            self.status = None;
-
-                            // W3C SCXML 5.3: <assign location="item.due">
-                            self.item.due = None;
-                        }
+                    // W3C SCXML 5.3: <assign location="item">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.item = StaticOptionalDueRecord {
+                                id: ev.id,
+                                due: ev.due,
+                                title: match ev.title.as_deref().map(str::to_string) {
+                                    Some(sce_present) => Some(
+                                        sce_forge_runtime::algorithm::bounded(sce_present, 16)?,
+                                    ),
+                                    None => None,
+                                },
+                                status: ev.status,
+                            };
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='item'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    2 => {
-                        // SCE-MAP: static_optional.scxml:82 :: tracking :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="days">
-                            self.days = if self.due.is_some() {
-                                sce_forge_runtime::optional::proven(self.due)
+
+                    // SCE Accepted Subset §2.15: <sce:append target="items">
+                    let sce_failed = if self.items.len() < 3 {
+                        self.items.push(self.item.clone());
+                        false
+                    } else {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StaticOptionalEvent::ErrorExecution,
+                            "<sce:append target='items'>: the list already holds its capacity of 3",
+                        ));
+                        true
+                    };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // tracking, transition 1
+            1 => {
+                // SCE-MAP: static_optional.scxml:75 :: tracking :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="due">
+                    self.due = None;
+
+                    // W3C SCXML 5.3: <assign location="other">
+                    self.other = None;
+
+                    // W3C SCXML 5.3: <assign location="status">
+                    self.status = None;
+
+                    // W3C SCXML 5.3: <assign location="item.due">
+                    self.item.due = None;
+                }
+            }
+            // tracking, transition 2
+            2 => {
+                // SCE-MAP: static_optional.scxml:82 :: tracking :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="days">
+                    self.days = if self.due.is_some() {
+                        sce_forge_runtime::optional::proven(self.due)
+                    } else {
+                        0
+                    };
+
+                    // W3C SCXML 5.3: <assign location="late">
+                    self.late =
+                        self.due.is_some() && sce_forge_runtime::optional::proven(self.due) > 10;
+
+                    // W3C SCXML 5.3: <assign location="early">
+                    self.early =
+                        self.due.is_none() || sce_forge_runtime::optional::proven(self.due) < 3;
+
+                    // W3C SCXML 5.3: <assign location="following">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.following = if !(self.due.is_none()) {
+                                sce_forge_runtime::algorithm::add::<i64>(
+                                    sce_forge_runtime::optional::proven(self.due),
+                                    1,
+                                )?
                             } else {
                                 0
                             };
-
-                            // W3C SCXML 5.3: <assign location="late">
-                            self.late = self.due.is_some()
-                                && sce_forge_runtime::optional::proven(self.due) > 10;
-
-                            // W3C SCXML 5.3: <assign location="early">
-                            self.early = self.due.is_none()
-                                || sce_forge_runtime::optional::proven(self.due) < 3;
-
-                            // W3C SCXML 5.3: <assign location="following">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.following = if !(self.due.is_none()) { sce_forge_runtime::algorithm::add::<i64>(sce_forge_runtime::optional::proven(self.due), 1)? } else { 0 };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='following'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='following'>: an integer operation overflowed or failed"));
+                                true
                             }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
 
-                            // W3C SCXML 5.9: cond="title === null"
-                            if self.title.as_deref().is_none() {
-                                // W3C SCXML 5.3: <assign location="label">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                    // W3C SCXML 5.9: cond="title === null"
+                    if self.title.as_deref().is_none() {
+                        // W3C SCXML 5.3: <assign location="label">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.label = sce_forge_runtime::algorithm::bounded("untitled".to_string(), 16)?;
     Ok(())
 })() {
@@ -2041,14 +2118,12 @@ impl StatePolicy for StaticOptionalPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            } else if sce_forge_runtime::optional::proven(self.title.as_deref())
-                                == "soon"
-                            {
-                                // W3C SCXML 5.3: <assign location="label">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    } else if sce_forge_runtime::optional::proven(self.title.as_deref()) == "soon" {
+                        // W3C SCXML 5.3: <assign location="label">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.label = sce_forge_runtime::algorithm::bounded("due soon".to_string(), 16)?;
     Ok(())
 })() {
@@ -2058,12 +2133,12 @@ impl StatePolicy for StaticOptionalPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            } else {
-                                // W3C SCXML 5.3: <assign location="label">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    } else {
+                        // W3C SCXML 5.3: <assign location="label">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.label = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::optional::proven(self.title.as_deref()).to_string(), 16)?;
     Ok(())
 })() {
@@ -2073,36 +2148,36 @@ impl StatePolicy for StaticOptionalPolicy {
         true
     }
 };
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-                            }
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
 
-                            // W3C SCXML 5.9: cond="status !== null"
-                            if self.status.is_some() {
-                                // W3C SCXML 5.3: <assign location="plain">
-                                self.plain = sce_forge_runtime::optional::proven(self.status);
-                            }
+                    // W3C SCXML 5.9: cond="status !== null"
+                    if self.status.is_some() {
+                        // W3C SCXML 5.3: <assign location="plain">
+                        self.plain = sce_forge_runtime::optional::proven(self.status);
+                    }
 
-                            // W3C SCXML 5.9: cond="item.due !== null"
-                            if self.item.due.is_some() {
-                                // W3C SCXML 5.3: <assign location="kept">
-                                self.kept = sce_forge_runtime::optional::proven(self.item.due);
-                            }
+                    // W3C SCXML 5.9: cond="item.due !== null"
+                    if self.item.due.is_some() {
+                        // W3C SCXML 5.3: <assign location="kept">
+                        self.kept = sce_forge_runtime::optional::proven(self.item.due);
+                    }
 
+                    // W3C SCXML 5.3: <assign location="listed">
+                    self.listed = 0;
+
+                    // W3C SCXML 5.3: <assign location="missing">
+                    self.missing = 0;
+
+                    for it in self.items.clone() {
+                        let _ = &it;
+
+                        // W3C SCXML 5.9: cond="it.due !== null"
+                        if it.due.is_some() {
                             // W3C SCXML 5.3: <assign location="listed">
-                            self.listed = 0;
-
-                            // W3C SCXML 5.3: <assign location="missing">
-                            self.missing = 0;
-
-                            for it in self.items.clone() {
-                                let _ = &it;
-
-                                // W3C SCXML 5.9: cond="it.due !== null"
-                                if it.due.is_some() {
-                                    // W3C SCXML 5.3: <assign location="listed">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.listed = sce_forge_runtime::algorithm::add::<i64>(self.listed, sce_forge_runtime::optional::proven(it.due))?;
     Ok(())
 })() {
@@ -2112,12 +2187,12 @@ impl StatePolicy for StaticOptionalPolicy {
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-                                } else {
-                                    // W3C SCXML 5.3: <assign location="missing">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        } else {
+                            // W3C SCXML 5.3: <assign location="missing">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.missing = sce_forge_runtime::algorithm::add::<u32>(self.missing, 1)?;
     Ok(())
 })() {
@@ -2127,249 +2202,278 @@ impl StatePolicy for StaticOptionalPolicy {
         true
     }
 };
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+
+                    // W3C SCXML 5.3: <assign location="same">
+                    self.same = self.due == self.other;
+
+                    // W3C SCXML 5.3: <assign location="absent">
+                    self.absent = self.due.is_none();
+
+                    // W3C SCXML 5.3: <assign location="statusDone">
+                    self.status_done = self.status == Some(StaticOptionalStatusEnum::Done);
+
+                    // W3C SCXML 4.7: <log>
+                    ::sce_rust_runtime::sce_log_info!(
+                        "{}: {:?}",
+                        "due",
+                        sce_forge_runtime::optional::logged(&self.due)
+                    );
+
+                    // W3C SCXML 4.7: <log>
+                    ::sce_rust_runtime::sce_log_info!(
+                        "{}: {:?}",
+                        "status",
+                        sce_forge_runtime::optional::logged(&self.status)
+                    );
+                }
+            }
+            // tracking, transition 3
+            3 => {
+                // SCE-MAP: static_optional.scxml:117 :: tracking :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="label">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.label = sce_forge_runtime::algorithm::bounded(
+                                (match self.title.as_deref() {
+                                    Some(sce_present) => sce_present,
+                                    None => "none",
+                                })
+                                .to_string(),
+                                16,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="days">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.days = match self.due {
+                                Some(sce_present) => sce_present,
+                                None => {
+                                    sce_forge_runtime::algorithm::mul::<i64>(self.huge, self.huge)?
+                                }
+                            };
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='days'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="fallbacks">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.fallbacks =
+                                sce_forge_runtime::algorithm::add::<u32>(self.fallbacks, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='fallbacks'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // tracking, transition 4
+            4 => {
+                // SCE-MAP: static_optional.scxml:124 :: tracking :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_0";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("due".to_string()).or_default().push(
+                                match self.due {
+                                    Some(sce_present) => ::sce_rust_runtime::ScriptValue::String(
+                                        (sce_present).to_string(),
+                                    ),
+                                    None => ::sce_rust_runtime::ScriptValue::Null,
+                                },
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("title".to_string()).or_default().push(
+                                match self.title.as_deref().map(str::to_string) {
+                                    Some(sce_present) => {
+                                        ::sce_rust_runtime::ScriptValue::String(sce_present)
                                     }
-                                }
-                            }
-
-                            // W3C SCXML 5.3: <assign location="same">
-                            self.same = self.due == self.other;
-
-                            // W3C SCXML 5.3: <assign location="absent">
-                            self.absent = self.due.is_none();
-
-                            // W3C SCXML 5.3: <assign location="statusDone">
-                            self.status_done = self.status == Some(StaticOptionalStatusEnum::Done);
-
-                            // W3C SCXML 4.7: <log>
-                            ::sce_rust_runtime::sce_log_info!(
-                                "{}: {:?}",
-                                "due",
-                                sce_forge_runtime::optional::logged(&self.due)
+                                    None => ::sce_rust_runtime::ScriptValue::Null,
+                                },
                             );
-
-                            // W3C SCXML 4.7: <log>
-                            ::sce_rust_runtime::sce_log_info!(
-                                "{}: {:?}",
-                                "status",
-                                sce_forge_runtime::optional::logged(&self.status)
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("status".to_string()).or_default().push(
+                                match self.status {
+                                    Some(sce_present) => ::sce_rust_runtime::ScriptValue::String(
+                                        (sce_present).sce_name().to_string(),
+                                    ),
+                                    None => ::sce_rust_runtime::ScriptValue::Null,
+                                },
                             );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Default send (no target = external event)
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticOptionalEvent::DueSent,
+                            );
+                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                            meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise_external_with_meta(meta);
                         }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
                     }
-                    3 => {
-                        // SCE-MAP: static_optional.scxml:117 :: tracking :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="label">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.label = sce_forge_runtime::algorithm::bounded((match self.title.as_deref() { Some(sce_present) => sce_present, None => "none" }).to_string(), 16)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
+                }
+            }
+            // tracking, transition 5
+            5 => {
+                // SCE-MAP: static_optional.scxml:133 :: tracking :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    StaticOptionalPayload::DueSent(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="echoed">
+                    self.echoed = sce_forge_runtime::optional::proven(ev.due);
 
-                            // W3C SCXML 5.3: <assign location="days">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.days = match self.due { Some(sce_present) => sce_present, None => sce_forge_runtime::algorithm::mul::<i64>(self.huge, self.huge)? };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='days'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="fallbacks">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.fallbacks = sce_forge_runtime::algorithm::add::<u32>(self.fallbacks, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='fallbacks'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-                        }
-                    }
-                    4 => {
-                        // SCE-MAP: static_optional.scxml:124 :: tracking :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                let send_id: &str = "__send_0";
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("due".to_string()).or_default().push(
-                                        match self.due {
-                                            Some(sce_present) => {
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (sce_present).to_string(),
-                                                )
-                                            }
-                                            None => ::sce_rust_runtime::ScriptValue::Null,
-                                        },
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("title".to_string()).or_default().push(
-                                        match self.title.as_deref().map(str::to_string) {
-                                            Some(sce_present) => {
-                                                ::sce_rust_runtime::ScriptValue::String(sce_present)
-                                            }
-                                            None => ::sce_rust_runtime::ScriptValue::Null,
-                                        },
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("status".to_string()).or_default().push(
-                                        match self.status {
-                                            Some(sce_present) => {
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (sce_present).sce_name().to_string(),
-                                                )
-                                            }
-                                            None => ::sce_rust_runtime::ScriptValue::Null,
-                                        },
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Default send (no target = external event)
-                                {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        StaticOptionalEvent::DueSent,
-                                    );
-                                    // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                                    meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id,
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise_external_with_meta(meta);
+                    // W3C SCXML 5.3: <assign location="echoTitle">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.echo_title = match ev.title.as_deref().map(str::to_string) {
+                                Some(sce_present) => {
+                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
                                 }
-
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                                None => None,
+                            };
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='echoTitle'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
-                    }
-                    5 => {
-                        // SCE-MAP: static_optional.scxml:133 :: tracking :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
-                        let ev = match &self.pending_payload {
-                            StaticOptionalPayload::DueSent(ev) => ev.clone(),
-                            _ => return,
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="echoed">
-                            self.echoed = sce_forge_runtime::optional::proven(ev.due);
-
-                            // W3C SCXML 5.3: <assign location="echoTitle">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.echo_title = match ev.title.as_deref().map(str::to_string) { Some(sce_present) => Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?), None => None };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='echoTitle'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="echoStatus">
-                            self.echo_status = ev.status;
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    6 => {
-                        // SCE-MAP: static_optional.scxml:138 :: tracking :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
-                        let ev = match &self.pending_payload {
-                            StaticOptionalPayload::DueSent(ev) => ev.clone(),
-                            _ => return,
+
+                    // W3C SCXML 5.3: <assign location="echoStatus">
+                    self.echo_status = ev.status;
+                }
+            }
+            // tracking, transition 6
+            6 => {
+                // SCE-MAP: static_optional.scxml:138 :: tracking :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                let ev = match &self.pending_payload {
+                    StaticOptionalPayload::DueSent(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="echoed">
+                    self.echoed = -1;
+
+                    // W3C SCXML 5.3: <assign location="echoTitle">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.echo_title = match ev.title.as_deref().map(str::to_string) {
+                                Some(sce_present) => {
+                                    Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)
+                                }
+                                None => None,
+                            };
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='echoTitle'>: an integer operation overflowed or failed"));
+                                true
+                            }
                         };
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="echoed">
-                            self.echoed = -1;
-
-                            // W3C SCXML 5.3: <assign location="echoTitle">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.echo_title = match ev.title.as_deref().map(str::to_string) { Some(sce_present) => Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?), None => None };
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='echoTitle'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="echoStatus">
-                            self.echo_status = ev.status;
-                        }
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    7 => {
-                        // SCE-MAP: static_optional.scxml:143 :: tracking :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            // W3C SCXML 5.3: <assign location="errors">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+
+                    // W3C SCXML 5.3: <assign location="echoStatus">
+                    self.echo_status = ev.status;
+                }
+            }
+            // tracking, transition 7
+            7 => {
+                // SCE-MAP: static_optional.scxml:143 :: tracking :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="errors">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.errors = sce_forge_runtime::algorithm::add::<u32>(self.errors, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticOptionalEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                true
                             }
-                        }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-                    _ => {}
                 }
             }
             _ => {}

@@ -88,57 +88,372 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u16)]
 pub enum SendParamPayloadState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    AwaitChild,
-    EscapePhase,
-    FailBrokenParamDelivered,
-    FailChildPayload,
-    FailDuplicateParams,
-    FailEscapedMemberName,
-    FailEscapedText,
-    FailInternalPayload,
-    FailNoParamError,
-    FailNumberType,
-    FailSiblingParamLost,
-    FailStringType,
-    InternalPhase,
-    ParamErrorPhase,
-    Pass,
-    TypedPhase,
+    AwaitChild = 0,
+    InternalPhase = 1,
+    TypedPhase = 2,
+    ParamErrorPhase = 3,
+    EscapePhase = 4,
+    Pass = 5,
+    FailChildPayload = 6,
+    FailInternalPayload = 7,
+    FailNumberType = 8,
+    FailStringType = 9,
+    FailDuplicateParams = 10,
+    FailNoParamError = 11,
+    FailBrokenParamDelivered = 12,
+    FailSiblingParamLost = 13,
+    FailEscapedText = 14,
+    FailEscapedMemberName = 15,
 }
 
 // ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum SendParamPayloadEvent {
-    DoneInvoke,
-    ErrorExecution,
-    Escaped,
-    FromChild,
-    Loopback,
-    Typed,
-    WithBadParam,
+    DoneInvoke = 0,
+    ErrorExecution = 1,
+    Escaped = 2,
+    FromChild = 3,
+    Loopback = 4,
+    Typed = 5,
+    WithBadParam = 6,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = 7,
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, 1, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type SendParamPayloadConfiguration =
     ::sce_rust_runtime::helpers::hierarchy::BoundedVec<SendParamPayloadState, 1>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `SendParamPayloadState`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const SEND_PARAM_PAYLOAD_TABLES: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+            // 0: awaitChild
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 1: internalPhase
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 2: typedPhase
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 3: paramErrorPhase
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 4: escapePhase
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(4),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 5: pass
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(5),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 6: failChildPayload
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(6),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 7: failInternalPayload
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(7),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 8: failNumberType
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(8),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 9: failStringType
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(9),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 10: failDuplicateParams
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(10),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 11: failNoParamError
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(11),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 12: failBrokenParamDelivered
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(12),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 13: failSiblingParamLost
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(13),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 14: failEscapedText
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(14),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+            // 15: failEscapedMemberName
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(15),
+                children: Span { start: 0, len: 0 },
+                initial: None,
+            },
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // 0: awaitChild, transition 0
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 1: awaitChild, transition 1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 2: internalPhase, transition 0
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 3: internalPhase, transition 1
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 4: typedPhase, transition 0
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 4, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 5: typedPhase, transition 1
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 5, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 6: typedPhase, transition 2
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 6, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 7: typedPhase, transition 3
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 7, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 8: paramErrorPhase, transition 0
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 8, len: 0 },
+                internal: false,
+                has_content: true,
+            },
+            // 9: paramErrorPhase, transition 1
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 8, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 10: paramErrorPhase, transition 2
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 9, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 11: paramErrorPhase, transition 3
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 10, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 12: paramErrorPhase, transition 4
+            TransitionRow {
+                source: Some(StateId(3)),
+                targets: Span { start: 11, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 13: escapePhase, transition 0
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 12, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 14: escapePhase, transition 1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 13, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 15: escapePhase, transition 2
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 14, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // 16: the document's initial transition
+            TransitionRow {
+                source: None,
+                targets: Span { start: 15, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(1)),
+            Target::State(StateId(6)),
+            Target::State(StateId(2)),
+            Target::State(StateId(7)),
+            Target::State(StateId(8)),
+            Target::State(StateId(9)),
+            Target::State(StateId(3)),
+            Target::State(StateId(10)),
+            Target::State(StateId(11)),
+            Target::State(StateId(12)),
+            Target::State(StateId(4)),
+            Target::State(StateId(13)),
+            Target::State(StateId(5)),
+            Target::State(StateId(15)),
+            Target::State(StateId(14)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(16),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    }
+};
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
@@ -876,30 +1191,71 @@ impl StatePolicy for SendParamPayloadPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &SEND_PARAM_PAYLOAD_TABLES;
+    const STATES: &'static [Self::State] = &[
+        SendParamPayloadState::AwaitChild,
+        SendParamPayloadState::InternalPhase,
+        SendParamPayloadState::TypedPhase,
+        SendParamPayloadState::ParamErrorPhase,
+        SendParamPayloadState::EscapePhase,
+        SendParamPayloadState::Pass,
+        SendParamPayloadState::FailChildPayload,
+        SendParamPayloadState::FailInternalPayload,
+        SendParamPayloadState::FailNumberType,
+        SendParamPayloadState::FailStringType,
+        SendParamPayloadState::FailDuplicateParams,
+        SendParamPayloadState::FailNoParamError,
+        SendParamPayloadState::FailBrokenParamDelivered,
+        SendParamPayloadState::FailSiblingParamLost,
+        SendParamPayloadState::FailEscapedText,
+        SendParamPayloadState::FailEscapedMemberName,
+    ];
+    const HISTORIES: &'static [Self::History] = &[];
+    const EVENTS: &'static [Self::Event] = &[
+        SendParamPayloadEvent::DoneInvoke,
+        SendParamPayloadEvent::ErrorExecution,
+        SendParamPayloadEvent::Escaped,
+        SendParamPayloadEvent::FromChild,
+        SendParamPayloadEvent::Loopback,
+        SendParamPayloadEvent::Typed,
+        SendParamPayloadEvent::WithBadParam,
+        SendParamPayloadEvent::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+        // No `<history>`, so no value of the type to number.
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds 1 state(s) at
-    // most; a selection enables 1 transition(s) at most, one from each atomic state
-    // of one; the deepest state sits 1 level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
+    // one from each atomic state of one; a microstep owes 0 history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: 6 step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the 0 state(s) the histories record
+    // together, is the engine's.
+    type Workspace =
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
     type Configuration = SendParamPayloadConfiguration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
-        1,
-    >;
-    type HistoryDefaults =
-        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: 6 step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
-        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
-        6,
-    >;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -931,95 +1287,10 @@ impl StatePolicy for SendParamPayloadPolicy {
         SendParamPayloadState::AwaitChild
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-            SendParamPayloadState::FailBrokenParamDelivered => true,
-            SendParamPayloadState::FailChildPayload => true,
-            SendParamPayloadState::FailDuplicateParams => true,
-            SendParamPayloadState::FailEscapedMemberName => true,
-            SendParamPayloadState::FailEscapedText => true,
-            SendParamPayloadState::FailInternalPayload => true,
-            SendParamPayloadState::FailNoParamError => true,
-            SendParamPayloadState::FailNumberType => true,
-            SendParamPayloadState::FailSiblingParamLost => true,
-            SendParamPayloadState::FailStringType => true,
-            SendParamPayloadState::Pass => true,
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-            _ => false,
-        }
-    }
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets(
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        &[::sce_rust_runtime::EntryTarget::State(
-            SendParamPayloadState::AwaitChild,
-        )]
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            SendParamPayloadState::AwaitChild => 0,
-            SendParamPayloadState::EscapePhase => 4,
-            SendParamPayloadState::FailBrokenParamDelivered => 12,
-            SendParamPayloadState::FailChildPayload => 6,
-            SendParamPayloadState::FailDuplicateParams => 10,
-            SendParamPayloadState::FailEscapedMemberName => 15,
-            SendParamPayloadState::FailEscapedText => 14,
-            SendParamPayloadState::FailInternalPayload => 7,
-            SendParamPayloadState::FailNoParamError => 11,
-            SendParamPayloadState::FailNumberType => 8,
-            SendParamPayloadState::FailSiblingParamLost => 13,
-            SendParamPayloadState::FailStringType => 9,
-            SendParamPayloadState::InternalPhase => 1,
-            SendParamPayloadState::ParamErrorPhase => 3,
-            SendParamPayloadState::Pass => 5,
-            SendParamPayloadState::TypedPhase => 2,
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1095,16 +1366,6 @@ impl StatePolicy for SendParamPayloadPolicy {
 
     fn null_event() -> Self::Event {
         SendParamPayloadEvent::Null
-    }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
@@ -1515,11 +1776,12 @@ impl StatePolicy for SendParamPayloadPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
         match state {
             _ => {}
         }
@@ -1614,8 +1876,9 @@ impl StatePolicy for SendParamPayloadPolicy {
 
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
     // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn first_enabled_transition(
@@ -1623,7 +1886,7 @@ impl StatePolicy for SendParamPayloadPolicy {
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
             SendParamPayloadState::AwaitChild => {
                 if event == SendParamPayloadEvent::FromChild {
@@ -1631,28 +1894,14 @@ impl StatePolicy for SendParamPayloadPolicy {
                         "(_scxml_truthy(_event.data) and (_event.data.value == \"42\"))",
                         engine,
                     ) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::InternalPhase,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // awaitChild, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
                 if event == SendParamPayloadEvent::FromChild {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailChildPayload,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // awaitChild, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
                 None
@@ -1660,39 +1909,20 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadState::EscapePhase => {
                 if event == SendParamPayloadEvent::Escaped {
                     if self.safe_evaluate_guard("(((_event.data.text == \"x\\ny\") and (_event.data.obj[\"q\\\"k\"] == 1)) and (_event.data.obj[\"b\\\\k\"] == 2))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(SendParamPayloadState::Pass)],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // escapePhase, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == SendParamPayloadEvent::Escaped {
                     if self.safe_evaluate_guard("(_event.data.text == \"x\\ny\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailEscapedMemberName,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // escapePhase, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 if event == SendParamPayloadEvent::Escaped {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailEscapedText,
-                            )],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // escapePhase, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
                 None
@@ -1703,28 +1933,14 @@ impl StatePolicy for SendParamPayloadPolicy {
                         "(_scxml_truthy(_event.data) and (_event.data.carried == \"kept\"))",
                         engine,
                     ) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::TypedPhase,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // internalPhase, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
                 if event == SendParamPayloadEvent::Loopback {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailInternalPayload,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // internalPhase, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -1732,65 +1948,32 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadState::ParamErrorPhase => {
                 if event == SendParamPayloadEvent::ErrorExecution {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[],
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: false,
-                        });
+                        // paramErrorPhase, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 if event == SendParamPayloadEvent::WithBadParam {
                     if self.safe_evaluate_guard("(sawParamError ~= 1)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailNoParamError,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // paramErrorPhase, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == SendParamPayloadEvent::WithBadParam {
                     if self.safe_evaluate_guard("(_event.data.broken == \"\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailBrokenParamDelivered,
-                            )],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // paramErrorPhase, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == SendParamPayloadEvent::WithBadParam {
                     if self.safe_evaluate_guard("(_event.data.kept == \"here\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::EscapePhase,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // paramErrorPhase, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == SendParamPayloadEvent::WithBadParam {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailSiblingParamLost,
-                            )],
-                            transition_index: 4,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // paramErrorPhase, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(12));
                     }
                 }
                 None
@@ -1798,52 +1981,26 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadState::TypedPhase => {
                 if event == SendParamPayloadEvent::Typed {
                     if self.safe_evaluate_guard("(_event.data.n ~= 7)", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailNumberType,
-                            )],
-                            transition_index: 0,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // typedPhase, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 if event == SendParamPayloadEvent::Typed {
                     if self.safe_evaluate_guard("(_event.data.s ~= \"kept\")", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailStringType,
-                            )],
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // typedPhase, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == SendParamPayloadEvent::Typed {
                     if self.safe_evaluate_guard("(((#_event.data.d == 2) and (_event.data.d[1] == 1)) and (_event.data.d[2] == 2))", engine) {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(SendParamPayloadState::ParamErrorPhase)],
-                            transition_index: 2,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // typedPhase, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == SendParamPayloadEvent::Typed {
                     {
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: &[::sce_rust_runtime::EntryTarget::State(
-                                SendParamPayloadState::FailDuplicateParams,
-                            )],
-                            transition_index: 3,
-                            has_actions: false,
-                            is_internal: false,
-                        });
+                        // typedPhase, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1853,53 +2010,47 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     #[doc = "SCE-MAP: send_param_payload.scxml:82 :: _machine"]
     // SCE-MAP: send_param_payload.scxml:82 :: _machine
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match source {
-            SendParamPayloadState::ParamErrorPhase => {
-                match transition_index {
-                    0 => {
-                        // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
-                        // W3C SCXML 3.13: Transition 0 actions
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
-                            {
-                                // W3C SCXML 5.3: <assign location="sawParamError">
-                                self.ensure_script_engine();
-                                let sid = self.session_id.as_ref().unwrap().clone();
-                                let se = self.script_engine.clone();
-                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                let expr = "1";
-                                // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                                // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                                // through evaluate_expression + set_variable would round-trip through ScriptValue
-                                // and create a fresh table, breaking reference equality.
-                                let assign_script = format!("{} = {}", "sawParamError", expr);
-                                if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                    ::sce_rust_runtime::sce_log_error!(
-                                        "Assign failed for 'sawParamError': {}",
-                                        e
-                                    );
-                                    engine.raise(
-                                        sce_rust_runtime::EventWithMetadata::platform_error(
-                                            SendParamPayloadEvent::ErrorExecution,
-                                            "<assign> to 'sawParamError' failed",
-                                        ),
-                                    );
-                                    // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                                    break 'action_block;
-                                }
-                            }
+        match transition.0 {
+            // paramErrorPhase, transition 0
+            8 => {
+                // SCE-MAP: send_param_payload.scxml:199 :: paramErrorPhase :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        // W3C SCXML 5.3: <assign location="sawParamError">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "sawParamError", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'sawParamError': {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                SendParamPayloadEvent::ErrorExecution,
+                                "<assign> to 'sawParamError' failed",
+                            ));
+                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
+                            break 'action_block;
                         }
                     }
-                    _ => {}
                 }
             }
             _ => {}
