@@ -204,13 +204,19 @@ edit("backends/rust/runtime/src/host_processor.rs",
         if !self.started.contains_key(&key) {""")
 PY
 
+# The refusal's `return` is put behind `if false` rather than deleted: it is
+# the only place `ExternalEvent::Refused` is built, and a variant nothing
+# builds is a dead-code warning deny-warnings refuses.
 mutation_case "a done.invoke raised around the completion is accepted" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            self.refused_host_invoke_completions =
                 self.refused_host_invoke_completions.saturating_add(1);
-            return true;""",
+            return ExternalEvent::Refused;""",
      """            self.refused_host_invoke_completions =
-                self.refused_host_invoke_completions.saturating_add(1);""")
+                self.refused_host_invoke_completions.saturating_add(1);
+            if false {
+                return ExternalEvent::Refused;
+            }""")
 PY
 
 # ── …and the completion it reports ──────────────────────────────────

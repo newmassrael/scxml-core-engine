@@ -1569,19 +1569,10 @@ impl<P: StatePolicy> Engine<P> {
     /// ends because the run entered a top-level `<final>`, or the host stops
     /// a run that has not ended. Runs once per run.
     pub(crate) fn exit_interpreter(&mut self) {
-        let mut workspace = P::Workspace::default();
-        let (_, scratch) = workspace.split();
-        self.exit_interpreter_on(scratch);
-    }
-
-    /// [`exit_interpreter`](Self::exit_interpreter) on a scratch the caller
-    /// lends: the main loop's own, so the run's end holds one workspace and not
-    /// two.
-    fn exit_interpreter_on(&mut self, scratch: microstep::Scratch<'_>) {
         if self.interpreter_exited {
             return;
         }
-        microstep::exit_interpreter(P::TABLES, &mut EngineHost { engine: self }, scratch);
+        microstep::exit_interpreter(&mut EngineHost { engine: self });
         self.interpreter_exited = true;
         self.main_loop.is_running = false;
     }
@@ -1657,7 +1648,7 @@ impl<P: StatePolicy> Engine<P> {
             Ok(()),
             "the generated tables break a rule Appendix D's procedures assume"
         );
-        self.run_store.view_mut().set_configuration(&[]);
+        self.run_store.view_mut().configuration().clear();
         self.enter_states(&[P::TABLES.initial]);
 
         // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
@@ -1772,11 +1763,9 @@ impl<P: StatePolicy> Engine<P> {
             };
 
         // §scxml-3.4: the configuration is the engine's, kept as numbers.
-        let mut store = self.run_store.view_mut();
-        store.set_configuration(&[]);
-        for &state in configuration {
-            store.add(P::state_id(state));
-        }
+        self.run_store
+            .view_mut()
+            .set_configuration(configuration.iter().map(|&state| P::state_id(state)));
 
         self.main_loop.is_running = true;
         Ok(())
@@ -2440,43 +2429,44 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// §scxml-3.11: Full list of active states — the configuration Appendix
-    /// D's procedures read, and what history recording and In() see — in the
-    /// order the states were entered, for every machine alike.
+    /// D's procedures read, and what history recording and In() see — in
+    /// document order, for every machine alike: a configuration is a set, and
+    /// the engine keeps it as one.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the document's own
     /// [`Configuration`](StatePolicy::Configuration), which is a `Vec<P::State>`
     /// under std and a `heapless::Vec<P::State, N>` under no_std with `N` the
     /// most states one configuration of the document holds. The engine keeps
-    /// the configuration as numbers (docs/adr/0064); this is it in the
-    /// machine's own states.
+    /// the configuration as a set of numbers (docs/adr/0064); this is it in
+    /// the machine's own states.
     pub fn get_active_states(&self) -> P::Configuration {
         let mut active = P::Configuration::default();
-        for &state in self.run_store.view().configuration() {
+        for state in self.run_store.view().configuration().iter() {
             active.push_bounded(P::state_of(state));
         }
         active
     }
 
-    /// What `history` recorded when its parent was last exited, in the order it
-    /// was recorded; `None` before that ever happened.
+    /// What `history` recorded when its parent was last exited, in document
+    /// order; `None` before that ever happened.
     #[cfg(feature = "std")]
     pub fn history_value(&self, history: P::History) -> Option<Vec<P::State>> {
         let recorded = self
             .run_store
             .view()
-            .history_value(P::TABLES, P::history_id(history))?;
-        Some(recorded.iter().map(|&state| P::state_of(state)).collect())
+            .history_value(P::history_id(history))?;
+        Some(recorded.iter().map(P::state_of).collect())
     }
 
     /// Make `states` what `history` recorded, for a restore that has checked
     /// them against the document (`saved_state::restore_history`, a plain code
     /// span: that module does not exist on the no_std docs profile).
     pub fn set_history_value(&mut self, history: P::History, states: &[P::State]) {
-        self.run_store.view_mut().record_history_from(
-            P::TABLES,
-            P::history_id(history),
-            states.iter().map(|&state| P::state_id(state)),
-        );
+        let mut store = self.run_store.view_mut();
+        let (_, mut record) = store.record_history(P::history_id(history));
+        for &state in states {
+            record.insert(P::state_id(state));
+        }
     }
 
     /// Whether `state` is in the configuration: what the generated `In()`
@@ -5123,7 +5113,7 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
         // "where did it end" is a fact the engine keeps rather than a reading
         // of the configuration.
         let row = P::TABLES.state(id);
-        if row.kind == crate::helpers::tables::StateKind::Final && row.parent.is_none() {
+        if row.kind() == crate::helpers::tables::StateKind::Final && row.parent().is_none() {
             self.engine.main_loop.terminal_state = Some(id);
         }
     }
@@ -5262,7 +5252,7 @@ trait MainLoop {
     fn start_pending_invokes(&mut self);
     /// The loop is over: report what it did not take, and exit the
     /// interpreter if the run ended in a final.
-    fn end_run(&mut self, scratch: microstep::Scratch<'_>);
+    fn end_run(&mut self);
 }
 
 impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
@@ -5340,10 +5330,10 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self.engine.start_restored_host_invokes();
     }
 
-    fn end_run(&mut self, scratch: microstep::Scratch<'_>) {
+    fn end_run(&mut self) {
         self.engine.record_unseen_external_events();
         if self.engine.main_loop.terminal_state.is_some() {
-            self.engine.exit_interpreter_on(scratch);
+            self.engine.exit_interpreter();
         }
     }
 }
@@ -5394,7 +5384,7 @@ impl Turn<'_> {
                 // §scxml-D-exitInterpreter: the loop is over because the run
                 // entered a top-level final, so every state still active is
                 // exited now — before the completion callback tells a parent.
-                self.host.end_run(self.scratch.reborrow());
+                self.host.end_run();
                 break;
             }
 

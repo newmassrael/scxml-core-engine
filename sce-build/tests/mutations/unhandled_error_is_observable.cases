@@ -59,8 +59,8 @@ PY
 
 mutation_case "every error is counted, answered or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if outcome == EventOutcome::Discarded && is_error {""",
-     """        if matches!(outcome, EventOutcome::Discarded | EventOutcome::Taken) && is_error {""")
+     """        if outcome == EventOutcome::Discarded && taken.is_error {""",
+     """        if matches!(outcome, EventOutcome::Discarded | EventOutcome::Taken) && taken.is_error {""")
 PY
 
 # ── Counting the author's own unmatched raise ──────────────────────
@@ -69,11 +69,15 @@ PY
 # unmatched internal event, which is exactly the thing the sibling axis
 # deliberately does not count — `whisper` raises `unheard`, nothing answers it,
 # and both ends of that are in the document.
+#
+# The name test is short-circuited (`|| true`) rather than deleted: this is the
+# only read of `TakenEvent::is_error`, and a field nothing reads is a dead-code
+# warning this crate denies.
 
 mutation_case "any unmatched internal event counts as an engine error" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if outcome == EventOutcome::Discarded && is_error {""",
-     """        if outcome == EventOutcome::Discarded {""")
+     """        if outcome == EventOutcome::Discarded && taken.is_error {""",
+     """        if outcome == EventOutcome::Discarded && (taken.is_error || true) {""")
 PY
 
 # ── The classifier ─────────────────────────────────────────────────
@@ -117,7 +121,7 @@ PY
 
 mutation_case "the unhandled error is counted but never named" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.last_unhandled_error = Some(event_with_meta.event);""",
+     """            self.last_unhandled_error = Some(P::EVENTS[usize::from(taken.event.0)]);""",
      """            self.last_unhandled_error = None;""")
 PY
 
@@ -159,16 +163,17 @@ PY
 # The count is a byproduct of the drain, not its job. Folding the selection
 # into the condition — which is what the first draft of this code did — skips
 # `take_event` for every event that is not an error, so nothing in the
-# document runs. The fixture's `<assign>` counters are what notice.
+# document runs. The fixture's `<assign>` counters are what notice. The
+# selection is the main loop's, on the internal event its host took and bound.
 
 mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        let outcome = self.take_event(event_with_meta.event);
-        self.handling_error_event = false;""",
-     """        let outcome = if is_error {
-            self.take_event(event_with_meta.event)
-        } else {
-            EventOutcome::Taken
-        };
-        self.handling_error_event = false;""")
+     """            let outcome = self.take_event(event.event);
+            if outcome == EventOutcome::Taken {""",
+     """            let outcome = if event.is_error {
+                self.take_event(event.event)
+            } else {
+                EventOutcome::Taken
+            };
+            if outcome == EventOutcome::Taken {""")
 PY

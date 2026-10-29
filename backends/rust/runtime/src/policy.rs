@@ -80,7 +80,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// A history is not a state — it is never in a configuration — so it is not
     /// a variant of [`State`](StatePolicy::State): target lists name one as a
-    /// [`Target::History`](crate::helpers::tables::Target::History), and the
+    /// [`Target::history`](crate::helpers::tables::Target::history), and the
     /// entry procedures dereference it to what it recorded or to its default.
     type History: Copy + Eq + Debug + 'static;
 

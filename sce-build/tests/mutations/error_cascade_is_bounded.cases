@@ -60,15 +60,21 @@ PY
 # its third link with a refusal the host is told about.
 # `a_chain_that_ends_on_its_own_is_not_refused` is the assertion that separates
 # them, and it is why the fixture has two error states rather than one.
+#
+# The handler test is short-circuited (`|| true`) rather than deleted: it is the
+# only read of `handling_error_event`, and a field nothing reads is a dead-code
+# warning this crate denies.
 
 mutation_case "any error is a link, handler or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        if self.handling_error_event
             && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
         {
-            self.error_cascade_depth""",
-     """        if crate::helpers::event_matching::is_error_event(P::get_event_name(event.event)) {
-            self.error_cascade_depth""")
+            self.main_loop.error_cascade_depth""",
+     """        if (self.handling_error_event || true)
+            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+        {
+            self.main_loop.error_cascade_depth""")
 PY
 
 # ── The reset ──────────────────────────────────────────────────────
@@ -85,7 +91,7 @@ edit("backends/rust/runtime/src/engine.rs",
                 // is over. A machine whose next macrostep starts a new one
                 // starts it from zero, and the count of what was refused stays
                 // where the host reads it.
-                self.error_cascade_depth = 0;""",
+                self.host.state().error_cascade_depth = 0;""",
      """                // MUTANT: the depth outlives the drain that built it.""")
 PY
 
@@ -109,12 +115,12 @@ PY
 mutation_case "an unrelated internal event ends the chain again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        self.handling_error_event = is_error;
-        let outcome = self.take_event(event_with_meta.event);""",
+        Some(TakenEvent {""",
      """        if !is_error {
-            self.error_cascade_depth = 0;
+            self.main_loop.error_cascade_depth = 0;
         }
         self.handling_error_event = is_error;
-        let outcome = self.take_event(event_with_meta.event);""")
+        Some(TakenEvent {""")
 PY
 
 # ── The count ──────────────────────────────────────────────────────

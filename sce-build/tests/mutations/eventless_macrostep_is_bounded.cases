@@ -34,20 +34,16 @@ mutation_oracles backends/rust/tests/tests/eventless_macrostep_is_bounded.rs
 # shipped behaviour on the one engine with no ceiling at all, so the case is
 # also the regression: with no budget the drain does not come back, and the
 # harness's artefact timeout is what turns "the round hung" into a verdict.
+# The refusal branch stays written (`if false`) rather than deleted: it is the
+# only place `Eventless::Refused` is built, and an enum variant nothing builds
+# is a dead-code warning this crate denies.
 
 mutation_case "the macrostep past the ceiling is taken anyway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                    // The chain is still going one microstep past the budget,
-                    // so this is the case the specification calls a macrostep
-                    // that does not terminate. Refuse the microstep rather than
-                    // take it, and publish the refusal: the configuration left
-                    // behind is not a stable one and only the count says so.
-                    self.refuse_macrostep(self.current_state);
-                    return;
-                }
-                self.macrostep_microsteps_taken += 1;""",
-     """                self.macrostep_microsteps_taken += 1;""")
+     """        if self.refuse_spent_macrostep() {
+            // The chain is still going one microstep past the budget, so this is""",
+     """        if false {
+            // The chain is still going one microstep past the budget, so this is""")
 PY
 
 # ── The chain that ends on its own ─────────────────────────────────
@@ -62,14 +58,13 @@ PY
 
 mutation_case "a chain that settles at the ceiling is called a runaway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            let enabled = self.select_transitions(P::null_event());
-            if !enabled.is_empty() {""",
-     """            let enabled = self.select_transitions(P::null_event());
-            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                self.refuse_macrostep(self.current_state);
-                return;
-            }
-            if !enabled.is_empty() {""")
+     """        self.select_transitions(null_event);
+        if self.enabled.is_empty() {""",
+     """        self.select_transitions(null_event);
+        if self.refuse_spent_macrostep() {
+            return Eventless::Refused;
+        }
+        if self.enabled.is_empty() {""")
 PY
 
 # ── The budget is per macrostep, not per caller ────────────────────
@@ -86,8 +81,8 @@ PY
 
 mutation_case "each caller of the drain gets its own budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        while self.is_running && !self.is_in_final_state() && !self.macrostep_truncated {""",
-     """        while self.is_running && !self.is_in_final_state() {""")
+     """            if !state.goes_on() || state.macrostep_truncated {""",
+     """            if !state.goes_on() {""")
 PY
 
 # ── The budget is per macrostep, not per machine ───────────────────
@@ -101,8 +96,8 @@ PY
 
 mutation_case "the ceiling outlives the macrostep that hit it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.macrostep_truncated = false;
-        self.macrostep_microsteps_taken = 0;
+     """        self.main_loop.macrostep_truncated = false;
+        self.main_loop.macrostep_microsteps_taken = 0;
 """,
      "")
 PY
@@ -129,17 +124,27 @@ PY
 # names for the same refusal, and only one of them is where an author looks.
 # (Dropping the name entirely is the sibling mutant in
 # `internal_chain_is_bounded.cases`, which owns the shared recorder.)
+#
+# The recorder, `report_truncated_macrostep`, names the state the machine
+# stands in and cannot see the enabled set, so the mutant moves the machine's
+# current state to the first target of the first enabled transition on the
+# turn the budget is already spent — just before the refusal reads it.
 
 mutation_case "the engine names the state the refused microstep would have entered" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                    // behind is not a stable one and only the count says so.
-                    self.refuse_macrostep(self.current_state);""",
-     """                    // behind is not a stable one and only the count says so.
-                    let entered = match enabled.first().and_then(|t| t.targets.first()) {
-                        Some(EntryTarget::State(target)) => *target,
-                        _ => self.current_state,
-                    };
-                    self.refuse_macrostep(entered);""")
+     """            return Eventless::NoneEnabled;
+        }
+        if self.refuse_spent_macrostep() {""",
+     """            return Eventless::NoneEnabled;
+        }
+        if self.host.state().macrostep_microsteps_taken >= MAX_MACROSTEP_MICROSTEPS {
+            if let Some(crate::helpers::tables::Named::State(target)) =
+                self.tables.targets(self.enabled[0]).first().map(|target| target.named())
+            {
+                self.host.settle(Entered { states: 1, current: Some(target) });
+            }
+        }
+        if self.refuse_spent_macrostep() {""")
 PY
 
 # ── The lower bound on the accessor ────────────────────────────────

@@ -105,45 +105,38 @@ const _: () = assert!(
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
 );
 
-/// The probe machine's tables (docs/adr/0064), which carry the bounds its
-/// buffers are sized by.
+/// The probe machine's tables (docs/adr/0064): the rows of the document the
+/// buffers below are sized for.
 const PROBE_TABLES: &sce_rust_runtime::DocumentTables =
     <EventQueueCapacityProbePolicy as StatePolicy>::TABLES;
 
-/// Document-bound lever. Appendix D's procedures hold a configuration, the sets
-/// built from it, an enabled set and the walks' stack in the workspace of the
-/// call that runs a macrostep, so every slot of their capacities is paid on the
-/// stack at the deepest point of a call. The generator sizes them to what this
-/// document's state tree bounds, and this machine is three flat states with no
-/// `<history>`, so one is active at a time and one transition enabled, the walks
-/// owe three steps for its one level and three of headroom, and no history
-/// default is ever owed: where a bound written for every document was 16 and
-/// then 32 (516 B an enabled set). The numbers are asserted exactly, since a
-/// number that is merely small enough would let the generator drift back toward
-/// a constant without a word.
+/// The document the bounds below are those of: three flat states and no
+/// `<history>`. A set of its states is a bit vector of three states, one word.
 const _: () = assert!(
-    PROBE_TABLES.max_configuration == 1
-        && PROBE_TABLES.max_enabled == 1
-        && PROBE_TABLES.max_walk == 6
-        && PROBE_TABLES.max_history_defaults == 0
-        && PROBE_TABLES.history_records == 0,
-    "the flat probe machine's microstep bounds are not those of three flat states: the \
-     generator stopped reading the document's state tree (sce-build/src/microstep_bounds.rs) \
-     and wrote a constant, or the fixture gained a state",
+    PROBE_TABLES.states.len() == 3 && PROBE_TABLES.histories.is_empty(),
+    "the flat probe machine's tables are not those of three flat states with no history: the \
+     fixture gained a state or a history, or the generator wrote rows the document does not \
+     have (sce-build/src/document_tables.rs)",
 );
 
-/// The buffers are spelled to those capacities, not only the numbers in the
-/// tables beside them: the machine's workspace is exactly the workspace of
-/// those bounds.
-const _: () = assert!(
-    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::Workspace>()
-        == core::mem::size_of::<
-            sce_rust_runtime::Workspace<{ sce_rust_runtime::state_scratch(1) }, 1, 6, 0>,
-        >(),
-    "the machine's microstep workspace is not the size of a workspace of the document's \
-     bounds: its type was spelled with other capacities. See the Rust template's \
-     `type Workspace` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
-);
+/// Document-bound lever. Appendix D's procedures hold the sets of states they
+/// build, an enabled set and the walks' stack in the workspace of the call that
+/// runs a macrostep, so every slot of their capacities is paid on the stack at
+/// the deepest point of a call. The generator sizes them to what this
+/// document's state tree bounds, and this machine is three flat states with no
+/// `<history>`, so its sets are bit vectors of three states, one transition is
+/// enabled, the walks owe three steps for its one level and three of headroom,
+/// and no history default is ever owed: where a bound written for every
+/// document was 16 and then 32 (516 B an enabled set). The workspace is
+/// asserted to be exactly the type of those bounds, since a capacity that is
+/// merely small enough would let the generator drift back toward a constant
+/// without a word: this item stops compiling (a mismatched type) when the
+/// machine's `type Workspace` is spelled with other capacities, because the
+/// generator stopped reading the document's state tree
+/// (sce-build/src/microstep_bounds.rs) or the Rust template's `type Workspace`
+/// (tools/codegen/templates/rust/state_machine.rs.jinja2) changed.
+const _: <EventQueueCapacityProbePolicy as StatePolicy>::Workspace =
+    sce_rust_runtime::Workspace::<{ sce_rust_runtime::state_scratch(3) }, 1, 6, 0>::new();
 
 /// Constant-construction lever. A bare-metal program holds its engine in a
 /// `static`, so nothing is built at start-up and no copy of the engine is made on
@@ -157,12 +150,14 @@ pub static ENGINE_BUILT_IN_ITS_SLOT: Engine<EventQueueCapacityProbePolicy> =
     Engine::new_const(EventQueueCapacityProbePolicy::new_const("queue-size-probe"));
 
 /// The configuration and history records the engine keeps for the whole run,
-/// spelled to the document too: one state at a time and no `<history>` to
-/// record. A store of a constant's size would be paid in static RAM by every
-/// machine for as long as it runs.
+/// spelled to the document too: a configuration of one word for its three
+/// states and no `<history>` to record. A store of a constant's size would be
+/// paid in static RAM by every machine for as long as it runs.
 const _: () = assert!(
     core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::RunStore>()
-        == core::mem::size_of::<sce_rust_runtime::RunStore<1, 0, 0>>(),
+        == core::mem::size_of::<
+            sce_rust_runtime::RunStore<{ sce_rust_runtime::state_words(3) }, 0, 0>,
+        >(),
     "the machine's run store is not the size of a store of the document's bounds: its type was \
      spelled with other capacities. See the Rust template's `type RunStore` \
      (tools/codegen/templates/rust/state_machine.rs.jinja2).",

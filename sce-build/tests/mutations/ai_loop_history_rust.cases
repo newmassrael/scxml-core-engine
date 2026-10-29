@@ -5,11 +5,11 @@
 #
 # Sibling of `ai_loop_history_cpp.cases`, and since the Rust backend moved onto
 # Appendix D (2026-09-24) the two are built the same way: C++ calls
-# `SCE::Core::HistoryHelper::recordHistory` at run time, and the generated Rust
-# policy's exit hook calls the runtime's `recorded_history`
+# `SCE::Core::HistoryHelper::recordHistory` at run time, and the runtime's
+# `exit_states` calls its `recorded_history`
 # (`backends/rust/runtime/src/helpers/microstep.rs`) with the history's parent
-# and its type. The filter that decides what a history records is the
-# runtime's now, so that is what the cases below break.
+# and its type, read from the document's tables. The filter that decides what a
+# history records is the runtime's now, so that is what the cases below break.
 #
 # Until then the Rust emitter inlined the filter into the generated policy, and
 # these cases mutated the committed `ai_loop_sm.rs`, whose anchor went with the
@@ -30,8 +30,8 @@ mutation_targets backends/rust/runtime/src/helpers/microstep.rs
 
 mutation_case "shallow history records no state at all" <<'PY'
 edit("backends/rust/runtime/src/helpers/microstep.rs",
-     "doc.parent_of(state) == Some(parent)",
-     "false && doc.parent_of(state) == Some(parent)")
+     "tables.parent(state) == Some(parent)",
+     "false && tables.parent(state) == Some(parent)")
 PY
 
 # ── Shallow history records the wrong states ───────────────────────
@@ -42,6 +42,6 @@ PY
 
 mutation_case "shallow history records everything but the direct children" <<'PY'
 edit("backends/rust/runtime/src/helpers/microstep.rs",
-     "doc.parent_of(state) == Some(parent)",
-     "doc.parent_of(state) != Some(parent)")
+     "tables.parent(state) == Some(parent)",
+     "tables.parent(state) != Some(parent)")
 PY

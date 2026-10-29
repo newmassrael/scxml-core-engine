@@ -479,10 +479,11 @@ pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 /// Appendix D's procedures read, named at the crate root because every
 /// generated machine spells them (docs/adr/0064).
 pub use helpers::microstep::{state_scratch, Workspace};
-pub use helpers::run_store::RunStore;
+pub use helpers::run_store::{record_words, RunStore};
+pub use helpers::state_set::state_words;
 pub use helpers::tables::{
-    DocumentTables, EventId, HistoryId, HistoryRow, NoHistory, Span, StateId, StateKind, StateRow,
-    Target, TransitionId, TransitionRow,
+    DocumentTables, EventId, HistoryId, HistoryRow, Named, NoHistory, Span, StateId, StateKind,
+    StateRow, Target, TransitionId, TransitionRow,
 };
 #[cfg(feature = "std")]
 pub use host_processor::{

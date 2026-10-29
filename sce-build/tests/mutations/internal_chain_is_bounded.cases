@@ -37,7 +37,7 @@ mutation_oracles backends/rust/tests/tests/internal_chain_is_bounded.rs
 
 mutation_case "the internal drain has no ceiling at all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+     """            if self.refuse_spent_macrostep() {
                 // Work is still queued one microstep past the budget. Refuse the""",
      """            if false {
                 // Work is still queued one microstep past the budget. Refuse the""")
@@ -49,15 +49,19 @@ PY
 # chain is still bounded and every count still moves, so only
 # `a_refused_chain_is_left_queued_for_the_next_macrostep` can see it: the
 # `resume` chain stops a link short of its end and never finishes, because the
-# link that would have continued it was thrown away.
+# link that would have continued it was thrown away. The loop reaches the queue
+# only through its host, so the mutant takes the event there and closes it as
+# answered, which leaves the lost link as the only difference.
 
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """                // which is where the next macrostep will find it.
-                self.refuse_macrostep(self.current_state);""",
+                return;""",
      """                // which is where the next macrostep will find it.
-                let _swallowed = self.internal_queue.pop();
-                self.refuse_macrostep(self.current_state);""")
+                if let Some(swallowed) = self.host.take_internal_event() {
+                    self.host.end_internal_event(swallowed, EventOutcome::Taken);
+                }
+                return;""")
 PY
 
 # ── One budget, not one per branch ─────────────────────────────────
@@ -73,14 +77,14 @@ PY
 
 mutation_case "internal microsteps are not counted against the macrostep's budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if outcome == EventOutcome::Taken {
-            // Appendix D: the loop turn that selects nothing takes no
-            // microstep, so it spends no budget. Only a turn that answered
-            // the event moved the machine, and only those are what a
-            // ceiling on microsteps can be counted in.
-            self.macrostep_microsteps_taken += 1;
-        }""",
-     """        // MUTANT: the internal branch spends none of the shared budget.""")
+     """            if outcome == EventOutcome::Taken {
+                // Appendix D: the loop turn that selects nothing takes no
+                // microstep, so it spends no budget. Only a turn that answered
+                // the event moved the machine, and only those are what a
+                // ceiling on microsteps can be counted in.
+                self.host.state().macrostep_microsteps_taken += 1;
+            }""",
+     """            // MUTANT: the internal branch spends none of the shared budget.""")
 PY
 
 # ── The microstep that was answered is the one that is counted ─────
@@ -91,8 +95,8 @@ PY
 
 mutation_case "an unanswered internal event still spends the budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if outcome == EventOutcome::Taken {""",
-     """        if true {""")
+     """            if outcome == EventOutcome::Taken {""",
+     """            if true {""")
 PY
 
 # ── The report ─────────────────────────────────────────────────────
@@ -102,12 +106,17 @@ PY
 # hands back is not a stable one. This is the shape the Kotlin engine shipped
 # on this branch: bounded and silent, which is the same signal as unbounded to
 # the host reading it.
+#
+# Both branches of the inner loop refuse through one `refuse_spent_macrostep`,
+# and it reports through one `report_truncated_macrostep`, so this case and
+# `eventless_macrostep_is_bounded.cases`'s "the refusal is silent" break the
+# same line; this one is what says the internal chain's test sees it.
 
 mutation_case "the internal refusal is silent" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
-            self.last_truncated_macrostep_state = Some(state);""",
-     """            self.last_truncated_macrostep_state = Some(state);""")
+     """        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+        self.last_truncated_macrostep_state = Some(self.current_state);""",
+     """        self.last_truncated_macrostep_state = Some(self.current_state);""")
 PY
 
 # ── Naming where it stopped ────────────────────────────────────────
@@ -115,17 +124,15 @@ PY
 # The count alone says a document somewhere cannot settle. Naming a state on
 # the chain is what an author acts on, and the fixture's chains never leave one
 # state so the name is unambiguous in all seven channels.
-
-# ⚠ The mutant also consumes `state`. Dropping the only use of a parameter is
-# an `unused_variables` warning, this crate denies warnings, and a mutant that
-# does not compile reports INCONCLUSIVE — a case that says nothing where it
-# used to say CAUGHT. Measured 2026-08-21, when the diagnostics feature gate
-# moved this assignment inside a `#[cfg]` block.
+#
+# The recorder reads the state from the engine itself and takes no parameter,
+# so dropping the name leaves no binding unused. (When it took the state as a
+# parameter the mutant had to consume it: this crate denies warnings, and a
+# mutant that does not compile reports INCONCLUSIVE — measured 2026-08-21.)
 mutation_case "the internal refusal counts but never names the state" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.last_truncated_macrostep_state = Some(state);""",
-     """            self.last_truncated_macrostep_state = None;
-            let _ = state;""")
+     """        self.last_truncated_macrostep_state = Some(self.current_state);""",
+     """        self.last_truncated_macrostep_state = None;""")
 PY
 
 # ── The macrostep boundary ─────────────────────────────────────────
@@ -139,8 +146,8 @@ PY
 
 mutation_case "the spent budget outlives the macrostep that spent it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.macrostep_truncated = false;
-        self.macrostep_microsteps_taken = 0;
+     """        self.main_loop.macrostep_truncated = false;
+        self.main_loop.macrostep_microsteps_taken = 0;
 """,
      "")
 PY

@@ -14,8 +14,11 @@
 #
 # Since docs/adr/0064 the configuration is the engine's, and the order is the
 # runtime's: `exit_states` in `helpers/microstep.rs` calls the machine's exit
-# hook, then removes the state. The anchor is a literal slice of that
-# procedure; `scripts/mutate --check` reports it when the procedure changes.
+# hook, then removes the state from the run store. The anchor is a literal
+# slice of that procedure; `scripts/mutate --check` reports it when the
+# procedure changes. `exit_interpreter` exits each remaining state the same
+# way, and the anchor keeps the `exit_states` comment line so it names one
+# site.
 
 mutation_tests -p sce-rust-tests --test onexit_runs_before_the_state_leaves
 mutation_targets backends/rust/runtime/src/helpers/microstep.rs
@@ -31,8 +34,8 @@ mutation_case "the state leaves the configuration before its own onexit runs" <<
 edit("backends/rust/runtime/src/helpers/microstep.rs",
      """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
         machine.exit_state(state);
-        machine.remove_from_configuration(state);""",
+        machine.store().remove(state);""",
      """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
-        machine.remove_from_configuration(state);
+        machine.store().remove(state);
         machine.exit_state(state);""")
 PY

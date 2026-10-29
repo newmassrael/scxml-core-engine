@@ -23,8 +23,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, DocumentTables, Engine, EventId, Hal, HistoryId, NoHistory, RunStore, Span,
-    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EventId, Hal, HistoryId, NoHistory,
+    RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -106,34 +107,22 @@ impl StatePolicy for MockPolicy {
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
-    type RunStore = RunStore<1, 0, 0>;
+    type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<St, 1>;
 
     // One child of the `<scxml>` element and no transition of its own: the
     // only row of the transitions table is the document's initial transition.
     const TABLES: &'static DocumentTables = &DocumentTables {
-        states: &[StateRow {
-            parent: None,
-            kind: StateKind::Atomic,
-            last_descendant: StateId(0),
-            children: Span::EMPTY,
-            initial: None,
-        }],
-        children: &[],
+        states: &[StateRow::new(None, StateKind::Atomic, StateId(0), None)],
         histories: &[],
-        transitions: &[TransitionRow {
-            source: None,
-            targets: Span { start: 0, len: 1 },
-            internal: false,
-            has_content: false,
-        }],
-        targets: &[Target::State(StateId(0))],
+        transitions: &[TransitionRow::new(
+            None,
+            Span { start: 0, len: 1 },
+            false,
+            false,
+        )],
+        targets: &[Target::state(StateId(0))],
         initial: TransitionId(0),
-        history_records: 0,
-        max_configuration: 1,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 6,
     };
     const STATES: &'static [St] = &[St::S0];
     const HISTORIES: &'static [NoHistory] = &[];

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A document's structure as data: the tables Appendix D's procedures
-//! ([`microstep`](super::microstep)) read, one `static` for each machine.
+//! ([`microstep`](super::microstep)) read, one constant for each machine.
 //!
 //! The procedures are compiled once for every program, whatever machines it
 //! holds (docs/adr/0064). So they cannot name a machine's own types, and a
@@ -10,8 +10,9 @@
 //!
 //! - a state is a [`StateId`], its position in document order. Document order is
 //!   a pre-order walk, so a state's subtree is the contiguous range of ids from
-//!   the state to its [`StateRow::last_descendant`], entry order is ascending
-//!   order and exit order is descending order;
+//!   the state to its [`StateRow::last_descendant`], its first child is the next
+//!   id and each further child the id after the subtree of the one before, entry
+//!   order is ascending order and exit order is descending order;
 //! - a `<history>` is a [`HistoryId`], its position in document order among the
 //!   document's histories;
 //! - a transition is a [`TransitionId`]. The rows are the written transitions,
@@ -21,6 +22,12 @@
 //!   transitions too, and the entry procedures read their targets the same way;
 //! - an event is an [`EventId`], the number of the machine's event enum's
 //!   variant.
+//!
+//! The rows are as small as these numbers allow, since a program holds one
+//! table for each machine: what a pre-order numbering already says (a state's
+//! children) is not stored, an absent state or transition is the one number no
+//! document reaches, and a target is one number that says whether it names a
+//! state or a history.
 //!
 //! `sce_build::document_tables` computes the rows from the document, and the
 //! generator writes them. A table written by hand states the same rows, and
@@ -49,6 +56,14 @@ pub struct TransitionId(pub u16);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
 pub struct EventId(pub u16);
+
+/// The number a row holds where a state or a transition is absent: one past
+/// the most ids a table can name, so no document reaches it.
+const ABSENT: u16 = u16::MAX;
+
+/// The most states, histories or transitions one table names: every id below
+/// [`ABSENT`], and a [`Target`] keeps one bit for its kind.
+pub const MAX_IDS: usize = 1 << 15;
 
 impl StateId {
     /// The id as an index into a table.
@@ -81,7 +96,7 @@ impl TransitionId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NoHistory {}
 
-/// A run of rows in one of the pools of [`DocumentTables`].
+/// A run of rows in the pool of targets of [`DocumentTables`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     /// The first row.
@@ -110,6 +125,7 @@ impl Span {
 
 /// What kind of state a row is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum StateKind {
     /// A `<state>` with no child states.
     Atomic,
@@ -124,17 +140,68 @@ pub enum StateKind {
 /// One state of the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StateRow {
+    parent: u16,
+    last_descendant: StateId,
+    initial: u16,
+    kind: StateKind,
+}
+
+impl StateRow {
+    /// A state whose parent is `parent` (`None`: the `<scxml>` element), whose
+    /// subtree ends at `last_descendant` (itself when it has no child states),
+    /// and whose initial transition is `initial` (a compound state's only).
+    pub const fn new(
+        parent: Option<StateId>,
+        kind: StateKind,
+        last_descendant: StateId,
+        initial: Option<TransitionId>,
+    ) -> Self {
+        Self {
+            parent: match parent {
+                Some(parent) => parent.0,
+                None => ABSENT,
+            },
+            last_descendant,
+            initial: match initial {
+                Some(initial) => initial.0,
+                None => ABSENT,
+            },
+            kind,
+        }
+    }
+
     /// Its parent; `None` when the parent is the `<scxml>` element.
-    pub parent: Option<StateId>,
+    #[inline]
+    pub const fn parent(&self) -> Option<StateId> {
+        if self.parent == ABSENT {
+            None
+        } else {
+            Some(StateId(self.parent))
+        }
+    }
+
     /// What kind of state it is.
-    pub kind: StateKind,
+    #[inline]
+    pub const fn kind(&self) -> StateKind {
+        self.kind
+    }
+
     /// The largest id in its subtree, itself when it has no child states. The
     /// subtree is every id from the state's to this one.
-    pub last_descendant: StateId,
-    /// Its child states in document order, in [`DocumentTables::children`].
-    pub children: Span,
+    #[inline]
+    pub const fn last_descendant(&self) -> StateId {
+        self.last_descendant
+    }
+
     /// Its initial transition, for a compound state.
-    pub initial: Option<TransitionId>,
+    #[inline]
+    pub const fn initial(&self) -> Option<TransitionId> {
+        if self.initial == ABSENT {
+            None
+        } else {
+            Some(TransitionId(self.initial))
+        }
+    }
 }
 
 /// One `<history>` of the document.
@@ -142,49 +209,124 @@ pub struct StateRow {
 pub struct HistoryRow {
     /// The state it is declared in.
     pub parent: StateId,
-    /// Whether it is `type="deep"`.
-    pub deep: bool,
     /// Its default transition.
     pub default: TransitionId,
-    /// Where what it records is kept, in a pool of
-    /// [`DocumentTables::history_records`] states the engine holds.
-    pub record: Span,
+    /// Whether it is `type="deep"`.
+    pub deep: bool,
 }
 
 /// One transition of the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransitionRow {
-    /// Its source; `None` for the document's initial transition, whose source
-    /// is the `<scxml>` element.
-    pub source: Option<StateId>,
-    /// Its targets as written, in [`DocumentTables::targets`]; empty for a
-    /// targetless transition.
-    pub targets: Span,
-    /// Whether it was written `type="internal"`.
-    pub internal: bool,
-    /// Whether it has executable content.
-    pub has_content: bool,
+    source: u16,
+    targets: Span,
+    internal: bool,
+    has_content: bool,
 }
 
-/// One target of a target list, as the document wrote it.
+impl TransitionRow {
+    /// A transition from `source` (`None`: the `<scxml>` element, the
+    /// document's initial transition) to the targets `targets` names in
+    /// [`DocumentTables::targets`], written `type="internal"` when `internal`,
+    /// with executable content when `has_content`.
+    pub const fn new(
+        source: Option<StateId>,
+        targets: Span,
+        internal: bool,
+        has_content: bool,
+    ) -> Self {
+        Self {
+            source: match source {
+                Some(source) => source.0,
+                None => ABSENT,
+            },
+            targets,
+            internal,
+            has_content,
+        }
+    }
+
+    /// Its source; `None` for the document's initial transition, whose source
+    /// is the `<scxml>` element.
+    #[inline]
+    pub const fn source(&self) -> Option<StateId> {
+        if self.source == ABSENT {
+            None
+        } else {
+            Some(StateId(self.source))
+        }
+    }
+
+    /// Its targets as written, in [`DocumentTables::targets`]; empty for a
+    /// targetless transition.
+    #[inline]
+    pub const fn targets(&self) -> Span {
+        self.targets
+    }
+
+    /// Whether it was written `type="internal"`.
+    #[inline]
+    pub const fn internal(&self) -> bool {
+        self.internal
+    }
+
+    /// Whether it has executable content.
+    #[inline]
+    pub const fn has_content(&self) -> bool {
+        self.has_content
+    }
+}
+
+/// One target of a target list, as the document wrote it: a state or a
+/// `<history>`, in one number whose top bit says which.
 ///
 /// A history is not a state: it is never in a configuration, and the entry
 /// procedures dereference it to what it recorded or to its default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Target {
+#[repr(transparent)]
+pub struct Target(u16);
+
+/// What a [`Target`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Named {
     /// A `<state>`, `<parallel>` or `<final>`.
     State(StateId),
     /// A `<history>`.
     History(HistoryId),
 }
 
-/// A document's tables, and the numbers its buffers are sized by.
+/// The bit of a [`Target`] that says it names a `<history>`.
+const HISTORY_BIT: u16 = 1 << 15;
+
+impl Target {
+    /// A target that names `state`.
+    #[inline]
+    pub const fn state(state: StateId) -> Self {
+        Self(state.0)
+    }
+
+    /// A target that names `history`.
+    #[inline]
+    pub const fn history(history: HistoryId) -> Self {
+        Self(history.0 | HISTORY_BIT)
+    }
+
+    /// What it names.
+    #[inline]
+    pub const fn named(self) -> Named {
+        if self.0 & HISTORY_BIT == 0 {
+            Named::State(StateId(self.0))
+        } else {
+            Named::History(HistoryId(self.0 & !HISTORY_BIT))
+        }
+    }
+}
+
+/// A document's tables.
 #[derive(Debug)]
 pub struct DocumentTables {
     /// One row for each state, by [`StateId`].
     pub states: &'static [StateRow],
-    /// The pool [`StateRow::children`] names.
-    pub children: &'static [StateId],
     /// One row for each `<history>`, by [`HistoryId`].
     pub histories: &'static [HistoryRow],
     /// One row for each transition, by [`TransitionId`].
@@ -194,21 +336,13 @@ pub struct DocumentTables {
     /// The document's initial transition, whose source is the `<scxml>`
     /// element.
     pub initial: TransitionId,
-    /// How many states the history records of the document hold together.
-    pub history_records: u16,
-    /// The most states one configuration holds (docs/adr/0056).
-    pub max_configuration: u16,
-    /// The most transitions one selection enables.
-    pub max_enabled: u16,
-    /// The most `<history>` default transitions one microstep owes.
-    pub max_history_defaults: u16,
-    /// The most steps the entry walks owe at once.
-    pub max_walk: u16,
 }
 
 /// Which rule a [`DocumentTables`] breaks; [`DocumentTables::check`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TablesFault {
+    /// More states, histories or transitions than [`MAX_IDS`].
+    TooMany,
     /// A state's parent is not before it in document order.
     ParentNotBefore(StateId),
     /// A state's subtree is not the range of ids its children's subtrees fill.
@@ -246,7 +380,13 @@ impl DocumentTables {
     /// `state`'s parent; `None` when it is the `<scxml>` element.
     #[inline]
     pub fn parent(&self, state: StateId) -> Option<StateId> {
-        self.state(state).parent
+        self.state(state).parent()
+    }
+
+    /// The largest id in `state`'s subtree.
+    #[inline]
+    pub fn last_descendant(&self, state: StateId) -> StateId {
+        self.state(state).last_descendant
     }
 
     /// Whether `state` is a `<state>` with child states. A `<parallel>` is not:
@@ -275,10 +415,16 @@ impl DocumentTables {
         matches!(self.state(state).kind, StateKind::Atomic | StateKind::Final)
     }
 
-    /// Appendix D's getChildStates: `state`'s child states, in document order.
+    /// Appendix D's getChildStates: `state`'s child states, in document order —
+    /// the next id, then each id after the subtree of the one before, up to
+    /// the end of `state`'s subtree.
     #[inline]
-    pub fn child_states(&self, state: StateId) -> &[StateId] {
-        self.state(state).children.of(self.children)
+    pub fn children(&self, state: StateId) -> Children<'_> {
+        Children {
+            tables: self,
+            next: state.0 + 1,
+            last: self.state(state).last_descendant,
+        }
     }
 
     /// `transition`'s targets as written.
@@ -294,49 +440,52 @@ impl DocumentTables {
         ancestor < state && state <= self.state(ancestor).last_descendant
     }
 
-    /// Whether the rows keep the rules of this module: every parent before its
-    /// child, every subtree the range of ids its children's subtrees fill, every
-    /// span inside its pool, an initial transition for exactly the compound
-    /// states, and every id a row names a row of its table. The procedures assume
-    /// all of them; a debug build checks a machine's tables when it is built.
+    /// Whether the rows keep the rules of this module: every id below
+    /// [`MAX_IDS`], every parent before its child, every subtree the range of
+    /// ids its children's subtrees fill, every span inside its pool, an initial
+    /// transition for exactly the compound states, and every id a row names a
+    /// row of its table. The procedures assume all of them; a debug build
+    /// checks a machine's tables when it is built.
     pub fn check(&self) -> Result<(), TablesFault> {
         let states = self.states.len();
+        if states > MAX_IDS || self.histories.len() > MAX_IDS || self.transitions.len() > MAX_IDS {
+            return Err(TablesFault::TooMany);
+        }
         let state_ok = |id: StateId| id.index() < states;
         let transition_ok = |id: TransitionId| id.index() < self.transitions.len();
         for (index, row) in self.states.iter().enumerate() {
             let id = StateId(index as u16);
-            if let Some(parent) = row.parent {
+            if let Some(parent) = row.parent() {
                 if parent >= id {
                     return Err(TablesFault::ParentNotBefore(id));
                 }
-            }
-            if row.children.end() > self.children.len() {
-                return Err(TablesFault::SpanOutOfRange);
             }
             if !state_ok(row.last_descendant) || row.last_descendant < id {
                 return Err(TablesFault::Subtree(id));
             }
             // The children's subtrees, one after another, fill the range from
-            // the state's next id to its last descendant.
-            let mut next = index + 1;
-            for &child in row.children.of(self.children) {
-                if child.index() != next || self.parent_row(child) != Some(id) {
+            // the state's next id to its last descendant, each the child of
+            // this state.
+            let mut children = 0;
+            for child in self.children(id) {
+                let child_row = &self.states[child.index()];
+                if child_row.parent() != Some(id)
+                    || child_row.last_descendant < child
+                    || child_row.last_descendant > row.last_descendant
+                {
                     return Err(TablesFault::Subtree(id));
                 }
-                next = self.state(child).last_descendant.index() + 1;
-            }
-            if next != row.last_descendant.index() + 1 {
-                return Err(TablesFault::Subtree(id));
+                children += 1;
             }
             let compound = row.kind == StateKind::Compound;
-            match row.initial {
+            match row.initial() {
                 Some(initial) if compound && transition_ok(initial) => {}
                 None if !compound => {}
                 _ => return Err(TablesFault::Initial(id)),
             }
             let kind_ok = match row.kind {
-                StateKind::Compound => row.children.len > 0,
-                StateKind::Atomic | StateKind::Final => row.children.len == 0,
+                StateKind::Compound => children > 0,
+                StateKind::Atomic | StateKind::Final => children == 0,
                 StateKind::Parallel => true,
             };
             if !kind_ok {
@@ -347,22 +496,19 @@ impl DocumentTables {
             if !state_ok(row.parent) || !transition_ok(row.default) {
                 return Err(TablesFault::Dangling);
             }
-            if row.record.end() > usize::from(self.history_records) {
-                return Err(TablesFault::SpanOutOfRange);
-            }
         }
         for row in self.transitions {
             if row.targets.end() > self.targets.len() {
                 return Err(TablesFault::SpanOutOfRange);
             }
-            if row.source.is_some_and(|source| !state_ok(source)) {
+            if row.source().is_some_and(|source| !state_ok(source)) {
                 return Err(TablesFault::Dangling);
             }
         }
         for target in self.targets {
-            let ok = match *target {
-                Target::State(state) => state_ok(state),
-                Target::History(history) => history.index() < self.histories.len(),
+            let ok = match target.named() {
+                Named::State(state) => state_ok(state),
+                Named::History(history) => history.index() < self.histories.len(),
             };
             if !ok {
                 return Err(TablesFault::Dangling);
@@ -373,8 +519,26 @@ impl DocumentTables {
         }
         Ok(())
     }
+}
 
-    fn parent_row(&self, state: StateId) -> Option<StateId> {
-        self.states.get(state.index()).and_then(|row| row.parent)
+/// The child states of one state, in document order: [`DocumentTables::children`].
+#[derive(Debug, Clone)]
+pub struct Children<'t> {
+    tables: &'t DocumentTables,
+    next: u16,
+    last: StateId,
+}
+
+impl Iterator for Children<'_> {
+    type Item = StateId;
+
+    #[inline]
+    fn next(&mut self) -> Option<StateId> {
+        if self.next > self.last.0 {
+            return None;
+        }
+        let child = StateId(self.next);
+        self.next = self.tables.state(child).last_descendant.0 + 1;
+        Some(child)
     }
 }

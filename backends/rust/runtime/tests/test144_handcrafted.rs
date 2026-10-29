@@ -29,9 +29,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, DocumentTables, Engine, EventId, EventWithMetadata, HistoryId, NoHistory,
-    RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
-    Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EventId, EventWithMetadata, HistoryId,
+    NoHistory, RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
+    TransitionRow, Workspace,
 };
 
 // Declared in document order, so a variant's discriminant is its `StateId`:
@@ -78,10 +78,11 @@ impl StatePolicy for Test144Policy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // Four flat states: one is active at a time, one transition is enabled,
-    // and the walks owe three steps for the one level and three of headroom.
-    type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
-    type RunStore = RunStore<1, 0, 0>;
+    // Four flat states and no history: the sets of states are bit vectors of
+    // four states, one transition is enabled, and the walks owe three steps
+    // for the one level and three of headroom.
+    type Workspace = Workspace<{ state_scratch(4) }, 1, 6, 0>;
+    type RunStore = RunStore<{ state_words(4) }, 0, 0>;
     type Configuration = BoundedVec<Test144State, 1>;
 
     // C++ `getParent` answers `std::nullopt` for all: four children of the
@@ -89,71 +90,26 @@ impl StatePolicy for Test144Policy {
     // transition, last, is `<scxml initial="s0">`.
     const TABLES: &'static DocumentTables = &DocumentTables {
         states: &[
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(0),
-                children: Span::EMPTY,
-                initial: None,
-            },
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(1),
-                children: Span::EMPTY,
-                initial: None,
-            },
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(2),
-                children: Span::EMPTY,
-                initial: None,
-            },
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(3),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Atomic, StateId(0), None),
+            StateRow::new(None, StateKind::Atomic, StateId(1), None),
+            StateRow::new(None, StateKind::Final, StateId(2), None),
+            StateRow::new(None, StateKind::Final, StateId(3), None),
         ],
-        children: &[],
         histories: &[],
         transitions: &[
             // s0: foo -> s1
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
             // s1: bar -> pass
-            TransitionRow {
-                source: Some(StateId(1)),
-                targets: Span { start: 1, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
             // <scxml initial="s0">
-            TransitionRow {
-                source: None,
-                targets: Span { start: 2, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 2, len: 1 }, false, false),
         ],
         targets: &[
-            Target::State(StateId(1)),
-            Target::State(StateId(2)),
-            Target::State(StateId(0)),
+            Target::state(StateId(1)),
+            Target::state(StateId(2)),
+            Target::state(StateId(0)),
         ],
         initial: TransitionId(2),
-        history_records: 0,
-        max_configuration: 1,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 6,
     };
     const STATES: &'static [Test144State] = &[
         Test144State::S0,

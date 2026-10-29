@@ -15,9 +15,9 @@
 //     chain from the `<scxml>` element's child down to the leaf, and the leaf
 //     is the current state.
 //
-// Neither keeps its own configuration: the engine keeps it, as numbers, and
-// `Engine::get_active_states` reads it back in the order the states were
-// entered (docs/adr/0064). `enter_at` has to close the round trip for both.
+// Neither keeps its own configuration: the engine keeps it, as a set of state
+// numbers, and `Engine::get_active_states` reads it back in document order
+// (docs/adr/0064). `enter_at` has to close the round trip for both.
 //
 // The onentry witness is what separates a resume from a replay. Both policies
 // raise an event from an `<onentry>` that has a transition waiting for it, so a
@@ -27,9 +27,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, ConfigurationRejection, DocumentTables, Engine, EventId, EventWithMetadata,
-    HistoryId, NoHistory, RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target,
-    TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EventId,
+    EventWithMetadata, HistoryId, NoHistory, RunStore, Span, StateId, StateKind, StatePolicy,
+    StateRow, Target, TransitionId, TransitionRow, Workspace,
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -84,11 +84,12 @@ impl StatePolicy for ParallelPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // P, RA, one of A1/A2, RB, B1: five states at most, two of them atomic, so
+    // Six states and no history, so the sets of states are bit vectors of six.
+    // P, RA, one of A1/A2, RB, B1 are active at once, two of them atomic, so
     // two transitions enabled at most; three steps for each of the three
     // levels and three of headroom for the walks.
-    type Workspace = Workspace<{ state_scratch(5) }, 2, 12, 0>;
-    type RunStore = RunStore<5, 0, 0>;
+    type Workspace = Workspace<{ state_scratch(6) }, 2, 12, 0>;
+    type RunStore = RunStore<{ state_words(6) }, 0, 0>;
     type Configuration = BoundedVec<PState, 5>;
 
     // The transitions: `a1 --advance--> a2`, then the initial transitions of
@@ -96,98 +97,46 @@ impl StatePolicy for ParallelPolicy {
     const TABLES: &'static DocumentTables = &DocumentTables {
         states: &[
             // p
-            StateRow {
-                parent: None,
-                kind: StateKind::Parallel,
-                last_descendant: StateId(5),
-                children: Span { start: 0, len: 2 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Parallel, StateId(5), None),
             // ra
-            StateRow {
-                parent: Some(StateId(0)),
-                kind: StateKind::Compound,
-                last_descendant: StateId(3),
-                children: Span { start: 2, len: 2 },
-                initial: Some(TransitionId(1)),
-            },
+            StateRow::new(
+                Some(StateId(0)),
+                StateKind::Compound,
+                StateId(3),
+                Some(TransitionId(1)),
+            ),
             // a1
-            StateRow {
-                parent: Some(StateId(1)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(2),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(Some(StateId(1)), StateKind::Atomic, StateId(2), None),
             // a2
-            StateRow {
-                parent: Some(StateId(1)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(3),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(Some(StateId(1)), StateKind::Atomic, StateId(3), None),
             // rb
-            StateRow {
-                parent: Some(StateId(0)),
-                kind: StateKind::Compound,
-                last_descendant: StateId(5),
-                children: Span { start: 4, len: 1 },
-                initial: Some(TransitionId(2)),
-            },
+            StateRow::new(
+                Some(StateId(0)),
+                StateKind::Compound,
+                StateId(5),
+                Some(TransitionId(2)),
+            ),
             // b1
-            StateRow {
-                parent: Some(StateId(4)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(5),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(Some(StateId(4)), StateKind::Atomic, StateId(5), None),
         ],
-        children: &[StateId(1), StateId(4), StateId(2), StateId(3), StateId(5)],
         histories: &[],
         transitions: &[
             // a1: advance -> a2
-            TransitionRow {
-                source: Some(StateId(2)),
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(2)), Span { start: 0, len: 1 }, false, false),
             // ra's initial: a1
-            TransitionRow {
-                source: Some(StateId(1)),
-                targets: Span { start: 1, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
             // rb's initial: b1
-            TransitionRow {
-                source: Some(StateId(4)),
-                targets: Span { start: 2, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(4)), Span { start: 2, len: 1 }, false, false),
             // the document's initial: p
-            TransitionRow {
-                source: None,
-                targets: Span { start: 3, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 3, len: 1 }, false, false),
         ],
         targets: &[
-            Target::State(StateId(3)),
-            Target::State(StateId(2)),
-            Target::State(StateId(5)),
-            Target::State(StateId(0)),
+            Target::state(StateId(3)),
+            Target::state(StateId(2)),
+            Target::state(StateId(5)),
+            Target::state(StateId(0)),
         ],
         initial: TransitionId(3),
-        history_records: 0,
-        max_configuration: 5,
-        max_enabled: 2,
-        max_history_defaults: 0,
-        max_walk: 12,
     };
     const STATES: &'static [PState] = &[
         PState::P,
@@ -342,10 +291,11 @@ impl StatePolicy for LinearPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // Root with one of X1/X2 below it: two states, one atomic; three steps for
-    // each of the two levels and three of headroom for the walks.
-    type Workspace = Workspace<{ state_scratch(2) }, 1, 9, 0>;
-    type RunStore = RunStore<2, 0, 0>;
+    // Three states and no history, so the sets of states are bit vectors of
+    // three. Root with one of X1/X2 below it: one atomic state active; three
+    // steps for each of the two levels and three of headroom for the walks.
+    type Workspace = Workspace<{ state_scratch(3) }, 1, 9, 0>;
+    type RunStore = RunStore<{ state_words(3) }, 0, 0>;
     type Configuration = BoundedVec<LState, 2>;
 
     // The transitions: `x1 --go--> x2`, then `root`'s initial transition, then
@@ -353,66 +303,27 @@ impl StatePolicy for LinearPolicy {
     const TABLES: &'static DocumentTables = &DocumentTables {
         states: &[
             // root
-            StateRow {
-                parent: None,
-                kind: StateKind::Compound,
-                last_descendant: StateId(2),
-                children: Span { start: 0, len: 2 },
-                initial: Some(TransitionId(1)),
-            },
+            StateRow::new(None, StateKind::Compound, StateId(2), Some(TransitionId(1))),
             // x1
-            StateRow {
-                parent: Some(StateId(0)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(1),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(Some(StateId(0)), StateKind::Atomic, StateId(1), None),
             // x2
-            StateRow {
-                parent: Some(StateId(0)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(2),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(Some(StateId(0)), StateKind::Atomic, StateId(2), None),
         ],
-        children: &[StateId(1), StateId(2)],
         histories: &[],
         transitions: &[
             // x1: go -> x2
-            TransitionRow {
-                source: Some(StateId(1)),
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(1)), Span { start: 0, len: 1 }, false, false),
             // root's initial: x1
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 1, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 1, len: 1 }, false, false),
             // the document's initial: root
-            TransitionRow {
-                source: None,
-                targets: Span { start: 2, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 2, len: 1 }, false, false),
         ],
         targets: &[
-            Target::State(StateId(2)),
-            Target::State(StateId(1)),
-            Target::State(StateId(0)),
+            Target::state(StateId(2)),
+            Target::state(StateId(1)),
+            Target::state(StateId(0)),
         ],
         initial: TransitionId(2),
-        history_records: 0,
-        max_configuration: 2,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 9,
     };
     const STATES: &'static [LState] = &[LState::Root, LState::X1, LState::X2];
     const HISTORIES: &'static [NoHistory] = &[];
@@ -550,7 +461,7 @@ fn linear_configuration_round_trips_without_a_parallel_region() {
     let saved_current = ran.get_current_state();
     assert_eq!(saved_current, LState::X2);
     // No parallel regions: the chain from the `<scxml>` element's child down to
-    // the leaf, in the order the states were entered.
+    // the leaf. The configuration is a set, reported in document order.
     assert_eq!(saved_configuration, [LState::Root, LState::X2]);
 
     let mut restored = Engine::<LinearPolicy>::new(LinearPolicy::new());

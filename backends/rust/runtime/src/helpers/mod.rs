@@ -41,6 +41,7 @@
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)
 //! - [`session_id`]: a root session's `_sessionid`, given by the host or drawn
+//! - [`state_set`]: a set of a document's states as a bit vector
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
 //! - [`tables`]: a document's structure as the tables the microstep reads
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
@@ -109,6 +110,7 @@ pub mod send;
 // holds it to the same rule with nothing allocated.
 pub mod session_id;
 pub mod state_policy_concepts;
+pub mod state_set;
 pub mod tables;
 pub mod unique_id_generator;
 pub mod url_encoding;

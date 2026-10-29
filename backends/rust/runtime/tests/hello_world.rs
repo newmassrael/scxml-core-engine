@@ -14,8 +14,9 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    state_scratch, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore, Span, StateId,
-    StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    state_scratch, state_words, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore,
+    Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 // Declared in document order, so a variant's discriminant is its `StateId`.
@@ -60,83 +61,39 @@ impl StatePolicy for HwPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // A flat document: one state is active at a time, one transition is
-    // enabled, and the walks owe three steps for its one level and three of
-    // headroom.
-    type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
-    type RunStore = RunStore<1, 0, 0>;
+    // A flat document of three states and no history: the sets of states are
+    // bit vectors of three states, one transition is enabled, and the walks
+    // owe three steps for its one level and three of headroom.
+    type Workspace = Workspace<{ state_scratch(3) }, 1, 6, 0>;
+    type RunStore = RunStore<{ state_words(3) }, 0, 0>;
     type Configuration = BoundedVec<HwState, 1>;
 
     // Three children of the `<scxml>` element; the document's initial
     // transition, last, enters `stopped`.
     const TABLES: &'static DocumentTables = &DocumentTables {
         states: &[
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(0),
-                children: Span::EMPTY,
-                initial: None,
-            },
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(1),
-                children: Span::EMPTY,
-                initial: None,
-            },
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(2),
-                children: Span::EMPTY,
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Atomic, StateId(0), None),
+            StateRow::new(None, StateKind::Atomic, StateId(1), None),
+            StateRow::new(None, StateKind::Final, StateId(2), None),
         ],
-        children: &[],
         histories: &[],
         transitions: &[
             // stopped: play -> running
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
             // running: stop -> stopped
-            TransitionRow {
-                source: Some(StateId(1)),
-                targets: Span { start: 1, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
             // running: end -> done
-            TransitionRow {
-                source: Some(StateId(1)),
-                targets: Span { start: 2, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(1)), Span { start: 2, len: 1 }, false, false),
             // <scxml initial="stopped">
-            TransitionRow {
-                source: None,
-                targets: Span { start: 3, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 3, len: 1 }, false, false),
         ],
         targets: &[
-            Target::State(StateId(1)),
-            Target::State(StateId(0)),
-            Target::State(StateId(2)),
-            Target::State(StateId(0)),
+            Target::state(StateId(1)),
+            Target::state(StateId(0)),
+            Target::state(StateId(2)),
+            Target::state(StateId(0)),
         ],
         initial: TransitionId(3),
-        history_records: 0,
-        max_configuration: 1,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 6,
     };
     const STATES: &'static [HwState] = &[HwState::Stopped, HwState::Running, HwState::Done];
     const HISTORIES: &'static [NoHistory] = &[];

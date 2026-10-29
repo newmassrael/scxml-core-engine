@@ -128,10 +128,9 @@ pub enum ConfigurationRejection<S> {
 /// nothing, and is therefore the same function under std and `no_std`.
 ///
 /// Cost is quadratic in the chain length, which is bounded by the most states
-/// one configuration of the document holds
-/// ([`DocumentTables::max_configuration`](crate::helpers::tables::DocumentTables::max_configuration)). A configuration is a handful of states
-/// and this runs once per restore, so the shape is chosen for being obviously
-/// right rather than for being fast.
+/// one configuration of the document holds. A configuration is a handful of
+/// states and this runs once per restore, so the shape is chosen for being
+/// obviously right rather than for being fast.
 pub fn validate<P: StatePolicy>(
     configuration: &[P::State],
     current: P::State,
@@ -197,8 +196,8 @@ fn check_child_arity<P: StatePolicy>(
     if P::is_parallel_state(state) {
         // §scxml-3.4: every region, simultaneously — a `<parallel>`'s
         // regions are exactly its child states.
-        let regions = P::TABLES.child_states(P::state_id(state));
-        for &region in regions {
+        let mut regions = 0;
+        for region in P::TABLES.children(P::state_id(state)) {
             let region = P::state_of(region);
             if !configuration.contains(&region) {
                 return Err(ConfigurationRejection::ParallelRegionMissing {
@@ -206,12 +205,13 @@ fn check_child_arity<P: StatePolicy>(
                     region,
                 });
             }
+            regions += 1;
         }
-        if children != regions.len() {
+        if children != regions {
             return Err(ConfigurationRejection::ParallelChildCount {
                 parallel: state,
                 found: children,
-                regions: regions.len(),
+                regions,
             });
         }
     } else if P::is_compound_state(state) {
@@ -321,7 +321,7 @@ pub fn validate_history<P: StatePolicy>(
 
     if deep {
         for &state in recorded {
-            if !P::TABLES.child_states(P::state_id(state)).is_empty() {
+            if P::TABLES.children(P::state_id(state)).next().is_some() {
                 return Err(HistoryRejection::NotAtomic { state });
             }
         }

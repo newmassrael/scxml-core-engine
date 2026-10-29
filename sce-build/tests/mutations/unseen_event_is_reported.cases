@@ -37,14 +37,15 @@ mutation_case "the loop abandons the queue without recording it" <<'PY'
 # The call is kept behind a false guard rather than deleted: `warnings = deny`
 # turns an unused private method into a compile error, and a mutation that will
 # not build is INCONCLUSIVE rather than a verdict. Measured — deleting it
-# outright produced exactly that.
+# outright produced exactly that. The loop's end is the host's `end_run`,
+# which records what the loop left queued and then exits the interpreter.
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.record_unseen_external_events();
-                // §scxml-D-exitInterpreter: the loop is over""",
-     """                if false {
-                    self.record_unseen_external_events();
-                }
-                // §scxml-D-exitInterpreter: the loop is over""")
+     """        self.engine.record_unseen_external_events();
+        if self.engine.main_loop.terminal_state.is_some() {""",
+     """        if false {
+            self.engine.record_unseen_external_events();
+        }
+        if self.engine.main_loop.terminal_state.is_some() {""")
 PY
 
 # ── The other refusal site ─────────────────────────────────────────
@@ -55,7 +56,7 @@ PY
 
 mutation_case "the convenience door refuses without recording it" <<'PY'
 # Deletes the RECORD, keeping the early return. Disabling the whole guard
-# instead — `if !self.is_running && false` — is an EQUIVALENT MUTANT and was
+# instead — `if !self.main_loop.is_running && false` — is an EQUIVALENT MUTANT and was
 # measured as one: control then falls through to `raise_external` + `step`, the
 # loop breaks on the same `!is_running`, and `record_unseen_external_events`
 # counts the very same delivery. 0 of 5 tests red, twice, because the two
