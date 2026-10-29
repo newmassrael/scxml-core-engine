@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A table read by exact match: a static function of the caseless enum `{{ struct_name }}`, a
+// file of the module that calls it. A call is qualified by the enum
+// (`{{ struct_name }}.{{ func_name }}(…)`), which a member of the calling type cannot hide as
+// it would hide a free function of the same name.{% if on_miss_error %} A key the table
+// does not list answers no value: the call is an error, and the function answers `nil`.{% endif %}
+
+import SceForgeRuntime
+
+public enum {{ struct_name }} {
+    private static let sceKeys: [{{ input_type }}] = [{{ keys_literal | join(", ") }}]
+    private static let sceValues: [{{ value_type }}] = [{{ values_literal | join(", ") }}]
+
+    public static func {{ func_name }}(_ {{ input_id }}: {{ input_type }}) -> {{ value_type }}{% if on_miss_error %}?{% endif %} {
+{% if on_miss_error %}
+        Lookup.find(sceKeys, sceValues, {{ input_id }})
+{% else %}
+        Lookup.find(sceKeys, sceValues, {{ input_id }}) ?? {{ default_literal }}
+{% endif %}
+    }
+}

@@ -1546,6 +1546,17 @@ pub(crate) fn kotlin_literal(text: &str, ty: &SceType) -> String {
     }
 }
 
+/// A constant of the type `ty` written as the document writes it, for Swift: a number
+/// or a `bool` is its own text, which the type the literal lands in (an array or a
+/// parameter of `ty`) reads at its width, an integer into a `Double` as well; a string
+/// is quoted and escaped as every string literal of generated Swift is.
+fn swift_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::String => format!("\"{}\"", filters::escape_swift(text.to_string())),
+        _ => text.to_string(),
+    }
+}
+
 fn python_literal(text: &str, ty: &SceType) -> String {
     match ty {
         SceType::Float32 | SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
@@ -2325,11 +2336,15 @@ fn render_lookup(
     // The enum is declared in the file that also writes the input's own type
     // (`UByte`), so a Kotlin enum is kept off the standard type names.
     let enum_name = match lang {
-        Language::Swift => no_swift_emitter("render_lookup"),
         Language::Kotlin => kotlin_declared_type_name(&enum_name),
-        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
-            enum_name
-        }
+        // The enum a table of names declares, which a Swift unit does not write yet
+        // ([`swift_lookup_unlowered`]); a table of numbers declares none.
+        Language::Swift
+        | Language::Rust
+        | Language::Cpp
+        | Language::Go
+        | Language::Python
+        | Language::C11 => enum_name,
     };
     // W1 symbol-name SSOT: the bare call-base comes from forge_lookup_symbol
     // (shared with the cross-doc resolver); the C11 flat prefix is applied at
@@ -2377,11 +2392,11 @@ fn render_lookup(
     // the body that reads the input, so an input under the enum's name would
     // hide them; `local_id` shifts it like any other local.
     let input_id = match lang {
-        Language::Swift => no_swift_emitter("render_lookup"),
         Language::Go if output_is_string => {
             go_local_spelling_beside(&m.input.id, &[enum_name.as_str()])
         }
-        Language::Rust
+        Language::Swift
+        | Language::Rust
         | Language::Cpp
         | Language::Kotlin
         | Language::Go
@@ -2406,7 +2421,7 @@ fn render_lookup(
         }
 
         let ebv: Vec<serde_json::Value> = match lang {
-            Language::Swift => no_swift_emitter("render_lookup"),
+            Language::Swift => unreachable!("refused by swift_lookup_unlowered"),
             Language::Python => {
                 // Python template expects a `condition` expression per group.
                 raw_ebv.into_iter().map(|(value, keys)| {
@@ -2431,7 +2446,7 @@ fn render_lookup(
         };
 
         let uv: Vec<String> = match lang {
-            Language::Swift => no_swift_emitter("render_lookup"),
+            Language::Swift => unreachable!("refused by swift_lookup_unlowered"),
             Language::Rust => m
                 .unique_values()
                 .into_iter()
@@ -2444,7 +2459,7 @@ fn render_lookup(
 
         let dv = match &m.miss_policy {
             MissPolicy::Default(s) => match lang {
-                Language::Swift => no_swift_emitter("render_lookup"),
+                Language::Swift => unreachable!("refused by swift_lookup_unlowered"),
                 Language::Rust => to_rust_variant(s),
                 Language::Cpp
                 | Language::Kotlin
@@ -24388,6 +24403,7 @@ pub fn generate_swift_with_imports(
         // A condition is one expression over scalars, which the expression emitter
         // spells or refuses by name where it reads it.
         ForgeDocument::Condition(_) => None,
+        ForgeDocument::Lookup(m) => swift_lookup_unlowered(m).map(|c| swift_lookup_refusal(m, &c)),
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24414,6 +24430,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::EventSchema(m) => render_event_schema(&env, m, imports, Language::Swift)?,
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -24685,6 +24702,21 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
     unlowered(&m.body, &reserved)
+}
+
+/// What of the lookup `m` the Swift backend does not lower yet, described for a refusal
+/// by name (`generate/unsupported-feature`): a table that answers a name, which the other
+/// backends declare an enum of the output's variants for, and a Swift unit has not spelled.
+/// A table of numbers, a `bool` or the variants of an enum an import declares is lowered.
+pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
+    m.output_is_string()
+        .then(|| "an output that answers a name (`type=\"string\"`)".to_string())
+}
+
+/// The refusal of the lookup `m` for the Swift construct `construct` it holds
+/// ([`swift_lookup_unlowered`]).
+fn swift_lookup_refusal(m: &LookupModel, construct: &str) -> String {
+    format!("lookup '{}': {construct} has no Swift lowering yet", m.name)
 }
 
 /// What of the enum `m` the Swift backend does not lower yet, described for a refusal
@@ -28512,7 +28544,7 @@ impl LangCtx {
             crate::generator::Language::Go => go_literal(val, ty),
             crate::generator::Language::Python => python_literal(val, ty),
             crate::generator::Language::C11 => c_literal(val, ty),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::literal"),
+            crate::generator::Language::Swift => swift_literal(val, ty),
         }
     }
 
@@ -33352,14 +33384,15 @@ pub(crate) fn forge_lookup_symbol(output_id: &str, language: crate::generator::L
     use crate::generator::Language;
     match language {
         Language::Go => format!("Lookup{}", filters::to_pascal_case(output_id.to_string())),
-        Language::Cpp | Language::Kotlin => {
+        // Swift's is a static function of the caseless enum the document's `<Pascal>`
+        // names (`lookup.swift.jinja2`), lowerCamelCase as Kotlin's.
+        Language::Cpp | Language::Kotlin | Language::Swift => {
             format!("lookup{}", filters::to_pascal_case(output_id.to_string()))
         }
         Language::Rust | Language::Python => {
             format!("lookup_{}", filters::to_snake_case(output_id.to_string()))
         }
         Language::C11 => filters::to_snake_case(output_id.to_string()),
-        Language::Swift => no_swift_emitter("forge_lookup_symbol"),
     }
 }
 
