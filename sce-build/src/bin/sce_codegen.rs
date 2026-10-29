@@ -3482,10 +3482,25 @@ enum Commands {
     /// reported as `check-queue-history` does: one line per file, and the
     /// command fails when any file is not linearizable, is not a history, or
     /// records no operation.
+    ///
+    /// Two checkers decide the question and `--method` picks which. The
+    /// general search is the definition and is exponential in the number of
+    /// operations in the worst case; the specialised checker decides in
+    /// `O(n log n)` by the theorem its module documents (`broadcast_history::
+    /// specialised`), and declines a history outside the theorem's
+    /// hypothesis. The default asks the specialised checker and falls back to
+    /// the general search when it declines.
     CheckBroadcastHistory {
         /// The history files to judge
         #[arg(required = true)]
         files: Vec<String>,
+
+        /// Which checker decides: `auto` (the specialised checker, then the
+        /// general search when it declines), `general` (the search alone) or
+        /// `specialised` (the specialised checker alone: a history it
+        /// declines is refused, naming the reason, instead of falling back)
+        #[arg(long, value_enum, default_value_t = HistoryMethod::Auto)]
+        method: HistoryMethod,
     },
 
     /// Verify that generated files were generated from the current inputs,
@@ -4101,7 +4116,9 @@ fn main() {
             header_dir,
         } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
-        Commands::CheckBroadcastHistory { files } => cmd_check_broadcast_history(&files),
+        Commands::CheckBroadcastHistory { files, method } => {
+            cmd_check_broadcast_history(&files, method)
+        }
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
@@ -13118,21 +13135,58 @@ fn cmd_check_queue_history(files: &[String]) {
     judge_history_files("check-queue-history", files, |text| {
         let history = History::from_json(text).map_err(|e| e.to_string())?;
         let operations = history.participants.iter().map(Vec::len).sum();
-        Ok((operations, check(&history)))
+        Ok((operations, check(&history), None))
     });
 }
 
-/// Judge recorded broadcast-log histories. See `Commands::CheckBroadcastHistory`.
-fn cmd_check_broadcast_history(files: &[String]) {
-    use sce_build::broadcast_history::{check, History};
+/// Which checker `check-broadcast-history` asks (`--method`).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum HistoryMethod {
+    Auto,
+    General,
+    Specialised,
+}
 
+/// Judge recorded broadcast-log histories. See `Commands::CheckBroadcastHistory`.
+fn cmd_check_broadcast_history(files: &[String], method: HistoryMethod) {
+    use sce_build::broadcast_history::{judge, Ask, Declined, History};
+    use sce_build::history_common::Verdict;
+
+    let ask = match method {
+        HistoryMethod::Auto => Ask::Auto,
+        HistoryMethod::General => Ask::General,
+        HistoryMethod::Specialised => Ask::Specialised,
+    };
     judge_history_files("check-broadcast-history", files, |text| {
         let history = History::from_json(text).map_err(|e| e.to_string())?;
         let operations =
             history.publisher.len() + history.readers.iter().map(Vec::len).sum::<usize>();
-        Ok((operations, check(&history)))
+        let judgement = match judge(&history, ask) {
+            Ok(judgement) => judgement,
+            // A history that cannot have come from a run is that under every
+            // method: the specialised checker declines it only because the
+            // one check of well-formedness is its hypothesis.
+            Err(Declined::NotWellFormed(why)) => {
+                return Ok((operations, Verdict::Malformed(why), None));
+            }
+            Err(declined) => {
+                return Err(format!(
+                    "the specialised checker declines this history ({declined}); `--method \
+                     auto` leaves it to the general search"
+                ));
+            }
+        };
+        let why_not = judgement
+            .unplaceable
+            .map(|unplaceable| unplaceable.to_string());
+        Ok((operations, judgement.verdict, why_not))
     });
 }
+
+/// What the judge of one history file reports: how many operations it records,
+/// what the checker made of them, and, when a checker that does not search
+/// found it not linearizable, the operation it could not place and why.
+type HistoryJudged = Result<(usize, sce_build::history_common::Verdict, Option<String>), String>;
 
 /// Judge the history files of one kind: read each, let `judge` parse it and
 /// say how many operations it records and what the checker made of them, and
@@ -13140,7 +13194,7 @@ fn cmd_check_broadcast_history(files: &[String]) {
 fn judge_history_files(
     stage: &'static str,
     files: &[String],
-    judge: impl Fn(&str) -> Result<(usize, sce_build::history_common::Verdict), String>,
+    judge: impl Fn(&str) -> HistoryJudged,
 ) {
     use sce_build::history_common::Verdict;
 
@@ -13149,16 +13203,19 @@ fn judge_history_files(
         let verdict = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot be read: {e}"))
             .and_then(|text| judge(&text))
-            .and_then(|(operations, verdict)| {
+            .and_then(|(operations, verdict, why_not)| {
                 if operations == 0 {
                     return Err("records no operation, which proves nothing".to_string());
                 }
                 match verdict {
                     Verdict::Linearizable => Ok(operations),
-                    Verdict::NotLinearizable { explored, deepest } => Err(format!(
-                        "is not linearizable: the search explored {explored} states and got no \
-                         further than {deepest:?} operations placed per participant"
-                    )),
+                    Verdict::NotLinearizable { explored, deepest } => Err(match why_not {
+                        Some(why_not) => format!("is not linearizable: {why_not}"),
+                        None => format!(
+                            "is not linearizable: the search explored {explored} states and got \
+                             no further than {deepest:?} operations placed per participant"
+                        ),
+                    }),
                     Verdict::Malformed(why) => Err(format!("cannot have come from a run: {why}")),
                 }
             });
