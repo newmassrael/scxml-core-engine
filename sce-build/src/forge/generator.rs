@@ -21000,7 +21000,10 @@ fn render_broadcast_log_rust(
         ))
         .into());
     };
-    if let Some(why) = &resolution.element_unsupported {
+    if let Some(why) = resolution
+        .element
+        .refusal_for(crate::generator::Language::Rust)
+    {
         return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
             "broadcast-log '{name}': the element '{element}' cannot be stored by the Rust \
              template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \

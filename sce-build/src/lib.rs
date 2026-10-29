@@ -3587,12 +3587,77 @@ pub struct BroadcastLogResolution {
     /// ([`forge::codec_size::largest_encoded_bytes`]): what a slot's words are
     /// sized from.
     pub element_max_bytes: u64,
-    /// Why the Rust template cannot hold this element, or `None` when it can:
-    /// its `encode` or `decode` takes an input from the caller that a log has
-    /// none to give (flag inputs, a variant's tag), or the form it decodes to
-    /// borrows the buffer it was read from and has no owned form to copy it
-    /// into.
-    pub element_unsupported: Option<String>,
+    /// The shape of the element's codec, as facts. Whether a language's template
+    /// can hold an element of that shape is that language's decision
+    /// ([`BroadcastLogElementFacts::refusal_for`]), made where the document is
+    /// rendered and not where the facts are read.
+    pub element: BroadcastLogElementFacts,
+}
+
+/// What the document-set compile reads of a broadcast log's element codec that
+/// bears on whether a template can store it, stated as facts of the codec and not
+/// as any language's verdict on them. A log's typed `publish` and `read` call the
+/// element's `encode` with a sink and its `decode` with a cursor and nothing
+/// else, so an element whose signature asks the caller for more cannot be
+/// stored, in any language; whether the form a language decodes to can outlive
+/// the buffer it was read from depends on the language.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BroadcastLogElementFacts {
+    /// The flag inputs the element's `encode` and `decode` take from the caller,
+    /// by name. Empty when it takes none.
+    pub caller_flag_inputs: Vec<String>,
+    /// The element is a variant whose tag the caller supplies, because the wire
+    /// form carries no tag field.
+    pub caller_variant_tag: bool,
+    /// The element is a CBOR map with a string or byte-string entry: the one
+    /// shape whose decoded form can hold a view into the buffer it was read from.
+    pub cbor_text_or_bytes_entry: bool,
+}
+
+impl BroadcastLogElementFacts {
+    /// Why the template of `language` cannot store an element of this shape, or
+    /// `None` when it can.
+    ///
+    /// The two inputs a caller must give are refused for every language. The
+    /// third fact is each language's own: a language whose decode of a CBOR
+    /// text or byte-string entry yields a value that owns its bytes (a copy
+    /// into the value) holds the element, and one whose value borrows the
+    /// buffer does not unless it has an owned form to copy into. Every arm is
+    /// written out, so that a language added to [`generator::Language`] is
+    /// decided here and does not inherit another's answer, and the change that
+    /// gives a language its template states, in its arm, which it is and why.
+    pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
+        use generator::Language;
+        if !self.caller_flag_inputs.is_empty() {
+            return Some(format!(
+                "its encode and decode take the flag input(s) {} from the caller, and a log has none to give",
+                self.caller_flag_inputs.join(", ")
+            ));
+        }
+        if self.caller_variant_tag {
+            return Some(
+                "its decode takes the variant's tag from the caller, and a log has none to give"
+                    .to_string(),
+            );
+        }
+        let borrows = match language {
+            // The decoded form is `<'a>` over the cursor's buffer and has no
+            // `Owned` mirror for a string or byte-string entry.
+            Language::Rust => self.cbor_text_or_bytes_entry,
+            // No template has landed for these, so none has decided yet.
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => false,
+        };
+        borrows.then(|| {
+            "a CBOR map with a string or byte string entry decodes to a value that borrows \
+             the buffer it was read from, and has no owned form to copy it into"
+                .to_string()
+        })
+    }
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -6633,51 +6698,34 @@ pub fn resolve_broadcast_log_retention(
 /// number its slots are sized from, and whether the Rust template can hold it.
 struct BroadcastLogElement {
     max_bytes: u64,
-    unsupported: Option<String>,
+    facts: BroadcastLogElementFacts,
 }
 
-/// Why the Rust template cannot store `codec` as a broadcast log's element, or
-/// `None` when it can. A log's typed `publish` and `read` call the element's
-/// `encode(sink)` and `decode(cursor)` and nothing else, so an element whose
-/// signature asks the caller for more, or whose decoded form cannot outlive
-/// the buffer it is read from, is refused by name where the element is in hand.
-fn broadcast_log_element_unsupported(codec: &forge::model::CodecModel) -> Option<String> {
-    if !codec.flag_inputs.is_empty() {
-        let names: Vec<&str> = codec
+/// The facts of `codec` that decide whether a template can store it as a
+/// broadcast log's element ([`BroadcastLogElementFacts`]). A log's typed
+/// `publish` and `read` call the element's `encode(sink)` and `decode(cursor)`
+/// and nothing else, so what the codec asks the caller for, and whether its
+/// decoded form can hold a view into the buffer, are read where the element is
+/// in hand and judged per language where the log is rendered.
+fn broadcast_log_element_facts(codec: &forge::model::CodecModel) -> BroadcastLogElementFacts {
+    BroadcastLogElementFacts {
+        caller_flag_inputs: codec
             .flag_inputs
             .iter()
-            .map(|input| input.name.as_str())
-            .collect();
-        return Some(format!(
-            "its encode and decode take the flag input(s) {} from the caller, and a log has none to give",
-            names.join(", ")
-        ));
+            .map(|input| input.name.clone())
+            .collect(),
+        caller_variant_tag: codec
+            .variant
+            .as_ref()
+            .is_some_and(|variant| variant.tag_field.is_none()),
+        cbor_text_or_bytes_entry: codec.encoding == forge::model::CodecEncoding::Cbor
+            && codec.cbor_entries.iter().any(|entry| {
+                matches!(
+                    entry.present_type(),
+                    forge::model::SceType::String | forge::model::SceType::Bytes
+                )
+            }),
     }
-    if codec
-        .variant
-        .as_ref()
-        .is_some_and(|variant| variant.tag_field.is_none())
-    {
-        return Some(
-            "its decode takes the variant's tag from the caller, and a log has none to give"
-                .to_string(),
-        );
-    }
-    if codec.encoding == forge::model::CodecEncoding::Cbor
-        && codec.cbor_entries.iter().any(|entry| {
-            matches!(
-                entry.present_type(),
-                forge::model::SceType::String | forge::model::SceType::Bytes
-            )
-        })
-    {
-        return Some(
-            "a CBOR map with a string or byte string entry decodes to a value that borrows \
-             the buffer it was read from, and has no owned form to copy it into"
-                .to_string(),
-        );
-    }
-    None
 }
 
 /// Resolve every broadcast log of a document set into what its render needs
@@ -6713,7 +6761,7 @@ fn resolve_broadcast_logs(
             BroadcastLogResolution {
                 retention,
                 element_max_bytes: element.max_bytes,
-                element_unsupported: element.unsupported.clone(),
+                element: element.facts.clone(),
             },
         );
     }
@@ -7285,8 +7333,8 @@ fn validate_queue_cross_refs(
 ///
 /// What it reads is returned, by log name, so that the number is computed once
 /// and the render is handed the very number the refusal judged: the largest
-/// encoded size, and why the Rust template cannot hold the element, if it cannot
-/// ([`broadcast_log_element_unsupported`]).
+/// encoded size, and the facts of the element's codec that each language's
+/// template judges ([`broadcast_log_element_facts`]).
 fn validate_broadcast_log_cross_refs(
     logs: &[(String, forge::model::BroadcastLogModel)],
     element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
@@ -7318,7 +7366,7 @@ fn validate_broadcast_log_cross_refs(
                 None,
             ));
         };
-        let (bound, unsupported) = match element {
+        let (bound, facts) = match element {
             forge::model::ForgeDocument::Codec(codec) => {
                 // A codec with no recorded sources has no imports to resolve.
                 let (imports, base_dir) = element_import_sources
@@ -7329,23 +7377,17 @@ fn validate_broadcast_log_cross_refs(
                 let sized = sized_codec(codec, imports, base_dir, &mut HashSet::new());
                 (
                     forge::codec_size::largest_encoded_bytes(&sized),
-                    broadcast_log_element_unsupported(codec),
+                    broadcast_log_element_facts(codec),
                 )
             }
             other => (
                 Err(forge::codec_size::Unbounded::no_wire_form(other.kind())),
-                None,
+                BroadcastLogElementFacts::default(),
             ),
         };
         match bound {
             Ok(max_bytes) => {
-                elements.insert(
-                    log.name.clone(),
-                    BroadcastLogElement {
-                        max_bytes,
-                        unsupported,
-                    },
-                );
+                elements.insert(log.name.clone(), BroadcastLogElement { max_bytes, facts });
             }
             Err(unbounded) => {
                 return Err(Located::new(

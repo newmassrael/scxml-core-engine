@@ -34,7 +34,7 @@ use sce_build::generator::Language;
 use sce_build::mesh::deploy::{parse_deploy_str, DeployConfig};
 use sce_build::{
     compile_forge_from_string, compile_forge_with_imports, resolve_broadcast_log_retention,
-    BroadcastLogResolution, DocumentLabel, ForgeCompileOptions,
+    BroadcastLogElementFacts, BroadcastLogResolution, DocumentLabel, ForgeCompileOptions,
 };
 
 fn label(name: &'static str) -> DocumentLabel<'static> {
@@ -1345,7 +1345,7 @@ fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_he
 fn resolution_options(
     retention: Option<u32>,
     element_max_bytes: u64,
-    element_unsupported: Option<&str>,
+    element: BroadcastLogElementFacts,
 ) -> ForgeCompileOptions {
     ForgeCompileOptions {
         broadcast_log_resolutions: Some(HashMap::from([(
@@ -1353,7 +1353,7 @@ fn resolution_options(
             BroadcastLogResolution {
                 retention,
                 element_max_bytes,
-                element_unsupported: element_unsupported.map(str::to_string),
+                element,
             },
         )])),
         ..ForgeCompileOptions::default()
@@ -1410,9 +1410,12 @@ fn a_single_document_with_no_resolution_is_refused_naming_what_is_missing() {
 #[test]
 fn a_deploy_key_the_set_could_not_resolve_is_refused_on_the_retention_row() {
     let xml = deploy_key_ring();
-    let located = compile_single(&xml, &resolution_options(None, 4, None))
-        .err()
-        .unwrap_or_else(|| panic!("an unresolved retention is not guessed"));
+    let located = compile_single(
+        &xml,
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("an unresolved retention is not guessed"));
     assert!(
         row_text(&located, &xml).contains("<sce:retention"),
         "the refusal is placed on the retention row"
@@ -1429,8 +1432,11 @@ fn a_deploy_key_the_set_could_not_resolve_is_refused_on_the_retention_row() {
 fn a_resolved_retention_and_size_become_the_modules_constants() {
     // 9 bytes encode to words of 1 + ceil(9 / 8) = 1 + 2 = 3, computed by the
     // module from the constant below.
-    let code = compile_single(&deploy_key_ring(), &resolution_options(Some(15), 9, None))
-        .expect("a resolved log generates");
+    let code = compile_single(
+        &deploy_key_ring(),
+        &resolution_options(Some(15), 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a resolved log generates");
     assert_holds(
         &code,
         &[
@@ -1443,8 +1449,11 @@ fn a_resolved_retention_and_size_become_the_modules_constants() {
 
 #[test]
 fn a_literal_retention_is_the_documents_whatever_the_resolution_says() {
-    let code = compile_single(&event_ring(), &resolution_options(Some(99), 4, None))
-        .expect("a literal needs no resolution of its own");
+    let code = compile_single(
+        &event_ring(),
+        &resolution_options(Some(99), 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("a literal needs no resolution of its own");
     assert!(code.contains("pub const RETENTION: usize = 7;"), "{code}");
     assert!(!code.contains("= 99;"), "{code}");
 }
@@ -1452,9 +1461,12 @@ fn a_literal_retention_is_the_documents_whatever_the_resolution_says() {
 #[test]
 fn a_retention_that_resolves_to_nothing_is_refused() {
     let xml = deploy_key_ring();
-    let located = compile_single(&xml, &resolution_options(Some(0), 4, None))
-        .err()
-        .unwrap_or_else(|| panic!("a log retains at least one entry"));
+    let located = compile_single(
+        &xml,
+        &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log retains at least one entry"));
     assert!(
         row_text(&located, &xml).contains("<sce:retention"),
         "the refusal is placed on the retention row"
@@ -1469,7 +1481,11 @@ fn a_retention_that_resolves_to_nothing_is_refused() {
 fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
     let xml = event_ring();
     let why = "its decode takes the variant's tag from the caller, and a log has none to give";
-    let located = compile_single(&xml, &resolution_options(None, 4, Some(why)))
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let located = compile_single(&xml, &resolution_options(None, 4, facts))
         .err()
         .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
     assert!(
@@ -1482,6 +1498,63 @@ fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
         "{detail}"
     );
     assert!(detail.contains(why), "{detail}");
+}
+
+// --- The facts of an element are the codec's; the verdict on them is a language's ---
+
+#[test]
+fn what_a_caller_must_give_is_refused_for_every_language() {
+    let flags = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let tag = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    for language in Language::ALL.iter().copied() {
+        let why = flags
+            .refusal_for(language)
+            .unwrap_or_else(|| panic!("{language:?} has no flag input to give"));
+        assert!(why.contains("flag input(s) S, T"), "{why}");
+        let why = tag
+            .refusal_for(language)
+            .unwrap_or_else(|| panic!("{language:?} has no variant tag to give"));
+        assert!(why.contains("the variant's tag"), "{why}");
+    }
+}
+
+#[test]
+fn an_element_with_nothing_unusual_is_refused_by_no_language() {
+    for language in Language::ALL.iter().copied() {
+        assert_eq!(
+            BroadcastLogElementFacts::default().refusal_for(language),
+            None,
+            "{language:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cbor_entry_that_borrows_is_refused_only_where_the_decoded_form_borrows() {
+    let facts = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let why = facts
+        .refusal_for(Language::Rust)
+        .expect("Rust decodes a CBOR string to a borrowed view");
+    assert!(why.contains("a CBOR map with a string"), "{why}");
+    // The other languages have no template yet, so none has decided that its
+    // decoded form borrows; the change that gives one its template says which it is
+    // in the arm of `refusal_for`.
+    for language in Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::Rust)
+    {
+        assert_eq!(facts.refusal_for(language), None, "{language:?}");
+    }
 }
 
 // --- The set resolves a deploy key against the machine it is generated for ---
