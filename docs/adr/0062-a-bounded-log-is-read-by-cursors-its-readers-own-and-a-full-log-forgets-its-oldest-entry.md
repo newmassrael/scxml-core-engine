@@ -141,7 +141,7 @@ document learns the contract from the document. `<sce:retention>` is a count wri
 | `broadcast-log/progress-unreachable-on-backend` | the backend's ceiling is lower (Python is `blocking`) |
 | `broadcast-log/wrap-bound-unstated`, `.../wrap-bound-below-deploy-minimum` | the stamp is narrower than 64 bits and the deploy states no sufficient wrap bound (§4) |
 | `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | the stamp is narrower than 64 bits and `retention + 1` is not a power of two (§4) |
-| `broadcast-log/runtime-missing` | the language's runtime has no row yet (Swift, at landing) |
+| `broadcast-log/runtime-missing` | the language has no template over its runtime row yet (every language but Rust, since step 6b) |
 
 ### 4. The algorithm: one producer, a stamped ring, and a seqlock read
 
@@ -343,6 +343,11 @@ Each step is green on its own, and the last two are the ones that need the consu
 5. **C11 and C++**: runtime, templates, GenMC scenarios. Then **Go**, **Kotlin**, **Python**; Swift stays refused.
 6. **The differential run against the consumer's ring** (§6.5), then the consumer's switch to the generated row.
 
+The templates of steps 4 and 5 (the code a document generates, as against the runtime row it calls) land one language at a
+time after the element's bound, which they are sized from: step 6a gave the bound, and step 6b the Rust template, which
+ends `runtime-missing` for Rust. C11, then C++, Go, Kotlin and Python follow, each ending it for its language; Swift stays
+refused.
+
 ### What step 1 landed (2026-10-28)
 
 - **The checker and its form.** `sce-build/src/broadcast_history.rs`: the general search of §5, the JSON form
@@ -477,13 +482,69 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
   tests have been run, and the committed C11 constants of the CBOR and content-line codecs have not been regenerated and
   compared, though no arithmetic was edited.
 
+### What step 6b landed: the Rust template (2026-10-29)
+
+- **The kind is generated for Rust.** `sce-codegen` writes `<name>.rs` for a `broadcast-log` document from
+  `tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2`, through `render_broadcast_log_rust`, and the codegen matrix
+  answers `Emit` for Rust alone: `awaits_runtime` is now per language, so every other language still answers
+  `RuntimeMissing` and is refused by `refuse_broadcast_log` with `broadcast-log/runtime-missing`, after the progress ceiling
+  it judges first (`judge_broadcast_log_progress_on_backend`, shared with Rust's arm; wait-free is Rust's ceiling, so it
+  asks Rust nothing today). The module refuses a target without 64-bit and 8-bit atomics with a `compile_error!` under the
+  cfg that gates the runtime module (a test reads the cfg out of `forge-runtime/src/lib.rs` and holds the two equal); states
+  `RETENTION`, `SLOTS = RETENTION + 1`, `MAX_ENCODED_BYTES`, `WORDS = 1 + ceil(MAX_ENCODED_BYTES / 8)` (one length word,
+  then the bytes, eight to a word, little-endian) and `DECLARED_PROGRESS`; defines the log type over
+  `BroadcastLog<WORDS, SLOTS>`, an alias for its publisher and a three-way read result; and gives typed
+  `publish(&mut Publisher, &Element)` and `read(&Log, &mut Reader)`. No `unsafe`, no allocation, no `std`.
+- **Bytes in, bytes out.** `publish` encodes through the runtime's bounded slice sink into a stack buffer of
+  `MAX_ENCODED_BYTES`, so an element that encodes to more is refused by the codec (`BufferOverflow`) and nothing is
+  published: an entry is never a truncated element. `read` calls the runtime's `read` and decodes only on `Item`, which the
+  runtime returns after the copy was validated against the slot, so a torn copy is `Lagged` and never decoded; a stored
+  length above `MAX_ENCODED_BYTES` is `CodecError::LengthOutOfRange` and never a slice out of bounds. `publish` takes the
+  element codec's own type, where `encode` is defined; `read` returns the stored form `rust_stored_element` gives (the
+  helper the queue uses): that type when it holds no borrow, and its owned mirror at the non-allocating storage profile
+  when it does, built by `try_into_owned_in::<Inline>` from the decode that borrowed the stack buffer.
+- **How the three numbers travel.** The renderer needs the retention, the element's largest encoded size and whether the
+  template can hold the element, and the document gives none of them. `ForgeCompileOptions::broadcast_log_resolutions` carries
+  a `BroadcastLogResolution` per log, and only the document-set compile fills it, where the element document is in hand:
+  `validate_broadcast_log_cross_refs` already computes the size for `element-size-unbounded` and now returns it, so the
+  refusal and the render read one number. The retention is the literal, or, when the set is given a deploy and
+  `target_machine`, the limit `machines.<m>.limits.<limit>` that `resolve_broadcast_log_retention` (the counterpart of
+  `resolve_queue_deploy_limits`, reading the same `limits:`) finds; a key for another machine, or none given, leaves it
+  `None`, as for the queue. A limit that is not a number is refused where the deploy file is read, for both. A single-document
+  compile has none of this and is refused, naming the log and what is missing, never given a guessed number (so the
+  single-document `check` sweep reports Rust as rejecting a valid log, and `check --forge <element> --forge <log>`
+  generates it).
+- **What is refused, and why.** A key naming this machine and an undeclared limit, a retention that resolves to 0 (one slot,
+  which the protocol cannot represent), and an element the template cannot hold, each as `generate/invalid-config` placed
+  on the row that wrote it. No new diagnostic code was added: the queue's `queue/deploy-limit-unresolved` carries a
+  candidates fix, and a typed code for the log is the follow-up if a consumer wants the repair machine-readable. An element
+  is refused when its `encode` or `decode` takes an input from the caller that a log has none to give (the flag inputs of
+  a codec, the tag of a caller-tag variant), or when it is a CBOR map with a string or byte-string entry, whose decoded
+  form borrows its buffer and has no owned mirror to copy it into.
+- **`judge_broadcast_log_stamp` is not called.** The Rust row's stamp is 64 bits, which the function answers `Ok` for
+  without reading the retention or the deploy: calling it would assert nothing. The row that keeps a narrower stamp calls it.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the renderer (the constants with their computed values, the
+  compile error and its cfg, the typed functions, the refusal of a stored length above the bound, the owned form of a
+  borrowing element, each refusal above, the set's deploy resolution), and the matrix's unit tests hold the per-language
+  answer. `backends/rust/forge-conformance/tests/forge_broadcast_log_generated.rs` compiles what the generator writes for a
+  log with a literal retention over a three-byte element and a log with a deploy-key retention over a record with a payload
+  of at most eight bytes, and on one thread reads the entries back whole and in order, tells a lapped reader how many it
+  missed, keeps two readers' cursors apart, refuses a payload past the bound without publishing, and refuses a length
+  word above the bound.
+- **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the
+  conformance crate have been compiled or run. The generated module has no mutation case of its own, and no loom or
+  ThreadSanitizer model reaches it: the nine Rust cases and the loom models are of the runtime row it calls.
+
 ### What is still undone
 
-- **The generated code.** The kind parses and every language refuses a valid document with `broadcast-log/runtime-missing`,
-  because no codegen template emits it yet. The templates, and generated tests that regenerate and build them, are the next
-  step, one language at a time starting with Rust. The deploy resolution of a retention and of the wrap bound belong with
-  the first template that stores bytes. `element-size-unbounded` is raised (step 6a), but no template reads the bound it
-  computes yet: the slot width is still to be derived from it.
+- **The generated code for the other languages.** Rust's template landed (step 6b). The C11, C++, Go, Kotlin and Python
+  templates, and generated tests that regenerate and build them, are next, one language at a time; each is refused by name
+  (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same `BroadcastLogResolution`.
+  Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
+  and stores, are not built, so `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
+- **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
+- **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
+  with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
 - **The specialised checker** of section 5 and its differential test.
 - **The narrow-stamp row and the load/store-only row** of section 4.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
