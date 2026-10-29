@@ -62,11 +62,15 @@ static inline sce_forge_codec_status_t codec_length_ref_uint16_be_decode(sce_for
  * `codec_length_ref_uint16_be_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_length_ref_uint16_be_encode(const codec_length_ref_uint16_be_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->payload_len, 1024)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->payload_len >> 8) & 0xFF)));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->payload_len & 0xFF)));
-    if (self->payload_len <= 1024) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload, self->payload_len));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload, self->payload_len));
     return SCE_FORGE_CODEC_OK;
 }
 

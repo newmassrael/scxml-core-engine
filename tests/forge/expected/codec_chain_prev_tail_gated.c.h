@@ -73,6 +73,12 @@ static inline sce_forge_codec_status_t codec_chain_prev_tail_gated_decode(sce_fo
  * `codec_chain_prev_tail_gated_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_chain_prev_tail_gated_encode(const codec_chain_prev_tail_gated_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (self->entries.present && !sce_forge_length_within_bound(self->entries.value.len, 4)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

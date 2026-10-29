@@ -129,6 +129,12 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_encode(const codec
     if (!_has_entries_9) {
         if (!self->checksum.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     } else if (self->checksum.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->entries_len, 3)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

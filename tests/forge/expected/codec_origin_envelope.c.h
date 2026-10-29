@@ -113,6 +113,15 @@ static inline sce_forge_codec_status_t codec_origin_envelope_decode(sce_forge_cu
  * `codec_origin_envelope_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_origin_envelope_encode(const codec_origin_envelope_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->note_len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    if (!sce_forge_length_within_bound(self->items_len, 3)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

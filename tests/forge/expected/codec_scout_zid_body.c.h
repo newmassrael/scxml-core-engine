@@ -63,10 +63,14 @@ static inline sce_forge_codec_status_t codec_scout_zid_body_decode(sce_forge_cur
  * `codec_scout_zid_body_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_scout_zid_body_encode(const codec_scout_zid_body_t *self, sce_forge_writer_t *w) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->zid_len_m1));
-    if (self->zid_len <= 16) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, self->zid_len));
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->zid_len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->zid_len_m1));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, self->zid_len));
     return SCE_FORGE_CODEC_OK;
 }
 

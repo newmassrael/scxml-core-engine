@@ -65,11 +65,15 @@ static inline sce_forge_codec_status_t codec_tlv_entry_decode(sce_forge_cursor_t
  * `codec_tlv_entry_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_tlv_entry_encode(const codec_tlv_entry_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->entry_body_len, 32)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->entry_type));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->entry_len));
-    if (self->entry_body_len <= 32) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->entry_body, self->entry_body_len));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->entry_body, self->entry_body_len));
     return SCE_FORGE_CODEC_OK;
 }
 

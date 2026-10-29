@@ -63,10 +63,14 @@ static inline sce_forge_codec_status_t codec_ext_attachment_decode(sce_forge_cur
  * `codec_ext_attachment_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_ext_attachment_encode(const codec_ext_attachment_t *self, sce_forge_writer_t *w) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->length));
-    if (self->body_len <= 64) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->body, self->body_len));
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->body_len, 64)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->length));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->body, self->body_len));
     return SCE_FORGE_CODEC_OK;
 }
 

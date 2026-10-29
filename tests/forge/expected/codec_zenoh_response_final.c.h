@@ -95,6 +95,12 @@ static inline sce_forge_codec_status_t codec_zenoh_response_final_decode(sce_for
  * `codec_zenoh_response_final_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_response_final_encode(const codec_zenoh_response_final_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

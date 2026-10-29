@@ -140,6 +140,15 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
 static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_encode(const codec_zenoh_value_zbuf_t *self, sce_forge_writer_t *w, uint8_t after_shm) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)after_shm;
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (self->value.present && !sce_forge_length_within_bound(self->value.value.len, 32)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    if (self->slices.present && !sce_forge_length_within_bound(self->slices.value.len, 4)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

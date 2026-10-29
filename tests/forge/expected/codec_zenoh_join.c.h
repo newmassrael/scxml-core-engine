@@ -122,6 +122,12 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
 static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, sce_forge_writer_t *w, uint8_t s) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)s;
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->zid_len, 16)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

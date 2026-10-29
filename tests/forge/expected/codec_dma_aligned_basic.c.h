@@ -74,6 +74,12 @@ static inline sce_forge_codec_status_t codec_dma_aligned_basic_decode(sce_forge_
  * `codec_dma_aligned_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_dma_aligned_basic_encode(const codec_dma_aligned_basic_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (!sce_forge_length_within_bound(self->aligned_payload_len, 64)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* RFC §synth-5-B B3 DMA padding: zero-fill the gap between the current
      * writer position and any aligned field's authored byte_offset
      * (deterministic zeros on the wire so peers stay byte-compatible
@@ -83,9 +89,7 @@ static inline sce_forge_codec_status_t codec_dma_aligned_basic_encode(const code
     while (sce_forge_writer_position(w) < 32) {
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, 0));
     }
-    if (self->aligned_payload_len <= 64) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->aligned_payload, self->aligned_payload_len));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->aligned_payload, self->aligned_payload_len));
     return SCE_FORGE_CODEC_OK;
 }
 

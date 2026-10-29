@@ -202,6 +202,15 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
  * `codec_zenoh_response_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_response_encode(const codec_zenoh_response_t *self, sce_forge_writer_t *w) {
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+    if (self->suffix.present && !sce_forge_length_within_bound(self->suffix.value.len, 256)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+    if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
