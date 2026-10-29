@@ -781,8 +781,10 @@ fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
             "{lang}: the in-line child's machine was not written into {}",
             out_dir.display()
         );
+        // The machine names the algorithm by the `name=` its document declares
+        // (`month_length`), which is not the alias the child imports it as.
         assert!(
-            spelling_free(&read_all(&child_files)).contains("daysinmonth"),
+            spelling_free(&read_all(&child_files)).contains("monthlength"),
             "{lang}: the in-line child's machine does not name the algorithm it calls"
         );
     }

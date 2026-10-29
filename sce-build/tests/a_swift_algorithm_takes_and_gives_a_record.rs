@@ -80,25 +80,3 @@ fn a_text_is_compared_by_its_bytes_and_not_by_swifts_equality() {
         "Swift's `==` takes two spellings of a character for one text: {code}"
     );
 }
-
-#[test]
-fn a_schema_swift_does_not_write_is_named_as_the_reason() {
-    // `schema_goal` declares an optional field, which Swift writes no struct for yet,
-    // so no algorithm is written against its payload type.
-    let refusal = swift_of(&format!("{FIXTURES}/algorithm_goal_earliest.scxml"))
-        .expect_err("an algorithm that imports a schema Swift does not write is refused");
-    assert!(
-        refusal.contains("Swift") && refusal.contains("optional field"),
-        "{refusal}"
-    );
-}
-
-#[test]
-fn an_optional_record_return_is_refused_by_the_return() {
-    let refusal = swift_of(&format!("{FIXTURES}/algorithm_item_pick_first.scxml"))
-        .expect_err("an optional record is not lowered for Swift yet");
-    assert!(
-        refusal.contains("Swift") && refusal.contains("optional<record:Item>"),
-        "{refusal}"
-    );
-}

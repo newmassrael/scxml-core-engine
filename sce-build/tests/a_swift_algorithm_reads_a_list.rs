@@ -2,9 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // An algorithm over a `list<T>` parameter (SCE_FORGE.md §4.12), written for Swift: the
-// list is an `Array` of the element, read-only, and `<sce:foreach>` walks it. A list
-// an algorithm builds, appends to or returns is refused by that construct and never
-// emitted wrong.
+// list is an `Array` of the element, read-only, and `<sce:foreach>` walks it. A list an
+// algorithm builds, appends to and returns is held by `a_swift_algorithm_builds_a_list`.
 
 use std::path::{Path, PathBuf};
 
@@ -73,16 +72,5 @@ fn a_standard_rule_over_a_list_of_texts_compares_them_by_their_bytes() {
     assert!(
         code.contains("s.text.utf8.elementsEqual(probe.text.utf8)"),
         "Swift's `==` takes two spellings of a character for one text: {code}"
-    );
-}
-
-#[test]
-fn a_list_an_algorithm_builds_or_returns_is_refused_by_name() {
-    // `day_run` appends to a list local and returns it, and fails.
-    let refusal = swift_of(&format!("{FIXTURES}/algorithm_day_run.scxml"))
-        .expect_err("a list a body builds is not lowered for Swift yet");
-    assert!(
-        refusal.contains("Swift") && refusal.contains("list<uint8>"),
-        "{refusal}"
     );
 }

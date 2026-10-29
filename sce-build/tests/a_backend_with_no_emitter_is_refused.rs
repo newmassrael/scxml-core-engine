@@ -285,10 +285,12 @@ fn an_event_schema_a_backend_writes_in_part_is_generated_and_the_rest_is_refused
             .unwrap_or_else(|e| panic!("{language:?} refused a schema it lowers: {e:?}"));
         assert!(!output.files.is_empty(), "{language:?} wrote nothing");
 
-        // A field it does not lower is refused by the field, naming the backend.
+        // A field it does not lower is refused by the field, naming the backend: a
+        // value that may be a byte string, which no backend of this list holds in a
+        // slot (it is bounded, as a byte string of a schema is).
         let unlowered = lowered.replace(
-            r#"sce:type="uint32""#,
-            r#"sce:type="optional&lt;uint32&gt;""#,
+            r#"<data id="id" sce:type="uint32" sce:direction="in"/>"#,
+            r#"<data id="id" sce:type="optional&lt;bytes&gt;" sce:max-size="8" sce:direction="in"/>"#,
         );
         assert_ne!(unlowered, lowered, "the replacement did not apply");
         let error = compile_forge_from_string(&unlowered, label, language)
