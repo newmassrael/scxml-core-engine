@@ -2448,6 +2448,185 @@ impl RustBounds {
     }
 }
 
+/// A number a Rust machine's tables hold as a `u16`, or the refusal that
+/// names what it counts (docs/adr/0064).
+fn rust_table_number(count: usize, what: &str) -> Result<u16, GenerateError> {
+    u16::try_from(count).map_err(|_| {
+        GenerateError::unsupported(format!(
+            "the document needs {count} {what}, and a Rust machine's tables number at most {} \
+             (a u16 each, docs/adr/0064)",
+            u16::MAX
+        ))
+    })
+}
+
+/// An optional id of the runtime's tables as the Rust expression a row holds it
+/// in: `None`, or `Some(<id_type>(<number>))`. Written here rather than in the
+/// template, so a row's text is one value and the template asks nothing of it.
+fn rust_optional_id(id_type: &str, id: Option<u16>) -> String {
+    match id {
+        Some(number) => format!("Some({id_type}({number}))"),
+        None => "None".to_string(),
+    }
+}
+
+/// What a Rust machine's template writes its tables from (docs/adr/0064): the
+/// rows [`crate::document_tables::DocumentTables::of`] computes for `model`, in
+/// the order the runtime numbers them, the sizes its buffers take from
+/// `bounds`, and the `TransitionId` of each written transition by its source
+/// state and its index there (`written`).
+///
+/// The rows are `model`'s own; the sizes are `bounds`, which a product line
+/// gives every variant from the whole document (ADR 0057 §9), so that a
+/// variant's buffers and the numbers its tables state are the same.
+fn rust_tables(
+    model: &SCXMLModel,
+    bounds: &crate::microstep_bounds::MicrostepBounds,
+) -> Result<serde_json::Value, GenerateError> {
+    use crate::document_tables::{DocumentTables, StateKind, TargetRef, TransitionOrigin};
+
+    let tables = DocumentTables::of(model).map_err(|refusal| {
+        GenerateError::unsupported(format!("the Rust machine's tables: {refusal}"))
+    })?;
+    // The event enum's `Null` is numbered after every event the document
+    // names, so it too is a `u16`.
+    rust_table_number(model.events.len(), "events before its null event")?;
+    let max_configuration = rust_table_number(bounds.configuration, "states in one configuration")?;
+    let max_enabled = rust_table_number(bounds.enabled, "transitions in one selection")?;
+    let max_history_defaults =
+        rust_table_number(bounds.history_defaults, "history defaults in one microstep")?;
+    let max_walk = rust_table_number(bounds.entry_walk, "steps of the entry walk")?;
+
+    let id_of_state = |number: u16| tables.states[usize::from(number)].id.as_str();
+    let states: Vec<serde_json::Value> = tables
+        .states
+        .iter()
+        .map(|row| {
+            // The variant of the runtime's `StateKind` of the same name.
+            let kind = match row.kind {
+                StateKind::Atomic => "Atomic",
+                StateKind::Compound => "Compound",
+                StateKind::Parallel => "Parallel",
+                StateKind::Final => "Final",
+            };
+            serde_json::json!({
+                "id": row.id,
+                "parent": rust_optional_id("StateId", row.parent),
+                "kind": kind,
+                "last_descendant": row.last_descendant,
+                "children_start": row.children.start,
+                "children_len": row.children.len,
+                "initial": rust_optional_id("TransitionId", row.initial),
+            })
+        })
+        .collect();
+    let histories: Vec<serde_json::Value> = tables
+        .histories
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "parent": row.parent,
+                "deep": row.deep,
+                "default": row.default,
+                "record_start": row.record.start,
+                "record_len": row.record.len,
+            })
+        })
+        .collect();
+    let mut written: std::collections::BTreeMap<&str, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    let mut transitions: Vec<serde_json::Value> = Vec::with_capacity(tables.transitions.len());
+    for (number, row) in tables.transitions.iter().enumerate() {
+        // What the row is, for the comment beside it.
+        let origin = match (row.origin, row.source) {
+            (TransitionOrigin::Written { index_in_source }, Some(source)) => {
+                // Rows of one source are numbered in the order they are
+                // written there, so the list grows by its index.
+                written.entry(id_of_state(source)).or_default().push(number);
+                format!("{}, transition {index_in_source}", id_of_state(source))
+            }
+            (TransitionOrigin::Initial, Some(source)) => {
+                format!("{}, initial", id_of_state(source))
+            }
+            (TransitionOrigin::HistoryDefault(history), _) => {
+                format!("{}, default", tables.histories[usize::from(history)].id)
+            }
+            _ => "the document's initial transition".to_string(),
+        };
+        transitions.push(serde_json::json!({
+            "origin": origin,
+            "source": rust_optional_id("StateId", row.source),
+            "targets_start": row.targets.start,
+            "targets_len": row.targets.len,
+            "internal": row.internal,
+            "has_content": row.has_content,
+        }));
+    }
+    let targets: Vec<serde_json::Value> = tables
+        .targets
+        .iter()
+        .map(|target| match *target {
+            TargetRef::State(state) => serde_json::json!({ "history": false, "id": state }),
+            TargetRef::History(history) => serde_json::json!({ "history": true, "id": history }),
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "states": states,
+        "children": tables.children,
+        "histories": histories,
+        "transitions": transitions,
+        "targets": targets,
+        "initial": tables.initial,
+        "history_records": tables.history_records,
+        "max_configuration": max_configuration,
+        "max_enabled": max_enabled,
+        "max_history_defaults": max_history_defaults,
+        "max_walk": max_walk,
+        "written": written,
+    }))
+}
+
+/// `text`, a condition or a statement of a Rust machine, with each test of
+/// whether a state is active (`In()`) asked of the engine, which keeps the
+/// configuration (docs/adr/0064), and the state resolved here to its variant
+/// of `<machine_name>State`.
+///
+/// Two spellings reach it: a pure `In()` condition as the parser writes it
+/// (`this->isStateActive("s")`) and a sce-static expression as
+/// `forge::static_lowering` lowers it (`self.is_state_active("s")`). A name
+/// that is no state of the document, a `<history>` among them, is never in a
+/// configuration, so its test is `false`.
+fn rust_in_predicate(text: &str, machine_name: &str, states: &BTreeSet<String>) -> String {
+    static IN_STATE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"(?:this->|self\.)?(?:isStateActive|is_state_active)\("([^"]+)"\)"#)
+            .expect("the In() pattern is a valid regex")
+    });
+    IN_STATE
+        .replace_all(text, |caps: &regex::Captures<'_>| {
+            let id = &caps[1];
+            if states.contains(id) {
+                format!(
+                    "engine.is_active({machine_name}State::{})",
+                    filters::to_state_variant(id.to_string())
+                )
+            } else {
+                "false".to_string()
+            }
+        })
+        .into_owned()
+}
+
+/// The filters a Rust machine's templates read that depend on its document:
+/// `rust_in_predicate` ([`rust_in_predicate`]).
+fn register_rust_dynamic_filters(env: &mut Environment, model: &SCXMLModel, machine_name: &str) {
+    let states: BTreeSet<String> = model.states.keys().cloned().collect();
+    let machine_name = machine_name.to_string();
+    env.add_filter("rust_in_predicate", move |text: String| -> String {
+        rust_in_predicate(&text, &machine_name, &states)
+    });
+}
+
 /// [`generate_with_options`] with the buffers sized by `bounds` rather than by
 /// `model`'s own: a variant of a product line generated for the machine of
 /// every build is given the document's, which hold each variant (ADR 0057 §9).
@@ -3150,6 +3329,8 @@ fn render_rust(
     let host_invoke_request_checks =
         crate::forge::host_invoker_interface::rust_request_checks(model);
 
+    // An `In()` is asked of the engine, which keeps the configuration.
+    register_rust_dynamic_filters(env, model, &machine_name);
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -3192,6 +3373,10 @@ fn render_rust(
     // What the state tree bounds: the sizes of the buffers the runtime's
     // microstep holds, written on the policy so each is this document's own.
     let microstep_bounds = bounds.microstep;
+    // The document's tables (docs/adr/0064), the one source of every row the
+    // machine writes and of the numbers its states, histories and transitions
+    // are known by in the runtime.
+    let tables = rust_tables(model, &microstep_bounds)?;
 
     model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
@@ -3200,10 +3385,7 @@ fn render_rust(
         license_config => minijinja::Value::from_serialize(license_config()),
         no_std => options.no_std,
         max_configuration => microstep_bounds.configuration,
-        max_enabled => microstep_bounds.enabled,
-        max_history_defaults => microstep_bounds.history_defaults,
-        max_depth => microstep_bounds.depth,
-        max_entry_walk => microstep_bounds.entry_walk,
+        tables => minijinja::Value::from_serialize(&tables),
         max_send_id => bounds.send_id,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
@@ -7627,6 +7809,88 @@ mod tests {
                 !code.contains(forbidden),
                 "the module names `{forbidden}`:\n{code}"
             );
+        }
+    }
+
+    /// An `In()` in a Rust machine is asked of the engine, which keeps the
+    /// configuration (docs/adr/0064), with the state resolved to its variant
+    /// when the machine is generated: in the parser's spelling of a pure
+    /// `In()` condition and in the sce-static lowering's alike. A name that is
+    /// no state of the document, a `<history>` among them, is never active.
+    #[test]
+    fn rust_in_predicate_asks_the_engine_for_each_state_the_document_has() {
+        let states: BTreeSet<String> = ["counting", "s.one"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        assert_eq!(
+            rust_in_predicate(
+                r#"this->isStateActive("counting") && !this->isStateActive("s.one")"#,
+                "Lamp",
+                &states
+            ),
+            "engine.is_active(LampState::Counting) && !engine.is_active(LampState::SOne)"
+        );
+        assert_eq!(
+            rust_in_predicate(
+                r#"(self.count < 10) && self.is_state_active("counting")"#,
+                "Lamp",
+                &states
+            ),
+            "(self.count < 10) && engine.is_active(LampState::Counting)"
+        );
+        assert_eq!(
+            rust_in_predicate(r#"isStateActive("h_resume")"#, "Lamp", &states),
+            "false"
+        );
+        assert_eq!(
+            rust_in_predicate("self.count < 10", "Lamp", &states),
+            "self.count < 10",
+            "text with no In() is left as it is"
+        );
+    }
+
+    /// A Rust machine's tables are the rows `DocumentTables::of` computes,
+    /// with the sizes of the bounds it was given, and the number of each
+    /// written transition by its source and index.
+    #[test]
+    fn rust_tables_number_each_written_transition_by_its_source_and_index() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+  <state id="idle"><transition event="go" target="busy"/></state>
+  <state id="busy">
+    <transition event="back" target="idle"/>
+    <transition event="stay"/>
+  </state>
+</scxml>"#,
+                "rust_tables",
+            )
+            .expect("parse");
+        let mut bounds = crate::microstep_bounds::MicrostepBounds::of(&model);
+        bounds.entry_walk = 40;
+        let tables = rust_tables(&model, &bounds).expect("tables");
+        assert_eq!(tables["written"]["idle"], serde_json::json!([0]));
+        assert_eq!(tables["written"]["busy"], serde_json::json!([1, 2]));
+        assert_eq!(tables["initial"], 3);
+        assert_eq!(
+            tables["transitions"][2]["origin"], "busy, transition 1",
+            "a row is named for the comment beside it"
+        );
+        assert_eq!(
+            tables["transitions"][3]["origin"],
+            "the document's initial transition"
+        );
+        assert_eq!(tables["max_walk"], 40, "the sizes are the bounds given");
+        assert_eq!(tables["states"][1]["kind"], "Atomic");
+
+        bounds.entry_walk = usize::from(u16::MAX) + 1;
+        match rust_tables(&model, &bounds) {
+            Err(GenerateError::UnsupportedFeature { detail, .. }) => {
+                assert!(detail.contains("steps of the entry walk"), "{detail}");
+                assert!(detail.contains("65535"), "{detail}");
+            }
+            other => panic!("a walk past a u16 is refused, got {other:?}"),
         }
     }
 }

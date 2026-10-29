@@ -3,15 +3,16 @@
 
 {% include 'license_header.rs.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{%- import '_macros/rust_entry_target.jinja2' as et %}
 {%- from 'invoke_macros.rs.jinja2' import child_engine_type, child_persist_trait %}
+{# The constant that holds this document's tables (docs/adr/0064). #}
+{% set tables_ident = (machine_name | to_snake_case | upper) ~ "_TABLES" %}
 
 {% if no_std %}
 // SCE Protocol-Synthesis RFC §synth-5-J-2: no_std variant of the statechart
 // emitter. It compiles against `sce-rust-runtime` with or without that
 // crate's `std` feature, and the generated crate omits `std::*` paths — Duration comes from
-// `core::time`, the configuration and history records are the runtime's
-// capacity-bounded `BoundedVec`, sized to this document's state tree, and the
+// `core::time`, the configuration and history records are kept by the engine
+// in a run store sized to this document's state tree, and the
 // parent-event queue field is elided
 // (SCXML `<invoke>` is rejected at codegen time under `--no-std` per the
 // `codegen/no-std-invoke-not-supported` diagnostic).
@@ -112,14 +113,19 @@ pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
+/// The document's states, declared in document order. Each variant's
+/// discriminant is its position in that order, which is the number the
+/// runtime's tables know the state by (docs/adr/0064), so a state is its number
+/// at no cost.
 {{ state_derives_attr }}
+#[repr(u16)]
 pub enum {{ machine_name }}State {
-{% for state_id in model.states | sort %}
-{% if state_id == default_state_id %}
+{% for row in tables.states %}
+{% if row.id == default_state_id %}
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
 {% endif %}
-    {{ state_id | to_state_variant }},
+    {{ row.id | to_state_variant }} = {{ loop.index0 }},
 {% endfor %}
 }
 {% if model.history_states %}
@@ -130,12 +136,14 @@ pub enum {{ machine_name }}State {
 
 /// The document's `<history>` pseudo-states. A history is not a state — it is
 /// never in a configuration — so it is named apart from `{{ machine_name }}State`,
-/// and a target list names one as `EntryTarget::History`: the engine
-/// dereferences it to what it recorded, or to its default.
+/// and a target list names one as `Target::History`: the engine
+/// dereferences it to what it recorded, or to its default. Each variant's
+/// discriminant is the number the runtime's tables know the history by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
 pub enum {{ machine_name }}History {
-{% for history_id in model.history_states | sort %}
-    {{ history_id | to_state_variant }},
+{% for row in tables.histories %}
+    {{ row.id | to_state_variant }} = {{ loop.index0 }},
 {% endfor %}
 }
 {% endif %}
@@ -144,26 +152,85 @@ pub enum {{ machine_name }}History {
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
+/// The events the document names, and the null event. Each variant's
+/// discriminant is the number the runtime knows the event by, its position in
+/// `StatePolicy::EVENTS`.
 {{ event_derives_attr }}
+#[repr(u16)]
 pub enum {{ machine_name }}Event {
 {% for event_name in model.events | sort %}
-    {{ event_name | to_event_variant }},
+    {{ event_name | to_event_variant }} = {{ loop.index0 }},
 {% endfor %}
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null,
+    Null = {{ model.events | length }},
 }
 
 // ======================================================================
 // What this document's state tree bounds (W3C SCXML 3.4)
 // ======================================================================
 
-/// A set of this machine's states that are, or are about to be, in one
-/// configuration: the configuration a host observes, and what the runtime's
-/// microstep builds from it (an exit set, an entry set, a history's record).
-/// Its capacity, {{ max_configuration }}, is the most states one configuration of this document holds,
-/// read from its state tree; the runtime names no size of its own. A `Vec` under
-/// std, where the capacity is not read.
+/// A configuration of this machine, in its own states: what
+/// `Engine::get_active_states` returns and a host observes. The engine keeps
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, {{ max_configuration }}, is
+/// the most states one configuration of this document holds, read from its
+/// state tree; the runtime names no size of its own. A `Vec` under std, where
+/// the capacity is not read.
 pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<{{ machine_name }}State, {{ max_configuration }}>;
+
+// ======================================================================
+// The document's tables (docs/adr/0064)
+// ======================================================================
+
+/// This document's state tree as the runtime's Appendix D procedures read it.
+/// Those procedures are compiled once for a program, whatever machines it
+/// holds, so they read a document as numbers: each state by its position in
+/// document order (the discriminant of `{{ machine_name }}State`), each `<history>` by
+/// the discriminant of its variant, and each transition by its row here — the
+/// written ones grouped by source state, then each compound state's initial
+/// transition, each history's default transition and the document's own
+/// initial transition. The last four fields size the microstep's buffers.
+///
+/// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
+/// constant may refer to a static only from Rust 1.83 on, past the toolchain
+/// the runtime supports. The reference is to one constant allocation all the
+/// same.
+pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables = {
+    use ::sce_rust_runtime::{
+        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
+        TransitionId, TransitionRow,
+    };
+    DocumentTables {
+        states: &[
+{% for row in tables.states %}
+            // {{ loop.index0 }}: {{ row.id }}
+            StateRow { parent: {{ row.parent }}, kind: StateKind::{{ row.kind }}, last_descendant: StateId({{ row.last_descendant }}), children: Span { start: {{ row.children_start }}, len: {{ row.children_len }} }, initial: {{ row.initial }} },
+{% endfor %}
+        ],
+        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+        // children, in document order — for a <parallel>, its regions — as the
+        // span its row names.
+        children: &[{% for child in tables.children %}StateId({{ child }}){{ ", " if not loop.last }}{% endfor %}],
+        histories: &[
+{% for row in tables.histories %}
+            // {{ loop.index0 }}: {{ row.id }}
+            HistoryRow { parent: StateId({{ row.parent }}), deep: {{ 'true' if row.deep else 'false' }}, default: TransitionId({{ row.default }}), record: Span { start: {{ row.record_start }}, len: {{ row.record_len }} } },
+{% endfor %}
+        ],
+        transitions: &[
+{% for row in tables.transitions %}
+            // {{ loop.index0 }}: {{ row.origin }}
+            TransitionRow { source: {{ row.source }}, targets: Span { start: {{ row.targets_start }}, len: {{ row.targets_len }} }, internal: {{ 'true' if row.internal else 'false' }}, has_content: {{ 'true' if row.has_content else 'false' }} },
+{% endfor %}
+        ],
+        targets: &[{% for target in tables.targets %}{% if target.history %}Target::History(HistoryId({{ target.id }})){% else %}Target::State(StateId({{ target.id }})){% endif %}{{ ", " if not loop.last }}{% endfor %}],
+        initial: TransitionId({{ tables.initial }}),
+        history_records: {{ tables.history_records }},
+        max_configuration: {{ tables.max_configuration }},
+        max_enabled: {{ tables.max_enabled }},
+        max_history_defaults: {{ tables.max_history_defaults }},
+        max_walk: {{ tables.max_walk }},
+    }
+};
 {% if model.emitted_transition_table %}
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
@@ -598,7 +665,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% endif %}
 {% endfor %}
             ],
-            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // What each history recorded is the engine's (docs/adr/0064).
+            ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
 {% if model.invokes | scxml_family %}
             // docs/adr/0045: each running child, with its whole state.
             self.policy().saved_children(wall_now_ms)?,
@@ -624,7 +692,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
     }
 
     fn restore_with(
-{% if static_fields or model.history_states or model.invokes | scxml_family %}
+{% if static_fields or model.invokes | scxml_family %}
         mut policy: {{ machine_name }}Policy{{ policy_generics_use }},
 {% else %}
         policy: {{ machine_name }}Policy{{ policy_generics_use }},
@@ -648,20 +716,22 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% for field in static_fields %}
         policy.{{ field.name }} = {{ saved_read(field) }};
 {% endfor %}
-{% if model.history_states %}
-        for (recorded, states) in history {
-            match recorded {
-{% for history_id in model.history_states | sort %}
-                {{ machine_name }}History::{{ history_id | to_state_variant }} => policy.history_{{ history_id }} = Some(states),
-{% endfor %}
-            }
-        }
-{% endif %}
 {% for invoke_info in model.invokes | scxml_family %}
         // A start after the restore is numbered on from the saved count.
         policy.invoke_starts_{{ invoke_info.field_suffix }} = saved.invoke_start("{{ invoke_info.invoke_id | escape_rust }}");
 {% endfor %}
+{% if model.history_states %}
+        let mut engine = ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)?;
+        // What each history recorded is the engine's (docs/adr/0064), so it is
+        // put back once the engine stands. Entering takes no transition, so
+        // nothing has read a history before this.
+        for (recorded, states) in history {
+            engine.set_history_value(recorded, &states);
+        }
+        Ok(engine)
+{% else %}
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+{% endif %}
     }
 }
 
@@ -718,15 +788,6 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // (`self.actions.<op>(…)`) instead of a runtime script engine.
     actions: A,
 {% endif %}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-    // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
-    // `{{ machine_name }}Configuration` — `Vec<S>` under std, a `heapless::Vec` of exactly
-    // the most states one configuration holds under no_std. The std alias preserves
-    // the existing ABI; the no_std alias keeps the generated code allocator-free.
-    active_states: {{ machine_name }}Configuration,
-{% endif %}
 {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name for _event.name binding
     //
@@ -773,14 +834,8 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
 {% endif %}
-{% for history_id, history_info in model.history_states | dictsort %}
-    // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: the recorded configuration is a
-    // `{{ machine_name }}Configuration`, as `active_states` is. Recorded history is always
-    // a subset of a configuration, so it cannot exceed the configuration's bound.
-    history_{{ history_id }}: Option<{{ machine_name }}Configuration>,
-{% endfor %}
+{# The configuration and what each `<history>` recorded are not fields here:
+   the engine keeps both, as numbers, in its run store (docs/adr/0064). #}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this struct.
 
    A `<data>` that carries an initializer is owned by the script engine for
@@ -824,7 +879,10 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     basic_http_access_uri: String,
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 5.9.2: the configuration as the script engine's In() reads it —
-    // a copy of `active_states` by name, republished on every change to it.
+    // a copy by name of the engine's, which the engine's own test cannot be
+    // asked from inside the script engine's callback. Republished from the
+    // engine as each hook that can run a script begins
+    // (`publish_in_predicate_states`).
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
 {% endif %}
 {% endif %}
@@ -966,9 +1024,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             actions,
 {% endif %}
 {% endif %}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-            active_states: {{ machine_name }}Configuration::new(),
-{% endif %}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
 {% endif %}
@@ -996,9 +1051,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if model.needs_event_invokeid %}
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
 {% endif %}
-{% for history_id, _ in model.history_states | dictsort %}
-            history_{{ history_id }}: None,
-{% endfor %}
 {% for field in static_fields %}
             {{ field.name }},
 {% endfor %}
@@ -1311,23 +1363,65 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 {% endif %}
 
+    // docs/adr/0064: the document as the runtime's Appendix D procedures read
+    // it, which are compiled once for a program: its tables, and its states,
+    // histories and events by the numbers the tables know them by. Each of the
+    // three lists is in the order of those numbers, so it is the inverse of the
+    // enum's discriminant.
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &{{ tables_ident }};
+    const STATES: &'static [Self::State] = &[
+{% for row in tables.states %}
+        {{ machine_name }}State::{{ row.id | to_state_variant }},
+{% endfor %}
+    ];
+{% if model.history_states %}
+    const HISTORIES: &'static [Self::History] = &[
+{% for row in tables.histories %}
+        {{ machine_name }}History::{{ row.id | to_state_variant }},
+{% endfor %}
+    ];
+{% else %}
+    const HISTORIES: &'static [Self::History] = &[];
+{% endif %}
+    const EVENTS: &'static [Self::Event] = &[
+{% for event_name in model.events | sort %}
+        {{ machine_name }}Event::{{ event_name | to_event_variant }},
+{% endfor %}
+        {{ machine_name }}Event::Null,
+    ];
+
+    fn state_id(state: Self::State) -> ::sce_rust_runtime::StateId {
+        ::sce_rust_runtime::StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> ::sce_rust_runtime::HistoryId {
+{% if model.history_states %}
+        ::sce_rust_runtime::HistoryId(history as u16)
+{% else %}
+        // No `<history>`, so no value of the type to number.
+        match history {}
+{% endif %}
+    }
+
+    fn event_id(event: Self::Event) -> ::sce_rust_runtime::EventId {
+        ::sce_rust_runtime::EventId(event as u16)
+    }
+
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger. A configuration holds {{ max_configuration }} state(s) at
-    // most; a selection enables {{ max_enabled }} transition(s) at most, one from each atomic state
-    // of one; the deepest state sits {{ max_depth }} level(s) down. Under std the buffers
-    // are `Vec`s and the capacities are not read.
+    // this document's size and no larger, in both profiles. A configuration
+    // holds {{ tables.max_configuration }} state(s) at most; a selection enables {{ tables.max_enabled }} transition(s) at most,
+    // one from each atomic state of one; a microstep owes {{ tables.max_history_defaults }} history default(s) at
+    // most; and Appendix D's entry procedures, the effective targets and the
+    // completion check are run over a stack of steps and not by recursion, so a
+    // call needs no depth the program has to assume: {{ tables.max_walk }} step(s) at most, three
+    // for each level of the tree, one for each `<history>` and three of
+    // headroom. The workspace is a local of the call that runs a macrostep; the
+    // run store, the configuration and the {{ tables.history_records }} state(s) the histories record
+    // together, is the engine's.
+    type Workspace = ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch({{ tables.max_configuration }}) }, {{ tables.max_enabled }}, {{ tables.max_walk }}, {{ tables.max_history_defaults }}>;
+    type RunStore = ::sce_rust_runtime::RunStore<{{ tables.max_configuration }}, {{ tables.history_records }}, {{ tables.histories | length }}>;
     type Configuration = {{ machine_name }}Configuration;
-    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>, {{ max_enabled }}>;
-    type HistoryDefaults = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), {{ max_history_defaults }}>;
-    // Appendix D's entry procedures, the effective targets and the completion
-    // check are run over a stack of steps and not by recursion, so a call needs
-    // no depth the program has to assume: {{ max_entry_walk }} step(s) at most, three for each level
-    // of the tree, one for each `<history>` and three of headroom.
-    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>, {{ max_entry_walk }}>;
-    const MAX_CONFIGURATION: usize = {{ max_configuration }};
-    const MAX_ENABLED: usize = {{ max_enabled }};
-    const MAX_DEPTH: usize = {{ max_depth }};
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
@@ -1340,9 +1434,6 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     const NEEDS_PARENT: bool = {{ 'true' if model.needs_parent else 'false' }};
-{% if model.has_parallel_states or model.uses_in_predicate %}
-    const HAS_ACTIVE_STATES: bool = true;
-{% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // §scxml-6.4: gates the engine's macrostep-end call into
     // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
@@ -1376,110 +1467,10 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endif %}
     }
 
-    fn is_final_state(state: Self::State) -> bool {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.is_final %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
-{% endif %}
-{% endfor %}
-            _ => false,
-        }
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.parent %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => Some({{ machine_name }}State::{{ state.parent | to_state_variant }}),
-{% endif %}
-{% endfor %}
-            _ => None,
-        }
-    }
-
-    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
-    // an initial transition. A <parallel> is not compound.
-    fn is_compound_state(state: Self::State) -> bool {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.initial_targets %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
-{% endif %}
-{% endfor %}
-            _ => false,
-        }
-    }
-
-{% if model.has_parallel_states %}
-    fn is_parallel_state(state: Self::State) -> bool {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.is_parallel %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
-{% endif %}
-{% endfor %}
-            _ => false,
-        }
-    }
-{% endif %}
-
-    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-    // children, in document order — for a <parallel>, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.children %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => &[{% for child in state.children %}{{ machine_name }}State::{{ child | to_state_variant }}{{ ", " if not loop.last }}{% endfor %}],
-{% endif %}
-{% endfor %}
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.3: a compound state's initial transition target, as written —
-    // the engine's entry procedures dereference a <history> among them.
-    fn get_initial_targets(state: Self::State) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.initial_targets %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => {{ et.entry_targets(state.initial_targets, model.history_states, machine_name) }},
-{% endif %}
-{% endfor %}
-            _ => &[],
-        }
-    }
-
-    // §scxml-3.2: the target of the document's own initial transition, as written.
-    fn get_document_initial_targets() -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        {{ et.entry_targets(model.initial_targets, model.history_states, machine_name) }}
-    }
-
-    // §scxml-3.10: the state a <history> is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {
-{% for history_id, info in model.history_states | dictsort %}
-            {{ machine_name }}History::{{ history_id | to_state_variant }} => {{ machine_name }}State::{{ info.parent | to_state_variant }},
-{% endfor %}
-        }
-    }
-
-    // §scxml-3.10.2: a <history>'s default transition target, as written.
-    fn get_history_default_targets(history: Self::History) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
-        match history {
-{% for history_id, info in model.history_states | dictsort %}
-            {{ machine_name }}History::{{ history_id | to_state_variant }} => {{ et.entry_targets(info.default_targets, model.history_states, machine_name) }},
-{% endfor %}
-        }
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-{% for state_id, state in model.states | dictsort %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => {{ state.document_order }},
-{% endfor %}
-        }
-    }
+    // The document's structure — each state's parent, kind, children and
+    // initial transition, each history's parent and default, document order —
+    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
+    // of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
@@ -1532,45 +1523,6 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn null_event() -> Self::Event {
         {{ machine_name }}Event::Null
     }
-
-    // ======================================================================
-    // Run-time state the entry procedures read
-    // ======================================================================
-
-    // §scxml-3.10: what a <history> recorded when its parent was last exited;
-    // None before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {
-{% for history_id in model.history_states | sort %}
-            {{ machine_name }}History::{{ history_id | to_state_variant }} => self.history_{{ history_id }}.as_deref(),
-{% endfor %}
-        }
-    }
-
-{% if model.has_parallel_states or model.uses_in_predicate %}
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `Self::Configuration`; this override matches that signature
-    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
-    // both resolve correctly.
-    fn get_active_states(&self) -> Self::Configuration {
-        self.active_states.clone()
-    }
-
-    // §scxml-3.4: the write half of the pair above, for `Engine::enter_at`.
-    // Emitted under the same condition as the read half because the same fact
-    // decides both — this machine keeps its own active set, so this machine is
-    // the one that can be handed one back. The trait default is a tripwire, so
-    // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(&mut self, states: &[Self::State]) {
-        self.active_states.clear();
-        for &state in states {
-            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
-        }
-{% if model.needs_script_engine %}
-        self.publish_in_predicate_states();
-{% endif %}
-    }
-{% endif %}
 
 {% if event_payload_type != '()' %}
     // NL→IR Item C1 Path A: store the current event's typed `_event.data`
@@ -1676,6 +1628,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        self.publish_in_predicate_states(engine);
+{% endif %}
         self.do_execute_pending_invokes(engine);
     }
 {% endif %}
@@ -2037,6 +1992,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         event: &sce_rust_runtime::EventWithMetadata<Self::Event>,
         engine: &mut Engine<Self>,
     ) {
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        self.publish_in_predicate_states(engine);
+{% endif %}
         self.do_execute_finalize_for_child_event(event, engine);
     }
 {% endif %}

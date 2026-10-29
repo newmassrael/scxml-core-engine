@@ -1184,7 +1184,7 @@ mod tests {
     fn the_members_a_type_carries_are_reserved() {
         let m = "machine";
         assert!(reserved(Language::Rust).covers("new", m));
-        assert!(reserved(Language::Rust).covers("is_state_active", m));
+        assert!(reserved(Language::Rust).covers("publish_in_predicate_states", m));
         assert!(reserved(Language::Kotlin).covers("start", m));
         assert!(reserved(Language::Go).covers("ScriptEngine", m));
         assert!(reserved(Language::C11).covers("t", m));

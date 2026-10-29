@@ -38,9 +38,9 @@
 {% endif %}
 {% endfor %}
 {% endset %}
-{{ action.native_loop_first if block_flow.ended else action.native_loop }} {
+{{ (action.native_loop_first if block_flow.ended else action.native_loop) | rust_in_predicate }} {
 {% if action.native_loop_prologue %}
-    {{ action.native_loop_prologue }}
+    {{ action.native_loop_prologue | rust_in_predicate }}
 {% endif %}
 {{ foreach_body }}{% endwith %}
 }

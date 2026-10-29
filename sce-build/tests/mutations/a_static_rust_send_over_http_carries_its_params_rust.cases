@@ -27,8 +27,8 @@ mutation_oracles backends/rust/tests/tests/a_static_send_over_http_carries_its_p
 
 mutation_case "a field's value is computed and never put among the pairs" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     "        wire_params.entry(\"{{ param.name | escape_rust }}\".to_string()).or_default().push({{ param.native_value }});",
-     "        let _ = {{ param.native_value }};")
+     "        wire_params.entry(\"{{ param.name | escape_rust }}\".to_string()).or_default().push({{ param.native_value | rust_in_predicate }});",
+     "        let _ = {{ param.native_value | rust_in_predicate }};")
 PY
 
 mutation_case "a BasicHTTP request is handed no pairs" <<'PY'

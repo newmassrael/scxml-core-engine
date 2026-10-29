@@ -316,9 +316,11 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
             .collect()
     };
     match (language, label) {
+        // A Rust variant, with the discriminant that is its number in the
+        // machine's tables (docs/adr/0064).
         (Language::Rust, "State" | "History" | "Event") => capture(
             &block(&format!("pub enum Names{label} {{"), "\n}"),
-            r"(?m)^\s+([A-Za-z_][A-Za-z0-9_]*),\s*$",
+            r"(?m)^\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*=\s*\d+)?,\s*$",
         ),
         (Language::Cpp, "State" | "History" | "Event") => {
             enumerators(block(&format!("enum class {label} : uint8_t {{"), "}"), "")

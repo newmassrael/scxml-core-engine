@@ -9,19 +9,20 @@
    is `true` when it failed, `error.execution` already raised. Which block the
    error ends, and what leaves it, is known from where the statement is
    rendered, so it is decided here: `break 'action_block` inside a block that
-   has that label, and nowhere to go outside one.
+   has that label, and nowhere to go outside one. An In() it reads is asked of
+   the engine, which keeps the configuration (`rust_in_predicate`).
 
    The caller passes `in_action_block` because an imported macro does not see
    the includer's context. #}
 {% macro emit(action, in_action_block) -%}
 {% if action.native_fails and in_action_block %}
-let sce_failed = {{ action.native_code }};
+let sce_failed = {{ action.native_code | rust_in_predicate }};
 if sce_failed {
     break 'action_block;  // W3C SCXML 4.9: the error ends the block
 }
 {% elif action.native_fails %}
-let _ = {{ action.native_code }};
+let _ = {{ action.native_code | rust_in_predicate }};
 {% else %}
-{{ action.native_code }}
+{{ action.native_code | rust_in_predicate }}
 {% endif %}
 {%- endmacro %}

@@ -228,7 +228,7 @@
                     let mut seed = super::{{ child_name }}_sm::{{ child_name | to_machine_name }}InvokeParams::default();
 {% for param in seeds %}
 {% if param.native_seed and param.native_fails %}
-                    match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_seed }}) })() {
+                    match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_seed | rust_in_predicate }}) })() {
                         Ok(value) => seed.{{ param.name | to_snake_case }} = {% if param.native_seed_optional %}value{% else %}Some(value){% endif %},
                         Err(_) => {
                             // W3C SCXML 5.7.1: report the failure and leave the value out.
@@ -239,7 +239,7 @@
                         }
                     }
 {% elif param.native_seed %}
-                    seed.{{ param.name | to_snake_case }} = {% if param.native_seed_optional %}{{ param.native_seed }}{% else %}Some({{ param.native_seed }}){% endif %};
+                    seed.{{ param.name | to_snake_case }} = {% if param.native_seed_optional %}{{ param.native_seed | rust_in_predicate }}{% else %}Some({{ param.native_seed | rust_in_predicate }}){% endif %};
 {% endif %}
 {% endfor %}
                     child_policy.accept_params(seed);
@@ -251,7 +251,7 @@
                 // MUST NOT add it to its data model — but the argument is still
                 // the invoke's, evaluated, and a failure of it is reported
                 // (§scxml-5.7.1).
-                if (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_value }}) })().is_err() {
+                if (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_value | rust_in_predicate }}) })().is_err() {
                     ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
@@ -549,7 +549,7 @@
                 // §scxml-6.4: the `srcexpr` names the document to start.
 {% if invoke_info.native_src_fails %}
                 let __sce_value = match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-                    Ok({{ invoke_info.native_src }})
+                    Ok({{ invoke_info.native_src | rust_in_predicate }})
                 })() {
                     Ok(value) => value,
                     Err(_) => {
@@ -563,7 +563,7 @@
                     }
                 };
 {% else %}
-                let __sce_value: String = {{ invoke_info.native_src }};
+                let __sce_value: String = {{ invoke_info.native_src | rust_in_predicate }};
 {% endif %}
                 __sce_selected = sce_rust_runtime::helpers::invoke_processing::document_stem(&__sce_value).to_string();
 {% elif invoke_info.srcexpr %}
@@ -710,7 +710,7 @@
    raises error.execution and starts nothing. #}
 {% if invoke_info.native_src_fails %}
                 match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-                    Ok({{ invoke_info.native_src }})
+                    Ok({{ invoke_info.native_src | rust_in_predicate }})
                 })() {
                     Ok(value) => host_invoke_src = value,
                     Err(_) => {
@@ -721,7 +721,7 @@
                     }
                 }
 {% else %}
-                host_invoke_src = {{ invoke_info.native_src }};
+                host_invoke_src = {{ invoke_info.native_src | rust_in_predicate }};
 {% endif %}
 {% endif %}
 {% if invoke_info.native_content %}
@@ -732,7 +732,7 @@
    nothing. #}
 {% if invoke_info.native_content_fails %}
                 match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-                    Ok({{ invoke_info.native_content }})
+                    Ok({{ invoke_info.native_content | rust_in_predicate }})
                 })() {
                     Ok(value) => host_invoke_content = value,
                     Err(_) => {
@@ -743,7 +743,7 @@
                     }
                 }
 {% else %}
-                host_invoke_content = {{ invoke_info.native_content }};
+                host_invoke_content = {{ invoke_info.native_content | rust_in_predicate }};
 {% endif %}
 {% endif %}
 {% for attr, expr in [('src', invoke_info.srcexpr), ('content', invoke_info.contentexpr)] %}

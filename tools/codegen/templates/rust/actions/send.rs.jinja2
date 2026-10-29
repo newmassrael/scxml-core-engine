@@ -139,8 +139,8 @@
     // id and writes it to the variable `idlocation` names before it reads any
     // other argument (`Action::native_idlocation`); that variable is then the
     // id the send is known by (`Action::native_sendid`).
-    {{ action.native_idlocation }}
-    let send_id_text: String = {{ action.native_sendid }};
+    {{ action.native_idlocation | rust_in_predicate }}
+    let send_id_text: String = {{ action.native_sendid | rust_in_predicate }};
     let send_id: &str = &send_id_text;
 {% elif action.id %}
     // The id is text and stays text: a literal is borrowed, and the engine builds
@@ -252,11 +252,11 @@
     let _send_event_name: String = if _send_arg_error.is_none() {
 {% if action.native_event_fails %}
         (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok({{ action.native_event }})
+            Ok({{ action.native_event | rust_in_predicate }})
         })()
         .unwrap_or_default()
 {% else %}
-        {{ action.native_event }}
+        {{ action.native_event | rust_in_predicate }}
 {% endif %}
     } else {
         String::new()
@@ -292,7 +292,7 @@
     let _send_target_text: Option<String> = if _send_arg_error.is_none() {
 {% if action.native_target_fails %}
         match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok({{ action.native_target }})
+            Ok({{ action.native_target | rust_in_predicate }})
         })() {
             Ok(route) => Some(route),
             Err(_) => {
@@ -301,7 +301,7 @@
             }
         }
 {% else %}
-        Some({{ action.native_target }})
+        Some({{ action.native_target | rust_in_predicate }})
 {% endif %}
     } else {
         None
@@ -358,7 +358,7 @@
     let _send_delay_ms: u64 = if _send_arg_error.is_none() {
 {% if action.native_delay_fails %}
         match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok({{ action.native_delay }})
+            Ok({{ action.native_delay | rust_in_predicate }})
         })() {
             Ok(s) => sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
                 _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
@@ -370,7 +370,7 @@
             }
         }
 {% else %}
-        let s: String = {{ action.native_delay }};
+        let s: String = {{ action.native_delay | rust_in_predicate }};
         sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
             _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
             0
@@ -632,7 +632,7 @@
         // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
         // checked operation that overflows leaves the pair out and says so.
         match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok({{ param.native_value }})
+            Ok({{ param.native_value | rust_in_predicate }})
         })() {
             Ok(val) => {
                 wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
@@ -648,7 +648,7 @@
         }
 {% elif param.native_value %}
         // The value is read from the machine's field as it stands now.
-        wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push({{ param.native_value }});
+        wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push({{ param.native_value | rust_in_predicate }});
 {% elif param.expr %}
         match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
@@ -758,7 +758,7 @@
     // <content> element."
 {% if action.native_content_value_fails %}
     let _send_content_value: ::sce_rust_runtime::ScriptValue = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-        Ok({{ action.native_content_value }})
+        Ok({{ action.native_content_value | rust_in_predicate }})
     })() {
         Ok(val) => val,
         Err(_) => {
@@ -771,7 +771,7 @@
         }
     };
 {% else %}
-    let _send_content_value: ::sce_rust_runtime::ScriptValue = {{ action.native_content_value }};
+    let _send_content_value: ::sce_rust_runtime::ScriptValue = {{ action.native_content_value | rust_in_predicate }};
 {% endif %}
     let event_data_string: String = ::sce_rust_runtime::helpers::event_data::script_value_to_json(&_send_content_value);
     let event_data: &str = &event_data_string;

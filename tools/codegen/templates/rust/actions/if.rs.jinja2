@@ -35,10 +35,10 @@ let mut if_cond_failed = false;
 {% endif %}
 {% if action.native_cond %}
 // W3C SCXML 5.9: cond="{{ action.cond }}"
-if {{ action.native_cond }} {
+if {{ action.native_cond | rust_in_predicate }} {
 {% elif action.is_pure_in_predicate %}
-// W3C SCXML 5.9.2: In() predicate condition
-if {{ action.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
+// W3C SCXML 5.9.2: In() predicate condition, asked of the engine
+if {{ action.cond_cpp | rust_in_predicate }} {
 {% elif model.needs_script_engine %}
 // W3C SCXML 5.9: Script engine guard ({{ action.cond }})
 if {% if if_script_can_fail %}self.evaluate_if_cond("{{ action.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ action.cond | to_lua_guard | escape_rust }}", engine){% endif %} {
@@ -59,7 +59,7 @@ if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
 {% endwith %}
 {% for elseif in action.elseif_branches %}
-} else if {% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}{% if if_script_can_fail %}self.evaluate_if_cond("{{ elseif.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% endif %}{% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
+} else if {% if elseif.native_cond %}{{ elseif.native_cond | rust_in_predicate }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | rust_in_predicate }}{% elif model.needs_script_engine %}{% if if_script_can_fail %}self.evaluate_if_cond("{{ elseif.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% endif %}{% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
 {% with block_flow = namespace(ended=false) %}
 {% for elseif_action in elseif.actions %}
 {% if not block_flow.ended %}

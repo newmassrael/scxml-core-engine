@@ -4,4 +4,4 @@
 {# SCE Accepted Subset §2.15: empty a sce-static list, lowered ahead of the
    template by `forge::static_lowering` and stored on `action.native_code`. #}
 // SCE Accepted Subset §2.15: <sce:clear target="{{ action.location }}">
-{{ action.native_code }}
+{{ action.native_code | rust_in_predicate }}

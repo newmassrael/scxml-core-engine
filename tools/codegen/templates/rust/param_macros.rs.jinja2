@@ -46,7 +46,7 @@
            read, so it crosses exactly as a script engine's would. A checked
            operation that overflows is the evaluation that failed. #}
         match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok({{ param.native_value }})
+            Ok({{ param.native_value | rust_in_predicate }})
         })() {
             Ok(val) => {
                 let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
@@ -65,7 +65,7 @@
         }
 {% elif param.native_value %}
         {
-            let val = {{ param.native_value }};
+            let val = {{ param.native_value | rust_in_predicate }};
             let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
             {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
 {% if typed_map and not param.envelope_metadata %}
@@ -157,7 +157,7 @@
    field cannot hold. #}
         if !request_refused {
             match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-                Ok({{ param.native_value }})
+                Ok({{ param.native_value | rust_in_predicate }})
             })() {
                 Ok(val) => {
                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);

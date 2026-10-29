@@ -23,21 +23,26 @@
     Generates:
     - bind_current_event(event, engine)             §scxml-5.10 `_event` for the guards
     - first_enabled_transition(state, event, engine)  the per-state half of selection
-    - execute_transition_content(source, index, engine)
+    - execute_transition_content(transition, engine)
+
+    A transition reaches the engine as its number in the document's tables
+    (docs/adr/0064), the row that holds its source, its targets and its type:
+    `tables.written[state][index]` is the number of the `index`-th transition
+    written in `state`.
 
     The Rust twin of C++ process_transition.jinja2.
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
-{%- import '_macros/rust_entry_target.jinja2' as et %}
 
 {# The guard a transition is taken under, in the one form this machine can
    evaluate it: a guard lowered to Rust at generate time (a typed-payload
    comparison, a sce-static condition), a pure In() predicate, the script
-   engine, or a value decided at build time. #}
+   engine, or a value decided at build time. An In() is asked of the engine,
+   which keeps the configuration (`rust_in_predicate`). #}
 {% macro guard_expr(trans) -%}
-{%- if trans.native_guard -%}{{ trans.native_guard }}
-{%- elif trans.is_pure_in_predicate -%}{{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}
+{%- if trans.native_guard -%}{{ trans.native_guard | rust_in_predicate }}
+{%- elif trans.is_pure_in_predicate -%}{{ trans.cond_cpp | rust_in_predicate }}
 {%- elif model.needs_script_engine -%}self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
@@ -64,6 +69,11 @@
     fn bind_current_event(&mut self, event: Self::Event, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // A selection does not change the configuration, so the guards it
+        // runs read the one published here.
+        self.publish_in_predicate_states(engine);
+{% endif %}
 {% if model.needs_event_name %}
         if event != Self::null_event() {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
@@ -127,15 +137,16 @@
 {% endif %}
     // Appendix D selectTransitions, the half only this document can answer:
     // the first of `state`'s own transitions, in document order, that `event`
-    // enables. The engine walks the atomic states and their ancestors and
-    // keeps the ordered set. `Event::Null` asks for eventless transitions.
+    // enables, as its row of the tables, which holds its targets and its
+    // type. The engine walks the atomic states and their ancestors and keeps
+    // the ordered set. `Event::Null` asks for eventless transitions.
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<::sce_rust_runtime::TransitionId> {
         match state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
@@ -147,13 +158,8 @@
 {% else %}
                     {
 {% endif %}
-                        return Some(::sce_rust_runtime::EnabledTransition {
-                            source: state,
-                            targets: {{ et.entry_targets(trans.targets, model.history_states, machine_name) }},
-                            transition_index: {{ trans.transition_index }},
-                            has_actions: {{ 'true' if trans.actions else 'false' }},
-                            is_internal: {{ 'true' if trans.type == 'internal' else 'false' }},
-                        });
+                        // {{ state_id }}, transition {{ trans.transition_index }}
+                        return Some(::sce_rust_runtime::TransitionId({{ tables.written[state_id][trans.transition_index] }}));
                     }
                 }
 {% endfor %}
@@ -166,27 +172,28 @@
     }
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
-    // between the microstep's exits and its entries.
+    // between the microstep's exits and its entries. `transition` is a
+    // written transition's row, one whose row says it has content.
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_transition_content(
         &mut self,
-        source: Self::State,
-        transition_index: usize,
+        transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        self.publish_in_predicate_states(engine);
+{% endif %}
 {% if model.has_transition_actions %}
-        match source {
+        match transition.0 {
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions | selectattr("actions") | list %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
-                match transition_index {
 {% for trans in state.transitions %}
 {% if trans.actions %}
-                    {{ trans.transition_index }} => {  {{- annot.annotation_comment(trans, "rust", "                        ") }}
+            // {{ state_id }}, transition {{ trans.transition_index }}
+            {{ tables.written[state_id][trans.transition_index] }} => {  {{- annot.annotation_comment(trans, "rust", "                ") }}
 {% if trans.source_location %}
-                        {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
-                        // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
+                // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
     cannot run for a delivery that did not carry one, so it binds the payload
     once, before any of it runs, or does not run — raising nothing: the engine
@@ -194,39 +201,35 @@
     one unreadable delivery is one error (the Kotlin arm's rule). The binding
     is owned, so the statements after it may write the machine's fields. #}
 {% if trans.content_reads_payload %}
-                        let ev = match &self.pending_payload {
-                            {{ machine_name }}Payload::{{ trans.event | to_event_variant }}(ev) => ev.clone(),
-                            _ => return,
-                        };
+                let ev = match &self.pending_payload {
+                    {{ machine_name }}Payload::{{ trans.event | to_event_variant }}(ev) => ev.clone(),
+                    _ => return,
+                };
 {% endif %}
-                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                        'action_block: {
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
 {# `block_flow`: an element that ends the block unconditionally sets it, and
    nothing after that element is emitted (rust/entry_exit_actions.rs.jinja2). #}
 {% with block_flow = namespace(ended=false) %}
 {% for action in trans.actions %}
 {% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "rust", "                        ") -}}
+{{ annot.annotation_block(action, "rust", "                ") -}}
 {%- endif %}
-                        {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endif %}
 {% endfor %}
 {% endwith %}
-                        }
-                    }
-{% endif %}
-{% endfor %}
-                    _ => {}
                 }
             }
 {% endif %}
+{% endfor %}
 {% endfor %}
             _ => {}
         }
 {% else %}
         // W3C SCXML 3.13: no transition in this document has content.
-        let _ = (source, transition_index, engine);
+        let _ = (transition, engine);
 {% endif %}
     }

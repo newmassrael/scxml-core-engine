@@ -12,33 +12,27 @@
 # file is its witness: it puts the old order back and asks whether the
 # fixture's own driver goes red.
 #
-# Anchors are literal slices of the committed generated source.
-# `scripts/regen_onexit_runs_before_the_state_leaves.sh` rewrites that file, so
-# a regeneration that changes the exit function needs these anchors re-cut
-# (`scripts/mutate --check` reports it).
+# Since docs/adr/0064 the configuration is the engine's, and the order is the
+# runtime's: `exit_states` in `helpers/microstep.rs` calls the machine's exit
+# hook, then removes the state. The anchor is a literal slice of that
+# procedure; `scripts/mutate --check` reports it when the procedure changes.
 
 mutation_tests -p sce-rust-tests --test onexit_runs_before_the_state_leaves
-mutation_targets backends/rust/tests/src/integration/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves_sm.rs
+mutation_targets backends/rust/runtime/src/helpers/microstep.rs
 mutation_oracles backends/rust/tests/tests/onexit_runs_before_the_state_leaves.rs
 
 # ── The state leaves before its handler runs ────────────────────────
 #
-# The deactivation moves back to the head of the exit, ahead of the <onexit>
-# match — the order this channel generated until the round that added the
-# fixture. `In('inner')` inside `inner`'s own handler then answers false and
-# the document lands in `failSelfInInner`.
+# The removal moves ahead of the exit hook, the order this channel generated
+# until the round that added the fixture. `In('inner')` inside `inner`'s own
+# handler then answers false and the document lands in `failSelfInInner`.
 
-mutation_case "the state is deactivated before its own onexit runs" <<'PY'
-edit("backends/rust/tests/src/integration/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves_sm.rs",
-     """        // own handler is true: the deactivation is the LAST step here.
-        match state {""",
-     """        // own handler is true: the deactivation is the LAST step here.
-        self.deactivate(state);
-        match state {""")
-edit("backends/rust/tests/src/integration/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves_sm.rs",
-     """        // and invoke cancellation — the configuration.delete(s) step.
-        self.deactivate(state);
-    }""",
-     """        // and invoke cancellation — the configuration.delete(s) step.
-    }""")
+mutation_case "the state leaves the configuration before its own onexit runs" <<'PY'
+edit("backends/rust/runtime/src/helpers/microstep.rs",
+     """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
+        machine.exit_state(state);
+        machine.remove_from_configuration(state);""",
+     """        // configuration.delete(s), so `In(s)` inside s's own handler is true.
+        machine.remove_from_configuration(state);
+        machine.exit_state(state);""")
 PY

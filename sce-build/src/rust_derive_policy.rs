@@ -124,7 +124,9 @@ pub enum RustDeriveCategory {
     /// besides.
     QueryableData,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}State`.
-    /// Statechart lifecycle enum. Repr-untagged C-like enum used as a
+    /// Statechart lifecycle enum: `#[repr(u16)]`, its variants declared in
+    /// document order with explicit discriminants, each the number the
+    /// runtime's tables know the state by (docs/adr/0064). Used as a
     /// `HashMap` key across the generated transition tables, so `Hash`
     /// is carried in addition to the Copy-trivial set. Distinct from
     /// [`Self::ProcedureState`] precisely because of that `Hash` — the
@@ -139,8 +141,9 @@ pub enum RustDeriveCategory {
     /// event"; its `Null` sentinel is not a meaningful `Default`).
     StatechartState,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}Event`.
-    /// Statechart trigger enum. Same repr-untagged, `Hash`-keyed shape as
-    /// [`Self::StatechartState`] but WITHOUT `Default` — there is no
+    /// Statechart trigger enum. Same `#[repr(u16)]`, `Hash`-keyed shape as
+    /// [`Self::StatechartState`], numbered in the order of the policy's
+    /// `EVENTS` with the `Null` sentinel last, but WITHOUT `Default` — there is no
     /// default event (the `Null` eventless sentinel is a dispatch marker,
     /// not a sensible `Default::default()`), and a name-parsing consumer
     /// rejects unknown / non-external names rather than defaulting.

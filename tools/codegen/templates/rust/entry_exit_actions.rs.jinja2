@@ -8,7 +8,7 @@
 
     Generates:
     - execute_entry_actions(&mut self, state, engine, is_default_entry)
-    - execute_exit_actions(&mut self, state, engine, configuration_before_exit)
+    - execute_exit_actions(&mut self, state, engine)
     - execute_history_default_content(&mut self, history, engine)
 
     Each answers for ONE state. Which states a microstep enters and exits, and
@@ -18,6 +18,12 @@
     descends to an initial child, or exits a descendant. `is_default_entry` is
     the entry set's statesForDefaultEntry answer — whether this state's initial
     transition content runs.
+
+    The configuration and the histories' records are the engine's
+    (docs/adr/0064): it adds a state before its entry hook, and calls the hook
+    only for a state that was not already active; it records the histories
+    before the first exit of a microstep, and removes a state after its exit
+    hook. Nothing here keeps either.
 
     Ports from C++ entry_exit_actions.jinja2.
     Uses datamodel_macros.rs.jinja2 for Zero Duplication in late binding init.
@@ -33,11 +39,10 @@
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>, is_default_entry: bool) {
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        if !self.activate(state) {
-            return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
-        }
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        // W3C SCXML 3.8: the engine has added `state` to the configuration
+        // already, so an In() its onentry asks sees it.
+        self.publish_in_predicate_states(engine);
 {% endif %}
 {% if model.has_entry_actions %}
         match state {
@@ -194,7 +199,7 @@
    evaluation that failed: reported, and the pair left out (§scxml-5.7.1). #}
 {% if param.native_fails %}
                     match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok({{ param.native_value }})
+                        Ok({{ param.native_value | rust_in_predicate }})
                     })() {
                         Ok(val) => {
                             let mut part = String::from("\"{{ param.name | escape_json_string | escape_rust }}\":");
@@ -210,7 +215,7 @@
                     }
 {% else %}
                     {
-                        let val = {{ param.native_value }};
+                        let val = {{ param.native_value | rust_in_predicate }};
                         let mut part = String::from("\"{{ param.name | escape_json_string | escape_rust }}\":");
                         part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
                         json_parts.push(part);
@@ -266,7 +271,7 @@
                     // W3C SCXML 5.5: the value of <content expr> is the done event's data.
 {% if state.donedata.native_content_value_fails %}
                     let content_value = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok({{ state.donedata.native_content_value }})
+                        Ok({{ state.donedata.native_content_value | rust_in_predicate }})
                     })() {
                         Ok(val) => val,
                         Err(_) => {
@@ -278,7 +283,7 @@
                         }
                     };
 {% else %}
-                    let content_value = {{ state.donedata.native_content_value }};
+                    let content_value = {{ state.donedata.native_content_value | rust_in_predicate }};
 {% endif %}
                     done_event_data = ::sce_rust_runtime::helpers::event_data::script_value_to_json(&content_value);
                 }
@@ -348,18 +353,13 @@
                 // {{ grandparent_id }} has reached a final state, and the
                 // <parallel> completes when every one of its child states is in
                 // one — Appendix D's isInFinalState, which counts a region that
-                // is itself a <parallel> only once all of ITS regions are.
-                {
-                    let parallel_state = {{ machine_name }}State::{{ grandparent_id | to_state_variant }};
-                    if ::sce_rust_runtime::helpers::microstep::is_in_final_state(
-                        &::sce_rust_runtime::PolicyDocument(&*self),
-                        parallel_state,
-                        &self.active_states,
-                    ) {
+                // is itself a <parallel> only once all of ITS regions are. The
+                // engine answers it over its configuration, which holds this
+                // state already.
+                if engine.is_state_in_final_state({{ machine_name }}State::{{ grandparent_id | to_state_variant }}) {
 {% if 'done.state.' ~ grandparent_id in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ grandparent_id) | to_event_variant }}));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ grandparent_id) | to_event_variant }}));
 {% endif %}
-                    }
                 }
 {% endif %}
 {% endif %}
@@ -386,6 +386,9 @@
 {% if _history_content.any %}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_history_default_content(&mut self, history: Self::History, engine: &mut sce_rust_runtime::Engine<Self>) {
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        self.publish_in_predicate_states(engine);
+{% endif %}
         match history {
 {% for history_id, history_info in model.history_states | dictsort %}
 {% if history_info.default_actions %}
@@ -415,30 +418,14 @@
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        configuration_before_exit: &[Self::State],
     ) {
         // §scxml-D-exitStates orders one state's exit as onexit, then
         // cancelInvoke, then configuration.delete(s), so `In(s)` inside s's
-        // own handler is true: the deactivation is the LAST step here.
-{% if model.history_states %}
-        // W3C SCXML 3.10: Record history as this state exits, from the
-        // configuration the microstep started from — the engine hands every
-        // exit the configuration as it stood before the first one, so every
-        // history in one microstep reads the same configuration.
-{% for history_id, history_info in model.history_states | dictsort %}
-        if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
-            // W3C SCXML 3.11: {{ history_info.type }} history — SCE Protocol-Synthesis
-            // RFC §synth-5-J-2: the record is this machine's `Configuration`
-            // (heapless under no_std), and a subset of a configuration, so it
-            // fits the configuration's bound.
-            self.history_{{ history_id }} = Some(::sce_rust_runtime::helpers::microstep::recorded_history(
-                &::sce_rust_runtime::PolicyDocument(&*self),
-                {{ machine_name }}State::{{ history_info.parent | to_state_variant }},
-                {{ 'true' if history_info.type == 'deep' else 'false' }},
-                configuration_before_exit,
-            ));
-        }
-{% endfor %}
+        // own handler is true. The engine recorded every history this exit
+        // set records before its first exit (W3C SCXML 3.10), and removes
+        // `state` from the configuration after this returns.
+{% if model.needs_script_engine and (model.has_parallel_states or model.uses_in_predicate) %}
+        self.publish_in_predicate_states(engine);
 {% endif %}
 {# Every kind of invocation needs this exit chain: a pending one is dropped
    here when its state leaves before the macrostep ends (§scxml-6.4), and a
@@ -553,11 +540,6 @@
 {% endfor %}
             _ => {}
         }
-{% endif %}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // §scxml-D-exitStates: out of the configuration only after its onexit
-        // and invoke cancellation — the configuration.delete(s) step.
-        self.deactivate(state);
 {% endif %}
     }
 

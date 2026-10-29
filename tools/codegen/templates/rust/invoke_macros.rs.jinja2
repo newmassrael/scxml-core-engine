@@ -13,7 +13,7 @@
                     // docs/adr/0045: under `datamodel="sce-static"` the id is
                     // written to the string variable `idlocation` names, whose
                     // bound the build held to one the id fits.
-                    {{ invoke_info.native_idlocation }}
+                    {{ invoke_info.native_idlocation | rust_in_predicate }}
                     let id_stored = true;
 {% elif invoke_info.idlocation %}
                     self.ensure_script_engine();

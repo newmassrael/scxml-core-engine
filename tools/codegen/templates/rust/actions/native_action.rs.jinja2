@@ -7,4 +7,4 @@
    `action.native_action_rendered`, so this template only emits it. No script
    engine is involved. #}
             // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
-            {{ action.native_action_rendered }}
+            {{ action.native_action_rendered | rust_in_predicate }}

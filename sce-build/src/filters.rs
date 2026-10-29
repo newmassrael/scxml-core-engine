@@ -19,7 +19,8 @@ static RE_DELIMITERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[._\-]").u
 /// Splits on underscore or hyphen only (no dot) — used for state variants, state/event class names.
 static RE_WORD_DELIMITERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_\-]").unwrap());
 
-/// Matches C++ `isStateActive("stateId")` calls for Rust transformation.
+/// Matches C++ `isStateActive("stateId")` calls, for the Swift and Go
+/// transformations of a pure `In()` condition.
 static RE_IS_STATE_ACTIVE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"isStateActive\("([^"]+)"\)"#).unwrap());
 
@@ -142,7 +143,6 @@ pub fn register_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentSc
     env.add_filter("to_state_variant", to_state_variant);
     env.add_filter("to_rust_literal", to_rust_literal);
     env.add_filter("escape_keyword", escape_keyword);
-    env.add_filter("to_in_predicate_rust", to_in_predicate_rust);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("to_machine_name", to_pascal_case);
     register_ecmascript_filters(env, scope);
@@ -350,17 +350,6 @@ fn escape_keyword(name: String) -> String {
     } else {
         name
     }
-}
-
-/// Transform C++ In() predicate code to Rust.
-fn to_in_predicate_rust(cond_cpp: String) -> String {
-    if cond_cpp.is_empty() {
-        return String::new();
-    }
-    let result = cond_cpp.replace("this->", "");
-    RE_IS_STATE_ACTIVE
-        .replace_all(&result, r#"self.is_state_active("$1")"#)
-        .to_string()
 }
 
 /// §scxml-B-2: Normalize whitespace.

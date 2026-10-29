@@ -18,9 +18,8 @@
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
-            // Seeded with the configuration as it stands now; every later change
-            // to it republishes (`activate` / `deactivate` / `set_active_states`).
-            self.publish_in_predicate_states();
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -134,6 +133,9 @@
 {% endif %}
 
 {{ register_in_predicate_callback() }}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        self.publish_in_predicate_states(engine);
+{% endif %}
         self.script_engine_initialized = true;
     }
 
