@@ -496,16 +496,22 @@ lowers it yet, so generating one is refused by name
 (`broadcast-log/runtime-missing`). A document is refused when `producers` is
 `many` (`broadcast-log/producers-many-unsupported`), when its
 `<sce:element-type>` names no codec or procedure of the build
-(`broadcast-log/element-type-not-a-kind`), and when the progress it declares is
-more than its selection row gives (`broadcast-log/progress-unreachable`) or
-than the target language can give (`broadcast-log/progress-unreachable-on-backend`,
-Python gives `blocking`). A stamp narrower than 64 bits asks the deploy for
-`queues.<log>.min_wrap_ops` (`broadcast-log/wrap-bound-unstated`,
+(`broadcast-log/element-type-not-a-kind`), when the element is a codec whose
+largest encoded size is not a constant of the build or a procedure, which has no
+wire form (`broadcast-log/element-size-unbounded`), and when the progress it
+declares is more than its selection row gives (`broadcast-log/progress-unreachable`)
+or than the target language can give (`broadcast-log/progress-unreachable-on-backend`,
+Python gives `blocking`). A codec has such a size when every variable-length
+field declares its bound (`sce:max-size` on a `tail` or `length-ref` field, a
+CBOR or content-line string or byte string, `max-count` on a `<sce:repeat>`) and
+every codec it embeds, repeats, chains or dispatches to has one; the refusal names
+the field and the declaration that is missing, on the `<sce:element-type>` row,
+for every language and for `check`. A stamp narrower than 64 bits asks the
+deploy for `queues.<log>.min_wrap_ops` (`broadcast-log/wrap-bound-unstated`,
 `broadcast-log/wrap-bound-below-deploy-minimum`) and a retention one less than a
-power of two (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`); an
-element whose encoded size is not fixed when the program is built is
-`broadcast-log/element-size-unbounded`. The last four are judged where the
-target and the deploy are in hand, which is when a language's row exists.
+power of two (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`). Those
+three are judged where the target and the deploy are in hand, which is when a
+language's row exists.
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and

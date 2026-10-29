@@ -407,8 +407,8 @@ Each step is green on its own, and the last two are the ones that need the consu
   document and the language named, and not as `codegen/generic-kind-backend-emit-missing`. The backend ceiling is checked
   first, because waiting for the row would not repair it.
 - **Left undone, and why.**
-  - `element-size-unbounded` is declared and not raised: the codec model has no encoded size that is a constant of the
-    build, so there is nothing to compare. The check belongs with the first row that stores bytes (step 4).
+  - `element-size-unbounded` was declared and not raised at this step: the codec model had no encoded size that is a
+    constant of the build, so there was nothing to compare. Step 6a gives it one and raises the refusal.
   - `wrap-bound-unstated`, `wrap-bound-below-deploy-minimum` and `slots-not-a-divisor-of-the-stamp-space` are implemented as
     one function (`judge_broadcast_log_stamp`) over the stamp width, and no row calls it: the width is a property of a
     row, and no row exists. The deploy figure is the one the queue's SCQ row reads, `machines.<m>.queues.<name>.min_wrap_ops`,
@@ -449,12 +449,41 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
 - **Not asserted by any row's stress.** That a recorded run contained a `Lagged` answer. The deterministic tests reach
   it on one thread and the loom models reach the late branch for certain.
 
+### What step 6a landed: the element's largest encoded size (2026-10-29)
+
+- **`broadcast-log/element-size-unbounded` is raised.** `sce-build/src/forge/codec_size.rs` gives a codec the number the
+  slot of section 4 needs: `largest_encoded_bytes` returns the most bytes any value of the codec encodes to, or an
+  `Unbounded` that says why there is none, in the clause the diagnostic carries after "is not a build-time constant". The
+  cross-document pass beside `broadcast-log/element-type-not-a-kind` asks it of every log's element and places the refusal
+  on the element-type row. The pass reads the documents and no language, so the check holds for every language and for
+  `check`. A procedure has no wire form and is refused with that reason. Nothing reads the number yet: the slot width, and
+  the template that stores bytes, are the next piece.
+- **The bound is read from the encoders, and is refused where it cannot be proved.** The positional path is the fixed
+  fields by ascending byte offset (sub-byte fields that share an offset are one byte) and a trailing payload at its
+  `sce:max-size`, after the zero padding a `sce:dma-burst-align` codec writes up to the payload's offset. The streaming path
+  is each field in order: a fixed field at its width rounded up to bytes, a VLE integer at its cap, a payload at its
+  `sce:max-size`, a `<sce:repeat>` at `max-count` times its body, a `<sce:tlv-chain>` at `max-depth` times its entry, an
+  embedded body and the largest arm of a variant at that codec's own bound; an optional field counts present. A CBOR map
+  and a content-line component are bounded by the arithmetic their C11 renderers already carry for `MAX_ENCODED_BYTES`: the
+  two functions are the single implementation, and the renderers' results are unchanged. An enum's texts do not depend on
+  the language, so the content-line bound takes the longest text of each imported enum from the enum document, and needs
+  no language. The refusals: a `tail` or `length-ref` payload with no `sce:max-size`, a CBOR string or byte string with
+  neither `sce:length` nor `sce:max-size`, a `<sce:repeat>` with no `max-count`, an import that does not resolve (a missing
+  file, another kind, or a cycle of imports, which is how a recursive codec or variant is caught), and a codec held by
+  another whose own bound is missing. Each names the field or entry and the declaration. The default caps that
+  `CodecModel::max_frame_bytes` falls back to size a buffer hint, and are not a declaration; a bound over them could be
+  smaller than a frame.
+- **Not run.** The change was written with nothing built: neither the new unit tests nor the broadcast-log integration
+  tests have been run, and the committed C11 constants of the CBOR and content-line codecs have not been regenerated and
+  compared, though no arithmetic was edited.
+
 ### What is still undone
 
 - **The generated code.** The kind parses and every language refuses a valid document with `broadcast-log/runtime-missing`,
   because no codegen template emits it yet. The templates, and generated tests that regenerate and build them, are the next
-  step, one language at a time starting with Rust. `element-size-unbounded` and the deploy resolution of a retention and of
-  the wrap bound belong with the first template that stores bytes.
+  step, one language at a time starting with Rust. The deploy resolution of a retention and of the wrap bound belong with
+  the first template that stores bytes. `element-size-unbounded` is raised (step 6a), but no template reads the bound it
+  computes yet: the slot width is still to be derived from it.
 - **The specialised checker** of section 5 and its differential test.
 - **The narrow-stamp row and the load/store-only row** of section 4.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
