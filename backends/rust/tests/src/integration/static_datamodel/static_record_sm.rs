@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: adbae20e9ca5d62b09870f4a9e5e88119b90dbcf69963958bb021c42c5c2c6a4
+// source-hash: 047dc621dfd01b6348575becd26162c58fa20fa7680f076526766f91e97d2c5f
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -81,7 +81,7 @@
 #![doc = "SCE-MAP: static_record.scxml:13 :: _machine"]
 // SCE-MAP: static_record.scxml:13 :: _machine
 
-use super::days_in_month;
+use super::month_length;
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
@@ -888,7 +888,7 @@ impl StatePolicy for StaticRecordPolicy {
             StaticRecordState::Showing => {
                 if event == StaticRecordEvent::Next {
                     if self.shown.dayOfMonth
-                        < days_in_month::days_in_month(self.shown.year, self.shown.month)
+                        < month_length::month_length(self.shown.year, self.shown.month)
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,

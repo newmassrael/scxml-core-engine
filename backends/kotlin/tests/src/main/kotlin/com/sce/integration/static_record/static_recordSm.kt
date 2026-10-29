@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: adbae20e9ca5d62b09870f4a9e5e88119b90dbcf69963958bb021c42c5c2c6a4
+// source-hash: 047dc621dfd01b6348575becd26162c58fa20fa7680f076526766f91e97d2c5f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
@@ -9,7 +9,7 @@
 package com.sce.integration.static_record
 
 import com.sce.runtime.*
-import com.sce.generated.days_in_month.*
+import com.sce.generated.month_length.*
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -381,7 +381,7 @@ class StaticRecordStateMachine(
         event: StaticRecordEvent?
     ): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
         is StaticRecordState.Showing -> when {
-            event is StaticRecordEvent.Next && vShown.dayOfMonth < daysInMonth(vShown.year, vShown.month) -> transitionShowingAt0
+            event is StaticRecordEvent.Next && vShown.dayOfMonth < monthLength(vShown.year, vShown.month) -> transitionShowingAt0
             event is StaticRecordEvent.Day.Picked -> transitionShowingAt1
             event is StaticRecordEvent.Error.Execution -> transitionShowingAt2
             else -> null

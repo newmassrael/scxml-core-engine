@@ -2,7 +2,6 @@
 
 pub mod day_repeat;
 pub mod day_run;
-pub mod days_in_month;
 pub mod enum_item_status;
 pub mod event_agenda;
 pub mod event_answer;
@@ -51,6 +50,7 @@ pub mod lww_write;
 pub mod merkle_change_hash;
 pub mod merkle_insert;
 pub mod merkle_node;
+pub mod month_length;
 pub mod mv_value;
 pub mod mv_value_drop;
 pub mod mv_value_holds;

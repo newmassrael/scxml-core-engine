@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: adbae20e9ca5d62b09870f4a9e5e88119b90dbcf69963958bb021c42c5c2c6a4
-#![doc = "SCE-MAP: algorithm_days_in_month.scxml:8 :: _forge_body"]
-// SCE-MAP: algorithm_days_in_month.scxml:8 :: _forge_body
+// source-hash: 047dc621dfd01b6348575becd26162c58fa20fa7680f076526766f91e97d2c5f
+#![doc = "SCE-MAP: algorithm_days_in_month.scxml:14 :: _forge_body"]
+// SCE-MAP: algorithm_days_in_month.scxml:14 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -13,7 +13,7 @@
 
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
-pub fn days_in_month(year: u16, month: u8) -> u8 {
+pub fn month_length(year: u16, month: u8) -> u8 {
     let mut days: u8 = 31;
     if month == 4 || month == 6 || month == 9 || month == 11 {
         days = 30;

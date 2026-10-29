@@ -1,22 +1,22 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: adbae20e9ca5d62b09870f4a9e5e88119b90dbcf69963958bb021c42c5c2c6a4
-// SCE-MAP: algorithm_days_in_month.scxml:8 :: _forge_body
+// source-hash: 047dc621dfd01b6348575becd26162c58fa20fa7680f076526766f91e97d2c5f
+// SCE-MAP: algorithm_days_in_month.scxml:14 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: pure synchronous function with bounded loops. Free
-// function in package `com.sce.generated.days_in_month`, no instance
+// function in package `com.sce.generated.month_length`, no instance
 // state. `bytes` parameters lower to `ByteArray` (RFC §synth-5-J-5 emitter
 // table). Iteration over `ByteArray` yields signed `Byte`, so the
 // foreach lowering inserts a `Byte → UByte` reinterpretation per
 // iteration to match the SCXML type-ctx contract that
 // `<sce:foreach item>` is `uint8`.
 
-package com.sce.generated.days_in_month
+package com.sce.generated.month_length
 
-fun daysInMonth(year: UShort, month: UByte): UByte {
+fun monthLength(year: UShort, month: UByte): UByte {
     var days: UByte = 31.toUByte()
     if (month == 4.toUByte() || month == 6.toUByte() || month == 9.toUByte() || month == 11.toUByte()) {
         days = 30.toUByte()
