@@ -28,12 +28,31 @@
 //!   the distance to its start, `(h - retention) - cursor`; the cursor moves
 //!   to the start of the window.
 //!
-//! [`check`] searches for that sequence with the search of
-//! [`crate::queue_history`]: Wing and Gong's, with the memo of states already
-//! explored that Lowe added. Here the state is only how many operations of
-//! each participant are placed, because `h` is the number of publishes among
-//! the publisher's, and a reader's cursor is a function of the readings it
-//! recorded.
+//! There are two checkers, and the first is the definition of the second's
+//! answer.
+//!
+//! - [`check_general`] searches for that sequence with the search of
+//!   [`crate::queue_history`]: Wing and Gong's, with the memo of states already
+//!   explored that Lowe added. Here the state is only how many operations of
+//!   each participant are placed, because `h` is the number of publishes among
+//!   the publisher's, and a reader's cursor is a function of the readings it
+//!   recorded. It is exponential in the number of operations in the worst case.
+//! - [`check_specialised`], in [`specialised`], decides the same question
+//!   without a search, in `O(n log n)`, by a theorem proved in that module's
+//!   documentation: with one publisher, `h` is a step function of time and each
+//!   other operation constrains it at one instant of its own interval. It
+//!   declines a history outside the theorem's hypothesis, with a typed reason,
+//!   and never guesses.
+//!
+//! [`check`] is what every caller uses: it asks the specialised checker, and
+//! the general search only when that declines, so its verdict class
+//! (linearizable, not linearizable, malformed) is the general search's on every
+//! history. A [`Verdict::NotLinearizable`] that the specialised checker gave
+//! has `explored` 0, since it explored no state, and `deepest` as
+//! [`Unplaceable::deepest`] defines it. [`judge`] says in addition which method
+//! decided and, for the specialised one, why an operation could not be placed.
+//! `tests/broadcast_history_differential.rs` holds the two equal on generated,
+//! mutated and shrunk histories.
 //!
 //! Nothing here knows an implementation or a language: the stress run of each
 //! backend writes the JSON form ([`History::to_json`], read by
@@ -46,6 +65,10 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::history_common::{check_clock, may_come_next, HistoryError, Timed, Verdict};
+
+pub mod specialised;
+
+pub use specialised::{check as check_specialised, Decision, Declined, Obstruction, Unplaceable};
 
 /// Where a reader's cursor starts (ADR 0062 §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,8 +154,91 @@ impl History {
     }
 }
 
-/// Judge `history`.
+/// Which checker to ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ask {
+    /// The specialised checker, and the general search when that declines.
+    Auto,
+    /// The general search alone: the definition.
+    General,
+    /// The specialised checker alone: a history it declines is an `Err`.
+    Specialised,
+}
+
+/// Which checker decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Method {
+    Specialised,
+    General,
+}
+
+/// A verdict, and how it was reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Judgement {
+    pub verdict: Verdict,
+    pub method: Method,
+    /// When the specialised checker found the history not linearizable: the
+    /// operation it could not place and why. The general search says only how
+    /// far it got, in the verdict.
+    pub unplaceable: Option<Unplaceable>,
+}
+
+/// Judge `history` with the checker `ask` names.
+///
+/// Only `Ask::Specialised` can fail, with the reason the specialised checker
+/// declined the history; `Ask::Auto` goes on to the general search instead.
+pub fn judge(history: &History, ask: Ask) -> Result<Judgement, Declined> {
+    match ask {
+        Ask::General => Ok(general_judgement(history)),
+        Ask::Specialised => specialised_judgement(history),
+        Ask::Auto => Ok(automatic_judgement(history)),
+    }
+}
+
+/// The specialised checker's judgement, or the general search's when the
+/// specialised checker declines.
+fn automatic_judgement(history: &History) -> Judgement {
+    specialised_judgement(history).unwrap_or_else(|_| general_judgement(history))
+}
+
+fn general_judgement(history: &History) -> Judgement {
+    Judgement {
+        verdict: check_general(history),
+        method: Method::General,
+        unplaceable: None,
+    }
+}
+
+fn specialised_judgement(history: &History) -> Result<Judgement, Declined> {
+    match check_specialised(history) {
+        Decision::Linearizable => Ok(Judgement {
+            verdict: Verdict::Linearizable,
+            method: Method::Specialised,
+            unplaceable: None,
+        }),
+        Decision::NotLinearizable(unplaceable) => Ok(Judgement {
+            verdict: Verdict::NotLinearizable {
+                explored: 0,
+                deepest: unplaceable.deepest.clone(),
+            },
+            method: Method::Specialised,
+            unplaceable: Some(unplaceable),
+        }),
+        Decision::Declined(declined) => Err(declined),
+    }
+}
+
+/// Judge `history`: by the specialised checker, and by the general search when
+/// that declines. The verdict class is the general search's on every history,
+/// which `tests/broadcast_history_differential.rs` holds and the theorem in
+/// [`specialised`] proves.
 pub fn check(history: &History) -> Verdict {
+    automatic_judgement(history).verdict
+}
+
+/// Judge `history` by the general search alone, the definition of what is
+/// linearizable here.
+pub fn check_general(history: &History) -> Verdict {
     let participants = history.participants();
     if let Err(why) = well_formed(history, &participants) {
         return Verdict::Malformed(why);
