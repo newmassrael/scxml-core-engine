@@ -13,7 +13,8 @@
 #define {{ guard }}
 
 #include <cstdint>
-{% if not output_is_string %}
+{% if uses_forge_algorithm %}#include <sce/forge/algorithm.h>
+{% endif %}{% if not output_is_string %}
 #include <optional>
 #include "sce/forge/lookup.h"
 {% endif %}

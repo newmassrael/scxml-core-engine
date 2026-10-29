@@ -143,6 +143,13 @@
       return canonical(signed && low > max ? low - span : low);
     }
 
+    /* docs/adr/0063: a saturating operation is its exact result held to
+       the width's bounds, as a wrapping one is the same result taken modulo
+       the width (`wrap`). Both are total. */
+    function clamp(value) {
+      return canonical(value < min ? min : value > max ? max : value);
+    }
+
     function count(value) {
       var n = exact(value);
       if (n < ZERO) {
@@ -176,6 +183,14 @@
       rem: function (a, b) { return remainder(a, b); },
       neg: function (a) { return hold(-exact(a)); },
       narrow: function (a) { return hold(exact(a)); },
+      wrappingAdd: function (a, b) { return wrap(exact(a) + exact(b)); },
+      wrappingSub: function (a, b) { return wrap(exact(a) - exact(b)); },
+      wrappingMul: function (a, b) { return wrap(exact(a) * exact(b)); },
+      wrappingNeg: function (a) { return wrap(-exact(a)); },
+      saturatingAdd: function (a, b) { return clamp(exact(a) + exact(b)); },
+      saturatingSub: function (a, b) { return clamp(exact(a) - exact(b)); },
+      saturatingMul: function (a, b) { return clamp(exact(a) * exact(b)); },
+      saturatingNeg: function (a) { return clamp(-exact(a)); },
       and: function (a, b) { return wrap(exact(a) & exact(b)); },
       or: function (a, b) { return wrap(exact(a) | exact(b)); },
       xor: function (a, b) { return wrap(exact(a) ^ exact(b)); },

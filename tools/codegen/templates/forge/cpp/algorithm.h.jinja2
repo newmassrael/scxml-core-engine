@@ -25,7 +25,7 @@
 {% for header in std_includes %}#include <{{ header }}>
 {% endfor %}{% if needs_vector %}#include <vector>
 {% endif %}{% if needs_span or needs_list_view %}#include <sce/forge/span.h>
-{% endif %}{% if may_fail %}#include <sce/forge/algorithm.h>
+{% endif %}{% if may_fail or uses_forge_algorithm %}#include <sce/forge/algorithm.h>
 {% endif %}{% if needs_optional %}#include <optional>
 #include <sce/forge/optional.h>
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}

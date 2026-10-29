@@ -21,7 +21,7 @@
 {% if needs_string_h %}#include <string.h>  /* a record's text is compared with strcmp */
 {% endif %}{% if needs_span %}#include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 {% endif %}{% if needs_list_view %}#include "sce/forge/list_view.h"  /* read-only list<T> parameters */
-{% endif %}{% if may_fail %}#include "sce/forge/algorithm.h"  /* checked arithmetic, SCE_FORGE.md §3.4.1 */
+{% endif %}{% if may_fail or uses_forge_algorithm %}#include "sce/forge/algorithm.h"  /* integer operations, SCE_FORGE.md §3.4.1 and §3.4.2 */
 {% endif %}{% if needs_optional %}#include "sce/forge/optional.h"  /* a value that may be absent, docs/adr/0055 */
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}

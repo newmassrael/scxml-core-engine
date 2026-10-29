@@ -12,7 +12,8 @@
 #define {{ guard }}
 
 #include <stdint.h>
-#include <stdbool.h>
+{% if uses_forge_algorithm %}#include "sce/forge/algorithm.h"
+{% endif %}#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 {% if is_l2 %}

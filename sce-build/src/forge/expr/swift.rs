@@ -319,8 +319,17 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         return swift_optional_form(form, expr);
     }
     Ok(match &expr.kind {
+        // docs/adr/0063: the runtime's helper of the operation, generic in the
+        // width. Typing refuses an operation of literals alone, so a declared
+        // operand gives the helper its type.
         ExprKind::Total { op, rule, .. } => {
-            return Err(total_unlowered(*op, *rule, "Swift").at(expr.span.clone()))
+            let (_, _, operands) = total_parts(expr, "Swift", emit)?;
+            format!(
+                "{}.{}({})",
+                crate::filters::capitalize_first(rule.helper()),
+                op.helper(),
+                operands.join(", ")
+            )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),

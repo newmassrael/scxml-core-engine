@@ -13,7 +13,8 @@
 #define {{ guard }}
 
 #include <cstdint>
-#include <string>
+{% if uses_forge_algorithm %}#include <sce/forge/algorithm.h>
+{% endif %}#include <string>
 {# `round(x)` lowers to `std::llround` and `floor(x)` to `std::floor`, both of
    which live in <cmath>. The include is conditional rather than unconditional
    because an unused header is noise in every generated file that does neither

@@ -186,14 +186,83 @@ pub fn cpp_used_in(source: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// What the scan reports: a name followed by `.` (a candidate Go package), and
-/// the member of a `std::` qualification (a C++ name).
+/// The forge runtime's integer header, which declares the checked operations
+/// of a `may-fail` body (SCE_FORGE.md §3.4.1), the wrapping and saturating
+/// operations any body may name (§3.4.2, docs/adr/0063) and the failure type
+/// they share: `<sce/forge/algorithm.h>` in C++, `"sce/forge/algorithm.h"` in
+/// C11.
+pub(crate) const FORGE_ALGORITHM_HEADER: &str = "sce/forge/algorithm.h";
+
+/// The members of `SCE::Forge` that [`FORGE_ALGORITHM_HEADER`] declares, by
+/// which a C++ text names it.
+const CPP_FORGE_ALGORITHM_NAMES: &[&str] = &[
+    "Checked",
+    "Wrapping",
+    "Saturating",
+    "AlgorithmResult",
+    "AlgorithmFailure",
+    "AlgorithmError",
+];
+
+/// The prefixes of the C11 names [`FORGE_ALGORITHM_HEADER`] declares, by which
+/// a C text names it.
+const C_FORGE_ALGORITHM_PREFIXES: &[&str] = &[
+    "sce_forge_checked_",
+    "sce_forge_wrapping_",
+    "sce_forge_saturating_",
+    "sce_forge_algorithm_",
+];
+
+/// Whether a C++ `source` names a member of `SCE::Forge` that the forge
+/// runtime's integer header declares ([`FORGE_ALGORITHM_HEADER`]): a body that
+/// wraps or saturates names it without declaring `may-fail`, so the include is
+/// a fact about the text, as a standard header is.
+pub fn cpp_uses_forge_algorithm(source: &str) -> bool {
+    let mut used = false;
+    scan(source, |name| {
+        if let Name::Path { path } = name {
+            let member = path
+                .strip_prefix("SCE::Forge::")
+                .map(|rest| rest.split("::").next().unwrap_or(rest));
+            if member.is_some_and(|m| CPP_FORGE_ALGORITHM_NAMES.contains(&m)) {
+                used = true;
+            }
+        }
+    });
+    used
+}
+
+/// Whether a C11 `source` names a function or type the forge runtime's integer
+/// header declares ([`FORGE_ALGORITHM_HEADER`]), read as
+/// [`cpp_uses_forge_algorithm`] reads a C++ one.
+pub fn c_uses_forge_algorithm(source: &str) -> bool {
+    let mut used = false;
+    scan(source, |name| {
+        if let Name::Path { path } = name {
+            if C_FORGE_ALGORITHM_PREFIXES
+                .iter()
+                .any(|p| path.starts_with(p))
+            {
+                used = true;
+            }
+        }
+    });
+    used
+}
+
+/// What the scan reports: a name followed by `.` (a candidate Go package), the
+/// member of a `std::` qualification (a C++ name), and every identifier with
+/// the `::` qualification it is written under.
 enum Name<'a> {
     /// An identifier immediately followed by `.`. `after_dot` says whether a
     /// `.` came just before it, which makes it a member and not a package.
     Qualified { head: &'a str, after_dot: bool },
     /// The identifier after `std::`.
     Std { member: &'a str },
+    /// An identifier and the identifiers it is qualified by, as written:
+    /// `SCE::Forge::Wrapping` at `Wrapping`, `sce_forge_wrapping_sub_u32` for a
+    /// name written alone.
+    Path { path: &'a str },
 }
 
 /// Walk `source` once, calling `report` for each name of interest, with string
@@ -207,6 +276,8 @@ fn scan<'a>(source: &'a str, mut report: impl FnMut(Name<'a>)) {
     let mut after_std = false;
     let mut last_ident: Option<&str> = None;
     let mut colons = 0;
+    // Where the `::` chain the current identifier belongs to began.
+    let mut path_start = 0;
     while i < bytes.len() {
         let c = bytes[i];
         match c {
@@ -256,6 +327,12 @@ fn scan<'a>(source: &'a str, mut report: impl FnMut(Name<'a>)) {
                     i += 1;
                 }
                 let name = &source[start..i];
+                if !(colons == 2 && last_ident.is_some()) {
+                    path_start = start;
+                }
+                report(Name::Path {
+                    path: &source[path_start..i],
+                });
                 if after_std {
                     report(Name::Std { member: name });
                 }
@@ -316,7 +393,8 @@ fn skip_raw(bytes: &[u8], open: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        cpp_used_in, go_imports_named_in, go_unimported_in, go_used_in, go_uses_forge_runtime,
+        c_uses_forge_algorithm, cpp_used_in, cpp_uses_forge_algorithm, go_imports_named_in,
+        go_unimported_in, go_used_in, go_uses_forge_runtime,
     };
 
     /// An import is kept when the text calls into its package under the name
@@ -500,5 +578,40 @@ mod tests {
     fn cpp_nothing_used_is_an_empty_list() {
         assert!(cpp_used_in("return n + 1;").is_empty());
         assert!(cpp_used_in("").is_empty());
+    }
+
+    /// A body that wraps or saturates names the forge runtime's integer header
+    /// without declaring `may-fail` (docs/adr/0063), so the include is read off
+    /// the text: a C++ `SCE::Forge` member it declares, a C11 name it declares.
+    #[test]
+    fn a_forge_integer_operation_names_the_runtime_header() {
+        assert!(cpp_uses_forge_algorithm(
+            "return SCE::Forge::Wrapping::sub<std::uint32_t>(now, last);"
+        ));
+        assert!(cpp_uses_forge_algorithm(
+            "SCE::Forge::AlgorithmResult<int> f();"
+        ));
+        assert!(c_uses_forge_algorithm(
+            "return sce_forge_saturating_sub_u32(p, e);"
+        ));
+        assert!(c_uses_forge_algorithm("sce_forge_algorithm_failure_t f;"));
+    }
+
+    #[test]
+    fn a_forge_name_another_header_declares_or_a_comment_is_not_a_use() {
+        assert!(!cpp_uses_forge_algorithm("SCE::Forge::Span<const int> s;"));
+        assert!(!cpp_uses_forge_algorithm(
+            "// SCE::Forge::Wrapping::sub\nint x;"
+        ));
+        assert!(!cpp_uses_forge_algorithm(
+            "Other::Forge::Wrapping::sub(a, b);"
+        ));
+        assert!(!cpp_uses_forge_algorithm(
+            "const char* s = \"SCE::Forge::Checked\";"
+        ));
+        assert!(!c_uses_forge_algorithm("sce_forge_bytes_view_t v;"));
+        assert!(!c_uses_forge_algorithm(
+            "/* sce_forge_wrapping_add_u8 */ int x;"
+        ));
     }
 }

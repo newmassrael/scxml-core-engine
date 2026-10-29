@@ -24014,17 +24014,32 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
     }
 }
 
-/// A generated Python module that rounds an operation on 32-bit reals to
-/// binary32 names the runtime's `to_f32` (`sce_algorithm.to_f32`), which Python's
-/// `float`, a binary64, has no operation for. The module's own template does not
-/// know whether an expression it was handed needed it, so the import is added
-/// here, once, where every kind's module is complete: after the module's
+/// Whether a generated Python module names an entry of the forge runtime that a
+/// module of any kind may reach for: the runtime's `to_f32`
+/// (`sce_algorithm.to_f32`), which rounds an operation on 32-bit reals to
+/// binary32 where Python's `float`, a binary64, has no operation for it, or a
+/// wrapping or saturating operation (`sce_algorithm.U32.wrapping_sub`,
+/// docs/adr/0063), which holds a result to its width where Python's integers do
+/// not overflow.
+fn names_the_algorithm_runtime(code: &str) -> bool {
+    const WIDTHS: [&str; 8] = ["I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"];
+    code.contains("sce_algorithm.to_f32(")
+        || WIDTHS.iter().any(|width| {
+            code.contains(&format!("sce_algorithm.{width}.wrapping_"))
+                || code.contains(&format!("sce_algorithm.{width}.saturating_"))
+        })
+}
+
+/// A generated Python module that names the forge runtime
+/// ([`names_the_algorithm_runtime`]) imports it. The module's own template does
+/// not know whether an expression it was handed needed it, so the import is
+/// added here, once, where every kind's module is complete: after the module's
 /// `from __future__` line, which must stay the first import, or before its first
 /// import where there is none, or, for a module that imports nothing, before its
 /// first statement, set off by the two blank lines a top-level definition takes.
-fn import_the_single_rounding(code: String) -> String {
+fn import_the_algorithm_runtime(code: String) -> String {
     const IMPORT: &str = "import sce_forge_runtime.algorithm as sce_algorithm";
-    if !code.contains("sce_algorithm.to_f32(") || code.contains("as sce_algorithm") {
+    if !names_the_algorithm_runtime(&code) || code.contains("as sce_algorithm") {
         return code;
     }
     let mut lines: Vec<&str> = code.lines().collect();
@@ -24168,7 +24183,7 @@ pub fn generate_python_with_imports(
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
-    let code = import_the_single_rounding(code);
+    let code = import_the_algorithm_runtime(code);
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
@@ -28532,13 +28547,20 @@ impl LangCtx {
                 |header| format!("#include <{header}>"),
                 "header",
             ),
+            // C11 reads no standard header off the text (its templates include
+            // what they need), but the forge runtime's integer header below.
+            crate::generator::Language::C11 => (
+                "std_includes",
+                |_| Vec::new(),
+                |header| format!("#include <{header}>"),
+                "header",
+            ),
             // Swift imports modules, and a module a file does not use costs it
             // nothing: what a renderer imports is decided by its own context
             // (`swift_uses_forge_runtime`).
             crate::generator::Language::Rust
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Python
-            | crate::generator::Language::C11
             | crate::generator::Language::Swift => {
                 let value = minijinja::Value::from_serialize(&ctx);
                 return Ok(tmpl.render(value).map_err(generator::render_error)?);
@@ -28574,11 +28596,26 @@ impl LangCtx {
         // names `optional.Of[T]`, and one whose optional values are only read
         // through methods names it nowhere. It is read off the text the same way,
         // and a template lists `uses_optional` in its import block.
+        //
+        // C++ and C11 have the same kind of import in the forge runtime's
+        // integer header (`sce/forge/algorithm.h`): a `may-fail` body names its
+        // checked operations, and ANY body that wraps or saturates names its
+        // wrapping and saturating ones (docs/adr/0063) — the second has nothing
+        // to do with `may-fail`, in an algorithm or in a transform. It is read off
+        // the text the same way, and a template lists `uses_forge_algorithm`
+        // in its include block.
         let go = matches!(self.lang, crate::generator::Language::Go);
+        let c_family = matches!(
+            self.lang,
+            crate::generator::Language::Cpp | crate::generator::Language::C11
+        );
         ctx.insert(key.into(), serde_json::Value::Array(Vec::new()));
         if go {
             ctx.insert("uses_scealgorithm".into(), false.into());
             ctx.insert("uses_optional".into(), false.into());
+        }
+        if c_family {
+            ctx.insert("uses_forge_algorithm".into(), false.into());
         }
         let first = tmpl
             .render(minijinja::Value::from_serialize(&ctx))
@@ -28595,8 +28632,18 @@ impl LangCtx {
         let optional = go
             && crate::std_imports::go_uses_optional(&first)
             && !first.contains(crate::std_imports::GO_FORGE_OPTIONAL_PATH);
-        if used.is_empty() && !runtime && !optional {
+        let forge_algorithm = c_family
+            && !first.contains(crate::std_imports::FORGE_ALGORITHM_HEADER)
+            && if matches!(self.lang, crate::generator::Language::Cpp) {
+                crate::std_imports::cpp_uses_forge_algorithm(&first)
+            } else {
+                crate::std_imports::c_uses_forge_algorithm(&first)
+            };
+        if used.is_empty() && !runtime && !optional && !forge_algorithm {
             return Ok(first);
+        }
+        if forge_algorithm {
+            ctx.insert("uses_forge_algorithm".into(), true.into());
         }
         ctx.insert(
             key.into(),
@@ -28636,6 +28683,14 @@ impl LangCtx {
                  `uses_optional` in its imports",
                 self.lang,
                 crate::std_imports::GO_FORGE_OPTIONAL_NAME
+            ))
+            .into());
+        }
+        if forge_algorithm && !second.contains(crate::std_imports::FORGE_ALGORITHM_HEADER) {
+            return Err(GenerateError::TemplateLoad(format!(
+                "the {:?} `{kind}` template emits code that names the forge runtime's integer \
+                 operations but does not list `uses_forge_algorithm` in its includes",
+                self.lang
             ))
             .into());
         }
@@ -29851,10 +29906,12 @@ fn optional_record_member(
 /// A record `local` handed on as a value the receiver may keep — an argument
 /// to another algorithm, an element appended to a list, a returned borrow.
 /// The caseless enums `SceForgeRuntime` declares, which a body names to reach what they
-/// hold (`Real.round`, `Checked.add`, `SceOptional.proven`). A body that names one is
-/// a file that imports the runtime. The one list, so a name the runtime gains is added
-/// here and not at each place a body is read for the runtime it uses.
-const SWIFT_FORGE_RUNTIME_ENUMS: &[&str] = &["Real", "Checked", "SceOptional"];
+/// hold (`Real.round`, `Checked.add`, `SceOptional.proven`, `Wrapping.sub`,
+/// `Saturating.add`). A body that names one is a file that imports the runtime. The one
+/// list, so a name the runtime gains is added here and not at each place a body is read
+/// for the runtime it uses.
+const SWIFT_FORGE_RUNTIME_ENUMS: &[&str] =
+    &["Real", "Checked", "SceOptional", "Wrapping", "Saturating"];
 
 /// What ends a statement of an algorithm's body in `lang`: nothing in the languages
 /// that end it with the line (Kotlin, Python, Swift), a `;` in the rest. The one rule a
@@ -35820,9 +35877,10 @@ fn render_algorithm(
     // module is imported is read off the body that names it.
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
     // Swift's forge runtime is named the same way: a real turned into an integer
-    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates, and a value
-    // proven present is read by its `SceOptional.proven`. A body that may fail names the
-    // runtime's `Failure` and its checked helpers whatever it holds.
+    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates, a value
+    // proven present is read by its `SceOptional.proven`, and an operation that wraps or
+    // saturates is `Wrapping.`/`Saturating.` (docs/adr/0063) in any body. A body that may
+    // fail names the runtime's `Failure` and its checked helpers whatever it holds.
     ctx.insert(
         "swift_uses_forge_runtime".into(),
         (lang == Language::Swift
@@ -37357,30 +37415,44 @@ mod tests {
         // the two blank lines a top-level definition takes.
         let bare = format!("# header\n\n\n{body}");
         assert_eq!(
-            import_the_single_rounding(bare),
+            import_the_algorithm_runtime(bare),
             format!("# header\n\n\n{ROUNDING}\n\n\n{body}")
         );
         // After the `from __future__` line, which stays the first import.
         let future = format!("from __future__ import annotations\nimport math\n\n{body}");
         assert_eq!(
-            import_the_single_rounding(future),
+            import_the_algorithm_runtime(future),
             format!("from __future__ import annotations\n{ROUNDING}\nimport math\n\n{body}")
         );
         // Before the first import where there is no `__future__` line.
         let imports = format!("import math\n\n{body}");
         assert_eq!(
-            import_the_single_rounding(imports),
+            import_the_algorithm_runtime(imports),
             format!("{ROUNDING}\nimport math\n\n{body}")
         );
+    }
+
+    /// A module of any kind that wraps or saturates (docs/adr/0063) names the
+    /// runtime too, and is given the same import.
+    #[test]
+    fn a_module_that_wraps_or_saturates_imports_the_runtime_that_does() {
+        let body =
+            "def f(a: int, b: int) -> int:\n    return sce_algorithm.U32.wrapping_sub(a, b)\n";
+        assert_eq!(
+            import_the_algorithm_runtime(format!("import math\n\n{body}")),
+            format!("{ROUNDING}\nimport math\n\n{body}")
+        );
+        let body = "def f(a: int) -> int:\n    return sce_algorithm.I8.saturating_neg(a)\n";
+        assert!(import_the_algorithm_runtime(body.to_string()).starts_with(ROUNDING));
     }
 
     #[test]
     fn a_module_that_does_not_round_a_single_is_left_as_it_is() {
         let plain = "import math\n\ndef f(a: float) -> float:\n    return a + a\n".to_string();
-        assert_eq!(import_the_single_rounding(plain.clone()), plain);
+        assert_eq!(import_the_algorithm_runtime(plain.clone()), plain);
         // One that already names the runtime is not given a second import.
         let named = format!("{ROUNDING}\n\ndef f(a):\n    return sce_algorithm.to_f32(a)\n");
-        assert_eq!(import_the_single_rounding(named.clone()), named);
+        assert_eq!(import_the_algorithm_runtime(named.clone()), named);
     }
 
     // ── Type mapping: python ─────────────────────────────────

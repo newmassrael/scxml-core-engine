@@ -236,8 +236,12 @@ new limit.
 2. The node, its parse, typing and refusals; the analysis and the fold; the Rust lowering, which needs no runtime
    row; SCE_FORGE.md §3.4.2 and the subset's vocabulary. Every other emitter refuses the node by name
    (`expression/unsupported-construct`) until its own step.
-3. One commit per target, each with its runtime row, the runtime's own tests, and the include or import its files
-   need wherever the text names the row: C++, C11, Go, Kotlin, Python, Swift, the Interpreter.
+3. One commit per runtime row with that runtime's own tests: C11, C++, Go, Kotlin, Python, Swift. Then one commit
+   that lowers the node on every other backend and the Interpreter (whose row is in `sce_static.js`), because the
+   emitters share one module and one helper (`total_parts`), with the include or import each file needs wherever its
+   text names a row: C++ and C11 read `sce/forge/algorithm.h` off the text at the render door
+   (`uses_forge_algorithm`, as Go reads `scealgorithm`), Python's module of any kind imports the runtime where it
+   names it, and Swift's algorithm imports it where it names `Wrapping.` or `Saturating.`.
 4. The conformance fixtures of section 9, on every backend at once.
 5. The reservation of the vocabulary's names (section 4), after measuring what a colliding declaration does today.
 

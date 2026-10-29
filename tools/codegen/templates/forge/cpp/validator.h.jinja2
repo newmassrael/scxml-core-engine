@@ -13,7 +13,8 @@
 #define {{ guard }}
 
 #include <cstdint>
-#include <string>
+{% if uses_forge_algorithm %}#include <sce/forge/algorithm.h>
+{% endif %}#include <string>
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

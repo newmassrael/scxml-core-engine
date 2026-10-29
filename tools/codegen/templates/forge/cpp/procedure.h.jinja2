@@ -24,7 +24,8 @@
 #define {{ guard }}
 
 #include <cstdint>
-#include <cstddef>
+{% if uses_forge_algorithm %}#include <sce/forge/algorithm.h>
+{% endif %}#include <cstddef>
 {% if helper_fields %}
 #include <functional>
 #include <stdexcept>

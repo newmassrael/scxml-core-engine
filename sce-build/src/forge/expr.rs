@@ -3042,6 +3042,49 @@ fn total_unlowered(op: RingOp, rule: OverflowRule, backend: &str) -> ExprError {
     }
 }
 
+/// The runtime helper of `op` under `rule` in the spelling of a runtime whose
+/// members are camelCase: `wrappingSub`, `saturatingAdd` (the Interpreter's
+/// library). The other runtimes join the two names in their own case.
+fn camel_helper(op: RingOp, rule: OverflowRule) -> String {
+    format!(
+        "{}{}",
+        rule.helper(),
+        crate::filters::capitalize_first(op.helper())
+    )
+}
+
+/// A total operation's width and its operands, each spelled by `emit` at the
+/// operation's type (docs/adr/0063): the parts every backend's call of the
+/// runtime is written from. `backend` names the emitter in the refusal of a
+/// node typing gave no integer type, which the judge refuses before any
+/// emitter is reached.
+fn total_parts<E>(
+    expr: &TypedExpr,
+    backend: &str,
+    mut emit: impl FnMut(&TypedExpr, InferredType) -> Result<String, E>,
+) -> Result<(bool, u8, Vec<String>), E>
+where
+    E: From<ExprError>,
+{
+    let ExprKind::Total {
+        op,
+        rule,
+        left,
+        right,
+    } = &expr.kind
+    else {
+        unreachable!("total_parts is called on a total operation");
+    };
+    let InferredType::Int { signed, bits } = expr.ty else {
+        return Err(total_unlowered(*op, *rule, backend).into());
+    };
+    let mut operands = vec![emit(left, expr.ty)?];
+    if let Some(right) = right {
+        operands.push(emit(right, expr.ty)?);
+    }
+    Ok((signed, bits, operands))
+}
+
 /// The type of a total operation over operands of types `left` and `right`
 /// (docs/adr/0063, section 3): the type its declared operands share, a
 /// literal taking it. `None` where the operation has none, which
@@ -6959,7 +7002,19 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return Ok(spelled);
     }
     Ok(match &expr.kind {
-        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "C++")),
+        // docs/adr/0063: the runtime's function for the operation's own
+        // width. The width is explicit, as the checked one's is, so an operand
+        // converts to it rather than choosing the instantiation.
+        ExprKind::Total { op, rule, .. } => {
+            let (signed, bits, operands) = total_parts(expr, "C++", emit_cpp)?;
+            format!(
+                "SCE::Forge::{}::{}<std::{}int{bits}_t>({})",
+                crate::filters::capitalize_first(rule.helper()),
+                op.helper(),
+                if signed { "" } else { "u" },
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `std::vector<uint8_t>` has `operator==`, so the default
@@ -7565,7 +7620,19 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return kotlin_optional_form(form, expr);
     }
     Ok(match &expr.kind {
-        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Kotlin")),
+        // docs/adr/0063: the runtime's overload for the operation's own width,
+        // each operand spelled at that width so the overload resolves, as the
+        // checked one's are. `Byte`, `Short`, `UByte` and `UShort` arithmetic
+        // is made in `Int`, so the runtime truncates it back.
+        ExprKind::Total { op, rule, .. } => {
+            let (_, _, operands) = total_parts(expr, "Kotlin", emit_kotlin)?;
+            format!(
+                "com.sce.forge.runtime.Sce{}.{}({})",
+                crate::filters::capitalize_first(rule.helper()),
+                op.helper(),
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
@@ -8631,19 +8698,8 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         // type, a `const fn` that never panics. Fully qualified, so a literal
         // left operand takes the type too, where a method call on the literal
         // would leave it ambiguous.
-        ExprKind::Total {
-            op,
-            rule,
-            left,
-            right,
-        } => {
-            let InferredType::Int { signed, bits } = expr.ty else {
-                return Err(total_unlowered(*op, *rule, "Rust").at(expr.span.clone()));
-            };
-            let mut operands = vec![emit_rust(left, expr.ty)?];
-            if let Some(right) = right {
-                operands.push(emit_rust(right, expr.ty)?);
-            }
+        ExprKind::Total { op, rule, .. } => {
+            let (signed, bits, operands) = total_parts(expr, "Rust", emit_rust)?;
             format!(
                 "{}::{}_{}({})",
                 rust_int_type(signed, bits),
@@ -9162,8 +9218,19 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         return go_optional(form, expr);
     }
     Ok(match &expr.kind {
+        // docs/adr/0063: the runtime's function for the operation's own width.
+        // Go defines the wrap of a typed operation, but folds an expression of
+        // two constants at compile time and refuses one that overflows, so
+        // the operation is a call, as the checked one is.
         ExprKind::Total { op, rule, .. } => {
-            return Err(total_unlowered(*op, *rule, "Go").at(expr.span.clone()))
+            let (signed, bits, operands) = total_parts(expr, "Go", emit_go)?;
+            format!(
+                "scealgorithm.{}{}{}{bits}({})",
+                crate::filters::capitalize_first(rule.helper()),
+                crate::filters::capitalize_first(op.helper()),
+                if signed { "Int" } else { "Uint" },
+                operands.join(", ")
+            )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -9828,7 +9895,19 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return python_optional(form, expr);
     }
     Ok(match &expr.kind {
-        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Python")),
+        // docs/adr/0063: the runtime's method for the operation's own width,
+        // which computes exactly and reduces the result: Python's integers
+        // never overflow, so this is where its `uint32` wraps.
+        ExprKind::Total { op, rule, .. } => {
+            let (signed, bits, operands) = total_parts(expr, "Python", emit_python)?;
+            format!(
+                "sce_algorithm.{}{bits}.{}_{}({})",
+                if signed { "I" } else { "U" },
+                rule.helper(),
+                op.helper(),
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("'{value}'"),
         // `bytes == bytes` compares content, so the default `==`/`!=`
@@ -10407,7 +10486,21 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         | None => {}
     }
     Ok(match &expr.kind {
-        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Interpreter")),
+        // docs/adr/0063: the library's method for the operation's own width,
+        // which computes exactly and reduces the result into the width, so it
+        // never throws.
+        ExprKind::Total { op, rule, .. } => {
+            let (signed, bits, operands) = total_parts(expr, "Interpreter", emit_js)?;
+            if !INTEGER_WIDTHS.contains(&bits) {
+                return Err(total_unlowered(*op, *rule, "Interpreter"));
+            }
+            format!(
+                "{RUNTIME_GLOBAL}.{}{bits}.{}({})",
+                if signed { "I" } else { "U" },
+                camel_helper(*op, *rule),
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => js_number_literal(n)?,
         // The author's own literal, in the quote the author chose: what the
         // lexer keeps is ECMAScript already.
@@ -10862,7 +10955,21 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return c_optional(form, expr);
     }
     Ok(match &expr.kind {
-        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "C11")),
+        // docs/adr/0063: the runtime's helper for the operation's own width.
+        // C promotes a narrow operand to `int`, where a product can overflow,
+        // and leaves a signed overflow undefined; the helper computes in the
+        // unsigned type of the width. C has no overloading, so the width is
+        // in the name.
+        ExprKind::Total { op, rule, .. } => {
+            let (signed, bits, operands) = total_parts(expr, "C11", emit_c)?;
+            format!(
+                "sce_forge_{}_{}_{}{bits}({})",
+                rule.helper(),
+                op.helper(),
+                if signed { "i" } else { "u" },
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback — the bytes-equality Binary branch renders
@@ -14330,6 +14437,66 @@ mod tests {
             total("saturatingMul(delta, -3)", ExprTarget::Rust).unwrap(),
             "i32::saturating_mul(delta, -3)"
         );
+    }
+
+    /// Each backend calls the row of its runtime named beside the checked one
+    /// (docs/adr/0063, section 8), at the operation's own width.
+    #[test]
+    fn every_backend_spells_a_total_operation_as_its_runtime_row() {
+        let cases = [
+            (
+                ExprTarget::Cpp,
+                "SCE::Forge::Wrapping::sub<std::uint32_t>(now, last)",
+                "SCE::Forge::Saturating::neg<std::int32_t>(delta)",
+            ),
+            (
+                ExprTarget::C,
+                "sce_forge_wrapping_sub_u32(now, last)",
+                "sce_forge_saturating_neg_i32(delta)",
+            ),
+            (
+                ExprTarget::Go,
+                "scealgorithm.WrappingSubUint32(now, last)",
+                "scealgorithm.SaturatingNegInt32(delta)",
+            ),
+            (
+                ExprTarget::Kotlin,
+                "com.sce.forge.runtime.SceWrapping.sub(now, last)",
+                "com.sce.forge.runtime.SceSaturating.neg(delta)",
+            ),
+            (
+                ExprTarget::Python,
+                "sce_algorithm.U32.wrapping_sub(now, last)",
+                "sce_algorithm.I32.saturating_neg(delta)",
+            ),
+            (
+                ExprTarget::Swift,
+                "Wrapping.sub(now, last)",
+                "Saturating.neg(delta)",
+            ),
+            (
+                ExprTarget::Js,
+                "SceStatic.U32.wrappingSub(now, last)",
+                "SceStatic.I32.saturatingNeg(delta)",
+            ),
+            (
+                ExprTarget::Rust,
+                "u32::wrapping_sub(now, last)",
+                "i32::saturating_neg(delta)",
+            ),
+        ];
+        for (target, wrapping, saturating) in cases {
+            assert_eq!(
+                total("wrappingSub(now, last)", target).unwrap(),
+                wrapping,
+                "{target:?}"
+            );
+            assert_eq!(
+                total("saturatingNeg(delta)", target).unwrap(),
+                saturating,
+                "{target:?}"
+            );
+        }
     }
 
     fn refused(expr: &str) -> ExprError {

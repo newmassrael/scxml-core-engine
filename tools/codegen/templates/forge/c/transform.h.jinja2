@@ -12,7 +12,8 @@
 #define {{ guard }}
 
 #include <stdint.h>
-#include <stdbool.h>
+{% if uses_forge_algorithm %}#include "sce/forge/algorithm.h"
+{% endif %}#include <stdbool.h>
 {# `round(x)` lowers to C99 `llround` and `floor(x)` to C99 `floor`, both
    declared in <math.h>. Conditional for the same reason as the C++ template:
    an unused header in every file that does neither is noise, and the condition
