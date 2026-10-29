@@ -1,0 +1,71 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: b3df842d016676bf8989832cb164de51027fadf6ca9e7b5543c7bac0c9a13d1a
+// SCE-MAP: stable_point.scxml:33 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
+// Runtime: sce_forge_runtime
+// Do not edit — regenerate from the source SCXML file.
+//
+// RFC §synth-5-A: pure synchronous function with bounded loops, no instance
+// state. A static function of the caseless enum `StablePoint`, a file of the
+// module that calls it: a call is qualified by the enum
+// (`StablePoint.stablePoint(…)`), which a member of the calling type
+// cannot hide as it would hide a free function of the same name.
+
+import SceForgeRuntime
+
+public enum StablePoint {
+    public static func stablePoint(_ cursors: [UInt64], _ lastSeen: [Int64], _ now: Int64, _ maxIdle: Int64) throws -> UInt64 {
+        // A failure a checked operation records, thrown once the statement is done
+        // (SCE_FORGE.md §3.4.1).
+        let sceFailure = Failure()
+        do {
+            let sceCond2 = !(cursors.count == lastSeen.count)
+            try sceFailure.throwIfFailed()
+            if sceCond2 {
+                throw AlgorithmError.precondition
+            }
+        }
+        do {
+            let sceCond2 = !(maxIdle >= 0)
+            try sceFailure.throwIfFailed()
+            if sceCond2 {
+                throw AlgorithmError.precondition
+            }
+        }
+        var stable: UInt64 = 0
+        try sceFailure.throwIfFailed()
+        var taking: Bool = false
+        try sceFailure.throwIfFailed()
+        var i: UInt32 = 0
+        try sceFailure.throwIfFailed()
+        while true {
+            let sceCond2 = i < UInt32(truncatingIfNeeded: cursors.count)
+            try sceFailure.throwIfFailed()
+            if !sceCond2 { break }
+            do {
+                let sceCond3 = Checked.sub(sceFailure, now, Checked.at(sceFailure, lastSeen, i, fallback: 0)) <= maxIdle
+                try sceFailure.throwIfFailed()
+                if sceCond3 {
+                    do {
+                        let sceCond5 = !taking || Checked.at(sceFailure, cursors, i, fallback: 0) < stable
+                        try sceFailure.throwIfFailed()
+                        if sceCond5 {
+                            stable = Checked.at(sceFailure, cursors, i, fallback: 0)
+                            try sceFailure.throwIfFailed()
+                        }
+                    }
+                    taking = true
+                    try sceFailure.throwIfFailed()
+                }
+            }
+            i = Checked.add(sceFailure, i, 1)
+            try sceFailure.throwIfFailed()
+        }
+        do {
+            let sceReturned: UInt64 = stable
+            try sceFailure.throwIfFailed()
+            return sceReturned
+        }
+    }
+}
