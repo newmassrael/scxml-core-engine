@@ -22591,6 +22591,14 @@ fn render_queue_go_unsupported(
 /// name (a codec called `cursor`) would hide it. The stamp is 64 bits and Go's
 /// atomics are sequentially consistent, so [`judge_broadcast_log_stamp`] is not
 /// asked anything here, as for Rust.
+///
+/// What the element's codec asks its caller for (its flag inputs, each a `byte`
+/// that follows the sink or the cursor, and for a variant with no tag field a
+/// `tag byte` that follows the flags on `Decode`) is stored in context words
+/// between the length word and the bytes ([`broadcast_log_context_value`], over
+/// 64-bit words), taken by `Publish` as booleans and a tag, and returned in the
+/// item `Read` gives (ADR 0062 section 4). An element with no caller input has
+/// no context word and the package it always had.
 fn render_broadcast_log_go(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -22625,6 +22633,7 @@ fn render_broadcast_log_go(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "github.com/newmassrael/sce-forge-runtime/broadcastlog",
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

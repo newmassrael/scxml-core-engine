@@ -20,14 +20,30 @@
 // collector must follow, and a copy that was torn is thrown away unread.
 //
 // Operations (from `broadcastlog`, typed here over the element):
+{% if context.present %}
+//   Publish(publisher, &element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) (uint64, error)
+//                          wait-free; the entry's sequence number
+//   Read(log, &reader) (broadcastlog.Read, *{{ pascal }}Item, error)
+//                          wait-free; the item is set only when the answer is
+//                          broadcastlog.ReadItem, and the answer says whether
+//                          that was an item, nothing new, or how many were missed
+{% else %}
 //   Publish(publisher, &element) (uint64, error)
 //                          wait-free; the entry's sequence number
 //   Read(log, &reader) (broadcastlog.Read, *Element, error)
 //                          wait-free; the element is set only when the answer is
 //                          broadcastlog.ReadItem, and the answer says whether
 //                          that was an item, nothing new, or how many were missed
+{% endif %}
 // A reader is `log.ReaderOldest()`, `log.ReaderHead()` or `log.ReaderAt(n)` and
 // owns its cursor; the publisher is `log.Publisher()`, taken once.
+{% if context.present %}
+//
+// The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+// part of the entry: Publish takes them, the log stores them in the entry's context
+// words beside the bytes, and the item Read returns holds them, so every reader decodes
+// an entry under what it was published under (ADR 0062 section 4).
+{% endif %}
 
 package {{ package }}
 
@@ -49,10 +65,22 @@ const Slots = Retention + 1
 // read from its document when this package was generated.
 const MaxEncodedBytes = {{ max_bytes }}
 
+{% if context.present %}
+// ContextWords is the words of an entry that hold what the element's codec asks its
+// caller for (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+// codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}.
+const ContextWords = {{ context.context_words }}
+
+// Words is the 64-bit words an entry holds: one for the length of the encoded
+// element, ContextWords for its context, then as many as MaxEncodedBytes bytes take
+// at eight to a word, that is 1 + ContextWords + ceil(MaxEncodedBytes / 8).
+const Words = 1 + ContextWords + (MaxEncodedBytes+7)/8
+{% else %}
 // Words is the 64-bit words an entry holds: one for the length of the encoded
 // element, then as many as MaxEncodedBytes bytes take at eight to a word, that is
 // 1 + ceil(MaxEncodedBytes / 8).
 const Words = 1 + (MaxEncodedBytes+7)/8
+{% endif %}
 
 // DeclaredProgress is what the document requires of publish and read
 // (`<sce:progress>`).
@@ -67,6 +95,41 @@ func New{{ pascal }}() *{{ pascal }} {
 	return broadcastlog.New(Words, Slots)
 }
 
+{% if context.flags %}
+// {{ pascal }}Flags are the flag inputs the element's codec takes from its caller,
+// which the log stores with each entry: what Publish was given is what a reader
+// gets back, and what the entry is decoded under.
+type {{ pascal }}Flags struct {
+{% for flag in context.flags %}
+	{{ flag.pascal }} bool
+{% endfor %}
+}
+
+{% endif %}
+{% if context.present %}
+// {{ pascal }}Item is an entry that was read: the element decoded, with what it was
+// published under.
+type {{ pascal }}Item struct {
+	Element *{{ element_qualified }}
+{% if context.flags %}
+	Flags   {{ pascal }}Flags
+{% endif %}
+{% if context.has_tag %}
+	Tag     byte
+{% endif %}
+}
+
+{% endif %}
+{% if context.flags %}
+// flagInput is a flag input as the codec takes it: one bit, in a byte that is 1 or 0.
+func flagInput(on bool) byte {
+	if on {
+		return 1
+	}
+	return 0
+}
+
+{% endif %}
 // Publish publishes element: it encodes it into a buffer of MaxEncodedBytes
 // bytes, packs the length and the bytes (little-endian, eight to a word) into
 // Words words, and hands them to the runtime, which never refuses and never
@@ -75,25 +138,50 @@ func New{{ pascal }}() *{{ pascal }} {
 // An element that encodes to more than MaxEncodedBytes bytes is refused by the
 // codec (codec.ErrBufferOverflow from the bounded sink) and nothing is
 // published: an entry is never a truncated element.
-func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}) (uint64, error) {
+{% if context.present %}
+//
+// {% if context.flags %}flags are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}tag is the variant tag its decode takes{% endif %}:
+// they are encoded under here and stored in the entry's context words, so that every
+// reader decodes the entry under what it was published under. The log does not check that
+// {% if context.has_tag %}tag is the tag of the arm element holds{% else %}the flags agree with element{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
+func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}{% if context.flags %}, flags {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag byte{% endif %}) (uint64, error) {
 	var buffer [MaxEncodedBytes]byte
 	sink := codec.NewBoundedSink(buffer[:])
-	if err := element.Encode(sink); err != nil {
+	if err := element.Encode(sink{% for flag in context.flags %}, flagInput(flags.{{ flag.pascal }}){% endfor %}); err != nil {
 		return 0, err
 	}
 	length := sink.Position()
 	var entry [Words]uint64
 	entry[0] = uint64(length)
+{% for flag in context.flags %}
+	if flags.{{ flag.pascal }} {
+		entry[1+{{ flag.word }}] |= uint64(1) << {{ flag.shift }}
+	}
+{% endfor %}
+{% if context.has_tag %}
+	entry[1+{{ context.tag_word }}] = uint64(tag)
+{% endif %}
 	for index, value := range buffer[:length] {
-		entry[1+index/8] |= uint64(value) << (8 * (index % 8))
+		entry[{{ context.payload_start }}+index/8] |= uint64(value) << (8 * (index % 8))
 	}
 	return publisher.Publish(entry[:]), nil
 }
 
+{% if context.present %}
+// Read reads the entry at reader's cursor and decodes it. The runtime answers
+// ReadItem only after the copy it made was checked against the slot, which is
+// what makes decoding it safe: a torn copy is ReadLagged, never decoded. The
+// item is returned only for ReadItem, and is nil for every other answer.
+//
+// The item holds {% if context.flags %}the flags{% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}the tag{% endif %} the entry was published under, read back from its
+// context words, and the element was decoded under them.
+{% else %}
 // Read reads the entry at reader's cursor and decodes it. The runtime answers
 // ReadItem only after the copy it made was checked against the slot, which is
 // what makes decoding it safe: a torn copy is ReadLagged, never decoded. The
 // element is returned only for ReadItem, and is nil for every other answer.
+{% endif %}
 //
 // A stored length above MaxEncodedBytes is not a length this log wrote, and is
 // codec.ErrLengthOutOfRange and never an out-of-range slice. The reader has
@@ -102,7 +190,11 @@ func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}
 // Every entry is decoded from a buffer of its own, which nothing else writes, so
 // a field of the element that is a view of the bytes it was decoded from stays
 // valid for as long as the element is held.
+{% if context.present %}
+func Read(log *{{ pascal }}, reader *broadcastlog.Reader) (broadcastlog.Read, *{{ pascal }}Item, error) {
+{% else %}
 func Read(log *{{ pascal }}, reader *broadcastlog.Reader) (broadcastlog.Read, *{{ element_qualified }}, error) {
+{% endif %}
 	var entry [Words]uint64
 	answer := log.Read(reader, entry[:])
 	if answer.Kind != broadcastlog.ReadItem {
@@ -114,12 +206,36 @@ func Read(log *{{ pascal }}, reader *broadcastlog.Reader) (broadcastlog.Read, *{
 	}
 	encoded := make([]byte, int(stored))
 	for index := range encoded {
-		encoded[index] = byte(entry[1+index/8] >> (8 * (index % 8)))
+		encoded[index] = byte(entry[{{ context.payload_start }}+index/8] >> (8 * (index % 8)))
 	}
+{% if context.flags %}
+	// What the entry was published under: the context words are written by Publish
+	// alone and a torn copy is never decoded, so a flag is a bit and the tag a byte.
+	flags := {{ pascal }}Flags{
+{% for flag in context.flags %}
+		{{ flag.pascal }}: (entry[1+{{ flag.word }}]>>{{ flag.shift }})&1 == 1,
+{% endfor %}
+	}
+{% endif %}
+{% if context.has_tag %}
+	tag := byte(entry[1+{{ context.tag_word }}])
+{% endif %}
 	cursor := codec.NewSceCursor(encoded)
-	element, err := {{ element_decode }}(&cursor)
+	element, err := {{ element_decode }}(&cursor{% for flag in context.flags %}, flagInput(flags.{{ flag.pascal }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
 	if err != nil {
 		return answer, nil, err
 	}
+{% if context.present %}
+	return answer, &{{ pascal }}Item{
+		Element: element,
+{% if context.flags %}
+		Flags:   flags,
+{% endif %}
+{% if context.has_tag %}
+		Tag:     tag,
+{% endif %}
+	}, nil
+{% else %}
 	return answer, element, nil
+{% endif %}
 }
