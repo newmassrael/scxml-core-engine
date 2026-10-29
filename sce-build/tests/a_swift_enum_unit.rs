@@ -76,11 +76,50 @@ fn a_value_is_named_and_converted_by_what_the_document_declares() {
 }
 
 #[test]
+fn a_field_of_an_enum_is_the_unit_of_the_enum_at_its_first_case() {
+    let code = swift_of("sce-build/tests/fixtures/static_datamodel/schema_item.scxml")
+        .expect("a schema whose field is an enum is written");
+    assert!(
+        code.contains("public var status: EnumItemStatus = EnumItemStatus.allCases[0]"),
+        "{code}"
+    );
+    // The memberwise initializer takes the field in the enum's type.
+    assert!(
+        code.contains("public init(id: UInt32, status: EnumItemStatus)"),
+        "{code}"
+    );
+}
+
+#[test]
+fn an_algorithm_takes_a_value_of_an_enum_as_the_unit_of_the_enum() {
+    let code =
+        swift_of("sce-build/tests/fixtures/static_datamodel/algorithm_item_status_set.scxml")
+            .expect("an algorithm over an enum is written");
+    assert!(
+        code.contains("_ status: EnumItemStatus) throws -> [SchemaItemPayload]"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_schema_whose_field_holds_an_enum_swift_does_not_write_is_refused_by_name() {
+    // The field is held in the unit of the enum, which is not written for an open
+    // set of variants: the schema is refused for it, and not left to name a type that
+    // does not exist.
+    let refusal = swift_of("sce-build/tests/fixtures/event_schema/schema_uds_response_open.scxml")
+        .expect_err("a schema over an open enum is refused");
+    assert!(
+        refusal.contains("an enum with an open set of variants") && refusal.contains("Swift"),
+        "{refusal}"
+    );
+}
+
+#[test]
 fn an_open_enum_is_refused_by_name() {
     let refusal = swift_of("sce-build/tests/fixtures/event_schema/uds_nrc_open.scxml")
         .expect_err("an open enum is not lowered for Swift");
     assert!(
-        refusal.contains("open enum") && refusal.contains("Swift"),
+        refusal.contains("open set of variants") && refusal.contains("Swift"),
         "{refusal}"
     );
 }
