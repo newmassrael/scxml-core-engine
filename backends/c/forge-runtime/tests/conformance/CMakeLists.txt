@@ -810,6 +810,47 @@ target_compile_options(broadcast_log_generated_test_c PRIVATE -Wall -Wextra -Wpe
 target_link_libraries(broadcast_log_generated_test_c PRIVATE sce_queue_host_intrinsics)
 add_test(NAME broadcast_log_generated_c COMMAND broadcast_log_generated_test_c)
 
+# The logs over an element whose codec asks its caller for what its wire form does
+# not carry (ADR 0062 section 4, "Caller inputs are part of the element"): one over a
+# codec with a flag input, one over a variant that has no tag of its own. The six
+# documents are the ones every backend's conformance lane reads, in one set, in the
+# order that puts what a document imports before it; `orchestrate` reads a set from
+# the one directory they are in.
+set(BLOG_CONTEXT_DIR "${REPO_ROOT}/tests/forge/conformance/broadcast_log_context")
+set(BLOG_CONTEXT_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_context_headers")
+file(MAKE_DIRECTORY "${BLOG_CONTEXT_C_GENERATED_DIR}")
+set(BLOG_CONTEXT_C_SET
+    broadcast_log_conformance_flagged_event
+    broadcast_log_conformance_flagged
+    broadcast_log_conformance_choice_small
+    broadcast_log_conformance_choice_large
+    broadcast_log_conformance_choice
+    broadcast_log_conformance_chosen)
+set(BLOG_CONTEXT_C_ARGS "")
+set(BLOG_CONTEXT_C_DEPENDS "")
+set(BLOG_CONTEXT_C_HEADERS "")
+foreach(_document IN LISTS BLOG_CONTEXT_C_SET)
+    list(APPEND BLOG_CONTEXT_C_ARGS --forge "${BLOG_CONTEXT_DIR}/${_document}.scxml")
+    list(APPEND BLOG_CONTEXT_C_DEPENDS "${BLOG_CONTEXT_DIR}/${_document}.scxml")
+    list(APPEND BLOG_CONTEXT_C_HEADERS "${BLOG_CONTEXT_C_GENERATED_DIR}/${_document}.h")
+endforeach()
+add_custom_command(
+    OUTPUT ${BLOG_CONTEXT_C_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate ${BLOG_CONTEXT_C_ARGS}
+            --language c11 --output-dir "${BLOG_CONTEXT_C_GENERATED_DIR}"
+    DEPENDS ${BLOG_CONTEXT_C_DEPENDS} "${SCE_CODEGEN}"
+    COMMENT "Generating C11 broadcast logs over elements that ask their caller for inputs"
+    VERBATIM)
+add_custom_target(generate_broadcast_log_context_headers_c DEPENDS ${BLOG_CONTEXT_C_HEADERS})
+
+add_executable(broadcast_log_context_generated_test_c
+    "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_context_generated_test.c")
+add_dependencies(broadcast_log_context_generated_test_c generate_broadcast_log_context_headers_c)
+target_include_directories(broadcast_log_context_generated_test_c PRIVATE "${BLOG_CONTEXT_C_GENERATED_DIR}")
+target_compile_options(broadcast_log_context_generated_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_context_generated_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_context_generated_c COMMAND broadcast_log_context_generated_test_c)
+
 # What the generator refuses is as much its contract as what it writes. One
 # document handed to `generate` has no element document to read the size from and
 # no deploy to read a retention from, so it is refused naming what is missing and
