@@ -21,9 +21,9 @@ mutation_oracles sce-build/src/forge/expr.rs
 
 mutation_case "the eq call is emitted as a call" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     r'''    reject_call_argument_mismatches(ast, ctx, source)?;
+     r'''    reject_ill_typed_total_operations(ast, source)?;
     lower_bytes_eq(ast, ctx);''',
-     r'''    reject_call_argument_mismatches(ast, ctx, source)?;
+     r'''    reject_ill_typed_total_operations(ast, source)?;
     let _ = lower_bytes_eq;''')
 PY
 

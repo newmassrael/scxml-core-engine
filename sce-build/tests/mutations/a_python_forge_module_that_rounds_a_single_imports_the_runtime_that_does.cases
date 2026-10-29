@@ -7,14 +7,17 @@
 # Python's `float` is a binary64, so the generator writes the rounding of every kind
 # (`sce_algorithm.to_f32`), and a module's own template cannot know whether an
 # expression it was handed needed it. The import is added once, where the module is
-# complete (`import_the_single_rounding`): after the `from __future__` line, before
+# complete (`import_the_algorithm_runtime`): after the `from __future__` line, before
 # the first import, or, for a module that imports nothing, before its first
-# statement. The two unit tests read that placement and the cases that need none;
-# the conformance fixtures `transform_single_sum` and `algorithm_single_sum` run the
-# generated module. The mutants below each take one decision away:
+# statement. A module of any kind that wraps or saturates (docs/adr/0063) names the
+# runtime too (`sce_algorithm.U32.wrapping_sub`) and is given the same import. The
+# unit tests read that placement and the cases that need none; the conformance
+# fixtures `transform_single_sum` and `algorithm_single_sum` run the generated
+# module. The mutants below each take one decision away:
 #
 #   no module is given the import;
 #   a module that already names the runtime is given a second import;
+#   a module that wraps or saturates is not given the import;
 #   the import goes before the `from __future__` line;
 #   a module with no import gets it with no blank lines around it.
 #
@@ -27,14 +30,20 @@ mutation_oracles sce-build/src/forge/generator.rs
 
 mutation_case "no module is given the import" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "    if !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {",
-     "    if true || !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {")
+     "    if !names_the_algorithm_runtime(&code) || code.contains(\"as sce_algorithm\") {",
+     "    if true || !names_the_algorithm_runtime(&code) || code.contains(\"as sce_algorithm\") {")
 PY
 
 mutation_case "a module that names the runtime is given a second import" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "    if !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {",
-     "    if !code.contains(\"sce_algorithm.to_f32(\") {")
+     "    if !names_the_algorithm_runtime(&code) || code.contains(\"as sce_algorithm\") {",
+     "    if !names_the_algorithm_runtime(&code) {")
+PY
+
+mutation_case "a module that wraps or saturates is not given the import" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        || WIDTHS.iter().any(|width| {",
+     "        || false && WIDTHS.iter().any(|width| {")
 PY
 
 mutation_case "the import goes before the future line" <<'PY'
