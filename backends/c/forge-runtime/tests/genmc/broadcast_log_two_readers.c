@@ -13,7 +13,7 @@
  */
 
 /*
- * Layer 3 of the broadcast-log kind's verification (ADR 0062 section 6): the C11
+ * Layer 3 of the broadcast-log kind's verification (RFC §synth-5-S; ADR 0062 section 6): the C11
  * bounded log (sce/forge/broadcast_log.h) under GenMC with two readers. It is the C
  * counterpart of the loom model `two_readers_each_hold_their_own_cursor`
  * (backends/rust/forge-runtime/tests/loom_broadcast_log.rs), the model that found

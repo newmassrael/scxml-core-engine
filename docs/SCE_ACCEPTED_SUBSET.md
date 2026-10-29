@@ -486,8 +486,8 @@ buffer-pool  bounded-collection      enum         event-schema
 queue        feature-model            broadcast-log
 ```
 
-`broadcast-log` (ADR 0062) is a bounded log that one producer appends to and
-any number of readers read, each by a cursor of its own; a full log forgets
+`broadcast-log` (RFC §synth-5-S, ADR 0062) is a bounded log that one producer
+appends to and any number of readers read, each by a cursor of its own; a full log forgets
 its oldest entry and tells a reader that was too slow how many it missed. Its
 `<sce:element-type>`, `<sce:producers>`, `<sce:progress>` and `<sce:retention>`
 (`entries="N"`, or `source="deploy" key="…"`) are all required and none has a

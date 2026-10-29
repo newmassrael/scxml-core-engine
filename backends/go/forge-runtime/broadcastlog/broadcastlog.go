@@ -3,7 +3,8 @@
 
 // Package broadcastlog is the Go row of the bounded broadcast log: one
 // publisher, any number of readers, the oldest entry forgotten when the log is
-// full (ADR 0062), the runtime half of `sce:kind="broadcast-log"`.
+// full (SCE Protocol-Synthesis RFC §synth-5-S, ADR 0062), the runtime half of
+// `sce:kind="broadcast-log"`.
 //
 // The contract is the sequential log of ADR 0062 section 2. h entries have
 // been published, only the last Retention are retained, and a reader owns a

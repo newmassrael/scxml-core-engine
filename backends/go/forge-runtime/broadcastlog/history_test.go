@@ -4,7 +4,7 @@
 package broadcastlog
 
 // The Go arm's stress runs of the `broadcast-log` kind, written as histories
-// (ADR 0062 section 5 and 6).
+// (RFC §synth-5-S; ADR 0062 section 5 and 6).
 //
 // These tests run the log of this package on real goroutines, record every
 // operation each goroutine made, and write one history per run in the JSON form

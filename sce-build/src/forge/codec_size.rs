@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The largest number of bytes a codec document encodes to, as a constant of
-//! the build (ADR 0062, section 4).
+//! the build (SCE Protocol-Synthesis RFC §synth-5-S; ADR 0062, section 4).
 //!
 //! A slot of a broadcast log holds the wire bytes of its element as a fixed
 //! number of words, so the generator needs a size no value of the element can

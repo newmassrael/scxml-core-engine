@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Loom models of the bounded broadcast log (ADR 0062 section 6, layer 2: the
-//! memory-model checker that proves the ordering the TLA+ model assumes).
+//! Loom models of the bounded broadcast log (RFC §synth-5-S; ADR 0062 section 6,
+//! layer 2: the memory-model checker that proves the ordering the TLA+ model assumes).
 //!
 //! `docs/formal/BroadcastLog.tla` proves the protocol under sequential
 //! consistency. These models run the same algorithm text that ships under every

@@ -10663,7 +10663,7 @@ fn read_progress(
 }
 
 /// Parse `<scxml sce:kind="broadcast-log">…</scxml>` into a
-/// [`BroadcastLogModel`] — ADR 0062.
+/// [`BroadcastLogModel`] — SCE Protocol-Synthesis RFC §synth-5-S, ADR 0062.
 ///
 /// **Required, no default:** `<sce:element-type>`, `<sce:producers>`,
 /// `<sce:progress>` and `<sce:retention>` (`entries="N"`, or `source="deploy"

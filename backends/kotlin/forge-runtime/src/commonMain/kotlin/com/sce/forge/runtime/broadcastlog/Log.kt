@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 /**
- * The runtime half of `sce:kind="broadcast-log"` (ADR 0062) for Kotlin: a
- * bounded log with one publisher and any number of readers, which forgets its
+ * The runtime half of `sce:kind="broadcast-log"` (SCE Protocol-Synthesis RFC
+ * §synth-5-S, ADR 0062) for Kotlin: a bounded log with one publisher and any number of readers, which forgets its
  * oldest entry when it is full.
  *
  * The contract is the sequential log of ADR 0062 section 2. `h` entries have

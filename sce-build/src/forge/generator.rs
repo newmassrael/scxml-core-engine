@@ -1757,7 +1757,8 @@ pub fn generate_cpp_with_imports_and_externs(
         // ring and SCQ (`sce/forge/queue.h`); the bounded storage mode is
         // lowered and the others are refused by name inside the render.
         ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
-        // ADR 0062: a broadcast log is parsed and checked on every backend, and
+        // RFC §synth-5-S, ADR 0062: a broadcast log is parsed and checked on every
+        // backend, and
         // lowered by the ones whose runtime row and template have landed
         // (`codegen_matrix::BROADCAST_LOG_BACKENDS` lists them, and each has its
         // own `render_broadcast_log_<language>`); every other dispatch refuses

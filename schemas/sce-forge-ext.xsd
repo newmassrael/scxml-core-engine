@@ -2390,7 +2390,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- Broadcast-log kind (ADR 0062). `element-type`, `producers` and
+  <!-- Broadcast-log kind (RFC §synth-5-S, ADR 0062). `element-type`, `producers` and
        `progress` are the elements above; the retention is the number of
        latest entries a reader may rely on, written the two ways a capacity
        is. Every attribute is optional for the reason `capacity` above is:

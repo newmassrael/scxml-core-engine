@@ -2,8 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The bounded broadcast log, 64-bit row: one publisher, any number of readers,
-//! the oldest entry forgotten when the log is full (ADR 0062) — the runtime half
-//! of `sce:kind="broadcast-log"` for a target with 64-bit atomics.
+//! the oldest entry forgotten when the log is full (SCE Protocol-Synthesis RFC
+//! §synth-5-S, ADR 0062) — the runtime half of `sce:kind="broadcast-log"` for a
+//! target with 64-bit atomics.
 //!
 //! The contract is the sequential log of ADR 0062 section 2. `h` entries have
 //! been published, only the last [`BroadcastLog::RETENTION`] are retained, and a

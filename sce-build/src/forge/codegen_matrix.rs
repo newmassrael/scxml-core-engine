@@ -111,8 +111,8 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // at `blocking` only). It is Generic, so a backend whose runtime has
         // not landed yet is `codegen/generic-kind-backend-emit-missing`.
         | ForgeKind::Queue
-        // ADR 0062: a broadcast log is specified for all six backends (Python
-        // at `blocking` only). A backend whose runtime row or template has not
+        // RFC §synth-5-S, ADR 0062: a broadcast log is specified for all six
+        // backends (Python at `blocking` only). A backend whose runtime row or template has not
         // landed yet is `broadcast-log/runtime-missing`, not a missing
         // template ([`awaits_runtime`]).
         | ForgeKind::BroadcastLog => KindClass::Generic,

@@ -4,6 +4,8 @@
 (* the narrow row of "Stamp width" (BroadcastLog.tla is the same protocol  *)
 (* over a stamp that does not).                                            *)
 (*                                                                         *)
+(* Ledger section: §synth-5-S, the broadcast-log kind of the RFC.          *)
+(*                                                                         *)
 (* What differs from BroadcastLog.tla is arithmetic, and it is all here.   *)
 (* M = 2^StampBits. The stamps and the head hold the count they stand for  *)
 (* modulo M: Busy(c) = (2c + 1) mod M, Done(c) = (2c + 2) mod M, head =    *)

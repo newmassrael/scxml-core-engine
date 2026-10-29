@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael */
 
 /*
- * The C11 arm of the `broadcast-log` kind's layer 1 (ADR 0062): the unit tests of
+ * The C11 arm of the `broadcast-log` kind's layer 1 (RFC §synth-5-S, ADR 0062): the unit tests of
  * the Rust row (backends/rust/forge-runtime/src/broadcast_log.rs) run against
  * sce/forge/broadcast_log.h, the refusals of the constructor, and real threads:
  * one publisher and several readers, where every entry a reader is handed must be

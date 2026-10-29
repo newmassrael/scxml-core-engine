@@ -3307,6 +3307,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
+    // RFC §synth-5-S: the broadcast log's refusals begin here.
     /// ADR 0062 §3 (`broadcast-log/element-type-not-a-kind`) —
     /// `<sce:element-type>` does not name a codec or procedure document in
     /// this build. The log stores the bytes of the element document's own wire

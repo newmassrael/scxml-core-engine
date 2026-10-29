@@ -3,8 +3,8 @@
 
 @file:OptIn(ExperimentalAtomicApi::class)
 
-// The properties of the Kotlin broadcast log that one thread cannot show (ADR
-// 0062 sections 4 and 5): with one publisher and several readers on real
+// The properties of the Kotlin broadcast log that one thread cannot show (RFC
+// §synth-5-S; ADR 0062 sections 4 and 5): with one publisher and several readers on real
 // threads, every entry a reader is handed is a whole entry, the sequence
 // numbers a reader sees strictly increase, and what a reader was handed plus
 // what it was told it missed is exactly what was published.

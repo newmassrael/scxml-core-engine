@@ -3,7 +3,7 @@
 //! narrow target, the catalog entry, and the refusal every language gives while
 //! none has the runtime row.
 //!
-//! Per ADR 0062: a `sce:kind="broadcast-log"` document states a contract
+//! Per RFC §synth-5-S (ADR 0062): a `sce:kind="broadcast-log"` document states a contract
 //! (element type, producer cardinality, the progress it relies on, the
 //! retention) and names no algorithm. The kind is parsed and checked on every
 //! backend before any backend lowers it, so generating a valid document for any

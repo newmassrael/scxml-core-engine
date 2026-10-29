@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-"""The runtime half of ``sce:kind="broadcast-log"`` (ADR 0062) for Python: a
-bounded log that one publisher fills and any number of readers read, each at
+"""The runtime half of ``sce:kind="broadcast-log"`` (SCE Protocol-Synthesis RFC
+§synth-5-S, ADR 0062) for Python: a bounded log that one publisher fills and any number of readers read, each at
 its own pace, in which a full log forgets its oldest entry.
 
 The contract is the sequential log of ADR 0062 section 2, and it is the same

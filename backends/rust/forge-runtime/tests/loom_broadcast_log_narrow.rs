@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Loom models of the narrow broadcast log (ADR 0062 section 4, "Stamp width"),
+//! Loom models of the narrow broadcast log (RFC §synth-5-S; ADR 0062 section 4, "Stamp width"),
 //! the memory-model layer of the proof that a stamp narrower than 64 bits, with its
 //! head and cursors taken modulo the stamp space, still gives the answers of the
 //! specification while a reader keeps the wrap bound.

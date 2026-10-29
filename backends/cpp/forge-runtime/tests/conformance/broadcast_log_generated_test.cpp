@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-// The broadcast-log kind's generated header (ADR 0062), compiled and run.
+// The broadcast-log kind's generated header (RFC §synth-5-S, ADR 0062), compiled and run.
 //
 // sce-build's tests read what the generator writes for a log and look for text in
 // it, which shows the text is what the template says and nothing about whether the

@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The specialised linearizability checker of the single-producer broadcast
-//! log (ADR 0062 section 5): a decision procedure that does not search.
+//! log (SCE Protocol-Synthesis RFC §synth-5-S; ADR 0062 section 5): a decision
+//! procedure that does not search.
 //!
 //! The general search of [`super::check_general`] is the definition of what
 //! linearizable means here, and in the worst case it visits every frontier of

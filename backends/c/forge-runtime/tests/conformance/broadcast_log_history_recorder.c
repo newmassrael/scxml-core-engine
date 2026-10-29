@@ -3,7 +3,7 @@
 
 /*
  * The C11 arm's stress runs of the `broadcast-log` kind, written as histories
- * (ADR 0062 section 6, layer 3).
+ * (RFC §synth-5-S; ADR 0062 section 6, layer 3).
  *
  * This program runs the runtime log of sce/forge/broadcast_log.h on real threads,
  * records every operation each thread made, and writes one history per run in the

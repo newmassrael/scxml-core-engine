@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! A linearizability checker for broadcast-log histories (ADR 0062 §5), and
-//! the one JSON format a history is written in.
+//! A linearizability checker for broadcast-log histories (SCE Protocol-Synthesis
+//! RFC §synth-5-S; ADR 0062 §5), and the one JSON format a history is written in.
 //!
 //! A history is what the participants of one run observed: the one publisher
 //! and each reader, their operations in program order, each with the instants

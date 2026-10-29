@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The bounded broadcast log on real threads (ADR 0062 section 6).
+//! The bounded broadcast log on real threads (RFC §synth-5-S; ADR 0062 section 6).
 //!
 //! These are ordinary tests and they run in the ordinary suite. Their job is to
 //! be the program Miri watches: Miri interprets the run, checks every access for

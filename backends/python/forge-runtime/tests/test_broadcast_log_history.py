@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The Python arm's stress runs of the `broadcast-log` kind, written as
-# histories (ADR 0062 section 5).
+# histories (RFC §synth-5-S; ADR 0062 section 5).
 #
 # These tests run the runtime log on real threads, record every operation each
 # thread made, and write one history per run in the JSON form every backend

@@ -1,5 +1,5 @@
-//! The Rust broadcast log on real threads, judged for linearizability (ADR
-//! 0062 section 6, layer 3).
+//! The Rust broadcast log on real threads, judged for linearizability (RFC
+//! §synth-5-S; ADR 0062 section 6, layer 3).
 //!
 //! One publisher and a few readers run against a log whose slots are reused many
 //! times over, and every call is recorded with the instants it began and ended,

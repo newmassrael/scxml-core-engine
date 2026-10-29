@@ -17,7 +17,7 @@
 #     same operations in any order are told the same. TLC must find no violation.
 #   * SharedListConflicts_arrival.cfg: the rule before that review (a conflicting operation is refused
 #     at the door and the device frozen from there). TLC must find the divergence the review found.
-#   * BroadcastLog.cfg, BroadcastLog_r1.cfg (docs/formal/BroadcastLog.tla, ADR 0062): the bounded log's
+#   * BroadcastLog.cfg, BroadcastLog_r1.cfg (docs/formal/BroadcastLog.tla, RFC §synth-5-S, ADR 0062): the bounded log's
 #     protocol, retention 2 and 1, one producer and two readers. TLC must find no violation.
 #   * BroadcastLog_without_extra_slot.cfg, BroadcastLog_without_revalidation.cfg: the ring with only R
 #     slots, and the read without its second stamp load. TLC must find an answer the specification does

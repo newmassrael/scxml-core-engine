@@ -17,7 +17,7 @@
 // survives, and one that does not survive is promoted to the list by whoever reads
 // that output.
 
-// Layer 3 of the broadcast-log kind's verification (ADR 0062 section 6): the C++
+// Layer 3 of the broadcast-log kind's verification (RFC §synth-5-S; ADR 0062 section 6): the C++
 // bounded log (sce/forge/broadcast_log.h) under GenMC, with a slot that is reused.
 // It is the C harness of the same name
 // (backends/c/forge-runtime/tests/genmc/broadcast_log_slot_reuse.c) over the C++

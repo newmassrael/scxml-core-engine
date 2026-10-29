@@ -4,6 +4,8 @@
 (* producer and any number of readers, kept in a ring of S slots, each     *)
 (* with a stamp and two payload words.                                     *)
 (*                                                                         *)
+(* Ledger section: §synth-5-S, the broadcast-log kind of the RFC.          *)
+(*                                                                         *)
 (* The producer writes a slot as: stamp := busy(n); the words; stamp :=    *)
 (* done(n); then head := n + 1. A reader holding cursor r loads head       *)
 (* (empty, or outside the window, or else), loads the stamp of slot        *)

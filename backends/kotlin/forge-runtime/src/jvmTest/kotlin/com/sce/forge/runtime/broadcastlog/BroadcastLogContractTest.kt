@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-// The Kotlin arm of the sequential contract of the bounded broadcast log (ADR
-// 0062 section 2): the unit tests of the Rust row
+// The Kotlin arm of the sequential contract of the bounded broadcast log (RFC
+// §synth-5-S; ADR 0062 section 2): the unit tests of the Rust row
 // (backends/rust/forge-runtime/src/broadcast_log.rs) carried over, then the
 // refusals and the edges this arm adds. Everything here runs on one thread, so
 // each test states what the log answers and not what a schedule gave.

@@ -56,7 +56,7 @@ shopt -u nullglob
 ( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq|Lscq' ./conformance/ ) \
     || sce_gate_fail "Go forge queue generated packages under the race detector"
 
-# The broadcast-log kind's Go arm (ADR 0062). The same two kinds of evidence as
+# The broadcast-log kind's Go arm (RFC §synth-5-S, ADR 0062). The same two kinds of evidence as
 # the queue's: the race detector over the runtime's tests, and the histories its
 # stress runs write, judged by the command every backend's broadcast histories
 # are judged by. The directory is emptied first for the same reason.

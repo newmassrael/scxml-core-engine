@@ -10,7 +10,7 @@
 // when this was written; the two fence mutants are left unlisted and the gate
 // prints each one that survives.
 
-// Layer 3 of the broadcast-log kind's verification (ADR 0062 section 6): the C++
+// Layer 3 of the broadcast-log kind's verification (RFC §synth-5-S; ADR 0062 section 6): the C++
 // bounded log (sce/forge/broadcast_log.h) under GenMC with two readers. It is the C
 // harness of the same name
 // (backends/c/forge-runtime/tests/genmc/broadcast_log_two_readers.c) over the C++

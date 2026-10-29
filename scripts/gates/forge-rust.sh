@@ -32,7 +32,8 @@ QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/rust"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
 
-# The broadcast log's runs are written and judged the same way (ADR 0062
+# The broadcast log's runs are written and judged the same way (RFC §synth-5-S,
+# ADR 0062
 # section 6, layer 3), in a directory of their own so that each command is
 # handed only the histories of its own kind.
 BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/rust"

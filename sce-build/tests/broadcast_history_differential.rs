@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The specialised broadcast-log checker held equal to the general search
-//! (ADR 0062 section 5).
+//! (RFC §synth-5-S; ADR 0062 section 5).
 //!
 //! The general search is the definition of what is linearizable; the
 //! specialised checker is admitted only while it gives the same verdict class

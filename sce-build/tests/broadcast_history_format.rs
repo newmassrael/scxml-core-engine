@@ -1,5 +1,5 @@
 //! The JSON form of a broadcast-log history and the command that judges it
-//! (ADR 0062 §5).
+//! (RFC §synth-5-S; ADR 0062 §5).
 //!
 //! The checker is one search written once; what each backend adds is a stress
 //! run that writes its observations in this form. So the form is held from

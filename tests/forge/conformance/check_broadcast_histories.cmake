@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Judge the histories an arm's broadcast-log stress runs wrote (ADR 0062) with the
+# Judge the histories an arm's broadcast-log stress runs wrote (RFC §synth-5-S,
+# ADR 0062) with the
 # command every backend's histories are judged by. Shared by the arms whose build
 # is CMake (C++ and C11), so the two read one script and not two copies of it. It
 # is check_queue_histories.cmake for the other command and the other format.

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The bounded broadcast log's one implementation (ADR 0062 sections 2 and 4),
-//! generic over the width of the atomics it keeps its stamps, its head and its
+//! The bounded broadcast log's one implementation (SCE Protocol-Synthesis RFC
+//! §synth-5-S; ADR 0062 sections 2 and 4), generic over the width of the atomics it keeps its stamps, its head and its
 //! words in. The rows a target gets are instantiations of it:
 //! [`crate::broadcast_log`] is the 64-bit row and [`crate::broadcast_log_narrow`]
 //! the row for a target without 64-bit atomics.

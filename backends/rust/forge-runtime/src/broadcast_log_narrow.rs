@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The bounded broadcast log, narrow row: the log of [`crate::broadcast_log`] for a
-//! target without 64-bit atomics (ADR 0062 section 4, "Stamp width"). The stamp,
+//! target without 64-bit atomics (SCE Protocol-Synthesis RFC §synth-5-S; ADR 0062
+//! section 4, "Stamp width"). The stamp,
 //! the head and every word are pointer-width atomics holding 32 bits, so the row
 //! needs no 64-bit atomic and no read-modify-write instruction: loads and
 //! stores alone, as the Lamport ring of [`crate::queue::spsc`] needs. It is the

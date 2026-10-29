@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+// The bounded broadcast log's slots and stamps (SCE Protocol-Synthesis RFC
+// §synth-5-S, ADR 0062); the contract and the argument are in Log.kt.
+
 @file:OptIn(ExperimentalAtomicApi::class)
 
 package com.sce.forge.runtime.broadcastlog

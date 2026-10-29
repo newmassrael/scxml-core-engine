@@ -19,7 +19,7 @@
  */
 
 /*
- * Layer 3 of the broadcast-log kind's verification (ADR 0062 section 6): the C11
+ * Layer 3 of the broadcast-log kind's verification (RFC §synth-5-S; ADR 0062 section 6): the C11
  * bounded log (sce/forge/broadcast_log.h) under GenMC, with a slot that is
  * reused. It is the C counterpart of the loom model
  * `a_reader_the_publisher_laps_is_told_how_far`

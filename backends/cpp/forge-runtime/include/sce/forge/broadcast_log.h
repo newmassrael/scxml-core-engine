@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // sce/forge/broadcast_log.h — the runtime half of `sce:kind="broadcast-log"`
-// (ADR 0062) for C++: one publisher, any number of readers, and the oldest entry
+// (SCE Protocol-Synthesis RFC §synth-5-S, ADR 0062) for C++: one publisher, any number of readers, and the oldest entry
 // forgotten when the log is full. The same algorithm as the Rust runtime
 // (backends/rust/forge-runtime/src/broadcast_log.rs), with the same memory orders
 // and the same two fences, because the orders are part of the algorithm and not a

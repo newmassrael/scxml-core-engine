@@ -61,7 +61,7 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/kotlin"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
-# The broadcast log's stress runs (ADR 0062) are written and emptied the same
+# The broadcast log's stress runs (RFC §synth-5-S, ADR 0062) are written and emptied the same
 # way, to SCE_BROADCAST_HISTORY_DIR, by the same Gradle run.
 BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/kotlin"
 rm -rf "$BROADCAST_HISTORIES"

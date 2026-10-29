@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael */
 
 /*
- * The broadcast-log kind's generated headers (ADR 0062), compiled and used.
+ * The broadcast-log kind's generated headers (RFC §synth-5-S, ADR 0062), compiled and used.
  *
  * sce-build's tests read what the generator writes for a log and look for text in
  * it, which shows the text is what the template says and nothing about whether

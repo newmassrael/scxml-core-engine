@@ -13147,7 +13147,8 @@ enum HistoryMethod {
     Specialised,
 }
 
-/// Judge recorded broadcast-log histories. See `Commands::CheckBroadcastHistory`.
+/// Judge recorded broadcast-log histories (RFC §synth-5-S). See
+/// `Commands::CheckBroadcastHistory`.
 fn cmd_check_broadcast_history(files: &[String], method: HistoryMethod) {
     use sce_build::broadcast_history::{judge, Ask, Declined, History};
     use sce_build::history_common::Verdict;

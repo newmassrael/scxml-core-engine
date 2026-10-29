@@ -43,7 +43,7 @@ pub mod attribute_spelling;
 /// way for every entry point, and pinned by an acceptance record.
 pub mod authoring_profile;
 /// The linearizability checker for broadcast-log histories and the JSON form
-/// a backend's stress run writes one in (ADR 0062 §5). Here, and not in a
+/// a backend's stress run writes one in (RFC §synth-5-S, ADR 0062 §5). Here, and not in a
 /// backend's tests, so `sce-codegen check-broadcast-history` judges the
 /// history of every backend.
 pub mod broadcast_history;

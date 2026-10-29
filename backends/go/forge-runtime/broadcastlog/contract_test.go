@@ -3,7 +3,7 @@
 
 package broadcastlog
 
-// The Go arm's contract tests of the broadcast log (ADR 0062 section 2): the
+// The Go arm's contract tests of the broadcast log (RFC §synth-5-S; ADR 0062 section 2): the
 // unit tests of the Rust row (backends/rust/forge-runtime/src/broadcast_log.rs)
 // ported, then a stress with one publisher goroutine and several reader
 // goroutines whose every answer is held against the contract. The stress is

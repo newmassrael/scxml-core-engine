@@ -2,7 +2,8 @@
 /* SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael */
 
 /*
- * SCE Forge -- the runtime half of `sce:kind="broadcast-log"` (ADR 0062) for C11:
+ * SCE Forge -- the runtime half of `sce:kind="broadcast-log"` (SCE
+ * Protocol-Synthesis RFC §synth-5-S, ADR 0062) for C11:
  * one publisher, any number of readers, and the oldest entry forgotten when the
  * log is full. The same algorithm as the Rust runtime
  * (backends/rust/forge-runtime/src/broadcast_log.rs), with the same memory

@@ -2818,7 +2818,7 @@ Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission. 
 
 ### Application: 2026-10-28 `broadcast-log` (a bounded log read by cursors its readers own)
 
-The request, from a downstream consumer, was an overflow policy for the `queue` kind (`sce:on-full="overwrite-oldest"`) and a way to read how many entries were overwritten. The design is ADR 0062.
+The request, from a downstream consumer, was an overflow policy for the `queue` kind (`sce:on-full="overwrite-oldest"`) and a way to read how many entries were overwritten. The design is ADR 0062, and its place in the Protocol-Synthesis RFC is §synth-5-S.
 
 | Axis | Pass/Fail | Reason |
 |---|---|---|

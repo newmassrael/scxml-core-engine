@@ -49,7 +49,7 @@ shopt -u nullglob
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Python queue histories are not linearizable"
 
-# The broadcast-log kind's Python arm (ADR 0062): the runtime's properties, the
+# The broadcast-log kind's Python arm (RFC §synth-5-S, ADR 0062): the runtime's properties, the
 # modules the generator writes for a log, and the stress runs, which write their
 # histories into the directory SCE_BROADCAST_HISTORY_DIR names, emptied first for
 # the reason above. One log under one lock, so the histories are judged against

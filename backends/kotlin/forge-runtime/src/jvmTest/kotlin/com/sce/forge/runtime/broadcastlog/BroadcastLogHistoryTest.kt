@@ -4,7 +4,7 @@
 @file:OptIn(ExperimentalAtomicApi::class)
 
 // The Kotlin arm's stress runs of the `broadcast-log` kind, written as histories
-// (ADR 0062 section 5 and section 6, layer 3).
+// (RFC §synth-5-S; ADR 0062 section 5 and section 6, layer 3).
 //
 // These tests run the log of this package on real threads, record every call the
 // publisher and each reader made, and write one history per run in the JSON form

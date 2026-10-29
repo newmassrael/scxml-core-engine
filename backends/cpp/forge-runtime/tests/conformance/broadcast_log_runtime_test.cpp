@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // sce/forge/broadcast_log.h — the C++ arm of the `broadcast-log` kind's layer 1
-// (ADR 0062): the unit tests of the Rust row
+// (RFC §synth-5-S, ADR 0062): the unit tests of the Rust row
 // (backends/rust/forge-runtime/src/broadcast_log.rs) run against the C++ runtime,
 // the properties the C++ row adds (a log in static storage is
 // constant-initialised, an oversized publish is refused), and real threads: one

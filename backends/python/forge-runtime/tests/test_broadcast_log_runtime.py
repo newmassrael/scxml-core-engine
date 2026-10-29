@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# The Python arm of the `broadcast-log` kind's runtime tests (ADR 0062): the
+# The Python arm of the `broadcast-log` kind's runtime tests (RFC §synth-5-S, ADR 0062): the
 # unit tests of the Rust row (backends/rust/forge-runtime/src/broadcast_log.rs)
 # ported to the runtime log (one ring under one lock), the properties of that
 # runtime the Rust tests do not state (the refusals of a constructor, the
