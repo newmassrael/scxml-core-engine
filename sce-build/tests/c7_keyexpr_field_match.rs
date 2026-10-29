@@ -643,11 +643,12 @@ fn compile_xdoc_caller_for(lang: Language) -> String {
 }
 
 /// The `<sce:call>` statement reaches an imported algorithm by the symbol
-/// the expression form calls — bare (`eq`) and dotted (`eq.bytes_equal`)
-/// alike — on every backend, whether or not its compiler is installed.
+/// the expression form calls — bare (`bytes_eq`) and dotted
+/// (`bytes_eq.bytes_equal`) alike — on every backend, whether or not its
+/// compiler is installed.
 ///
-/// ⚠ Measured 2026-09-23 before they were resolved: the bare statement
-/// was emitted verbatim as `eq(a, b)` on all six backends, and the dotted
+/// ⚠ Measured 2026-09-23 before they were resolved, when the alias was `eq`:
+/// the bare statement was emitted verbatim as `eq(a, b)` on all six backends, and the dotted
 /// one agreed with the expression form on Rust and C++ only (Go
 /// `eq.BytesEqual`, Python and Kotlin `eq.bytes_equal`, C
 /// `bytes_equal_bytes_equal`). The compile gates above reach the same

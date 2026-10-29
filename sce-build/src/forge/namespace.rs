@@ -226,11 +226,29 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
     out
 }
 
-/// Refuse the first name the document declares twice.
+/// Refuse the first name the document declares twice, and a callable it
+/// declares under a name of the expression vocabulary.
+///
+/// The vocabulary (`len`, `eq`, `round`, `floor` and the eight wrapping and
+/// saturating operations, docs/adr/0063) is declared before any document: a
+/// call of one of its names is the vocabulary's whatever the document says,
+/// so an import alias or a helper of that name would be shadowed without a
+/// word, and is one name declared twice. A value of that name is not: no
+/// expression calls a value, so a parameter `len` stays a parameter.
 pub fn check(parsed: &ParsedForge, document: &str) -> Result<(), Located<ForgeError>> {
     let kind: ForgeKind = parsed.document.kind();
     let mut first: BTreeMap<&str, Declared> = BTreeMap::new();
     for (name, what) in declarations(parsed) {
+        if matches!(what, Declared::ImportAlias | Declared::Helper)
+            && crate::forge::expr::vocabulary_names().any(|v| v == name)
+        {
+            let error = ValidationError::DuplicateId {
+                kind,
+                what: format!("name (expression vocabulary and {})", what.as_str()),
+                id: name.to_string(),
+            };
+            return Err(Located::new(error.into(), document, None, None));
+        }
         let Some(&earlier) = first.get(name) else {
             first.insert(name, what);
             continue;
@@ -327,6 +345,43 @@ mod tests {
                 if id == "frame" && what.contains("import alias")),
             "{e:?}"
         );
+    }
+
+    /// A call of a vocabulary name is the vocabulary's (docs/adr/0063), so an
+    /// import declared under one could never be called: refused where it is
+    /// declared, for the old names as for the new.
+    #[test]
+    fn an_import_named_like_a_vocabulary_name_is_refused() {
+        for alias in ["wrappingSub", "saturatingAdd", "round", "len"] {
+            let e = refusal(&format!(
+                r#"{HEAD} sce:kind="algorithm" name="a">
+                     <sce:import src="other.scxml" kind="algorithm" as="{alias}"/>
+                     <sce:signature><sce:param name="x" type="uint8"/><sce:return type="uint8"/></sce:signature>
+                     <sce:body><sce:return expr="x"/></sce:body>
+                   </scxml>"#
+            ));
+            assert!(
+                matches!(&e, ValidationError::DuplicateId { id, what, .. }
+                    if id == alias && what.contains("expression vocabulary") && what.contains("import alias")),
+                "{alias}: {e:?}"
+            );
+        }
+    }
+
+    /// A value is never called, so a parameter spelled like a vocabulary name
+    /// stays a parameter: only a callable collides.
+    #[test]
+    fn a_value_named_like_a_vocabulary_name_is_a_value() {
+        check(
+            &parse(&format!(
+                r#"{HEAD} sce:kind="algorithm" name="a">
+                     <sce:signature><sce:param name="len" type="uint8"/><sce:param name="wrappingAdd" type="uint8"/><sce:return type="uint8"/></sce:signature>
+                     <sce:body><sce:return expr="len"/></sce:body>
+                   </scxml>"#
+            )),
+            "t.scxml",
+        )
+        .expect("a value of a vocabulary name passes");
     }
 
     #[test]

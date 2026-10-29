@@ -5768,6 +5768,18 @@ fn real_to_int_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> Option<RealToI
 /// never calls past the parser ([`total_operation`]).
 const EXPR_BUILTINS: [&str; 4] = ["len", "eq", "round", "floor"];
 
+/// Every name the forge expression vocabulary provides without the document
+/// declaring it (docs/SCE_ACCEPTED_SUBSET.md §3.4.1): the four builtins and
+/// the eight wrapping and saturating operations. A call of one of them is the
+/// vocabulary's, whatever the document declares, so a callable the document
+/// declares under one of these names could never be called, and is refused
+/// where it is declared ([`crate::forge::namespace`]).
+pub(crate) fn vocabulary_names() -> impl Iterator<Item = &'static str> {
+    EXPR_BUILTINS
+        .into_iter()
+        .chain(ring_ops::VOCABULARY.iter().map(|(name, ..)| *name))
+}
+
 /// Refuse a call to a name nothing provides.
 ///
 /// ⚠ WHY THIS EXISTS. `infer_types` types an unresolved callee `Unknown` and

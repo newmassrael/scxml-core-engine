@@ -1503,6 +1503,14 @@ The last eight never fail, so they raise no `error.execution` in a
 rules (one declared integer type, a literal taking it, no operation of
 literals alone) and their lowering are SCE_FORGE.md §3.4.2.
 
+The twelve are declared before any document. A call of one of them is the
+vocabulary's whatever the document declares, so an import alias or an
+`<sce:helper>` the document declares under one of these names could never be
+called, and is refused where it is declared as `validation/duplicate-id`
+(`duplicate name (expression vocabulary and import alias)`). A value of such a
+name is not refused: no expression calls a value, so a parameter `len` stays a
+parameter.
+
 **And, in a transform's output expressions only, `previous(x)`** — the
 value field `x` of the same document held at the end of the previous
 activation. `x` is an input or an output of that document and nothing

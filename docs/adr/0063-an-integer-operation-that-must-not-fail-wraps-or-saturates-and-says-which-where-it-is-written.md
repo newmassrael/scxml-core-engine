@@ -143,10 +143,13 @@ because both are lowered by the one expression layer to the same emitters. In a 
 `error.execution`. Its operands are what they are: `wrappingAdd(a + 1, b)` checks `a + 1` by the contract and wraps the
 sum. A statechart with another data model is not affected.
 
-A document may not declare a callable (an import alias, an `<sce:helper>`, a stateful import's method name) spelled
-as a vocabulary name. Today the vocabulary wins silently over a declaration of the same name; the rule is held for
-all twelve names, not only the new ones, and the implementation measures the present behaviour before choosing the
-code it reports.
+A document may not declare a callable (an import alias, an `<sce:helper>`) spelled as a vocabulary name. The
+vocabulary wins over a declaration of the same name (the parser turns `wrappingAdd(…)` into the operation before any
+name is looked up, and `round(x)` was recognised by its callee's name), so such a declaration could never be called
+and was shadowed without a word. The rule is held for all twelve names, not only the new ones, by `forge::namespace`,
+which already refuses one name declared twice: the vocabulary is declared before the document, and the collision is
+`validation/duplicate-id` (`duplicate name (expression vocabulary and import alias)`). A value spelled like a
+vocabulary name (a parameter `len`) is not refused, because no expression calls a value.
 
 ### 5. The interval analysis
 
