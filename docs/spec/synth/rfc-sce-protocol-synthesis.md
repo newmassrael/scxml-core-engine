@@ -3964,12 +3964,10 @@ sequence number; an element that encodes to more than `MAX_ENCODED_BYTES` is
 refused by the codec and nothing is published) and `read(log, reader)`, whose
 answer is `Item{seq, element}`, `Empty` or `Lagged{skipped}`. A stored length
 above `MAX_ENCODED_BYTES` is a codec error and never an out-of-bounds read.
-A codec that takes flag inputs or a variant tag from its caller is held on
-every language: the entry stores them beside the bytes, `publish` takes them
-and the item `read` returns holds them. Which other element forms a given
-language's template holds is a matter of its borrowing model: a CBOR map entry
-of text or bytes is refused where the decoded form borrows its input (Rust),
-and held where it owns its bytes.
+A codec's flag inputs and variant tag are stored beside the bytes on every
+language; `publish` takes them and the item `read` returns holds them. A CBOR
+map entry of text or bytes is held where the decoded form owns its bytes and
+refused where it borrows its input (Rust).
 
 **Verification** (ADR 0062 §6; each layer answers a different question and none
 stands in for another):
