@@ -402,6 +402,9 @@ public enum WireValue {
     /// A byte string, written as its Latin-1 text.
     case bytes([UInt8])
 
+    /// A value that is absent, written as JSON `null`.
+    case null
+
     /// The value as JSON text.
     public var json: String {
         switch self {
@@ -412,6 +415,7 @@ public enum WireValue {
         case .real(let value): return value.isFinite ? numberText(value) : "null"
         case .truth(let value): return value ? "true" : "false"
         case .bytes(let value): return quoteJSON(bytesAsPayloadText(value))
+        case .null: return "null"
         }
     }
 }

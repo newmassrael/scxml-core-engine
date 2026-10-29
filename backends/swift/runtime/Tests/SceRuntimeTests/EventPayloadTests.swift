@@ -140,10 +140,11 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
         PayloadPair("t", .truth(false)),
         PayloadPair("s", .text("a\"b")),
         PayloadPair("b", .bytes([0x61, 0xFF])),
+        PayloadPair("absent", .null),
     ]
     #expect(
         payloadJSON(pairs)
-            == #"{"n":-4,"big":"18446744073709551615","wide":"-9223372036854775808","r":2.5,"t":false,"s":"a\"b","b":"aÿ"}"#
+            == #"{"n":-4,"big":"18446744073709551615","wide":"-9223372036854775808","r":2.5,"t":false,"s":"a\"b","b":"aÿ","absent":null}"#
     )
     #expect(WireValue.text("x").json == "\"x\"")
 }
