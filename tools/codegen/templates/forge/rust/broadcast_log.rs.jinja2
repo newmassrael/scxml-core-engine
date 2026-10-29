@@ -1,0 +1,146 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// ADR 0062 broadcast-log — a bounded log that one execution context appends
+// to and any number of readers read, each by a cursor of its own. The document
+// states the contract (element type `{{ element_type }}`, {{ producers }} producer,
+// `{{ declared_progress }}`, the last {{ retention }} entries retained) and names no algorithm;
+// the algorithm is the runtime's sequence-locked ring, and the memory ordering
+// is part of it, not a choice.
+//
+// An entry is the element's wire bytes, never a value: the log stores the
+// bytes the element document's codec writes, so a slot has no destructor to run
+// when it is overwritten, and a copy that was torn is thrown away unread.
+//
+// Operations (from `sce_forge_runtime::broadcast_log`, typed here over the
+// element):
+//   publish(&mut publisher, &element) -> Result<u64, CodecError>   wait-free; the entry's sequence number
+//   read(&log, &mut reader)           -> Result<Read, CodecError>  wait-free; an item, nothing new, or how many were missed
+// A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
+// and owns its cursor; the publisher is `log.publisher()`, taken once.
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+
+// The log's stamps and words are 64-bit atomics, and its publisher is handed out
+// by an 8-bit swap. The runtime has this module only where the target has both,
+// so a target without them says so here instead of leaving the build to find an
+// import that is not there.
+#[cfg(not(all(target_has_atomic = "64", target_has_atomic = "8")))]
+compile_error!("this broadcast log needs 64-bit atomics for its stamps and words and an 8-bit swap to hand out its publisher, and the target lacks one of them");
+
+use sce_forge_runtime::broadcast_log as runtime;
+use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};
+use super::{{ element_snake }}::{{ element_pascal }};
+{% if element_borrowed %}
+use super::{{ element_snake }}::{{ element_import }};
+{% endif %}
+
+/// The entries a reader may rely on (`<sce:retention>`): the last `RETENTION`
+/// published.
+pub const RETENTION: usize = {{ retention }};
+
+/// The slots the log keeps: one more than the retention, because the slot being
+/// overwritten is in flux and cannot be promised to a reader.
+pub const SLOTS: usize = RETENTION + 1;
+
+/// The most bytes the element `{{ element_type }}` encodes to, read from its
+/// document when this module was generated.
+pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
+
+/// The 64-bit words an entry holds: one for the length of the encoded element,
+/// then as many as `MAX_ENCODED_BYTES` bytes take at eight to a word, that is
+/// `1 + ceil(MAX_ENCODED_BYTES / 8)`.
+pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);
+
+/// What the document requires of publish and read (`<sce:progress>`).
+pub const DECLARED_PROGRESS: &str = "{{ declared_progress }}";
+
+/// The log: `SLOTS` slots of `WORDS` words. It owns its storage and allocates
+/// nothing, so it may be a `static`.
+pub type {{ pascal }} = runtime::BroadcastLog<WORDS, SLOTS>;
+
+/// The publishing side of the log, taken once with `publisher()`.
+pub type {{ pascal }}Publisher<'a> = runtime::Publisher<'a, WORDS, SLOTS>;
+
+/// What a typed read found: the runtime's three answers, with the entry decoded.
+#[derive(Debug, Clone, PartialEq)]
+pub enum {{ pascal }}Read {
+    /// The entry `seq`, decoded; the reader now holds `seq + 1`.
+    Item { seq: u64, element: {{ element_stored }} },
+    /// The reader is at the head: nothing newer is published.
+    Empty,
+    /// The reader had fallen behind the window and missed `skipped` (at least
+    /// one) entries; it now holds the oldest entry retained.
+    Lagged { skipped: u64 },
+}
+
+/// Publish `element`: encode it into a stack buffer of `MAX_ENCODED_BYTES`
+/// bytes, pack its length and its bytes (little-endian, eight to a word) into
+/// `WORDS` words, and hand them to the runtime, which never refuses and never
+/// waits. Returns the sequence number the entry took.
+///
+/// An element that encodes to more than `MAX_ENCODED_BYTES` bytes is refused by
+/// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
+/// published: an entry is never a truncated element.
+pub fn publish(
+    publisher: &mut {{ pascal }}Publisher<'_>,
+    element: &{{ element_pascal }},
+) -> Result<u64, CodecError> {
+    let mut bytes = [0u8; MAX_ENCODED_BYTES];
+    let mut sink = SliceSink::new(&mut bytes);
+    element.encode(&mut sink)?;
+    let length = sink.position();
+    let mut entry = [0u64; WORDS];
+    entry[0] = length as u64;
+    for (index, byte) in bytes[..length].iter().enumerate() {
+        entry[1 + index / 8] |= u64::from(*byte) << (8 * (index % 8));
+    }
+    Ok(publisher.publish(&entry))
+}
+
+/// Read the entry at `reader`'s cursor and decode it. The runtime answers `Item`
+/// only after the copy it made was checked against the slot, which is what makes
+/// decoding it safe: a torn copy is `Lagged`, never decoded.
+///
+/// A stored length above `MAX_ENCODED_BYTES` is not a length this log wrote, and
+/// is `CodecError::LengthOutOfRange` and never an out-of-bounds slice. The
+/// reader has moved past that entry either way.
+pub fn read(
+    log: &{{ pascal }},
+    reader: &mut runtime::Reader,
+) -> Result<{{ pascal }}Read, CodecError> {
+    let mut entry = [0u64; WORDS];
+    match log.read(reader, &mut entry) {
+        runtime::Read::Item { seq } => {
+            let stored = entry[0];
+            if stored > MAX_ENCODED_BYTES as u64 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let length = stored as usize;
+            let mut bytes = [0u8; MAX_ENCODED_BYTES];
+            for (index, byte) in bytes[..length].iter_mut().enumerate() {
+                *byte = (entry[1 + index / 8] >> (8 * (index % 8))) as u8;
+            }
+            let mut cursor = SceCursor::new(&bytes[..length]);
+{% if element_borrowed %}
+            // The decoded form borrows `bytes`, which does not outlive this call:
+            // the entry is returned as the element's owned form.
+            let element = {{ element_pascal }}::decode(&mut cursor)?
+                .try_into_owned_in::<::sce_forge_runtime::codec::Inline>()?;
+{% else %}
+            let element = {{ element_pascal }}::decode(&mut cursor)?;
+{% endif %}
+            Ok({{ pascal }}Read::Item { seq, element })
+        }
+        runtime::Read::Empty => Ok({{ pascal }}Read::Empty),
+        runtime::Read::Lagged { skipped } => Ok({{ pascal }}Read::Lagged { skipped }),
+    }
+}

@@ -620,8 +620,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "the loss is reported to the reader that suffered it and counted nowhere else: \
                  the log keeps no count of overwrites",
                 "the document names no algorithm and no memory ordering",
-                "no backend generates it yet: a valid document is refused by name \
-                 (broadcast-log/runtime-missing) until a language's runtime has its row",
+                "only the rust backend generates it so far, from a document set that holds \
+                 the element's document: on every other backend a valid document is refused \
+                 by name (broadcast-log/runtime-missing) until that language has its template",
             ],
             example: Example::Document(include_str!("../../kind-examples/broadcast-log.scxml")),
         },
@@ -727,8 +728,9 @@ pub struct KindRecord {
     pub inline_eligible: bool,
     /// The backends that emit the kind — [`codegen_matrix::lookup`]. Empty for
     /// a [`codegen_matrix::KindClass::Declaration`], which emits nothing on any
-    /// backend, and for a kind whose runtime no backend has yet
-    /// ([`codegen_matrix::awaits_runtime`]).
+    /// backend. A backend whose runtime row has not landed for the kind
+    /// ([`codegen_matrix::awaits_runtime`]) is not listed: generating it there
+    /// is refused by name.
     pub backends: Vec<&'static str>,
     pub example: ExampleRecord,
 }

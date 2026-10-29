@@ -66,7 +66,9 @@ pub enum EmitOutcome {
     /// not landed on this one ([`awaits_runtime`]): [`check`] lets it through to
     /// the dispatch, which refuses the document by name with the kind's own code
     /// (`broadcast-log/runtime-missing`). Not an emitting backend, so
-    /// [`emitting`] and the catalog's `backends` leave it out.
+    /// [`emitting`] and the catalog's `backends` leave it out. A backend whose
+    /// row and template have landed answers [`EmitOutcome::Emit`] for the same
+    /// kind.
     RuntimeMissing,
 }
 
@@ -110,9 +112,9 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // not landed yet is `codegen/generic-kind-backend-emit-missing`.
         | ForgeKind::Queue
         // ADR 0062: a broadcast log is specified for all six backends (Python
-        // at `blocking` only). A backend whose runtime has no row yet is
-        // `broadcast-log/runtime-missing`, not a missing template
-        // ([`awaits_runtime`]).
+        // at `blocking` only). A backend whose runtime row or template has not
+        // landed yet is `broadcast-log/runtime-missing`, not a missing
+        // template ([`awaits_runtime`]).
         | ForgeKind::BroadcastLog => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
@@ -311,14 +313,16 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Swift => false,
         },
         // ADR 0062 BroadcastLog: the algorithm lives once per language in that
-        // language's forge runtime, and no runtime has the row yet (the order
-        // of landing is Rust, then C11 and C++, then Go, Kotlin and Python;
-        // Swift stays refused). Each backend flips to `true` in the change
-        // that gives it the row and the template, and [`awaits_runtime`] stops
-        // answering for the kind when the last of them has.
+        // language's forge runtime, and the template that stores a document's
+        // element over it ships per language (the order of landing is Rust,
+        // then C11 and C++, then Go, Kotlin and Python; Swift stays refused).
+        // Rust's has landed (`forge/rust/broadcast_log.rs.jinja2`, over
+        // `sce_forge_runtime::broadcast_log`); each other backend flips to
+        // `true` in the change that gives it the template, and
+        // [`awaits_runtime`] stops answering for it then.
         ForgeKind::BroadcastLog => match lang {
-            Language::Rust
-            | Language::Cpp
+            Language::Rust => true,
+            Language::Cpp
             | Language::Go
             | Language::Kotlin
             | Language::Python
@@ -328,19 +332,34 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
     }
 }
 
-/// Whether `kind` is a valid kind whose absence of a template on a backend is
-/// a runtime that has not landed there yet, and not a defect of the generator.
+/// Whether `kind` is a valid kind whose absence of a template on `lang` is a
+/// runtime row that has not landed there yet, and not a defect of the generator.
 ///
 /// A [`KindClass::Generic`] kind with no template on a backend is, by default,
 /// `codegen/generic-kind-backend-emit-missing`: the matrix says the backend
 /// should have emitted it, and none does. A kind that is parsed and checked
-/// before any runtime has its row is not that: its document is valid and the
-/// refusal is the kind's own code, which names the document and the language
-/// (`broadcast-log/runtime-missing`, ADR 0062). [`lookup`] answers
+/// before a language's runtime has its row is not that: its document is valid
+/// and the refusal is the kind's own code, which names the document and the
+/// language (`broadcast-log/runtime-missing`, ADR 0062). [`lookup`] answers
 /// [`EmitOutcome::RuntimeMissing`] for it, and the generator's dispatch builds
 /// the refusal where the document is in hand.
-pub const fn awaits_runtime(kind: ForgeKind) -> bool {
-    matches!(kind, ForgeKind::BroadcastLog)
+///
+/// The answer is per language because the rows land one language at a time: a
+/// language whose template ships ([`template_ships`]) is out of it, and the
+/// kind stops being answered for at all when the last language has landed.
+pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
+    match kind {
+        ForgeKind::BroadcastLog => match lang {
+            Language::Rust => false,
+            Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => true,
+        },
+        _ => false,
+    }
 }
 
 /// Whether the template for `(kind, lang)` ships but lowers only part of what the
@@ -401,7 +420,7 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
         KindClass::Generic => {
             if template_ships(kind, lang) {
                 EmitOutcome::Emit
-            } else if awaits_runtime(kind) {
+            } else if awaits_runtime(kind, lang) {
                 EmitOutcome::RuntimeMissing
             } else {
                 EmitOutcome::TemplateMissing
@@ -819,6 +838,52 @@ mod tests {
                 ForgeKind::Algorithm,
                 lang,
             );
+        }
+    }
+
+    /// ADR 0062: a broadcast log is emitted by Rust, whose runtime row and
+    /// template have landed, and every other language still awaits its
+    /// runtime. The per-language answer of `awaits_runtime` and the matrix's
+    /// `template_ships` are never both true for one pair, and a pair that
+    /// ships is never the missing-runtime one.
+    #[test]
+    fn a_broadcast_log_is_emitted_by_rust_alone() {
+        assert_eq!(
+            lookup(ForgeKind::BroadcastLog, Language::Rust),
+            EmitOutcome::Emit
+        );
+        assert!(template_ships(ForgeKind::BroadcastLog, Language::Rust));
+        assert!(!awaits_runtime(ForgeKind::BroadcastLog, Language::Rust));
+        for &lang in Language::ALL {
+            if lang == Language::Rust {
+                continue;
+            }
+            assert_eq!(
+                lookup(ForgeKind::BroadcastLog, lang),
+                EmitOutcome::RuntimeMissing,
+                "{lang:?}"
+            );
+            assert!(!template_ships(ForgeKind::BroadcastLog, lang), "{lang:?}");
+            assert!(awaits_runtime(ForgeKind::BroadcastLog, lang), "{lang:?}");
+        }
+        assert_eq!(
+            emitting(ForgeKind::BroadcastLog).collect::<Vec<_>>(),
+            vec![Language::Rust]
+        );
+    }
+
+    /// No kind but the broadcast log awaits a runtime, and no pair that ships
+    /// a template awaits one.
+    #[test]
+    fn only_a_pair_with_no_template_awaits_its_runtime() {
+        for name in ForgeKind::ALL_ATTR_NAMES {
+            let kind = ForgeKind::from_attr(name).expect("every attribute name parses");
+            for &lang in Language::ALL {
+                if awaits_runtime(kind, lang) {
+                    assert_eq!(kind, ForgeKind::BroadcastLog, "{kind:?} on {lang:?}");
+                    assert!(!template_ships(kind, lang), "{kind:?} on {lang:?}");
+                }
+            }
         }
     }
 

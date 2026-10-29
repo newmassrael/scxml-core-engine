@@ -10,6 +10,7 @@
 //! language is refused by name (`broadcast-log/runtime-missing`), and never as
 //! a template the generator forgot (`codegen/generic-kind-backend-emit-missing`).
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,7 +33,8 @@ use sce_build::forge::parser::parse_forge;
 use sce_build::generator::Language;
 use sce_build::mesh::deploy::{parse_deploy_str, DeployConfig};
 use sce_build::{
-    compile_forge_from_string, resolve_broadcast_log_retention, DocumentLabel, ForgeCompileOptions,
+    compile_forge_from_string, compile_forge_with_imports, resolve_broadcast_log_retention,
+    BroadcastLogResolution, DocumentLabel, ForgeCompileOptions,
 };
 
 fn label(name: &'static str) -> DocumentLabel<'static> {
@@ -708,6 +710,16 @@ fn compile_documents(
     language: Language,
     documents: &[(&str, &String)],
 ) -> Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>> {
+    compile_documents_with(language, documents, &options_for(language), None)
+}
+
+/// [`compile_documents`] with the options and the deploy the test gives.
+fn compile_documents_with(
+    language: Language,
+    documents: &[(&str, &String)],
+    options: &ForgeCompileOptions,
+    deploy: Option<&DeployConfig>,
+) -> Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>> {
     let dir = tempdir().expect("tempdir");
     let paths: Vec<PathBuf> = documents
         .iter()
@@ -723,8 +735,8 @@ fn compile_documents(
         &forge_files,
         &sce_build::find_template_dir_for(language),
         language,
-        &options_for(language),
-        None,
+        options,
+        deploy,
     )
 }
 
@@ -775,7 +787,9 @@ fn refusal_codes(
 ) -> Vec<DiagnosticCode> {
     result
         .err()
-        .unwrap_or_else(|| panic!("no runtime has a broadcast-log row yet, so the set is refused"))
+        .unwrap_or_else(|| {
+            panic!("the language has no broadcast-log row yet, so the set is refused")
+        })
         .error
         .to_diagnostics()
         .iter()
@@ -901,7 +915,7 @@ fn an_element_that_embeds_a_codec_with_no_bound_is_refused_through_the_embed() {
 #[test]
 fn an_element_whose_every_field_is_bounded_is_not_refused_for_its_size() {
     // Reached the missing runtime instead: the one refusal a valid document
-    // has while no language has a row.
+    // has on a language that has no row yet (C++ has none).
     let xml = event_ring();
     for (name, codec) in [
         ("a fixed record", codec_doc("event_record")),
@@ -911,7 +925,7 @@ fn an_element_whose_every_field_is_bounded_is_not_refused_for_its_size() {
         ),
     ] {
         let codes = refusal_codes(compile_documents(
-            Language::Rust,
+            Language::Cpp,
             &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
         ));
         assert!(
@@ -941,7 +955,7 @@ fn an_element_that_embeds_a_bounded_codec_is_not_refused_for_its_size() {
         r#"<data id="blob" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="16"/>"#,
     );
     let codes = refusal_codes(compile_documents(
-        Language::Rust,
+        Language::Cpp,
         &[
             ("event_ring.scxml", &xml),
             ("event_record.scxml", &parent),
@@ -957,7 +971,7 @@ fn an_element_that_embeds_a_bounded_codec_is_not_refused_for_its_size() {
     );
 }
 
-// --- Generation: every language refuses by name while none has the row ---
+// --- Generation: a language with no row refuses by name, Rust generates ---
 
 fn options_for(language: Language) -> ForgeCompileOptions {
     match language {
@@ -975,14 +989,18 @@ fn options_for(language: Language) -> ForgeCompileOptions {
 }
 
 #[test]
-fn a_valid_document_is_refused_by_name_on_every_language() {
+fn a_valid_document_is_refused_by_name_on_every_language_but_rust() {
     let xml = simple_doc(
         "event_ring",
         "one",
         "blocking",
         r#"<sce:retention entries="1023"/>"#,
     );
-    for language in Language::ALL.iter().copied() {
+    for language in Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::Rust)
+    {
         let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
         let located = if language == Language::Swift {
             compile_forge_from_string(&xml, label("event_ring"), language)
@@ -1003,7 +1021,7 @@ fn a_valid_document_is_refused_by_name_on_every_language() {
                 None,
             )
             .err()
-            .unwrap_or_else(|| panic!("{wire}: no runtime has a broadcast-log row yet"))
+            .unwrap_or_else(|| panic!("{wire}: this language has no broadcast-log row yet"))
         };
         let codes: Vec<DiagnosticCode> = located
             .error
@@ -1059,10 +1077,11 @@ fn a_progress_the_python_backend_cannot_give_is_refused_before_the_missing_runti
         other => panic!("expected BroadcastLogProgressUnreachableOnBackend, got {other:?}"),
     }
 
-    // A backend that can give it reaches the missing runtime instead.
-    let located = compile_forge_from_string(&xml, label("event_ring"), Language::Rust)
+    // A backend that can give it and has no row yet (C++) reaches the missing
+    // runtime instead.
+    let located = compile_forge_from_string(&xml, label("event_ring"), Language::Cpp)
         .err()
-        .unwrap_or_else(|| panic!("no runtime has a row yet, so rust refuses the document"));
+        .unwrap_or_else(|| panic!("c++ has no row yet, so it refuses the document"));
     assert!(matches!(
         generate_error(located),
         GenerateError::BroadcastLogRuntimeMissing { .. }
@@ -1083,40 +1102,517 @@ fn the_ceiling_of_each_language_is_its_runtimes() {
     }
 }
 
-// --- The matrix: a valid kind that awaits its runtime ---
+// --- Rust generates the log over its runtime row ---
+
+/// The generated Rust of the log `event_ring`, out of the outputs of a set that
+/// generated.
+fn generated_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    outputs
+        .into_iter()
+        .flat_map(|(_, output)| output.files)
+        .find(|(file, _)| file == "event_ring.rs")
+        .map(|(_, code)| code)
+        .expect("the set generated the log's module")
+}
+
+/// The text of a generated module must hold every line of `needles`.
+fn assert_holds(code: &str, needles: &[&str]) {
+    for needle in needles {
+        assert!(code.contains(needle), "missing `{needle}` in:\n{code}");
+    }
+}
 
 #[test]
-fn the_matrix_says_the_runtime_is_missing_and_not_that_a_template_is() {
-    assert!(awaits_runtime(ForgeKind::BroadcastLog));
-    assert!(!awaits_runtime(ForgeKind::Queue));
+fn rust_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; a slot is then
+    // 1 + ceil(4 / 8) = 1 + 1 = 2 words, which the module computes and does not
+    // restate.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("rust generates a broadcast log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            r#"// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "// Runtime: sce_forge_runtime::broadcast_log",
+            "use sce_forge_runtime::broadcast_log as runtime;",
+            "use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};",
+            "use super::event_record::EventRecord;",
+            "pub const RETENTION: usize = 7;",
+            "pub const SLOTS: usize = RETENTION + 1;",
+            "pub const MAX_ENCODED_BYTES: usize = 4;",
+            "pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);",
+            r#"pub const DECLARED_PROGRESS: &str = "wait-free";"#,
+            "pub type EventRing = runtime::BroadcastLog<WORDS, SLOTS>;",
+            "pub type EventRingPublisher<'a> = runtime::Publisher<'a, WORDS, SLOTS>;",
+            "pub enum EventRingRead {",
+            "Item { seq: u64, element: EventRecord },",
+            "pub fn publish(",
+            "publisher: &mut EventRingPublisher<'_>,",
+            "element: &EventRecord,",
+            "let mut sink = SliceSink::new(&mut bytes);",
+            "element.encode(&mut sink)?;",
+            "pub fn read(",
+            "log: &EventRing,",
+            "runtime::Read::Item { seq } => {",
+            "let element = EventRecord::decode(&mut cursor)?;",
+        ],
+    );
+    // A stored length above the bound is refused before any slice is cut by it.
+    let check = code
+        .find("if stored > MAX_ENCODED_BYTES as u64 {")
+        .expect("the stored length is checked against the bound");
+    let refusal = code[check..]
+        .find("return Err(CodecError::LengthOutOfRange);")
+        .expect("a length above the bound is a codec error");
+    let slice = code[check..]
+        .find("bytes[..length]")
+        .expect("the entry's bytes are cut by the length");
+    assert!(
+        refusal < slice,
+        "the refusal comes before the slice the length cuts:\n{code}"
+    );
+    assert!(
+        !code.contains("EventRecordOwned"),
+        "a record that borrows nothing is its own stored form:\n{code}"
+    );
+}
+
+#[test]
+fn the_compile_error_is_gated_by_the_cfg_the_runtime_module_is() {
+    let lib = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/rust/forge-runtime/src/lib.rs"),
+    )
+    .expect("the runtime's lib.rs");
+    let at = lib
+        .find("pub mod broadcast_log;")
+        .expect("the runtime has the broadcast_log module");
+    let gate = lib[..at]
+        .lines()
+        .last()
+        .expect("a line precedes the module")
+        .trim()
+        .strip_prefix("#[cfg(")
+        .and_then(|rest| rest.strip_suffix(")]"))
+        .expect("the module is gated by one cfg attribute")
+        .to_string();
+
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("rust generates a broadcast log"),
+    );
+    assert!(
+        code.contains(&format!("#[cfg(not({gate}))]\ncompile_error!(")),
+        "the generated module refuses a target the runtime module is absent on, under the \
+         cfg `{gate}`:\n{code}"
+    );
+}
+
+#[test]
+fn an_element_that_borrows_its_buffer_is_stored_as_its_owned_form() {
+    // A one-byte head and a payload of at most 64 bytes: 1 + 64 = 65 bytes, so
+    // a slot is 1 + ceil(65 / 8) = 1 + 9 = 10 words. The payload is a view of
+    // the buffer it was decoded from, so the log hands back the owned mirror.
+    let xml = event_ring();
+    let codec = codec_with("event_record", "", BOUNDED_FIELDS);
+    let code = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("rust generates a broadcast log over a borrowing element"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "pub const MAX_ENCODED_BYTES: usize = 65;",
+            "use super::event_record::EventRecord;",
+            "use super::event_record::EventRecordOwned;",
+            "Item { seq: u64, element: EventRecordOwned<::sce_forge_runtime::codec::Inline> },",
+            "element: &EventRecord,",
+            "let element = EventRecord::decode(&mut cursor)?",
+            ".try_into_owned_in::<::sce_forge_runtime::codec::Inline>()?;",
+        ],
+    );
+}
+
+/// A codec `event_record` that no log can hold: its `encode` and `decode` take a
+/// flag input from the caller.
+fn flag_input_codec() -> String {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="event_record" version="1.0">
+  <sce:flag-inputs>
+    <sce:flag-input name="S" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="detail" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="S"/>
+  </datamodel>
+</scxml>"##
+        .to_string()
+}
+
+/// A CBOR codec `event_record` whose one entry is `entry`.
+fn cbor_codec_with(entry: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="event_record" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    {entry}
+  </datamodel>
+</scxml>"##
+    )
+}
+
+#[test]
+fn an_element_whose_signature_asks_the_caller_for_more_is_refused_by_name() {
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::Rust,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    match generate_error(located) {
+        GenerateError::InvalidConfig(detail) => {
+            assert!(
+                detail.contains("the element 'event_record' cannot be stored by the Rust template"),
+                "{detail}"
+            );
+            assert!(detail.contains("flag input(s) S"), "{detail}");
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_held() {
+    let xml = event_ring();
+    let borrowing = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let located = compile_documents(
+        Language::Rust,
+        &[
+            ("event_ring.scxml", &xml),
+            ("event_record.scxml", &borrowing),
+        ],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a string entry borrows the buffer, so the set is refused"));
+    match generate_error(located) {
+        GenerateError::InvalidConfig(detail) => {
+            assert!(detail.contains("a CBOR map with a string"), "{detail}");
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+
+    let scalar =
+        cbor_codec_with(r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#);
+    let code = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &scalar)],
+        )
+        .expect("a map of scalars borrows nothing, so rust generates the log"),
+    );
+    assert_holds(&code, &["use super::event_record::EventRecord;"]);
+}
+
+// --- The numbers a render reads, supplied by hand ---
+
+fn resolution_options(
+    retention: Option<u32>,
+    element_max_bytes: u64,
+    element_unsupported: Option<&str>,
+) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        broadcast_log_resolutions: Some(HashMap::from([(
+            "event_ring".to_string(),
+            BroadcastLogResolution {
+                retention,
+                element_max_bytes,
+                element_unsupported: element_unsupported.map(str::to_string),
+            },
+        )])),
+        ..ForgeCompileOptions::default()
+    }
+}
+
+/// The generated Rust of the single document `xml`, compiled with `options`.
+fn compile_single(xml: &str, options: &ForgeCompileOptions) -> Result<String, Located<ForgeError>> {
+    compile_forge_with_imports(
+        xml,
+        label("event_ring"),
+        Language::Rust,
+        Path::new("."),
+        options,
+    )
+    .map(|output| {
+        output
+            .files
+            .into_iter()
+            .find(|(file, _)| file == "event_ring.rs")
+            .map(|(_, code)| code)
+            .expect("the log's module")
+    })
+}
+
+const DEPLOY_KEY_RETENTION: &str =
+    r#"<sce:retention source="deploy" key="machines.mcu_node.limits.event_retention"/>"#;
+
+fn deploy_key_ring() -> String {
+    simple_doc("event_ring", "one", "wait-free", DEPLOY_KEY_RETENTION)
+}
+
+fn invalid_config(located: Located<ForgeError>) -> String {
+    match generate_error(located) {
+        GenerateError::InvalidConfig(detail) => detail,
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_single_document_with_no_resolution_is_refused_naming_what_is_missing() {
+    let located = compile_single(&event_ring(), &ForgeCompileOptions::default())
+        .err()
+        .unwrap_or_else(|| panic!("no number is guessed, so a log with no resolution is refused"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+    assert!(detail.contains("the element 'event_record'"), "{detail}");
+    assert!(
+        detail.contains("ForgeCompileOptions::broadcast_log_resolutions"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_deploy_key_the_set_could_not_resolve_is_refused_on_the_retention_row() {
+    let xml = deploy_key_ring();
+    let located = compile_single(&xml, &resolution_options(None, 4, None))
+        .err()
+        .unwrap_or_else(|| panic!("an unresolved retention is not guessed"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("machines.mcu_node.limits.event_retention"),
+        "{detail}"
+    );
+    assert!(detail.contains("target machine"), "{detail}");
+}
+
+#[test]
+fn a_resolved_retention_and_size_become_the_modules_constants() {
+    // 9 bytes encode to words of 1 + ceil(9 / 8) = 1 + 2 = 3, computed by the
+    // module from the constant below.
+    let code = compile_single(&deploy_key_ring(), &resolution_options(Some(15), 9, None))
+        .expect("a resolved log generates");
+    assert_holds(
+        &code,
+        &[
+            "pub const RETENTION: usize = 15;",
+            "pub const SLOTS: usize = RETENTION + 1;",
+            "pub const MAX_ENCODED_BYTES: usize = 9;",
+        ],
+    );
+}
+
+#[test]
+fn a_literal_retention_is_the_documents_whatever_the_resolution_says() {
+    let code = compile_single(&event_ring(), &resolution_options(Some(99), 4, None))
+        .expect("a literal needs no resolution of its own");
+    assert!(code.contains("pub const RETENTION: usize = 7;"), "{code}");
+    assert!(!code.contains("= 99;"), "{code}");
+}
+
+#[test]
+fn a_retention_that_resolves_to_nothing_is_refused() {
+    let xml = deploy_key_ring();
+    let located = compile_single(&xml, &resolution_options(Some(0), 4, None))
+        .err()
+        .unwrap_or_else(|| panic!("a log retains at least one entry"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    assert!(
+        invalid_config(located).contains("the retention resolves to 0"),
+        "a limit of 0 keeps one slot, which the protocol cannot represent"
+    );
+}
+
+#[test]
+fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
+    let xml = event_ring();
+    let why = "its decode takes the variant's tag from the caller, and a log has none to give";
+    let located = compile_single(&xml, &resolution_options(None, 4, Some(why)))
+        .err()
+        .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the Rust template"),
+        "{detail}"
+    );
+    assert!(detail.contains(why), "{detail}");
+}
+
+// --- The set resolves a deploy key against the machine it is generated for ---
+
+#[test]
+fn a_deploy_key_retention_is_read_from_the_target_machines_limits() {
+    // The element is one `uint32`: 4 bytes.
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_log(
+        compile_documents_with(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&cfg),
+        )
+        .expect("the deploy resolves the key"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "pub const RETENTION: usize = 15;",
+            "pub const MAX_ENCODED_BYTES: usize = 4;",
+        ],
+    );
+}
+
+#[test]
+fn a_deploy_key_with_no_target_machine_is_refused_and_not_guessed() {
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let located = compile_documents_with(
+        Language::Rust,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        &ForgeCompileOptions::default(),
+        Some(&cfg),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a deploy with no target machine resolves nothing"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    assert!(
+        invalid_config(located).contains("target machine"),
+        "the refusal says what is missing"
+    );
+}
+
+#[test]
+fn a_deploy_key_naming_an_undeclared_limit_is_refused_with_the_limits_there_are() {
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          other_limit: 3");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let located = compile_documents_with(
+        Language::Rust,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        &options,
+        Some(&cfg),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the key names a limit the machine does not declare"));
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("declared limits today: other_limit"),
+        "{detail}"
+    );
+}
+
+// --- The matrix: Rust emits, the other languages await their runtime ---
+
+#[test]
+fn the_matrix_emits_for_rust_and_says_the_runtime_is_missing_elsewhere() {
+    assert!(!awaits_runtime(ForgeKind::Queue, Language::Rust));
+    assert!(!awaits_runtime(ForgeKind::Queue, Language::Cpp));
     assert_eq!(
         sce_build::forge::codegen_matrix::kind_class(ForgeKind::BroadcastLog),
         KindClass::Generic
     );
     for language in Language::ALL.iter().copied() {
-        assert!(!template_ships(ForgeKind::BroadcastLog, language));
+        let rust = language == Language::Rust;
+        assert_eq!(
+            template_ships(ForgeKind::BroadcastLog, language),
+            rust,
+            "{language:?}"
+        );
+        assert_eq!(
+            awaits_runtime(ForgeKind::BroadcastLog, language),
+            !rust,
+            "{language:?}"
+        );
         assert_eq!(
             lookup(ForgeKind::BroadcastLog, language),
-            EmitOutcome::RuntimeMissing,
+            if rust {
+                EmitOutcome::Emit
+            } else {
+                EmitOutcome::RuntimeMissing
+            },
             "{language:?}"
         );
         assert!(
             check(ForgeKind::BroadcastLog, language).is_ok(),
-            "the dispatch refuses it by name, so the matrix lets it through: {language:?}"
+            "Rust emits it and the dispatch of every other refuses it by name, so the matrix \
+             lets it through: {language:?}"
         );
     }
-    assert_eq!(emitting(ForgeKind::BroadcastLog).count(), 0);
+    assert_eq!(
+        emitting(ForgeKind::BroadcastLog).collect::<Vec<_>>(),
+        vec![Language::Rust]
+    );
 }
 
 // --- The catalog and the page ---
 
 #[test]
-fn the_catalog_teaches_the_kind_and_says_no_backend_emits_it() {
+fn the_catalog_teaches_the_kind_and_says_only_rust_emits_it() {
     let catalog = KindCatalog::new(Some(ForgeKind::BroadcastLog));
     assert_eq!(catalog.kinds.len(), 1);
     let record = &catalog.kinds[0];
     assert_eq!(record.name, ForgeKind::BroadcastLog);
-    assert!(record.backends.is_empty());
+    assert_eq!(record.backends, ["rust"]);
     assert!(!record.choose_when.is_empty());
     assert!(
         record

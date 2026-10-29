@@ -475,7 +475,8 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "rust",
         "the machine of `--deploy` a queue document is resolved against: its \
          deploy keys and the target's atomics (`platform.atomic_rmw_width`), \
-         which decide whether the C11 backend can build the queue at all; \
+         which decide whether the C11 backend can build the queue at all, and \
+         the deploy key of a broadcast log's retention; \
          present on `check` and `orchestrate`, on whose document-set route the \
          same resolution runs",
     ),

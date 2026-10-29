@@ -1741,10 +1741,11 @@ pub fn generate_cpp_with_imports_and_externs(
         // ring and SCQ (`sce/forge/queue.h`); the bounded storage mode is
         // lowered and the others are refused by name inside the render.
         ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
-        // ADR 0062: a broadcast log is parsed and checked, and no language's
-        // forge runtime has its row yet, so every dispatch refuses it by name
-        // ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it through
-        // to here, since only the dispatcher has the document.
+        // ADR 0062: a broadcast log is parsed and checked on every backend, and
+        // lowered by the ones whose runtime row and template have landed
+        // (Rust's, [`render_broadcast_log_rust`]); every other dispatch refuses
+        // it by name ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it
+        // through to here, since only the dispatcher has the document.
         ForgeDocument::BroadcastLog(m) => {
             return Err(refuse_broadcast_log(m, crate::generator::Language::Cpp))
         }
@@ -19773,10 +19774,12 @@ pub fn generate_rust_with_imports_and_externs(
         // RFC §synth-5-P: the generated type names a queue of
         // `sce_forge_runtime::queue`, which has the bounded storage mode.
         ForgeDocument::Queue(m) => render_queue_rust(&env, m, imports, options)?,
-        // Broadcast log: see cpp dispatch.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::Rust))
-        }
+        // ADR 0062: Rust's forge runtime has the broadcast-log row
+        // (`sce_forge_runtime::broadcast_log`), so the document is lowered over
+        // it. The resolved retention and element size ride
+        // `options.broadcast_log_resolutions`, populated by the document-set
+        // compile ([`compile_scxml_with_imports`]).
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_rust(&env, m, imports, options)?,
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -20889,44 +20892,180 @@ fn render_queue_cpp(
     })
 }
 
+/// The word a progress is written as in a document and in generated code.
+fn queue_progress_word(progress: crate::forge::model::QueueProgress) -> &'static str {
+    match progress {
+        crate::forge::model::QueueProgress::WaitFree => "wait-free",
+        crate::forge::model::QueueProgress::LockFree => "lock-free",
+        crate::forge::model::QueueProgress::Blocking => "blocking",
+    }
+}
+
+/// The refusal of a broadcast log whose declared progress the language cannot
+/// keep (`broadcast-log/progress-unreachable-on-backend`), or `Ok` when it can
+/// ([`crate::forge::codegen_matrix::broadcast_log_progress_ceiling`], ADR 0062
+/// §4, Per backend). Waiting for a runtime row would not repair it, so it is
+/// judged first, by every dispatcher's arm for the kind: the one that lowers the
+/// log ([`render_broadcast_log_rust`]) as much as the ones that refuse it.
+fn judge_broadcast_log_progress_on_backend(
+    m: &crate::forge::model::BroadcastLogModel,
+    language: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    let (ceiling, because) = crate::forge::codegen_matrix::broadcast_log_progress_ceiling(language);
+    if m.progress > ceiling {
+        return Err(
+            ForgeError::from(GenerateError::BroadcastLogProgressUnreachableOnBackend {
+                log_name: m.name.clone(),
+                declared: queue_progress_word(m.progress).to_string(),
+                reachable: queue_progress_word(ceiling).to_string(),
+                language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+                because: because.to_string(),
+            })
+            .at_line(m.progress_line),
+        );
+    }
+    Ok(())
+}
+
 /// The refusal a broadcast log is answered with when a language is asked to
-/// lower it (ADR 0062): the document is valid, judged on its own and against the
-/// language, and no language's forge runtime has its row yet
-/// ([`crate::forge::codegen_matrix::awaits_runtime`]).
+/// lower it and its forge runtime row has not landed there
+/// ([`crate::forge::codegen_matrix::awaits_runtime`]; ADR 0062). The document is
+/// valid, judged on its own and against the language.
 ///
 /// The refusal that no runtime to come can repair is the one given: a declared
 /// progress the language cannot keep
 /// (`broadcast-log/progress-unreachable-on-backend`) comes before the one that
 /// says the row is missing (`broadcast-log/runtime-missing`), because waiting for
-/// the row would not repair it. Each dispatcher's arm for the kind returns this,
-/// so a backend that has not landed its row refuses by name and never reaches a
-/// template that does not exist; the arm is replaced by the render in the change
-/// that makes [`crate::forge::codegen_matrix::template_ships`] answer `true` for
-/// the pair.
+/// the row would not repair it. The dispatcher's arm for each language whose row
+/// has not landed returns this, so such a backend refuses by name and never
+/// reaches a template that does not exist; the arm is replaced by the render in
+/// the change that makes [`crate::forge::codegen_matrix::template_ships`] answer
+/// `true` for the pair, as [`render_broadcast_log_rust`] replaced Rust's.
 fn refuse_broadcast_log(
     m: &crate::forge::model::BroadcastLogModel,
     language: crate::generator::Language,
 ) -> ForgeError {
-    let wire = crate::forge::codegen_matrix::language_wire_name(language);
-    let (ceiling, because) = crate::forge::codegen_matrix::broadcast_log_progress_ceiling(language);
-    if m.progress > ceiling {
-        let word = |p: crate::forge::model::QueueProgress| match p {
-            crate::forge::model::QueueProgress::WaitFree => "wait-free",
-            crate::forge::model::QueueProgress::LockFree => "lock-free",
-            crate::forge::model::QueueProgress::Blocking => "blocking",
-        };
-        return ForgeError::from(GenerateError::BroadcastLogProgressUnreachableOnBackend {
-            log_name: m.name.clone(),
-            declared: word(m.progress).to_string(),
-            reachable: word(ceiling).to_string(),
-            language: wire.to_string(),
-            because: because.to_string(),
-        })
-        .at_line(m.progress_line);
+    if let Err(refusal) = judge_broadcast_log_progress_on_backend(m, language) {
+        return refusal;
     }
     ForgeError::from(GenerateError::BroadcastLogRuntimeMissing {
         log_name: m.name.clone(),
-        language: wire.to_string(),
+        language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+    })
+}
+
+/// Render a `<sce:kind="broadcast-log">` document for the Rust backend (ADR
+/// 0062). The generated module names the log type over
+/// `sce_forge_runtime::broadcast_log`, sized from three numbers the document
+/// alone does not give and the build resolved
+/// ([`crate::BroadcastLogResolution`]): the retention, the element's largest
+/// encoded size, and whether the template can hold the element. It states them
+/// and the contract as constants, and gives typed `publish` and `read` functions
+/// over the element's generated type, which store and recover the element's wire
+/// bytes.
+///
+/// A resolution that is missing is refused, never guessed: only the
+/// document-set compile has the element document and the deploy, so a
+/// single-document compile of a log is refused naming what is missing
+/// ([`GenerateError::InvalidConfig`]), as a queue's deploy-key capacity is.
+///
+/// The stamp is 64 bits, which the runtime row keeps wherever it exists, so
+/// [`judge_broadcast_log_stamp`] is not asked anything here: it judges the
+/// obligations of a stamp narrower than that (a wrap bound and a retention one
+/// less than a power of two), and no Rust row keeps one.
+fn render_broadcast_log_rust(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::forge::model::{CapacitySource, QueueCardinality};
+
+    judge_broadcast_log_progress_on_backend(m, crate::generator::Language::Rust)?;
+    let Some(resolution) = options
+        .broadcast_log_resolutions
+        .as_ref()
+        .and_then(|resolutions| resolutions.get(&m.name))
+    else {
+        return Err(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the build-time numbers of its generated module (the largest \
+             encoded size of the element '{element}', and a retention written as a deploy key) \
+             have no resolution. Only the document-set compile has the element document and, \
+             with a deploy and a target machine, the deploy file that give them: route through \
+             compile_scxml_with_imports (`sce-codegen orchestrate`, or `check` with `--forge`), \
+             or supply ForgeCompileOptions::broadcast_log_resolutions manually in tests, to pin \
+             the numbers.",
+            name = m.name,
+            element = m.element_type,
+        ))
+        .into());
+    };
+    if let Some(why) = &resolution.element_unsupported {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the element '{element}' cannot be stored by the Rust \
+             template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \
+             form, and its typed publish and read call the element's encode with a sink and \
+             its decode with a cursor alone. This document is valid and is refused rather than \
+             lowered to a log that could not read back what it stores.",
+            name = m.name,
+            element = m.element_type,
+        )))
+        .at_line(m.element_type_line));
+    }
+    let retention = match (&m.retention, resolution.retention) {
+        (CapacitySource::CompileConst { value }, _) => *value,
+        (CapacitySource::DeployKey { .. }, Some(value)) => value,
+        (CapacitySource::DeployKey { key }, None) => {
+            return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                "broadcast-log '{name}': <sce:retention source=\"deploy\" key=\"{key}\"/> \
+                 resolution missing: a compile without a deploy.yaml and a target machine \
+                 cannot resolve it, and neither can one whose key names another machine. Route \
+                 through compile_scxml_with_imports with a deploy and \
+                 ForgeCompileOptions::target_machine (`sce-codegen orchestrate --deploy \
+                 --target-machine`) to pin the number.",
+                name = m.name,
+            )))
+            .at_line(m.retention_line));
+        }
+    };
+    if retention == 0 {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the retention resolves to 0, and a log retains at least one \
+             entry (it keeps retention + 1 slots, and at least two). Declare a limit of at least \
+             1 for it.",
+            name = m.name,
+        )))
+        .at_line(m.retention_line));
+    }
+
+    let tmpl = env.get_template("broadcast_log.rs.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.rs.jinja2 (rust): {e}"
+        )))
+    })?;
+    let element = rust_stored_element(&m.element_type, options);
+    let producers = match m.producers {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
+    };
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_type => &m.element_type,
+        element_snake => element.snake,
+        element_pascal => element.pascal,
+        element_import => element.import,
+        element_stored => element.stored,
+        element_borrowed => element.borrowed,
+        retention => retention,
+        max_bytes => resolution.element_max_bytes,
+        producers => producers,
+        declared_progress => queue_progress_word(m.progress),
+        runtime_dep => "sce_forge_runtime::broadcast_log",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.rs.jinja2 (rust): {e}"
+        )))
     })
 }
 
