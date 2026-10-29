@@ -742,11 +742,57 @@ runner would let CI judge it, and is not built.
 - **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the Kotlin
   conformance test have been compiled or run, and no mutation case covers the generated file.
 
+### What step 7 landed for Go (2026-10-29)
+
+- **The kind is generated for Go.** `sce-codegen` writes `<name>.go`, a package named like the log, from
+  `tools/codegen/templates/forge/go/broadcast_log.go.jinja2` through `render_broadcast_log_go`, and `BROADCAST_LOG_BACKENDS`
+  lists Go, so the matrix answers `Emit` for it and the accepted gap of `a_backend_holds_what_the_other_backends_hold` is
+  gone. The package states `Retention`, `Slots = Retention + 1`, `MaxEncodedBytes`, `Words = 1 + (MaxEncodedBytes+7)/8` (one
+  length word, then the bytes, eight to a word, little-endian: Rust's layout) and `DeclaredProgress`; names the log as an
+  alias of `broadcastlog.Log` with a constructor `New<Log>()`; and gives `Publish(publisher, *Element) (uint64, error)` and
+  `Read(log, *Reader) (broadcastlog.Read, *Element, error)` over the element package's struct. The runtime's own `Read`
+  struct is the one statement of the three answers, so the typed read returns it with the decoded element, which is set only
+  for an item, and defines no second result type. Everything refused before a template is read (the declared progress
+  against the ceiling, a missing resolution, the language's verdict on the element, an unresolved deploy key, a retention of
+  0) is the one shared function `resolve_broadcast_log_render_inputs`; what is Go's own is the verdict on the element and
+  the module prefix the element's package is imported by (`broadcast-log '<name>'` ... `go_module_prefix`, as the queue's
+  element import is refused). The element's package is imported under `go_package_alias`, as every stateless import is,
+  because the typed functions reach it in their bodies.
+- **Bytes in, bytes out.** `Publish` encodes with the element's own `Encode` into a `codec.BoundedSink` over an array of
+  `MaxEncodedBytes`, so an element that encodes to more is refused by the codec (`codec.ErrBufferOverflow`) and nothing is
+  published. `Read` calls the runtime's `Read` and decodes only for `ReadItem`, which the runtime returns after the copy
+  was validated; a stored length above `MaxEncodedBytes` is `codec.ErrLengthOutOfRange` (a new sentinel beside Rust's
+  `CodecError::LengthOutOfRange`) and is checked before any slice is cut by it.
+- **Does a decoded Go element own its bytes.** For a CBOR text or byte-string entry it does: the runtime's `CborReadText`
+  and `CborReadBytes` copy out of the cursor's buffer, so `BroadcastLogElementFacts::refusal_for` answers `None` for Go and a
+  CBOR map with such an entry is held, where Rust refuses it. A positional `bytes` field of another codec does alias the
+  cursor's buffer (`raw[off:]`); that is not the fact's shape, and the typed read decodes every entry from a buffer it makes
+  for that entry alone, which the alias keeps alive and nothing else writes, so it stays valid for as long as the element is
+  held. A test holds that the buffer is made once, inside the read.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the package's text (the constants, the typed functions, the order
+  of the length check and the slice it guards, the encode refusal before the publish), the buffer of its own, the refusal of
+  an element that asks its caller for input in the shared words with `Go` as the template, the CBOR string held, the missing
+  prefix and the resolved numbers. `backends/go/forge-runtime/conformance/broadcast_log_generated_test.go` compiles what the
+  generator writes for three logs and, on one goroutine, reads the entries back whole and in order, tells a lapped reader how
+  many it missed, keeps two readers' cursors apart, refuses a payload past the bound and the nearest above it without
+  publishing, checks the packed words, and refuses a stored length above the bound and one too short for the element.
+  `conformance/generate.sh` generates the set with `orchestrate` into a staging directory and moves each file into the
+  package named like it, because a log is generated from its document set and a Go package is a directory.
+- **One document added.** `broadcast_log_conformance_bounded.scxml` is a log with a literal retention over the record: the
+  Rust conformance resolves the record's log from a deploy key, and carrying a deploy through `orchestrate` would also write
+  the deploy's own per-machine artifacts, so the Go package takes the document that needs none. The deploy-key resolution
+  is language-independent and is tested through Rust and `sce-build`. Adding a document under `tests/forge/resources` moves
+  the `source-hash` line of the committed Go round-trip tree.
+- **Not run.** The change was written with nothing built: neither the renderer, the template, the Go package it writes, the
+  new tests nor `generate.sh` have been compiled or run. Go's atomics are sequentially consistent and the stamp is 64 bits,
+  so `judge_broadcast_log_stamp` is not asked anything for Go, as for Rust. The generated package has no mutation case of
+  its own.
+
 ### What is still undone
 
-- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's and Kotlin's (step 7). The
-  C11, C++ and Go templates, and generated tests that regenerate and build them, are next, one language at a time; each is
-  refused by name (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same
+- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's, Kotlin's and Go's
+  (step 7). The C11 and C++ templates, and generated tests that regenerate and build them, are next, one language at a
+  time; each is refused by name (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same
   `BroadcastLogResolution`.
   Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
   and stores, are not built, so `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
