@@ -23,8 +23,8 @@ mutation_oracles sce-build/tests/a_backend_holds_what_the_other_backends_hold.rs
 
 mutation_case "a backend leaves the static data model roster" <<'PY'
 edit("sce-build/src/generator.rs",
-     "    Language::Go,\n    Language::Python,\n    Language::C11,\n];\n\n/// Whether `language` lowers `datamodel=\"sce-static\"`",
-     "    Language::Python,\n    Language::C11,\n];\n\n/// Whether `language` lowers `datamodel=\"sce-static\"`")
+     "    Language::Go,\n    Language::Python,\n    Language::C11,\n];\n\n/// The backends that lower part of `datamodel=\"sce-static\"`",
+     "    Language::Python,\n    Language::C11,\n];\n\n/// The backends that lower part of `datamodel=\"sce-static\"`")
 PY
 
 mutation_case "the saved-state reading finds no backend" <<'PY'

@@ -76,8 +76,8 @@ PY
 
 mutation_case "a statement writes the zero a failed operation answered" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            Self::then(&[failed, \"return true\"]),\n            write(\"sceValue\")",
-     "            Self::then(&[failed]),\n            write(\"sceValue\")")
+     "             if sceFailure.Failed() {{ {} }}; {}; return false }}()\",\n            Self::then(&[failed, \"return true\"]),\n            write(\"sceValue\")",
+     "             if sceFailure.Failed() {{ {} }}; {}; return false }}()\",\n            Self::then(&[failed]),\n            write(\"sceValue\")")
 PY
 
 # ── A failed argument does not reach the host ──────────────────────
