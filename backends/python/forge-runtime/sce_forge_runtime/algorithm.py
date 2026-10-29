@@ -13,6 +13,14 @@ then holds the result to its width: an overflow (a signed ``MIN / -1`` or
 
 The exception is Python's failure channel: it leaves the algorithm and reaches
 the caller by itself, so the generated body needs nothing after a statement.
+
+The same widths carry the operations that do not fail (docs/adr/0063), which
+an author names where they are written (``wrappingSub(now, start)``) and the
+generator lowers to ``U32.wrapping_sub(a, b)`` in any forge expression, of an
+algorithm (``may-fail`` or not), another kind or a ``sce-static`` machine.
+Each computes the exact result and brings it into the
+width by its rule: the value congruent to it modulo ``2**W`` (two's complement
+for a signed width), or the nearer bound when it lies past one. Neither raises.
 """
 
 from __future__ import annotations
@@ -54,7 +62,8 @@ class AlgorithmFailure(Exception):
 
 
 class _Width:
-    """The checked operations of one SCE integer width."""
+    """The checked, wrapping and saturating operations of one SCE integer
+    width, the type that holds ``[lo, hi]``."""
 
     def __init__(self, lo: int, hi: int) -> None:
         self.lo = lo
@@ -64,6 +73,16 @@ class _Width:
         if v < self.lo or v > self.hi:
             raise AlgorithmFailure(AlgorithmError.OVERFLOW)
         return v
+
+    def _wrap(self, e: int) -> int:
+        """The value of the width congruent to ``e`` modulo ``2**W``. Python's
+        ``%`` by a positive modulus is never negative, so the offset from
+        ``lo`` lands in ``[0, 2**W)`` whatever the sign of ``e``."""
+        return (e - self.lo) % (self.hi - self.lo + 1) + self.lo
+
+    def _saturate(self, e: int) -> int:
+        """``e``, or the bound of the width it lies past."""
+        return max(self.lo, min(self.hi, e))
 
     def add(self, a: int, b: int) -> int:
         return self._fit(a + b)
@@ -90,6 +109,35 @@ class _Width:
 
     def neg(self, a: int) -> int:
         return self._fit(-a)
+
+    def wrapping_add(self, a: int, b: int) -> int:
+        return self._wrap(a + b)
+
+    def wrapping_sub(self, a: int, b: int) -> int:
+        return self._wrap(a - b)
+
+    def wrapping_mul(self, a: int, b: int) -> int:
+        return self._wrap(a * b)
+
+    def wrapping_neg(self, a: int) -> int:
+        """``MIN`` for a signed ``MIN``, and ``2**W - a`` for an unsigned
+        ``a`` other than 0."""
+        return self._wrap(-a)
+
+    def saturating_add(self, a: int, b: int) -> int:
+        return self._saturate(a + b)
+
+    def saturating_sub(self, a: int, b: int) -> int:
+        return self._saturate(a - b)
+
+    def saturating_mul(self, a: int, b: int) -> int:
+        return self._saturate(a * b)
+
+    def saturating_neg(self, a: int) -> int:
+        """``MAX`` for a signed ``MIN``. Of an unsigned width it is 0 for every
+        input, which the build refuses where it is written (docs/adr/0063,
+        section 2); the method follows the definition there all the same."""
+        return self._saturate(-a)
 
     def narrow(self, v: int) -> int:
         """A value stored where this width is declared: the same value, or an
