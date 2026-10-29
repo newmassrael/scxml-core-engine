@@ -1165,13 +1165,13 @@ fn rust_generates_a_log_over_the_runtime_sized_from_its_element() {
         ],
     );
     // A stored length above the bound is refused before any slice is cut by it.
-    let check = code
+    let length_check = code
         .find("if stored > MAX_ENCODED_BYTES as u64 {")
         .expect("the stored length is checked against the bound");
-    let refusal = code[check..]
+    let refusal = code[length_check..]
         .find("return Err(CodecError::LengthOutOfRange);")
         .expect("a length above the bound is a codec error");
-    let slice = code[check..]
+    let slice = code[length_check..]
         .find("bytes[..length]")
         .expect("the entry's bytes are cut by the length");
     assert!(
