@@ -1274,12 +1274,12 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   under the arm's tag, and read back by encoding them again, so the test names nothing of the variant's internals. For a value
   present under a clear flag the test reads the entry's words through the runtime and does not decode it, because whether the
   C++ `decode` leaves trailing bytes unread was not read.
-- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, the generated headers nor the
-  C++ test have been compiled or executed, and `clang-format` was run on the C++ test but not on the generated header. The
-  least certain points are the exact text of the generated header the new assertions quote, the C++ spelling of the element
-  types and the optional member (`std::optional<std::uint16_t> value`) the test builds on, how the variant's `decode` selects
-  the default arm under tag 0, and whether `orchestrate --language cpp` resolves the documents' relative imports from their
-  own directory. No generated tree moves: no `.scxml` of the fixtures or the standard library changed.
+- **Run (2026-10-29, build machines).** `cargo test -p sce-build --features cli --test broadcast_log_kind` passed 126
+  tests with all six languages registered, the workspace clippy with `-D warnings` was clean, and
+  `scripts/gates/forge-cpp.sh` ended with all 15 of its ctest tests passed, `broadcast_log_context_generated` (built with
+  `-Werror`) and the older `broadcast_log_generated`, which exercises the no-context path, among them. `clang-format` was
+  run on the C++ test and not on the generated header. No generated tree moves: no `.scxml` of the fixtures or the standard
+  library changed.
 
 ### What is still undone
 
