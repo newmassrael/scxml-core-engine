@@ -356,6 +356,33 @@ private func stateAlgorithm() -> Machine {
     )
 }
 
+// An item as a scenario writes it: its id and the declared name of its status, in the
+// schema's order.
+private func statusItem(_ id: UInt32, _ status: String) -> JSONValue {
+    .object([
+        (key: "id", value: integer(id)),
+        (key: "status", value: .text(status)),
+    ])
+}
+
+private func stateAlgorithmEnum() -> Machine {
+    let policy = StaticStateAlgorithmEnumPolicy()
+    return drive(
+        policy,
+        variables: [
+            "items": {
+                .array(policy.items.map { statusItem($0.id, $0.status.declaredName) })
+            },
+            "last": { .text(policy.last.declaredName) },
+            "openCount": { integer(policy.openCount) },
+            "startedCount": { integer(policy.startedCount) },
+            "doneCount": { integer(policy.doneCount) },
+            "checks": { integer(policy.checks) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 // A text slot as a scenario writes it: its slot, version and text, in the schema's
 // order. The version is 64 bits wide, so it is the text of its digits, exactly.
 private func textSlot(_ slot: UInt32, _ version: Int64, _ text: String) -> JSONValue {
@@ -837,6 +864,14 @@ private func recordBytes() -> Machine {
 // two of which answer a record and a list and one of which only reads.
 @Test func aTextSlotIsHandedToTheStandardTextRules() {
     replay("static_text_record", textRecord())
+}
+
+// A list of records whose field is a value of an enum, and a value of the enum itself,
+// are handed to imported algorithms and taken back: each crosses between the machine's
+// own enum and the unit of the enum document as the variant of the same declared name,
+// and the values are the document's, not the variants' positions.
+@Test func aValueOfAnEnumIsHandedToAnAlgorithmAndTakenBack() {
+    replay("static_state_algorithm_enum", stateAlgorithmEnum())
 }
 
 // A record is taken into a list by name, and the list holds a copy of it: a record
