@@ -286,14 +286,43 @@ fn main() {
     // SET, because a slot is sized from the element document's largest encoded
     // size, which only the set compile reads. The second log's retention is a
     // deploy key, resolved against `BROADCAST_LOG_DEPLOY`.
+    let in_resources = |name: &str| resource_dir.join(format!("{name}.scxml"));
     generate_broadcast_log_set(
         &[
             "broadcast_log_conformance_event",
             "broadcast_log_conformance_record",
             "broadcast_log_conformance_literal",
             "broadcast_log_conformance_deployed",
+        ]
+        .map(in_resources),
+        BROADCAST_LOG_DEPLOY,
+        &out_dir,
+    );
+    // The same kind for a target without 64-bit atomics, which the runtime gives a
+    // narrow row: a 32-bit stamp that wraps. The deploy names the target, so the
+    // generator chooses the row from it, and states the pause the design relies on,
+    // which the narrow stamp is judged against. Two sets, one for each way the row
+    // hands out its one publisher: a target with compare-and-swap (the swap or
+    // `split`) and one with loads and stores only (`split`). Both compile here, on
+    // the host, because the narrow row's width is a parameter and not a target cfg.
+    // Their documents are this crate's own, beside the element they store, which
+    // is the resources' (the source hash of a tree generated from the resources
+    // reads every document there, and these are not its).
+    let element = in_resources("broadcast_log_conformance_event");
+    generate_broadcast_log_set(
+        &[
+            element.clone(),
+            source_fixtures.join("broadcast_log_conformance_narrow.scxml"),
         ],
-        &resource_dir,
+        BROADCAST_LOG_NARROW_DEPLOY,
+        &out_dir,
+    );
+    generate_broadcast_log_set(
+        &[
+            element,
+            source_fixtures.join("broadcast_log_conformance_ownership.scxml"),
+        ],
+        BROADCAST_LOG_OWNERSHIP_DEPLOY,
         &out_dir,
     );
 }
@@ -578,22 +607,51 @@ topology:
           event_retention: 5
 "#;
 
-/// Generate the documents `names` to Rust as one document set, for the machine
-/// of [`BROADCAST_LOG_DEPLOY`], into `OUT_DIR`, stripping the inner attributes
-/// so each result can be `include!()`-ed inside a parent `mod {}`.
+/// The deploy of the log whose target has compare-and-swap but no 64-bit atomics
+/// (`thumbv7em-none-eabihf`, whose widest read-modify-write atomic is 32 bits), which
+/// the generator reads to give the log the narrow row. It states the longest pause
+/// in publishes the design relies on for the log `broadcast_log_conformance_narrow`.
+const BROADCAST_LOG_NARROW_DEPLOY: &str = r#"
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv7em-none-eabihf
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        queues:
+          broadcast_log_conformance_narrow:
+            min_wrap_ops: 1000000
+"#;
+
+/// The deploy of the log whose target has loads and stores alone
+/// (`thumbv6m-none-eabi`): the narrow row again, whose one publisher is a matter of
+/// ownership.
+const BROADCAST_LOG_OWNERSHIP_DEPLOY: &str = r#"
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv6m-none-eabi
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        queues:
+          broadcast_log_conformance_ownership:
+            min_wrap_ops: 1000000
+"#;
+
+/// Generate the documents at `paths` to Rust as one document set, for the machine
+/// of the deploy `deploy_text` (`mcu_node` in each), into `OUT_DIR`, stripping the
+/// inner attributes so each result can be `include!()`-ed inside a parent `mod {}`.
 ///
 /// A set and not one document at a time, because a broadcast log's generated
 /// module is written from numbers its document does not give: the largest
-/// encoded size of its element, read from the element document, and a retention
-/// that is a deploy key. Only the set compile resolves them
-/// (`ForgeCompileOptions::broadcast_log_resolutions`).
-fn generate_broadcast_log_set(names: &[&str], resource_dir: &Path, out_dir: &str) {
-    let paths: Vec<std::path::PathBuf> = names
-        .iter()
-        .map(|name| resource_dir.join(format!("{name}.scxml")))
-        .collect();
+/// encoded size of its element, read from the element document, a retention
+/// that is a deploy key, and the atomics of the target the deploy names. Only the
+/// set compile resolves them (`ForgeCompileOptions::broadcast_log_resolutions`).
+fn generate_broadcast_log_set(paths: &[std::path::PathBuf], deploy_text: &str, out_dir: &str) {
     let documents: Vec<&Path> = paths.iter().map(std::path::PathBuf::as_path).collect();
-    let deploy = sce_build::mesh::deploy::parse_deploy_str(BROADCAST_LOG_DEPLOY)
+    let deploy = sce_build::mesh::deploy::parse_deploy_str(deploy_text)
         .unwrap_or_else(|e| panic!("parse the broadcast-log deploy: {e:?}"));
     let options = ForgeCompileOptions {
         target_machine: Some("mcu_node".to_string()),

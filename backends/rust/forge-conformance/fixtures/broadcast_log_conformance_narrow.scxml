@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): one producer, wait-free, a retention of three
+  written as a constant, so a slot is four, which divides the stamp space of a
+  narrow stamp. Generated for a target without 64-bit atomics (the Rust
+  conformance crate's deploy names `thumbv7em-none-eabihf`), so the generator
+  gives it the runtime's narrow row: a 32-bit stamp that wraps, 32-bit words, and
+  a publisher taken by an 8-bit swap or by `split`. The element is three bytes,
+  so an entry is one length word and one word of bytes. The conformance crate
+  compiles what the generator emits for it and reads the log on the host, where
+  the narrow row's width is a parameter and not a target.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_narrow"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>

@@ -26,8 +26,9 @@ use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationErro
 use sce_build::forge::generator::judge_broadcast_log_stamp;
 use sce_build::forge::kind_catalog::{ExampleRecord, KindCatalog};
 use sce_build::forge::model::{
-    broadcast_log_slots_divide_the_stamp_space, broadcast_log_wrap_bound_ops, BroadcastLogModel,
-    CapacitySource, ForgeDocument, ForgeKind, QueueCardinality, QueueProgress, RuntimeDep,
+    broadcast_log_longest_pause_ops, broadcast_log_slots_divide_the_stamp_space,
+    broadcast_log_wrap_bound_ops, BroadcastLogModel, CapacitySource, ForgeDocument, ForgeKind,
+    QueueCardinality, QueueProgress, RuntimeDep, BROADCAST_LOG_NARROW_STAMP_BITS,
 };
 use sce_build::forge::parser::parse_forge;
 use sce_build::generator::Language;
@@ -490,7 +491,10 @@ fn a_narrow_stamp_with_a_retention_that_is_not_one_less_than_a_power_of_two_is_r
 #[test]
 fn a_narrow_stamp_needs_the_delay_the_design_relies_on_and_a_bound_that_covers_it() {
     let m = model(r#"<sce:retention entries="7"/>"#);
-    let bound = 1u64 << 31;
+    // A 32-bit stamp tells 2^31 publishes of a slot apart, and 8 slots (retention 7
+    // and one) of that are the cursor's lag and the publish in flight: the longest
+    // pause a deploy may rely on is 2^31 - 8.
+    let bound = (1u64 << 31) - 8;
 
     match generate_of(judge_broadcast_log_stamp(&m, 7, 32, None)) {
         GenerateError::BroadcastLogWrapBoundUnstated {
@@ -1401,6 +1405,7 @@ fn resolution_options(
                 retention,
                 element_max_bytes,
                 element,
+                ..BroadcastLogResolution::default()
             },
         )])),
         ..ForgeCompileOptions::default()
@@ -3368,4 +3373,382 @@ fn the_kind_example_parses_and_renders_as_one_head_line() {
         ),
         "{page}"
     );
+}
+
+// --- Rust: the row the target chooses, the 64-bit row or the narrow one ---
+
+#[test]
+fn the_longest_pause_is_half_the_stamp_space_less_the_slots() {
+    // A 32-bit stamp tells K = 2^31 publishes of a slot apart; a retention of 7
+    // keeps 8 slots, so 2^31 - 8 is the pause a deploy may rely on.
+    assert_eq!(broadcast_log_longest_pause_ops(32, 7), (1u64 << 31) - 8);
+    // A 3-bit stamp tells K = 4 apart: 2 slots leave 2, 4 slots (as many as K)
+    // leave none, and 8 slots (more than K) are none and not a wrapped number.
+    assert_eq!(broadcast_log_longest_pause_ops(3, 1), 2);
+    assert_eq!(broadcast_log_longest_pause_ops(3, 3), 0);
+    assert_eq!(broadcast_log_longest_pause_ops(3, 7), 0);
+    // The narrowest stamp tells 2 apart, and its 2 slots fill it; a width below 2 is
+    // read as 2.
+    assert_eq!(broadcast_log_longest_pause_ops(2, 1), 0);
+    assert_eq!(broadcast_log_longest_pause_ops(0, 1), 0);
+    assert_eq!(broadcast_log_longest_pause_ops(1, 1), 0);
+    // The 64-bit stamp tells 2^63 apart.
+    assert_eq!(broadcast_log_longest_pause_ops(64, 1), (1u64 << 63) - 2);
+    assert_eq!(BROADCAST_LOG_NARROW_STAMP_BITS, 32);
+}
+
+/// The options of a log whose deploy says what it says of the target's atomics and of
+/// the pause the design relies on. The element is one `uint32`: 4 bytes.
+fn target_options(
+    retention: Option<u32>,
+    atomic_rmw_width: Option<u32>,
+    target: Option<&str>,
+    min_wrap_ops: Option<u64>,
+) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        broadcast_log_resolutions: Some(HashMap::from([(
+            "event_ring".to_string(),
+            BroadcastLogResolution {
+                retention,
+                element_max_bytes: 4,
+                atomic_rmw_width,
+                target: target.map(str::to_string),
+                min_wrap_ops,
+                ..BroadcastLogResolution::default()
+            },
+        )])),
+        ..ForgeCompileOptions::default()
+    }
+}
+
+/// The longest pause a 32-bit stamp covers for the log `event_ring`, a retention of 7
+/// (8 slots): half the stamp space, 2^31, less the 8 slots.
+const EVENT_RING_PAUSE: u64 = (1u64 << 31) - 8;
+
+#[test]
+fn a_target_with_32_bit_atomics_is_generated_over_the_narrow_row() {
+    // 4 bytes in 32-bit words: 1 + ceil(4 / 4) = 2 words an entry.
+    let options = target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+    let code = compile_single(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target gets the narrow row: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "// Runtime: sce_forge_runtime::broadcast_log_narrow",
+            "use sce_forge_runtime::broadcast_log_narrow as runtime;",
+            "pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(4);",
+            "const _: () = assert!(MAX_ENCODED_BYTES <= u32::MAX as usize);",
+            "pub type EventRing = runtime::BroadcastLog<WORDS, SLOTS>;",
+            "let mut entry = [0u32; WORDS];",
+            "entry[0] = length as u32;",
+            "entry[1 + index / 4] |= u32::from(*byte) << (8 * (index % 4));",
+            "let stored = u64::from(entry[0]);",
+            "*byte = (entry[1 + index / 4] >> (8 * (index % 4))) as u8;",
+            r#"#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]"#,
+            "The publisher is `log.publisher()`, taken once by an 8-bit swap, or",
+            "machines.<machine>.queues.event_ring.min_wrap_ops",
+        ],
+    );
+    // 2^31 less the 8 slots of a retention of 7: 2147483648 - 8 = 2147483640.
+    assert!(
+        code.contains("begins at most 2147483640 publishes"),
+        "the pause the stamp covers is stated:\n{code}"
+    );
+    assert!(
+        !code.contains("target_has_atomic") && !code.contains("[0u64; WORDS]"),
+        "nothing of the 64-bit row is left in the narrow module:\n{code}"
+    );
+}
+
+#[test]
+fn a_target_with_loads_and_stores_only_is_generated_with_an_ownership_publisher() {
+    // A width of 0 stated, and a triple the table knows to have no read-modify-write
+    // atomic (ARMv6-M), are the same statement.
+    for (width, target) in [(Some(0), None), (None, Some("thumbv6m-none-eabi"))] {
+        let options = target_options(None, width, target, Some(1_000_000));
+        let code = compile_single(&event_ring(), &options)
+            .unwrap_or_else(|e| panic!("{width:?} {target:?}: {:?}", e.error));
+        assert_holds(
+            &code,
+            &[
+                "use sce_forge_runtime::broadcast_log_narrow as runtime;",
+                "// The publisher is `log.split()`, which takes an exclusive borrow of the log and",
+                "`unsafe` `log.publisher_unchecked()`",
+                "taken once with `split()` (or, for a log in a",
+            ],
+        );
+        assert!(
+            !code.contains("taken once by an 8-bit swap"),
+            "no swap is promised where there is none ({width:?} {target:?}):\n{code}"
+        );
+    }
+}
+
+#[test]
+fn a_64_bit_target_or_a_deploy_that_says_nothing_keeps_the_64_bit_row() {
+    let generate = |width, target| {
+        compile_single(&event_ring(), &target_options(None, width, target, None))
+            .unwrap_or_else(|e| panic!("{width:?} {target:?}: {:?}", e.error))
+    };
+    let said_nothing = generate(None, None);
+    // The row is the same module whether the deploy says 64 or says nothing, and a
+    // pause it does not state is not asked for: the 64-bit stamp has no wrap bound.
+    assert_eq!(said_nothing, generate(Some(64), None));
+    assert_eq!(
+        said_nothing,
+        generate(None, Some("x86_64-unknown-linux-gnu"))
+    );
+    assert_holds(
+        &said_nothing,
+        &[
+            "use sce_forge_runtime::broadcast_log as runtime;",
+            "pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);",
+            "let mut entry = [0u64; WORDS];",
+            r#"#[cfg(not(all(target_has_atomic = "64", target_has_atomic = "8")))]"#,
+        ],
+    );
+    assert!(
+        !said_nothing.contains("broadcast_log_narrow"),
+        "{said_nothing}"
+    );
+}
+
+#[test]
+fn a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered() {
+    let at = |pause: Option<u64>| {
+        compile_single(&event_ring(), &target_options(None, Some(32), None, pause))
+    };
+
+    let unstated = at(None).err().unwrap_or_else(|| {
+        panic!("a narrow stamp wraps, so a log with no stated pause is refused")
+    });
+    match generate_error(unstated) {
+        GenerateError::BroadcastLogWrapBoundUnstated {
+            log_name,
+            stamp_bits,
+            bound,
+        } => {
+            assert_eq!(log_name, "event_ring");
+            assert_eq!((stamp_bits, bound), (32, EVENT_RING_PAUSE));
+        }
+        other => panic!("expected BroadcastLogWrapBoundUnstated, got {other:?}"),
+    }
+
+    let too_long = at(Some(EVENT_RING_PAUSE + 1))
+        .err()
+        .unwrap_or_else(|| panic!("a pause above what the stamp covers is refused"));
+    match generate_error(too_long) {
+        GenerateError::BroadcastLogWrapBoundBelowDeployMinimum {
+            bound,
+            min_wrap_ops,
+            ..
+        } => assert_eq!(
+            (bound, min_wrap_ops),
+            (EVENT_RING_PAUSE, EVENT_RING_PAUSE + 1)
+        ),
+        other => panic!("expected BroadcastLogWrapBoundBelowDeployMinimum, got {other:?}"),
+    }
+
+    // The pause the stamp covers, exactly and below, is met.
+    at(Some(EVENT_RING_PAUSE)).expect("the boundary is covered");
+    at(Some(1)).expect("a short pause is covered");
+}
+
+#[test]
+fn a_narrow_row_whose_slot_count_does_not_divide_the_stamp_space_is_refused() {
+    // A retention of 5 keeps 5 + 1 = 6 slots, between 4 and 8.
+    let xml = deploy_key_ring();
+    let located = compile_single(&xml, &target_options(Some(5), Some(32), None, Some(1)))
+        .err()
+        .unwrap_or_else(|| panic!("a narrow stamp wraps, and 6 slots do not divide 2^32"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    match generate_error(located) {
+        GenerateError::BroadcastLogSlotsNotADivisorOfTheStampSpace {
+            retention,
+            slots,
+            stamp_bits,
+            nearest_below,
+            nearest_above,
+            ..
+        } => {
+            assert_eq!((retention, slots, stamp_bits), (5, 6, 32));
+            // One less than 4 and than 8.
+            assert_eq!((nearest_below, nearest_above), (3, 7));
+        }
+        other => panic!("expected BroadcastLogSlotsNotADivisorOfTheStampSpace, got {other:?}"),
+    }
+    // The 64-bit row has no wrap and keeps any retention.
+    compile_single(&xml, &target_options(Some(5), Some(64), None, None))
+        .expect("the 64-bit row keeps a retention of 5");
+}
+
+#[test]
+fn a_width_that_contradicts_the_target_is_refused_and_an_unknown_target_needs_a_width() {
+    let located = compile_single(
+        &event_ring(),
+        &target_options(None, Some(64), Some("thumbv7em-none-eabihf"), None),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("two statements of the atomics that differ cannot both hold"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("platform.atomic_rmw_width 64"), "{detail}");
+    assert!(detail.contains("thumbv7em-none-eabihf"), "{detail}");
+    assert!(detail.contains("atomic is 32 bits"), "{detail}");
+
+    let unknown = Some("my-board-none-elf");
+    let located = compile_single(&event_ring(), &target_options(None, None, unknown, Some(1)))
+        .err()
+        .unwrap_or_else(|| panic!("a target the generator does not know says nothing"));
+    assert!(
+        invalid_config(located).contains("does not know"),
+        "the refusal says why"
+    );
+    // A width stated beside it stands alone for a triple the table does not know.
+    compile_single(
+        &event_ring(),
+        &target_options(None, Some(32), unknown, Some(1)),
+    )
+    .expect("a stated width is taken for a target the table does not know");
+}
+
+#[test]
+fn the_row_is_chosen_after_the_refusals_every_language_shares() {
+    // A retention that resolves to nothing is refused by the shared helper before
+    // any row is chosen, so a narrow target is not asked about its pause first.
+    let located = compile_single(
+        &deploy_key_ring(),
+        &target_options(Some(0), Some(32), None, None),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a retention of 0 is refused"));
+    assert!(
+        invalid_config(located).contains("the retention resolves to 0"),
+        "the shared refusal comes before the row's"
+    );
+}
+
+#[test]
+fn the_narrow_compile_error_is_gated_by_the_cfg_the_narrow_runtime_module_is() {
+    let lib = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/rust/forge-runtime/src/lib.rs"),
+    )
+    .expect("the runtime's lib.rs");
+    let at = lib
+        .find("pub mod broadcast_log_narrow;")
+        .expect("the runtime has the narrow row's module");
+    let gate = lib[..at]
+        .lines()
+        .last()
+        .expect("a line precedes the module")
+        .trim()
+        .strip_prefix("#[cfg(")
+        .and_then(|rest| rest.strip_suffix(")]"))
+        .expect("the module is gated by one cfg attribute")
+        .to_string();
+
+    let code = compile_single(
+        &event_ring(),
+        &target_options(None, Some(32), None, Some(1)),
+    )
+    .expect("a 32-bit target gets the narrow row");
+    assert!(
+        code.contains(&format!("#[cfg(not({gate}))]\ncompile_error!(")),
+        "the narrow module refuses a target the runtime's narrow module is absent on, under \
+         the cfg `{gate}`:\n{code}"
+    );
+}
+
+#[test]
+fn the_stamp_the_generator_judges_is_the_one_the_narrow_row_keeps() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../backends/rust/forge-runtime/src/broadcast_log_narrow.rs"),
+    )
+    .expect("the narrow row's module");
+    let declared = format!("pub const STAMP_BITS: u32 = {BROADCAST_LOG_NARROW_STAMP_BITS};");
+    assert!(
+        source.contains(&declared),
+        "the runtime's narrow row keeps a stamp of the width the generator judges \
+         ({declared})"
+    );
+}
+
+#[test]
+fn a_deploy_states_the_target_and_the_pause_and_the_set_generates_the_narrow_row() {
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let deploy = |queues: &str| {
+        parse_deploy_str(&format!(
+            r##"
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv7em-none-eabihf
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+          event_retention: 15
+{queues}
+"##
+        ))
+        .expect("deploy parses")
+    };
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let documents = [("event_ring.scxml", &xml), ("event_record.scxml", &codec)];
+
+    // The machine's device is built for ARMv7E-M (32-bit atomics), and the deploy
+    // states the pause for the log, so the set generates the narrow row, sized from the
+    // limit: 16 slots, of which 2^31 - 16 = 2147483632 is what the stamp covers.
+    let cfg = deploy("        queues:\n          event_ring:\n            min_wrap_ops: 1000000");
+    let code = generated_log(
+        compile_documents_with(Language::Rust, &documents, &options, Some(&cfg))
+            .unwrap_or_else(|e| panic!("the deploy gives a target and a pause: {:?}", e.error)),
+    );
+    assert_holds(
+        &code,
+        &[
+            "use sce_forge_runtime::broadcast_log_narrow as runtime;",
+            "pub const RETENTION: usize = 15;",
+            "begins at most 2147483632 publishes",
+        ],
+    );
+
+    // The same deploy without the pause is refused: the target says the stamp wraps.
+    let cfg = deploy("");
+    let located = compile_documents_with(Language::Rust, &documents, &options, Some(&cfg))
+        .err()
+        .unwrap_or_else(|| panic!("a narrow stamp needs the pause stated"));
+    match generate_error(located) {
+        GenerateError::BroadcastLogWrapBoundUnstated {
+            log_name, bound, ..
+        } => assert_eq!(
+            (log_name.as_str(), bound),
+            ("event_ring", (1u64 << 31) - 16)
+        ),
+        other => panic!("expected BroadcastLogWrapBoundUnstated, got {other:?}"),
+    }
+}
+
+#[test]
+fn only_the_rust_renderer_reads_the_target_go_has_one_row() {
+    // The resolution that gives Rust the narrow row leaves Go's package as it was:
+    // its runtime has one row.
+    let go = |options: ForgeCompileOptions| ForgeCompileOptions {
+        go_module_prefix: options_for(Language::Go).go_module_prefix,
+        ..options
+    };
+    let with_target = go(target_options(None, Some(32), None, Some(1)));
+    let without = go(target_options(None, None, None, None));
+    let a = compile_single_as(Language::Go, "event_ring.go", &event_ring(), &with_target)
+        .expect("go generates the log");
+    let b = compile_single_as(Language::Go, "event_ring.go", &event_ring(), &without)
+        .expect("go generates the log");
+    assert_eq!(a, b, "a target changes nothing for Go");
 }

@@ -3572,8 +3572,9 @@ pub struct QueueResolution {
 /// ADR 0062 — what a broadcast log's generated module needs of the build and its
 /// document does not say. The document-set compile reads each from where it is:
 /// the element's size from the element document, the retention from the
-/// document or from the deploy, and the element's shape from its codec.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// document or from the deploy, the element's shape from its codec, and the
+/// atomics of the target and the pause the design relies on from the deploy.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BroadcastLogResolution {
     /// The retention, in entries. A literal `<sce:retention entries="N"/>` is
     /// carried through; a `source="deploy"` key resolves to the limit
@@ -3592,6 +3593,20 @@ pub struct BroadcastLogResolution {
     /// ([`BroadcastLogElementFacts::refusal_for`]), made where the document is
     /// rendered and not where the facts are read.
     pub element: BroadcastLogElementFacts,
+    /// `platform.atomic_rmw_width` of the target machine, in bits (0, 32 or 64), when
+    /// the deploy states one. With [`Self::target`] it decides which row of the
+    /// Rust runtime the module is generated over: the 64-bit row where the widest
+    /// read-modify-write atomic is 64 bits or nothing is said, and the narrow row
+    /// (a 32-bit stamp) below that. Read by the Rust renderer only.
+    pub atomic_rmw_width: Option<u32>,
+    /// The build target triple of the device the machine is on
+    /// (`devices.<d>.target`), when the deploy names one; the generator reads what
+    /// atomics it has from [`target_atomics::rmw_width`], as it does for a queue.
+    pub target: Option<String>,
+    /// `machines.<m>.queues.<log>.min_wrap_ops`: the longest pause in publishes the
+    /// design relies on, which a narrow row's stamp must cover
+    /// ([`forge::model::broadcast_log_longest_pause_ops`]).
+    pub min_wrap_ops: Option<u64>,
 }
 
 /// What the document-set compile reads of a broadcast log's element codec that
@@ -6787,14 +6802,18 @@ fn resolve_broadcast_logs(
         let Some(element) = elements.get(&log.name) else {
             continue;
         };
-        let retention = match (deploy, target_machine) {
-            (Some(cfg), Some(machine)) => {
-                resolve_broadcast_log_retention(log, cfg, machine, diag_label)?
-            }
-            _ => match &log.retention {
-                forge::model::CapacitySource::CompileConst { value } => Some(*value),
-                forge::model::CapacitySource::DeployKey { .. } => None,
-            },
+        let (retention, atomics) = match (deploy, target_machine) {
+            (Some(cfg), Some(machine)) => (
+                resolve_broadcast_log_retention(log, cfg, machine, diag_label)?,
+                broadcast_log_target_atomics(log, cfg, machine),
+            ),
+            _ => (
+                match &log.retention {
+                    forge::model::CapacitySource::CompileConst { value } => Some(*value),
+                    forge::model::CapacitySource::DeployKey { .. } => None,
+                },
+                BroadcastLogResolution::default(),
+            ),
         };
         resolved.insert(
             log.name.clone(),
@@ -6802,10 +6821,37 @@ fn resolve_broadcast_logs(
                 retention,
                 element_max_bytes: element.max_bytes,
                 element: element.facts.clone(),
+                ..atomics
             },
         );
     }
     Ok(resolved)
+}
+
+/// What the deploy says of the machine's atomics and of the pause a broadcast
+/// log's design relies on, in the fields of a [`BroadcastLogResolution`] that carry
+/// them (`platform.atomic_rmw_width`, `devices.<d>.target` and
+/// `machines.<m>.queues.<log>.min_wrap_ops`); the rest is left at its default. The
+/// reads are a queue's own, in [`resolve_queue_deploy_limits`], so a deploy that
+/// states a machine's atomics for its queues states them for its logs.
+fn broadcast_log_target_atomics(
+    log: &forge::model::BroadcastLogModel,
+    cfg: &mesh::deploy::DeployConfig,
+    machine_name: &str,
+) -> BroadcastLogResolution {
+    let device = cfg.device_for_machine(machine_name);
+    let machine = device.and_then(|device| device.machines.get(machine_name));
+    let platform = machine.and_then(|machine| machine.platform.as_ref());
+    BroadcastLogResolution {
+        atomic_rmw_width: platform
+            .and_then(|platform| platform.atomic_rmw_width)
+            .map(mesh::deploy::AtomicRmwWidth::bits),
+        target: device.and_then(|device| device.target.clone()),
+        min_wrap_ops: machine
+            .and_then(|machine| machine.queues.get(&log.name))
+            .and_then(|queue| queue.min_wrap_ops),
+        ..BroadcastLogResolution::default()
+    }
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-L — look up `field` on the

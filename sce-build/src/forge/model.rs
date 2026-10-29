@@ -5972,6 +5972,32 @@ pub const fn broadcast_log_slots_divide_the_stamp_space(retention: u32) -> bool 
     (retention as u64 + 1).is_power_of_two()
 }
 
+/// The stamp width, in bits, of the Rust runtime's narrow row
+/// (`sce_forge_runtime::broadcast_log_narrow::STAMP_BITS`): the row a target
+/// without 64-bit atomics gets, in 32-bit stamps held in pointer-width atomics.
+/// A test reads the runtime's constant and holds the two equal.
+pub const BROADCAST_LOG_NARROW_STAMP_BITS: u32 = 32;
+
+/// The longest pause, in publishes, a deploy may rely on for a log of `retention`
+/// whose stamp is `stamp_bits` wide: `2^(stamp_bits - 1) - (retention + 1)`, and 0
+/// when the slots alone fill that (ADR 0062 §4, "Stamp width").
+///
+/// The stamp tells `K = 2^(stamp_bits - 1)` publishes of one slot apart, and a
+/// reader gets the answers of the specification while the newest publish begun is
+/// at most `K` entries past its cursor during each read
+/// (`backends/rust/forge-runtime/src/broadcast_log_core.rs` states and proves it). A
+/// read leaves the cursor within `retention` of the head it loaded and one publish
+/// may be in flight, so the newest begun is at most `P + (retention + 1)` past the
+/// cursor of the next read when `P` publishes are begun between that head load and
+/// the last access of the next read: the hypothesis holds exactly when
+/// `P <= K - (retention + 1)`. That `P` is what a deploy's `min_wrap_ops` states for a
+/// log, and what this is the bound of. A width of 0 or 1 is taken as 2, and a width
+/// above 64 as 64.
+pub const fn broadcast_log_longest_pause_ops(stamp_bits: u32, retention: u32) -> u64 {
+    let half = broadcast_log_wrap_bound_ops(if stamp_bits < 2 { 2 } else { stamp_bits });
+    half.saturating_sub(retention as u64 + 1)
+}
+
 impl BroadcastLogModel {
     /// The ADR 0062 §4 selection table. The one row is a single producer: its
     /// publish and every read are wait-free on loads and stores alone. `None`

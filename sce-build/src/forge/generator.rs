@@ -20968,6 +20968,15 @@ struct BroadcastLogRenderInputs {
     producers: &'static str,
     /// The progress the document requires, as it spells it.
     declared_progress: &'static str,
+    /// What the deploy says of the target's atomics
+    /// ([`crate::BroadcastLogResolution::atomic_rmw_width`]), the triple of the
+    /// device ([`crate::BroadcastLogResolution::target`]) and the pause the design
+    /// relies on ([`crate::BroadcastLogResolution::min_wrap_ops`]). Only the Rust
+    /// renderer reads them, to choose its row ([`rust_broadcast_log_row`]); the
+    /// other runtimes have one row.
+    atomic_rmw_width: Option<u32>,
+    target: Option<String>,
+    min_wrap_ops: Option<u64>,
 }
 
 /// The name a language's broadcast-log template goes by in a refusal. Every
@@ -21076,6 +21085,9 @@ fn resolve_broadcast_log_render_inputs(
             QueueCardinality::Many => "many",
         },
         declared_progress: queue_progress_word(m.progress),
+        atomic_rmw_width: resolution.atomic_rmw_width,
+        target: resolution.target.clone(),
+        min_wrap_ops: resolution.min_wrap_ops,
     })
 }
 
@@ -21094,10 +21106,15 @@ fn resolve_broadcast_log_render_inputs(
 /// [`resolve_broadcast_log_render_inputs`]'s, which every language's renderer
 /// asks first.
 ///
-/// The stamp is 64 bits, which the runtime row keeps wherever it exists, so
-/// [`judge_broadcast_log_stamp`] is not asked anything here: it judges the
-/// obligations of a stamp narrower than that (a wrap bound and a retention one
-/// less than a power of two), and no Rust row keeps one.
+/// **The row** the module is generated over is chosen from the target the deploy
+/// states, after the shared refusals, as a queue's Rust row is
+/// ([`rust_broadcast_log_row`]): a target whose widest read-modify-write atomic is
+/// 64 bits, or a deploy that states none, gets the 64-bit row exactly as before, and a
+/// target below that gets the narrow row (`sce_forge_runtime::broadcast_log_narrow`,
+/// 32-bit stamps and words). The narrow row's stamp wraps, so the log is judged
+/// against it ([`judge_broadcast_log_stamp`]): a retention one less than a power of
+/// two, and a deploy that states `machines.<m>.queues.<log>.min_wrap_ops` within what
+/// the stamp covers.
 fn render_broadcast_log_rust(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -21105,12 +21122,27 @@ fn render_broadcast_log_rust(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::Rust, options)?;
+    let row = rust_broadcast_log_row(m, &inputs)?;
+    if row != RustBroadcastLogRow::Wide {
+        judge_broadcast_log_stamp(
+            m,
+            inputs.retention,
+            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.min_wrap_ops,
+        )?;
+    }
     let tmpl = env.get_template("broadcast_log.rs.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "broadcast_log.rs.jinja2 (rust): {e}"
         )))
     })?;
     let element = rust_stored_element(&m.element_type, options);
+    // The module the row lives in, and the word its entries are made of: 64-bit words
+    // over the 64-bit stamp, 32-bit words over the narrow one.
+    let (runtime_module, word_type, word_bits, word_bytes, word_bytes_word) = match row {
+        RustBroadcastLogRow::Wide => ("broadcast_log", "u64", 64, 8, "eight"),
+        RustBroadcastLogRow::Narrow { .. } => ("broadcast_log_narrow", "u32", 32, 4, "four"),
+    };
     let ctx = minijinja::context! {
         pascal => filters::to_pascal_case(m.name.clone()),
         element_type => &m.element_type,
@@ -21123,7 +21155,20 @@ fn render_broadcast_log_rust(
         max_bytes => inputs.max_bytes,
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
-        runtime_dep => "sce_forge_runtime::broadcast_log",
+        runtime_module => runtime_module,
+        runtime_dep => format!("sce_forge_runtime::{runtime_module}"),
+        narrow => row != RustBroadcastLogRow::Wide,
+        ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),
+        stamp_bits => crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+        word_type => word_type,
+        word_bits => word_bits,
+        word_bytes => word_bytes,
+        word_bytes_word => word_bytes_word,
+        log_name => &m.name,
+        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.retention,
+        ),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -21398,24 +21443,109 @@ fn render_broadcast_log_c(
     })
 }
 
+/// The row of the Rust forge runtime a broadcast log is generated over (ADR 0062
+/// section 4, "Stamp width").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RustBroadcastLogRow {
+    /// `sce_forge_runtime::broadcast_log`: 64-bit stamps and words, where the target
+    /// has 64-bit atomics.
+    Wide,
+    /// `sce_forge_runtime::broadcast_log_narrow`: a 32-bit stamp and 32-bit words,
+    /// for a target without 64-bit atomics. `ownership_only` is a target with no
+    /// read-modify-write atomic at all, where the one publisher is a matter of
+    /// ownership (`split`) and not of an 8-bit swap.
+    Narrow { ownership_only: bool },
+}
+
+/// The row of the Rust runtime a broadcast log is generated over, from what the
+/// deploy says of the target ([`BroadcastLogRenderInputs`]). The reads are the Rust
+/// queue's own: a triple the deploy names (`devices.<d>.target`) says what atomics
+/// it has ([`crate::target_atomics::rmw_width`]), `platform.atomic_rmw_width` is a
+/// second statement of the same fact that is refused when it differs and stands
+/// alone for a triple the table does not know, and a deploy that says neither says
+/// nothing against any row, so the 64-bit row is generated as it always was and its
+/// module carries a `compile_error!` for the target that lacks the atomics.
+///
+/// A width of 64 gets the 64-bit row; 32 and 0 get the narrow row, which needs no
+/// 64-bit atomic and, at 0, no swap of 8 bits. A triple the table does not know,
+/// with no width stated beside it, cannot be judged and is refused, as a queue
+/// row that needs an atomic is.
+fn rust_broadcast_log_row(
+    m: &crate::forge::model::BroadcastLogModel,
+    inputs: &BroadcastLogRenderInputs,
+) -> Result<RustBroadcastLogRow, ForgeError> {
+    let stated = inputs.atomic_rmw_width;
+    let triple = inputs.target.as_deref();
+    let known = triple.and_then(crate::target_atomics::rmw_width);
+    let width = match (stated, known) {
+        (Some(stated), Some(known)) if stated != known => {
+            return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                "broadcast-log '{name}': the deploy states platform.atomic_rmw_width {stated} for \
+                 a target `{target}` whose widest read-modify-write atomic is {known} bits (what \
+                 rustc reports of it). ADR 0062 section 4: the target's atomics decide which row \
+                 of the runtime the log is generated over, and two statements of them that differ \
+                 cannot both hold. Repair: remove platform.atomic_rmw_width, which the target \
+                 already says, or correct the target.",
+                name = m.name,
+                target = triple.unwrap_or_default(),
+            )))
+            .at_line(m.retention_line));
+        }
+        (Some(stated), _) => Some(stated),
+        (None, Some(known)) => Some(known),
+        (None, None) if triple.is_some() => {
+            return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                "broadcast-log '{name}': the deploy names the target `{target}`, whose atomics \
+                 the generator does not know, and states no platform.atomic_rmw_width. ADR 0062 \
+                 section 4: the row of the runtime the log is generated over is judged against \
+                 the target's atomics before it is written. Repair: state \
+                 platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine \
+                 in deploy.yaml.",
+                name = m.name,
+                target = triple.unwrap_or_default(),
+            )))
+            .at_line(m.retention_line));
+        }
+        (None, None) => None,
+    };
+    match width {
+        None | Some(64) => Ok(RustBroadcastLogRow::Wide),
+        Some(32) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: false,
+        }),
+        Some(0) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: true,
+        }),
+        Some(other) => Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': platform.atomic_rmw_width is {other}, and the widths of a \
+             target's read-modify-write atomics are 0, 32 and 64.",
+            name = m.name,
+        )))
+        .at_line(m.retention_line)),
+    }
+}
+
 /// Judge a broadcast log against the stamp a language's row keeps (ADR 0062 §4):
 /// the obligations of a stamp narrower than 64 bits, which the document alone
 /// cannot discharge.
 ///
 /// A stamp of 64 bits is never asked anything: the sequence stays below `2^63`.
-/// A narrower one wraps after `2^(bits - 1)` publishes, so the deploy must state
-/// the longest delay the design relies on (`machines.<m>.queues.<log>.min_wrap_ops`,
-/// the key a queue's SCQ row reads, here naming a log) and the bound must cover it
-/// (`broadcast-log/wrap-bound-unstated`,
-/// `broadcast-log/wrap-bound-below-deploy-minimum`); and the slot index
-/// `n mod (retention + 1)` must stay continuous across the wrap, so
-/// `retention + 1` must divide `2^bits`
+/// A narrower one wraps, and a reader gets the answers of the specification only
+/// while it is not held for too long, so the deploy must state the longest pause
+/// in publishes the design relies on
+/// (`machines.<m>.queues.<log>.min_wrap_ops`, the key a queue's SCQ row reads, here
+/// naming a log) and the bound
+/// ([`crate::forge::model::broadcast_log_longest_pause_ops`], `2^(bits - 1)` less the
+/// slots) must cover it (`broadcast-log/wrap-bound-unstated`,
+/// `broadcast-log/wrap-bound-below-deploy-minimum`, whose `bound` is that
+/// longest pause); and the slot index `n mod (retention + 1)` must stay continuous
+/// across the wrap, so `retention + 1` must divide `2^bits`
 /// (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`).
 ///
 /// `retention` is the count after a deploy key, if the document wrote one, has
-/// been resolved. No language calls this yet: the stamp width is a property of a
-/// row, and no row exists (`broadcast-log/runtime-missing`). The row that keeps a
-/// narrow stamp calls it with the width it keeps.
+/// been resolved. The Rust renderer calls this with the width of the narrow row,
+/// when the target it generates for has no 64-bit atomics
+/// ([`render_broadcast_log_rust`]); the 64-bit row is never asked.
 pub fn judge_broadcast_log_stamp(
     m: &crate::forge::model::BroadcastLogModel,
     retention: u32,
@@ -21423,7 +21553,7 @@ pub fn judge_broadcast_log_stamp(
     min_wrap_ops: Option<u64>,
 ) -> Result<(), ForgeError> {
     use crate::forge::model::{
-        broadcast_log_slots_divide_the_stamp_space, broadcast_log_wrap_bound_ops,
+        broadcast_log_longest_pause_ops, broadcast_log_slots_divide_the_stamp_space,
         BROADCAST_LOG_FULL_STAMP_BITS,
     };
     if stamp_bits >= BROADCAST_LOG_FULL_STAMP_BITS {
@@ -21444,7 +21574,7 @@ pub fn judge_broadcast_log_stamp(
             .at_line(m.retention_line),
         );
     }
-    let bound = broadcast_log_wrap_bound_ops(stamp_bits);
+    let bound = broadcast_log_longest_pause_ops(stamp_bits, retention);
     match min_wrap_ops {
         None => Err(ForgeError::from(
             GenerateError::BroadcastLogWrapBoundUnstated {

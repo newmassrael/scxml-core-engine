@@ -19,16 +19,50 @@
 // bytes the element document's codec writes, so a slot has no destructor to run
 // when it is overwritten, and a copy that was torn is thrown away unread.
 //
-// Operations (from `sce_forge_runtime::broadcast_log`, typed here over the
+// Operations (from `sce_forge_runtime::{{ runtime_module }}`, typed here over the
 // element):
 //   publish(&mut publisher, &element) -> Result<u64, CodecError>   wait-free; the entry's sequence number
 //   read(&log, &mut reader)           -> Result<Read, CodecError>  wait-free; an item, nothing new, or how many were missed
+{% if narrow %}
+// A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
+// and owns its cursor.
+{% if ownership_only %}
+// The publisher is `log.split()`, which takes an exclusive borrow of the log and
+// is the proof that there is one publisher (this target has no atomic
+// read-modify-write instruction, so there is no swap to hand it out with); a log in
+// a `static` takes it with the `unsafe` `log.publisher_unchecked()`, whose safety
+// contract the runtime states.
+{% else %}
+// The publisher is `log.publisher()`, taken once by an 8-bit swap, or
+// `log.split()`, which takes an exclusive borrow of the log; the two are one place.
+{% endif %}
+//
+// This module is generated over the runtime's narrow row, for a target without
+// 64-bit atomics: its stamp is {{ stamp_bits }} bits and wraps. Every sequence number
+// (a `seq`, the number `publish` returns, a reader's `cursor()`) counts modulo
+// 2^{{ stamp_bits }}. A reader gets the answers the document states while the publisher
+// begins at most {{ wrap_bound_ops }} publishes between two of its reads: the deploy states
+// the longest pause the design relies on as
+// `machines.<machine>.queues.{{ log_name }}.min_wrap_ops`, and this module was generated
+// against it. The slot count `SLOTS` is a power of two, so that the slot index of a
+// cursor known only modulo 2^{{ stamp_bits }} is the publisher's.
+{% else %}
 // A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
 // and owns its cursor; the publisher is `log.publisher()`, taken once.
+{% endif %}
 
 #![allow(clippy::all)]
 #![allow(unused_imports)]
 
+{% if narrow %}
+// The log's stamp, head and words are pointer-width atomics holding {{ stamp_bits }} bits, and
+// its words are 32-bit. The runtime has this module wherever a pointer is at least
+// 32 bits, so a target whose pointer is narrower says so here instead of leaving
+// the build to find an import that is not there.
+#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+compile_error!("this broadcast log keeps a 32-bit stamp and 32-bit words in pointer-width atomics, and the target's pointer is narrower than 32 bits");
+
+{% else %}
 // The log's stamps and words are 64-bit atomics, and its publisher is handed out
 // by an 8-bit swap. The runtime has this module only where the target has both,
 // so a target without them says so here instead of leaving the build to find an
@@ -36,7 +70,8 @@
 #[cfg(not(all(target_has_atomic = "64", target_has_atomic = "8")))]
 compile_error!("this broadcast log needs 64-bit atomics for its stamps and words and an 8-bit swap to hand out its publisher, and the target lacks one of them");
 
-use sce_forge_runtime::broadcast_log as runtime;
+{% endif %}
+use sce_forge_runtime::{{ runtime_module }} as runtime;
 use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};
 use super::{{ element_snake }}::{{ element_pascal }};
 {% if element_borrowed %}
@@ -55,10 +90,15 @@ pub const SLOTS: usize = RETENTION + 1;
 /// document when this module was generated.
 pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
 
-/// The 64-bit words an entry holds: one for the length of the encoded element,
-/// then as many as `MAX_ENCODED_BYTES` bytes take at eight to a word, that is
-/// `1 + ceil(MAX_ENCODED_BYTES / 8)`.
-pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);
+/// The {{ word_bits }}-bit words an entry holds: one for the length of the encoded element,
+/// then as many as `MAX_ENCODED_BYTES` bytes take at {{ word_bytes_word }} to a word, that is
+/// `1 + ceil(MAX_ENCODED_BYTES / {{ word_bytes }})`.
+pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil({{ word_bytes }});
+{% if narrow %}
+
+/// The length word holds the length of the encoded element in 32 bits.
+const _: () = assert!(MAX_ENCODED_BYTES <= u32::MAX as usize);
+{% endif %}
 
 /// What the document requires of publish and read (`<sce:progress>`).
 pub const DECLARED_PROGRESS: &str = "{{ declared_progress }}";
@@ -67,7 +107,16 @@ pub const DECLARED_PROGRESS: &str = "{{ declared_progress }}";
 /// nothing, so it may be a `static`.
 pub type {{ pascal }} = runtime::BroadcastLog<WORDS, SLOTS>;
 
+{% if narrow %}
+{% if ownership_only %}
+/// The publishing side of the log, taken once with `split()` (or, for a log in a
+/// `static`, the `unsafe` `publisher_unchecked()`).
+{% else %}
+/// The publishing side of the log, taken once with `publisher()` or `split()`.
+{% endif %}
+{% else %}
 /// The publishing side of the log, taken once with `publisher()`.
+{% endif %}
 pub type {{ pascal }}Publisher<'a> = runtime::Publisher<'a, WORDS, SLOTS>;
 
 /// What a typed read found: the runtime's three answers, with the entry decoded.
@@ -83,9 +132,12 @@ pub enum {{ pascal }}Read {
 }
 
 /// Publish `element`: encode it into a stack buffer of `MAX_ENCODED_BYTES`
-/// bytes, pack its length and its bytes (little-endian, eight to a word) into
+/// bytes, pack its length and its bytes (little-endian, {{ word_bytes_word }} to a word) into
 /// `WORDS` words, and hand them to the runtime, which never refuses and never
 /// waits. Returns the sequence number the entry took.
+{% if narrow %}
+/// The number counts modulo 2^{{ stamp_bits }}, as every sequence number of this log does.
+{% endif %}
 ///
 /// An element that encodes to more than `MAX_ENCODED_BYTES` bytes is refused by
 /// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
@@ -98,10 +150,10 @@ pub fn publish(
     let mut sink = SliceSink::new(&mut bytes);
     element.encode(&mut sink)?;
     let length = sink.position();
-    let mut entry = [0u64; WORDS];
-    entry[0] = length as u64;
+    let mut entry = [0{{ word_type }}; WORDS];
+    entry[0] = length as {{ word_type }};
     for (index, byte) in bytes[..length].iter().enumerate() {
-        entry[1 + index / 8] |= u64::from(*byte) << (8 * (index % 8));
+        entry[1 + index / {{ word_bytes }}] |= {{ word_type }}::from(*byte) << (8 * (index % {{ word_bytes }}));
     }
     Ok(publisher.publish(&entry))
 }
@@ -117,17 +169,21 @@ pub fn read(
     log: &{{ pascal }},
     reader: &mut runtime::Reader,
 ) -> Result<{{ pascal }}Read, CodecError> {
-    let mut entry = [0u64; WORDS];
+    let mut entry = [0{{ word_type }}; WORDS];
     match log.read(reader, &mut entry) {
         runtime::Read::Item { seq } => {
+{% if narrow %}
+            let stored = u64::from(entry[0]);
+{% else %}
             let stored = entry[0];
+{% endif %}
             if stored > MAX_ENCODED_BYTES as u64 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let length = stored as usize;
             let mut bytes = [0u8; MAX_ENCODED_BYTES];
             for (index, byte) in bytes[..length].iter_mut().enumerate() {
-                *byte = (entry[1 + index / 8] >> (8 * (index % 8))) as u8;
+                *byte = (entry[1 + index / {{ word_bytes }}] >> (8 * (index % {{ word_bytes }}))) as u8;
             }
             let mut cursor = SceCursor::new(&bytes[..length]);
 {% if element_borrowed %}

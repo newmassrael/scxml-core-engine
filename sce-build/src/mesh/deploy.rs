@@ -1526,6 +1526,17 @@ pub struct QueueDeployConfig {
     /// Required for an SCQ row on a target whose `platform.atomic_rmw_width` is
     /// 32 (`queue/wrap-bound-unstated`); ignored on one with 64-bit atomics,
     /// whose bound is 2^62.
+    ///
+    /// Keyed by the name of a `sce:kind="broadcast-log"` document, it is the longest
+    /// pause in publishes the design relies on: the most entries the publisher
+    /// may begin between a reader's load of the head in one read and its last access
+    /// of the next. A log whose stamp is narrower than 64 bits (a target whose
+    /// widest atomic is below 64 bits) is correct only while that pause is within
+    /// what the stamp covers, `2^31` less the log's `retention + 1` slots for the
+    /// 32-bit stamp of the Rust runtime's narrow row, and the generator refuses a
+    /// smaller bound (`broadcast-log/wrap-bound-below-deploy-minimum`) or no figure
+    /// (`broadcast-log/wrap-bound-unstated`); ignored on a target with 64-bit
+    /// atomics (ADR 0062 section 4, "Stamp width").
     #[serde(default)]
     pub min_wrap_ops: Option<u64>,
     /// Where each side of the queue runs: the cores, and whether in a thread or

@@ -54,12 +54,34 @@ mod log_modules {
             "/broadcast_log_conformance_deployed.rs"
         ));
     }
+    // The two logs generated for a target without 64-bit atomics: a deploy that
+    // names `thumbv7em-none-eabihf` (compare-and-swap, 32-bit atomics) and one that
+    // names `thumbv6m-none-eabi` (loads and stores only). Both are over the runtime's
+    // narrow row, which has no target cfg to keep it off this host.
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_narrow {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_narrow.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_ownership {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_ownership.rs"
+        ));
+    }
 }
 
 use log_modules::broadcast_log_conformance_deployed as deployed;
 use log_modules::broadcast_log_conformance_event::BroadcastLogConformanceEvent;
 use log_modules::broadcast_log_conformance_literal as literal;
 use log_modules::broadcast_log_conformance_literal::BroadcastLogConformanceLiteralRead as Read;
+use log_modules::broadcast_log_conformance_narrow as narrow;
+use log_modules::broadcast_log_conformance_narrow::BroadcastLogConformanceNarrowRead as NarrowRead;
+use log_modules::broadcast_log_conformance_ownership as ownership;
+use log_modules::broadcast_log_conformance_ownership::BroadcastLogConformanceOwnershipRead as OwnershipRead;
 use log_modules::broadcast_log_conformance_record::BroadcastLogConformanceRecord;
 use sce_forge_runtime::codec::CodecError;
 
@@ -299,4 +321,153 @@ fn a_stored_length_above_the_bound_is_a_codec_error_and_never_a_slice() {
         );
         assert_eq!(reader.cursor(), 1, "the reader moved past the entry");
     }
+}
+
+// ─── The narrow row: a target without 64-bit atomics ───
+
+#[test]
+fn the_narrow_log_is_sized_in_32_bit_words_from_its_element() {
+    assert_eq!(narrow::RETENTION, 3, "<sce:retention entries=\"3\"/>");
+    assert_eq!(
+        narrow::SLOTS,
+        4,
+        "a power of two, which a narrow stamp needs"
+    );
+    assert_eq!(narrow::MAX_ENCODED_BYTES, 3);
+    // One length word, then ceil(3 / 4) = 1 word of bytes at four to a word.
+    assert_eq!(narrow::WORDS, 2);
+    assert_eq!(narrow::DECLARED_PROGRESS, "wait-free");
+    // The words of the log are the narrow row's: 32 bits.
+    let entry: [u32; narrow::WORDS] = [0; narrow::WORDS];
+    assert_eq!(entry.len(), 2);
+}
+
+#[test]
+fn a_narrow_log_hands_entries_back_whole_and_in_order() {
+    let log = narrow::BroadcastLogConformanceNarrow::new();
+    let mut publisher = log
+        .publisher()
+        .expect("a target with compare-and-swap takes its publisher by swap");
+    let mut reader = log.reader_oldest();
+    assert_eq!(narrow::read(&log, &mut reader), Ok(NarrowRead::Empty));
+
+    // Values that fill every byte of the packed word and differ in each.
+    let sent = [event(1, 0x0102), event(2, 0xFFEE), event(255, 0)];
+    for (n, element) in sent.iter().enumerate() {
+        assert_eq!(
+            narrow::publish(&mut publisher, element),
+            Ok(n as u64),
+            "an entry takes the next sequence number"
+        );
+    }
+    for (n, element) in sent.iter().enumerate() {
+        assert_eq!(
+            narrow::read(&log, &mut reader),
+            Ok(NarrowRead::Item {
+                seq: n as u64,
+                element: element.clone()
+            }),
+            "entry {n} comes back whole, in the order it was published"
+        );
+    }
+    assert_eq!(narrow::read(&log, &mut reader), Ok(NarrowRead::Empty));
+    assert_eq!(reader.lost(), 0);
+}
+
+#[test]
+fn a_narrow_reader_the_publisher_laps_is_told_how_many_it_missed() {
+    let log = narrow::BroadcastLogConformanceNarrow::new();
+    let mut publisher = log.publisher().expect("the publisher");
+    let mut slow = log.reader_oldest();
+
+    // Six entries, counts 0 to 5, into a log that retains three: the window is
+    // [6 - 3, 6) = [3, 6), so the reader at 0 missed 3 - 0 = 3.
+    for n in 0..6u16 {
+        narrow::publish(&mut publisher, &event(9, n)).expect("an entry within the bound");
+    }
+    assert_eq!(
+        narrow::read(&log, &mut slow),
+        Ok(NarrowRead::Lagged { skipped: 3 })
+    );
+    assert_eq!((slow.cursor(), slow.lost()), (3, 3));
+    for n in 3..6u16 {
+        assert_eq!(
+            narrow::read(&log, &mut slow),
+            Ok(NarrowRead::Item {
+                seq: u64::from(n),
+                element: event(9, n)
+            })
+        );
+    }
+    assert_eq!(narrow::read(&log, &mut slow), Ok(NarrowRead::Empty));
+}
+
+#[test]
+fn a_stored_length_above_the_bound_is_a_codec_error_in_the_narrow_log_too() {
+    // The nearest length above the bound, and the largest 32-bit word.
+    for stored in [narrow::MAX_ENCODED_BYTES as u32 + 1, u32::MAX] {
+        let log = narrow::BroadcastLogConformanceNarrow::new();
+        let mut publisher = log.publisher().expect("the publisher");
+        let mut entry = [0u32; narrow::WORDS];
+        entry[0] = stored;
+        publisher.publish(&entry);
+
+        let mut reader = log.reader_oldest();
+        assert_eq!(
+            narrow::read(&log, &mut reader),
+            Err(CodecError::LengthOutOfRange),
+            "stored length {stored}"
+        );
+        assert_eq!(reader.cursor(), 1, "the reader moved past the entry");
+    }
+}
+
+#[test]
+fn a_log_for_a_target_with_loads_and_stores_only_takes_its_publisher_by_ownership() {
+    assert_eq!(ownership::WORDS, 2, "the same narrow row, 32-bit words");
+    let mut log = ownership::BroadcastLogConformanceOwnership::new();
+    let (mut publisher, log) = log.split();
+    let mut reader = log.reader_head();
+    assert!(
+        log.publisher().is_none(),
+        "the borrow holds the place, so the shared view cannot raise a second publisher"
+    );
+    assert_eq!(
+        ownership::publish(&mut publisher, &event(7, 700)),
+        Ok(0),
+        "the first entry"
+    );
+    assert_eq!(
+        ownership::publish(&mut publisher, &event(8, 800)),
+        Ok(1),
+        "the second"
+    );
+    for (n, element) in [event(7, 700), event(8, 800)].into_iter().enumerate() {
+        assert_eq!(
+            ownership::read(log, &mut reader),
+            Ok(OwnershipRead::Item {
+                seq: n as u64,
+                element
+            })
+        );
+    }
+    assert_eq!(ownership::read(log, &mut reader), Ok(OwnershipRead::Empty));
+}
+
+#[test]
+fn a_log_in_a_static_takes_its_publisher_on_the_callers_word() {
+    static LOG: ownership::BroadcastLogConformanceOwnership =
+        ownership::BroadcastLogConformanceOwnership::new();
+    // SAFETY: this is the only publisher of `LOG`, taken once, and nothing else in
+    // this binary names it.
+    let mut publisher = unsafe { LOG.publisher_unchecked() };
+    let mut reader = LOG.reader_oldest();
+    assert_eq!(ownership::publish(&mut publisher, &event(3, 30)), Ok(0));
+    assert_eq!(
+        ownership::read(&LOG, &mut reader),
+        Ok(OwnershipRead::Item {
+            seq: 0,
+            element: event(3, 30)
+        })
+    );
 }

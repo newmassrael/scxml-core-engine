@@ -6260,10 +6260,10 @@ pub enum GenerateError {
     },
 
     /// ADR 0062 §4 (`broadcast-log/wrap-bound-unstated`) — a log whose stamp is
-    /// narrower than 64 bits, whose wrap bound is `2^(bits - 1)` publishes, and
-    /// the deploy does not state `queues.<log>.min_wrap_ops`, the longest delay
-    /// the design relies on. Without it the bound cannot be judged against
-    /// anything.
+    /// narrower than 64 bits, which covers a pause of at most `2^(bits - 1)` less
+    /// its slots publishes (`broadcast_log_longest_pause_ops`), and the deploy does
+    /// not state `queues.<log>.min_wrap_ops`, the longest pause the design relies
+    /// on. Without it the bound cannot be judged against anything.
     #[error(
         "broadcast-log '{log_name}': the log's {stamp_bits}-bit stamp tells {bound} publishes apart, and the deploy states no machines.<machine>.queues.{log_name}.min_wrap_ops to judge it against. \
          ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own, which is not decidable from the document. \
@@ -6274,13 +6274,14 @@ pub enum GenerateError {
         log_name: String,
         /// The stamp's width in bits.
         stamp_bits: u32,
-        /// The log's wrap bound in publishes.
+        /// The longest pause in publishes the log's stamp covers.
         bound: u64,
     },
 
     /// ADR 0062 §4 (`broadcast-log/wrap-bound-below-deploy-minimum`) — the
-    /// deploy states a `min_wrap_ops` above the log's wrap bound, so a delay the
-    /// design relies on is long enough to mislead a reader.
+    /// deploy states a `min_wrap_ops` above the longest pause the log's stamp
+    /// covers, so a pause the design relies on is long enough to mislead a
+    /// reader.
     #[error(
         "broadcast-log '{log_name}': the log's {stamp_bits}-bit stamp tells {bound} publishes apart, below the {min_wrap_ops} that machines.<machine>.queues.{log_name}.min_wrap_ops says the design relies on. \
          ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own. \
@@ -6291,7 +6292,7 @@ pub enum GenerateError {
         log_name: String,
         /// The stamp's width in bits.
         stamp_bits: u32,
-        /// The log's wrap bound in publishes.
+        /// The longest pause in publishes the log's stamp covers.
         bound: u64,
         /// The `min_wrap_ops` the deploy states.
         min_wrap_ops: u64,

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the log of broadcast_log_conformance_narrow for a
+  target with loads and stores only (the Rust conformance crate's deploy names
+  `thumbv6m-none-eabi`), whose atomics have no swap. The generator gives it the
+  narrow row with a publisher by ownership: `split`, or `publisher_unchecked` for a
+  log in a `static`. The conformance crate compiles what the generator emits for it
+  and publishes and reads through both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_ownership"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>
