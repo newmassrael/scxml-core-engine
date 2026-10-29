@@ -221,6 +221,21 @@ private func list() -> Machine {
     )
 }
 
+private func listAssign() -> Machine {
+    let policy = StaticListAssignPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": { integers(policy.shown) },
+            "first": { integer(policy.first) },
+            "few": { integers(policy.few) },
+            "count": { integer(policy.count) },
+            "size": { integer(policy.size) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func listIndex() -> Machine {
     let policy = StaticListIndexPolicy()
     return drive(
@@ -1067,6 +1082,13 @@ private func recordBytes() -> Machine {
 // refused as `error.execution` and leaves the list as it was.
 @Test func aListIsFilledToItsBoundAndEmptied() {
     replay("static_list", list())
+}
+
+// A list an imported algorithm answers is taken into a list variable whole, held to the
+// variable's bound: a list that does not fit is refused as `error.execution` and leaves
+// the variable as it was.
+@Test func aListAnAlgorithmAnswersIsTakenWholeAndHeldToTheBound() {
+    replay("static_list_assign", listAssign())
 }
 
 // An element is read by its index, and an index outside the list is refused rather
