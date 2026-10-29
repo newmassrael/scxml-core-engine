@@ -23,7 +23,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    EnabledTransition, Engine, EntryTarget, Hal, NoHistory, StatePolicy, WalkStep,
+    state_scratch, DocumentTables, Engine, EventId, Hal, HistoryId, NoHistory, RunStore, Span,
+    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -104,45 +105,52 @@ impl StatePolicy for MockPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
+    type RunStore = RunStore<1, 0, 0>;
     type Configuration = BoundedVec<St, 1>;
-    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
-    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
-    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
+
+    // One child of the `<scxml>` element and no transition of its own: the
+    // only row of the transitions table is the document's initial transition.
+    const TABLES: &'static DocumentTables = &DocumentTables {
+        states: &[StateRow {
+            parent: None,
+            kind: StateKind::Atomic,
+            last_descendant: StateId(0),
+            children: Span::EMPTY,
+            initial: None,
+        }],
+        children: &[],
+        histories: &[],
+        transitions: &[TransitionRow {
+            source: None,
+            targets: Span { start: 0, len: 1 },
+            internal: false,
+            has_content: false,
+        }],
+        targets: &[Target::State(StateId(0))],
+        initial: TransitionId(0),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    };
+    const STATES: &'static [St] = &[St::S0];
+    const HISTORIES: &'static [NoHistory] = &[];
+    const EVENTS: &'static [Ev] = &[Ev::Null, Ev::Delayed];
+
+    fn state_id(s: Self::State) -> StateId {
+        StateId(s as u16)
+    }
+    fn history_id(h: Self::History) -> HistoryId {
+        match h {}
+    }
+    fn event_id(e: Self::Event) -> EventId {
+        EventId(e as u16)
+    }
 
     fn initial_state() -> Self::State {
         St::S0
-    }
-    fn is_final_state(_s: Self::State) -> bool {
-        false
-    }
-    fn get_parent(_s: Self::State) -> Option<Self::State> {
-        None
-    }
-    fn is_compound_state(_s: Self::State) -> bool {
-        false
-    }
-    fn get_child_states(_s: Self::State) -> &'static [Self::State] {
-        &[]
-    }
-    fn get_initial_targets(_s: Self::State) -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[]
-    }
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[EntryTarget::State(St::S0)]
-    }
-    fn get_history_parent(h: Self::History) -> Self::State {
-        match h {}
-    }
-    fn get_history_default_targets(
-        h: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match h {}
-    }
-    fn get_document_order(_s: Self::State) -> u32 {
-        0
     }
     fn null_event() -> Self::Event {
         Ev::Null
@@ -170,10 +178,6 @@ impl StatePolicy for MockPolicy {
         }
     }
 
-    fn history_value(&self, h: Self::History) -> Option<&[Self::State]> {
-        match h {}
-    }
-
     // `_is_default_entry` is unused: this policy has no compound states.
     fn execute_entry_actions(
         &mut self,
@@ -182,22 +186,16 @@ impl StatePolicy for MockPolicy {
         _is_default_entry: bool,
     ) {
     }
-    fn execute_exit_actions(
-        &mut self,
-        _s: Self::State,
-        _eng: &mut Engine<Self>,
-        _before: &[Self::State],
-    ) {
-    }
+    fn execute_exit_actions(&mut self, _s: Self::State, _eng: &mut Engine<Self>) {}
     fn first_enabled_transition(
         &mut self,
         _s: Self::State,
         _e: Self::Event,
         _eng: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<TransitionId> {
         None
     }
-    fn execute_transition_content(&mut self, _s: Self::State, _i: usize, _eng: &mut Engine<Self>) {}
+    fn execute_transition_content(&mut self, _t: TransitionId, _eng: &mut Engine<Self>) {}
 }
 
 // ─────────────────────────────────────────────────────────────

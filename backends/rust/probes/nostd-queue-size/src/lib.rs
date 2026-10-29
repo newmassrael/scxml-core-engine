@@ -105,34 +105,44 @@ const _: () = assert!(
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
 );
 
-/// Document-bound lever. Appendix D's loop holds an enabled set, a configuration
-/// and the sets built from it in the frames from the main event loop to the
-/// microstep, so every slot of their capacities is paid on the stack several
-/// times over at the deepest point of a call. The generator sizes them to what
-/// this document's state tree bounds, and this machine is three flat states, so
-/// one is active at a time and one transition enabled: capacity 1 each, where a
-/// bound written for every document was 16 and then 32 (516 B an enabled set).
-/// The numbers are asserted exactly, since a number that is merely small enough
-/// would let the generator drift back toward a constant without a word.
+/// The probe machine's tables (docs/adr/0064), which carry the bounds its
+/// buffers are sized by.
+const PROBE_TABLES: &sce_rust_runtime::DocumentTables =
+    <EventQueueCapacityProbePolicy as StatePolicy>::TABLES;
+
+/// Document-bound lever. Appendix D's procedures hold a configuration, the sets
+/// built from it, an enabled set and the walks' stack in the workspace of the
+/// call that runs a macrostep, so every slot of their capacities is paid on the
+/// stack at the deepest point of a call. The generator sizes them to what this
+/// document's state tree bounds, and this machine is three flat states with no
+/// `<history>`, so one is active at a time and one transition enabled, the walks
+/// owe three steps for its one level and three of headroom, and no history
+/// default is ever owed: where a bound written for every document was 16 and
+/// then 32 (516 B an enabled set). The numbers are asserted exactly, since a
+/// number that is merely small enough would let the generator drift back toward
+/// a constant without a word.
 const _: () = assert!(
-    <EventQueueCapacityProbePolicy as StatePolicy>::MAX_CONFIGURATION == 1
-        && <EventQueueCapacityProbePolicy as StatePolicy>::MAX_ENABLED == 1
-        && <EventQueueCapacityProbePolicy as StatePolicy>::MAX_DEPTH == 1,
-    "the flat probe machine's microstep bounds are not 1: the generator stopped reading the \
-     document's state tree (sce-build/src/microstep_bounds.rs) and wrote a constant, or the \
-     fixture gained a state",
+    PROBE_TABLES.max_configuration == 1
+        && PROBE_TABLES.max_enabled == 1
+        && PROBE_TABLES.max_walk == 6
+        && PROBE_TABLES.max_history_defaults == 0
+        && PROBE_TABLES.history_records == 0,
+    "the flat probe machine's microstep bounds are not those of three flat states: the \
+     generator stopped reading the document's state tree (sce-build/src/microstep_bounds.rs) \
+     and wrote a constant, or the fixture gained a state",
 );
 
-/// The buffers are spelled to those capacities, not only the constants beside
-/// them: an enabled set of one transition is the transition and its length.
-const ENABLED_SET_BOUND: usize = 32;
-
+/// The buffers are spelled to those capacities, not only the numbers in the
+/// tables beside them: the machine's workspace is exactly the workspace of
+/// those bounds.
 const _: () = assert!(
-    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::EnabledSet>()
-        <= ENABLED_SET_BOUND,
-    "the enabled transition set is larger than one transition and its length: its type was \
-     spelled with a capacity other than the document's MAX_ENABLED. See the Rust template's \
-     `type EnabledSet` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::Workspace>()
+        == core::mem::size_of::<
+            sce_rust_runtime::Workspace<{ sce_rust_runtime::state_scratch(1) }, 1, 6, 0>,
+        >(),
+    "the machine's microstep workspace is not the size of a workspace of the document's \
+     bounds: its type was spelled with other capacities. See the Rust template's \
+     `type Workspace` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
 );
 
 /// Constant-construction lever. A bare-metal program holds its engine in a
@@ -146,25 +156,16 @@ const _: () = assert!(
 pub static ENGINE_BUILT_IN_ITS_SLOT: Engine<EventQueueCapacityProbePolicy> =
     Engine::new_const(EventQueueCapacityProbePolicy::new_const("queue-size-probe"));
 
-/// The walks' stack, spelled to the document too: three steps for each level of the
-/// tree (one here) and three of headroom is six, and a stack of six steps is those
-/// and its length. Appendix D's recursions run over it, so a generator that wrote a
-/// constant would put a stack of that size under every call of every machine.
-const ENTRY_WALK_STEPS: usize = 6;
-
+/// The configuration and history records the engine keeps for the whole run,
+/// spelled to the document too: one state at a time and no `<history>` to
+/// record. A store of a constant's size would be paid in static RAM by every
+/// machine for as long as it runs.
 const _: () = assert!(
-    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::EntryWalk>()
-        <= ENTRY_WALK_STEPS
-            * core::mem::size_of::<
-                sce_rust_runtime::WalkStep<
-                    <EventQueueCapacityProbePolicy as StatePolicy>::State,
-                    <EventQueueCapacityProbePolicy as StatePolicy>::History,
-                >,
-            >()
-            + core::mem::size_of::<usize>(),
-    "the entry walk's stack is larger than the document's three steps a level and three of \
-     headroom: its type was spelled with another capacity. See the Rust template's \
-     `type EntryWalk` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::RunStore>()
+        == core::mem::size_of::<sce_rust_runtime::RunStore<1, 0, 0>>(),
+    "the machine's run store is not the size of a store of the document's bounds: its type was \
+     spelled with other capacities. See the Rust template's `type RunStore` \
+     (tools/codegen/templates/rust/state_machine.rs.jinja2).",
 );
 
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler

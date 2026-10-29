@@ -22,12 +22,13 @@
 //! Appendix D does with those answers — which transitions an event selects,
 //! which survive preemption, which states a microstep exits and enters and in
 //! which order — is [`helpers::microstep`](crate::helpers::microstep), written
-//! once for every machine. It reads a policy as a [`Document`] (see
-//! [`PolicyDocument`]), and the engine hands it the rest.
+//! once for every program. It reads the policy's
+//! [`TABLES`](StatePolicy::TABLES) and asks for the rest through the engine
+//! (docs/adr/0064).
 //!
 //! ## Static vs Instance Methods
 //!
-//! - **Static methods** (`is_final_state()`, `get_child_states()`, etc.) mirror
+//! - **Static methods** (`is_final_state()`, `get_event_name()`, etc.) mirror
 //!   C++ `constexpr static` methods. They encode compile-time SCXML document
 //!   structure (state hierarchy, initial and history targets, document order).
 //! - **Instance methods** (`execute_entry_actions()`,
@@ -74,13 +75,13 @@ pub trait StatePolicy: Sized + 'static {
     type Event: Copy + Eq + Hash + Debug + 'static;
 
     /// `<history>` enum type generated per SCXML document (§scxml-3.10), or
-    /// [`NoHistory`](crate::helpers::microstep::NoHistory) for a document that
+    /// [`NoHistory`](crate::helpers::tables::NoHistory) for a document that
     /// declares none.
     ///
     /// A history is not a state — it is never in a configuration — so it is not
-    /// a variant of [`State`](StatePolicy::State): target lists name one as an
-    /// [`EntryTarget::History`], and the entry procedures dereference it to what
-    /// it recorded or to its default.
+    /// a variant of [`State`](StatePolicy::State): target lists name one as a
+    /// [`Target::History`](crate::helpers::tables::Target::History), and the
+    /// entry procedures dereference it to what it recorded or to its default.
     type History: Copy + Eq + Debug + 'static;
 
     /// Typed event payload for EventSchema native lowering.

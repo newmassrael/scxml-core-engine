@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Integration tests for the hierarchy helpers: the bounded buffers every
-// configuration, and every set of states a microstep builds, is held in.
+// Integration tests for the hierarchy helpers: the bounded buffer a
+// configuration is handed to a host in (`StatePolicy::Configuration`, what
+// `Engine::get_active_states` returns).
 //
 // The walks over the hierarchy — descendancy, domains, exit and entry sets —
-// are `helpers::microstep`'s, and are held to Appendix D in
+// are `helpers::microstep`'s, over the document's tables and the slices of the
+// machine's workspace, and are held to Appendix D in
 // `tests/microstep_algorithms.rs`.
 
 use sce_rust_runtime::helpers::hierarchy::{Bounded, BoundedVec};
@@ -26,7 +28,8 @@ enum FakeState {
 // profile this test is built in, since the trait is implemented for both.
 // ──────────────────────────────────────────────
 
-/// Everything a microstep does to a buffer, written once over the trait.
+/// Everything a configuration buffer is asked to do, written once over the
+/// trait.
 fn builds_in_order<B: Bounded<FakeState>>() {
     let mut chain = B::default();
     assert!(chain.is_empty());
@@ -83,14 +86,6 @@ fn a_bounded_vec_drops_what_it_is_told_to() {
 #[test]
 fn a_heapless_vec_drops_what_it_is_told_to() {
     drops_what_it_is_told_to::<heapless::Vec<FakeState, 5>>();
-}
-
-#[test]
-fn a_buffer_of_no_slots_is_empty_and_holds_nothing() {
-    // A document with no `<history>` spells its history defaults with
-    // capacity 0, and nothing is ever pushed.
-    let chain = heapless::Vec::<(FakeState, FakeState), 0>::default();
-    assert!(chain.is_empty());
 }
 
 #[test]

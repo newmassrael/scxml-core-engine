@@ -6,9 +6,10 @@
 //! Ports of the C++ helper headers (`sce/include/core/`,
 //! `sce/include/common/`) that the Rust engine and generated code consume.
 //! Most helpers here are pure functions over `P: StatePolicy`, matching the
-//! C++ pattern of template specialization; [`microstep`] is written over its
-//! own `Document` / `Run` traits instead, the way the C++ procedures take a
-//! `Host`.
+//! C++ pattern of template specialization. [`microstep`] is not generic at
+//! all: it reads a document's [`tables`] and drives the running machine
+//! through its `Behaviour` trait object, so one copy serves every machine of a
+//! program (docs/adr/0064).
 //!
 //! W3C SCXML Appendix D's microstep — selection, conflict removal, the exit
 //! and entry sets, history, deep and multi-target entry — is [`microstep`],
@@ -36,10 +37,12 @@
 //! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
 //! - [`microstep`]: Appendix D's microstep — selection, conflict removal, exit
 //!   set, entry set (`MicrostepAlgorithms` / `EntrySetAlgorithms`)
+//! - [`run_store`]: a running machine's configuration and history records
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)
 //! - [`session_id`]: a root session's `_sessionid`, given by the host or drawn
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
+//! - [`tables`]: a document's structure as the tables the microstep reads
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
 //!

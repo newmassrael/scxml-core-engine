@@ -29,21 +29,23 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory, StatePolicy, WalkStep,
+    state_scratch, DocumentTables, Engine, EventId, EventWithMetadata, HistoryId, NoHistory,
+    RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
-// `Fail` mirrors the W3C SCXML enum shape (test144 has both pass and fail
-// terminal states) but the hand-crafted happy-path port never constructs
-// it; matches!() arms still need the variant for exhaustiveness.
+// Declared in document order, so a variant's discriminant is its `StateId`:
+// the generated enum's order (docs/adr/0064).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 enum Test144State {
-    Fail,
-    Pass,
     S0,
     S1,
+    Pass,
+    Fail,
 }
 
+// Declared in the order of `EVENTS`, so a variant's discriminant is its
+// `EventId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Test144Event {
     /// W3C SCXML 6.2: default/scheduler-poll event (no semantic meaning).
@@ -60,6 +62,11 @@ impl Test144Policy {
     }
 }
 
+/// The written transitions, by `TransitionId`: grouped by source in state
+/// order, as the tables number them.
+const S0_ON_FOO: TransitionId = TransitionId(0);
+const S1_ON_BAR: TransitionId = TransitionId(1);
+
 impl StatePolicy for Test144Policy {
     type State = Test144State;
     type Event = Test144Event;
@@ -71,73 +78,113 @@ impl StatePolicy for Test144Policy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // Four flat states: one is active at a time.
+    // Four flat states: one is active at a time, one transition is enabled,
+    // and the walks owe three steps for the one level and three of headroom.
+    type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
+    type RunStore = RunStore<1, 0, 0>;
     type Configuration = BoundedVec<Test144State, 1>;
-    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
-    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
-    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
+
+    // C++ `getParent` answers `std::nullopt` for all: four children of the
+    // `<scxml>` element, two of them `<final>`. The document's initial
+    // transition, last, is `<scxml initial="s0">`.
+    const TABLES: &'static DocumentTables = &DocumentTables {
+        states: &[
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(2),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(3),
+                children: Span::EMPTY,
+                initial: None,
+            },
+        ],
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // s0: foo -> s1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // s1: bar -> pass
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // <scxml initial="s0">
+            TransitionRow {
+                source: None,
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(1)),
+            Target::State(StateId(2)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(2),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    };
+    const STATES: &'static [Test144State] = &[
+        Test144State::S0,
+        Test144State::S1,
+        Test144State::Pass,
+        Test144State::Fail,
+    ];
+    const HISTORIES: &'static [NoHistory] = &[];
+    const EVENTS: &'static [Test144Event] =
+        &[Test144Event::None, Test144Event::Bar, Test144Event::Foo];
 
     // C++ `static constexpr bool HAS_PARALLEL_STATES = false;`
     const HAS_PARALLEL_STATES: bool = false;
     // C++ `static constexpr bool NEEDS_SCRIPT_ENGINE = false;`
     const NEEDS_SCRIPT_ENGINE: bool = false;
 
+    fn state_id(state: Self::State) -> StateId {
+        StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> HistoryId {
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> EventId {
+        EventId(event as u16)
+    }
+
     fn initial_state() -> Self::State {
         // C++ `return State::S0;`
         Test144State::S0
-    }
-
-    fn is_final_state(state: Self::State) -> bool {
-        // C++ switch: Pass, Fail → true
-        matches!(state, Test144State::Pass | Test144State::Fail)
-    }
-
-    fn get_parent(_state: Self::State) -> Option<Self::State> {
-        // C++ `return std::nullopt;` for all (flat hierarchy)
-        None
-    }
-
-    fn is_compound_state(_state: Self::State) -> bool {
-        // C++ `return false;` for all
-        false
-    }
-
-    fn get_child_states(_state: Self::State) -> &'static [Self::State] {
-        // C++ `getChildStates`: every state is a child of the <scxml> element
-        &[]
-    }
-
-    fn get_initial_targets(
-        _state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[]
-    }
-
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
-        // C++ `getDocumentInitialTargets()`: <scxml initial="s0">
-        &[EntryTarget::State(Test144State::S0)]
-    }
-
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            Test144State::Fail => 0,
-            Test144State::Pass => 1,
-            Test144State::S0 => 2,
-            Test144State::S1 => 3,
-        }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
@@ -161,29 +208,25 @@ impl StatePolicy for Test144Policy {
     fn get_state_name(state: Self::State) -> &'static str {
         // C++ `getStateName(State)` 1:1
         match state {
-            Test144State::Fail => "fail",
-            Test144State::Pass => "pass",
             Test144State::S0 => "s0",
             Test144State::S1 => "s1",
+            Test144State::Pass => "pass",
+            Test144State::Fail => "fail",
         }
     }
 
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
-            "fail" => Some(Test144State::Fail),
-            "pass" => Some(Test144State::Pass),
             "s0" => Some(Test144State::S0),
             "s1" => Some(Test144State::S1),
+            "pass" => Some(Test144State::Pass),
+            "fail" => Some(Test144State::Fail),
             _ => None,
         }
     }
 
     fn null_event() -> Self::Event {
         Test144Event::None
-    }
-
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
     }
 
     // ──────────────────────────────────────────────
@@ -208,12 +251,7 @@ impl StatePolicy for Test144Policy {
         }
     }
 
-    fn execute_exit_actions(
-        &mut self,
-        _state: Self::State,
-        _engine: &mut Engine<Self>,
-        _before: &[Self::State],
-    ) {
+    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {
         // C++ executeExitActions: empty body
     }
 
@@ -226,32 +264,24 @@ impl StatePolicy for Test144Policy {
         state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>> {
-        let target: &'static [EntryTarget<Self::State, Self::History>] = match (state, event) {
+    ) -> Option<TransitionId> {
+        match (state, event) {
             // S0 on Foo → S1
-            (Test144State::S0, Test144Event::Foo) => &[EntryTarget::State(Test144State::S1)],
+            (Test144State::S0, Test144Event::Foo) => Some(S0_ON_FOO),
             // S1 on Bar → Pass
-            (Test144State::S1, Test144Event::Bar) => &[EntryTarget::State(Test144State::Pass)],
+            (Test144State::S1, Test144Event::Bar) => Some(S1_ON_BAR),
             // Wildcard '*' transitions to Fail are omitted: the happy path
             // (Foo → Bar → Pass) never exercises them, and W3C SCXML 5.9.3
             // descriptor matching has its own coverage (`helpers::event_matching`).
             // The full generated output emits `matches_event_descriptor(name, "*")`
             // arms here.
-            _ => return None,
-        };
-        Some(EnabledTransition {
-            source: state,
-            targets: target,
-            transition_index: 0,
-            has_actions: false,
-            is_internal: false,
-        })
+            _ => None,
+        }
     }
 
     fn execute_transition_content(
         &mut self,
-        _source: Self::State,
-        _index: usize,
+        _transition: TransitionId,
         _engine: &mut Engine<Self>,
     ) {
         // C++ executeTransitionActions: empty body
@@ -261,6 +291,11 @@ impl StatePolicy for Test144Policy {
 // ──────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────
+
+#[test]
+fn test144_tables_keep_the_rules_the_procedures_assume() {
+    assert_eq!(Test144Policy::TABLES.check(), Ok(()));
+}
 
 #[test]
 fn test144_initial_state_is_s0() {

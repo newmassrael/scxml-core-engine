@@ -13,8 +13,12 @@
 // template-driven generation. Pins that baseline.
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
-use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy, WalkStep};
+use sce_rust_runtime::{
+    state_scratch, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore, Span, StateId,
+    StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
+};
 
+// Declared in document order, so a variant's discriminant is its `StateId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HwState {
     Stopped,
@@ -22,6 +26,8 @@ enum HwState {
     Done,
 }
 
+// Declared in the order of `EVENTS`, so a variant's discriminant is its
+// `EventId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HwEvent {
     Null,
@@ -38,19 +44,11 @@ impl HwPolicy {
     }
 }
 
-/// One targeted transition of `source`, as a policy reports it.
-fn to(
-    source: HwState,
-    target: &'static [EntryTarget<HwState, NoHistory>],
-) -> EnabledTransition<HwState, NoHistory> {
-    EnabledTransition {
-        source,
-        targets: target,
-        transition_index: 0,
-        has_actions: false,
-        is_internal: false,
-    }
-}
+/// The written transitions, by `TransitionId`: grouped by source in state
+/// order, as the tables number them.
+const STOPPED_PLAY: TransitionId = TransitionId(0);
+const RUNNING_STOP: TransitionId = TransitionId(1);
+const RUNNING_END: TransitionId = TransitionId(2);
 
 impl StatePolicy for HwPolicy {
     type State = HwState;
@@ -62,61 +60,102 @@ impl StatePolicy for HwPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // A flat document: one state is active at a time.
+    // A flat document: one state is active at a time, one transition is
+    // enabled, and the walks owe three steps for its one level and three of
+    // headroom.
+    type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
+    type RunStore = RunStore<1, 0, 0>;
     type Configuration = BoundedVec<HwState, 1>;
-    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
-    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
-    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
-    const MAX_CONFIGURATION: usize = 1;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 1;
+
+    // Three children of the `<scxml>` element; the document's initial
+    // transition, last, enters `stopped`.
+    const TABLES: &'static DocumentTables = &DocumentTables {
+        states: &[
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(0),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            StateRow {
+                parent: None,
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            StateRow {
+                parent: None,
+                kind: StateKind::Final,
+                last_descendant: StateId(2),
+                children: Span::EMPTY,
+                initial: None,
+            },
+        ],
+        children: &[],
+        histories: &[],
+        transitions: &[
+            // stopped: play -> running
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // running: stop -> stopped
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // running: end -> done
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // <scxml initial="stopped">
+            TransitionRow {
+                source: None,
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+            Target::State(StateId(2)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(3),
+        history_records: 0,
+        max_configuration: 1,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 6,
+    };
+    const STATES: &'static [HwState] = &[HwState::Stopped, HwState::Running, HwState::Done];
+    const HISTORIES: &'static [NoHistory] = &[];
+    const EVENTS: &'static [HwEvent] = &[HwEvent::Null, HwEvent::Play, HwEvent::Stop, HwEvent::End];
+
+    fn state_id(state: Self::State) -> StateId {
+        StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> HistoryId {
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> EventId {
+        EventId(event as u16)
+    }
 
     fn initial_state() -> Self::State {
         HwState::Stopped
-    }
-
-    fn is_final_state(state: Self::State) -> bool {
-        matches!(state, HwState::Done)
-    }
-
-    fn get_parent(_state: Self::State) -> Option<Self::State> {
-        None // All states are flat (no hierarchy)
-    }
-
-    fn is_compound_state(_state: Self::State) -> bool {
-        false
-    }
-
-    fn get_child_states(_state: Self::State) -> &'static [Self::State] {
-        &[]
-    }
-
-    fn get_initial_targets(
-        _state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[]
-    }
-
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[EntryTarget::State(HwState::Stopped)]
-    }
-
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            HwState::Stopped => 0,
-            HwState::Running => 1,
-            HwState::Done => 2,
-        }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
@@ -158,10 +197,6 @@ impl StatePolicy for HwPolicy {
         HwEvent::Null
     }
 
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
     // `_is_default_entry` is unused: this policy has no compound states, so no
     // state has an initial transition whose content could run.
     fn execute_entry_actions(
@@ -173,12 +208,7 @@ impl StatePolicy for HwPolicy {
         // No entry actions in this minimal test
     }
 
-    fn execute_exit_actions(
-        &mut self,
-        _state: Self::State,
-        _engine: &mut Engine<Self>,
-        _before: &[Self::State],
-    ) {
+    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {
         // No exit actions
     }
 
@@ -187,25 +217,18 @@ impl StatePolicy for HwPolicy {
         state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<TransitionId> {
         match (state, event) {
-            (HwState::Stopped, HwEvent::Play) => {
-                Some(to(state, &[EntryTarget::State(HwState::Running)]))
-            }
-            (HwState::Running, HwEvent::Stop) => {
-                Some(to(state, &[EntryTarget::State(HwState::Stopped)]))
-            }
-            (HwState::Running, HwEvent::End) => {
-                Some(to(state, &[EntryTarget::State(HwState::Done)]))
-            }
+            (HwState::Stopped, HwEvent::Play) => Some(STOPPED_PLAY),
+            (HwState::Running, HwEvent::Stop) => Some(RUNNING_STOP),
+            (HwState::Running, HwEvent::End) => Some(RUNNING_END),
             _ => None,
         }
     }
 
     fn execute_transition_content(
         &mut self,
-        _source: Self::State,
-        _index: usize,
+        _transition: TransitionId,
         _engine: &mut Engine<Self>,
     ) {
         // No transition actions
@@ -228,6 +251,11 @@ fn engine_is_send() {
     fn assert_send<T: Send>() {}
     assert_send::<HwPolicy>();
     assert_send::<Engine<HwPolicy>>();
+}
+
+#[test]
+fn the_hand_written_tables_keep_the_rules_the_procedures_assume() {
+    assert_eq!(HwPolicy::TABLES.check(), Ok(()));
 }
 
 #[test]

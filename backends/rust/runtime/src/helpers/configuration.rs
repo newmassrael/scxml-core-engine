@@ -127,9 +127,9 @@ pub enum ConfigurationRejection<S> {
 /// Pure: reads the policy's static hierarchy and nothing else, allocates
 /// nothing, and is therefore the same function under std and `no_std`.
 ///
-/// Cost is quadratic in the chain length, which is bounded by the document's
-/// [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION) for any configuration
-/// of it. A configuration is a handful of states
+/// Cost is quadratic in the chain length, which is bounded by the most states
+/// one configuration of the document holds
+/// ([`DocumentTables::max_configuration`](crate::helpers::tables::DocumentTables::max_configuration)). A configuration is a handful of states
 /// and this runs once per restore, so the shape is chosen for being obviously
 /// right rather than for being fast.
 pub fn validate<P: StatePolicy>(

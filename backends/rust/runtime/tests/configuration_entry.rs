@@ -4,17 +4,20 @@
 // §scxml-3.3 / §scxml-3.4 / §scxml-3.8: `Engine::enter_at` — entering a
 // configuration a machine was already in, without re-running `<onentry>`.
 //
-// Two hand-written policies, because the two halves of the door are different
-// facts:
+// Two hand-written policies, because the two shapes of a configuration are
+// different facts:
 //
-//   - `ParallelPolicy` keeps its own active set (`HAS_ACTIVE_STATES`), which is
-//     the shape the consumer that asked for this door actually runs: a
-//     `<parallel>` document. Its configuration is a set, and it is the case
-//     where `current_state` is NOT recoverable from that set.
-//   - `LinearPolicy` has no parallel regions, so its configuration is the
-//     parent walk from the leaf and `Engine::get_active_states` derives it
-//     rather than reading the policy. `enter_at` has to close the round trip
-//     there too, through a different code path.
+//   - `ParallelPolicy` is a `<parallel>` document, the shape the consumer that
+//     asked for this door actually runs. Its configuration holds every region,
+//     and it is the case where `current_state` is NOT recoverable from that
+//     set.
+//   - `LinearPolicy` has no parallel regions, so its configuration is one
+//     chain from the `<scxml>` element's child down to the leaf, and the leaf
+//     is the current state.
+//
+// Neither keeps its own configuration: the engine keeps it, as numbers, and
+// `Engine::get_active_states` reads it back in the order the states were
+// entered (docs/adr/0064). `enter_at` has to close the round trip for both.
 //
 // The onentry witness is what separates a resume from a replay. Both policies
 // raise an event from an `<onentry>` that has a transition waiting for it, so a
@@ -24,23 +27,10 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    BoundedPush, ConfigurationRejection, EnabledTransition, Engine, EntryTarget, EventWithMetadata,
-    NoHistory, StatePolicy, WalkStep,
+    state_scratch, ConfigurationRejection, DocumentTables, Engine, EventId, EventWithMetadata,
+    HistoryId, NoHistory, RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target,
+    TransitionId, TransitionRow, Workspace,
 };
-
-/// One targeted transition of `source`, as a policy reports it.
-fn to<S: Copy + 'static>(
-    source: S,
-    target: &'static [EntryTarget<S, NoHistory>],
-) -> EnabledTransition<S, NoHistory> {
-    EnabledTransition {
-        source,
-        targets: target,
-        transition_index: 0,
-        has_actions: false,
-        is_internal: false,
-    }
-}
 
 // ══════════════════════════════════════════════════════════════════
 // A <parallel> document
@@ -52,6 +42,7 @@ fn to<S: Copy + 'static>(
 //   A1 --Advance--> A2
 // ══════════════════════════════════════════════════════════════════
 
+// Declared in document order, so a variant's discriminant is its `StateId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum PState {
     P,
@@ -69,7 +60,6 @@ enum PEvent {
 }
 
 struct ParallelPolicy {
-    active_states: <ParallelPolicy as StatePolicy>::Configuration,
     /// How many states this policy has run entry actions for. The inside view
     /// of the onentry contract.
     entries: u32,
@@ -77,12 +67,12 @@ struct ParallelPolicy {
 
 impl ParallelPolicy {
     fn new() -> Self {
-        Self {
-            active_states: Default::default(),
-            entries: 0,
-        }
+        Self { entries: 0 }
     }
 }
+
+/// `a1`'s one transition, the first row of the transitions table.
+const A1_ON_ADVANCE: TransitionId = TransitionId(0);
 
 impl StatePolicy for ParallelPolicy {
     type State = PState;
@@ -94,88 +84,139 @@ impl StatePolicy for ParallelPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // P, RA, one of A1/A2, RB, B1: five states at most, two of them atomic.
+    // P, RA, one of A1/A2, RB, B1: five states at most, two of them atomic, so
+    // two transitions enabled at most; three steps for each of the three
+    // levels and three of headroom for the walks.
+    type Workspace = Workspace<{ state_scratch(5) }, 2, 12, 0>;
+    type RunStore = RunStore<5, 0, 0>;
     type Configuration = BoundedVec<PState, 5>;
-    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 2>;
-    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
-    // Three steps for each of the three levels, and three of headroom.
-    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 12>;
-    const MAX_CONFIGURATION: usize = 5;
-    const MAX_ENABLED: usize = 2;
-    const MAX_DEPTH: usize = 3;
+
+    // The transitions: `a1 --advance--> a2`, then the initial transitions of
+    // the compound states `ra` and `rb`, then the document's.
+    const TABLES: &'static DocumentTables = &DocumentTables {
+        states: &[
+            // p
+            StateRow {
+                parent: None,
+                kind: StateKind::Parallel,
+                last_descendant: StateId(5),
+                children: Span { start: 0, len: 2 },
+                initial: None,
+            },
+            // ra
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(3),
+                children: Span { start: 2, len: 2 },
+                initial: Some(TransitionId(1)),
+            },
+            // a1
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            // a2
+            StateRow {
+                parent: Some(StateId(1)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(3),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            // rb
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Compound,
+                last_descendant: StateId(5),
+                children: Span { start: 4, len: 1 },
+                initial: Some(TransitionId(2)),
+            },
+            // b1
+            StateRow {
+                parent: Some(StateId(4)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(5),
+                children: Span::EMPTY,
+                initial: None,
+            },
+        ],
+        children: &[StateId(1), StateId(4), StateId(2), StateId(3), StateId(5)],
+        histories: &[],
+        transitions: &[
+            // a1: advance -> a2
+            TransitionRow {
+                source: Some(StateId(2)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // ra's initial: a1
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // rb's initial: b1
+            TransitionRow {
+                source: Some(StateId(4)),
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // the document's initial: p
+            TransitionRow {
+                source: None,
+                targets: Span { start: 3, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(3)),
+            Target::State(StateId(2)),
+            Target::State(StateId(5)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(3),
+        history_records: 0,
+        max_configuration: 5,
+        max_enabled: 2,
+        max_history_defaults: 0,
+        max_walk: 12,
+    };
+    const STATES: &'static [PState] = &[
+        PState::P,
+        PState::Ra,
+        PState::A1,
+        PState::A2,
+        PState::Rb,
+        PState::B1,
+    ];
+    const HISTORIES: &'static [NoHistory] = &[];
+    const EVENTS: &'static [PEvent] = &[PEvent::None, PEvent::Advance];
 
     const HAS_PARALLEL_STATES: bool = true;
-    const HAS_ACTIVE_STATES: bool = true;
     const NEEDS_SCRIPT_ENGINE: bool = false;
+
+    fn state_id(state: Self::State) -> StateId {
+        StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> HistoryId {
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> EventId {
+        EventId(event as u16)
+    }
 
     fn initial_state() -> Self::State {
         PState::P
-    }
-
-    fn is_final_state(_state: Self::State) -> bool {
-        false
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            PState::P => None,
-            PState::Ra | PState::Rb => Some(PState::P),
-            PState::A1 | PState::A2 => Some(PState::Ra),
-            PState::B1 => Some(PState::Rb),
-        }
-    }
-
-    // A <parallel> is not compound: Appendix D's isCompoundState.
-    fn is_compound_state(state: Self::State) -> bool {
-        matches!(state, PState::Ra | PState::Rb)
-    }
-
-    fn is_parallel_state(state: Self::State) -> bool {
-        matches!(state, PState::P)
-    }
-
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            PState::P => &[PState::Ra, PState::Rb],
-            PState::Ra => &[PState::A1, PState::A2],
-            PState::Rb => &[PState::B1],
-            _ => &[],
-        }
-    }
-
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match state {
-            PState::Ra => &[EntryTarget::State(PState::A1)],
-            PState::Rb => &[EntryTarget::State(PState::B1)],
-            _ => &[],
-        }
-    }
-
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[EntryTarget::State(PState::P)]
-    }
-
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            PState::P => 0,
-            PState::Ra => 1,
-            PState::A1 => 2,
-            PState::A2 => 3,
-            PState::Rb => 4,
-            PState::B1 => 5,
-        }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
@@ -219,13 +260,9 @@ impl StatePolicy for ParallelPolicy {
         PEvent::None
     }
 
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
-    // Mirrors the generated shape: the entered state joins the active set, and
-    // nothing below it is entered here — the engine's Appendix D entry set
-    // enters every region and initial child, one state at a time.
+    // Mirrors the generated shape: one state's onentry, and nothing below it —
+    // the engine's Appendix D entry set enters every region and initial child,
+    // one state at a time, and keeps the configuration itself.
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -233,53 +270,31 @@ impl StatePolicy for ParallelPolicy {
         _is_default_entry: bool,
     ) {
         self.entries += 1;
-        if !self.active_states.contains(&state) {
-            self.active_states.push_bounded(state);
-        }
         // The onentry that separates a resume from a replay.
         if state == PState::A1 {
             engine.raise(EventWithMetadata::new(PEvent::Advance));
         }
     }
 
-    fn execute_exit_actions(
-        &mut self,
-        state: Self::State,
-        _engine: &mut Engine<Self>,
-        _before: &[Self::State],
-    ) {
-        self.active_states.retain(|&s| s != state);
-    }
+    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
 
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<TransitionId> {
         match (state, event) {
-            (PState::A1, PEvent::Advance) => Some(to(state, &[EntryTarget::State(PState::A2)])),
+            (PState::A1, PEvent::Advance) => Some(A1_ON_ADVANCE),
             _ => None,
         }
     }
 
     fn execute_transition_content(
         &mut self,
-        _source: Self::State,
-        _index: usize,
+        _transition: TransitionId,
         _engine: &mut Engine<Self>,
     ) {
-    }
-
-    fn get_active_states(&self) -> Self::Configuration {
-        self.active_states.clone()
-    }
-
-    fn set_active_states(&mut self, states: &[Self::State]) {
-        self.active_states.clear();
-        for &state in states {
-            self.active_states.push_bounded(state);
-        }
     }
 }
 
@@ -290,6 +305,7 @@ impl StatePolicy for ParallelPolicy {
 //   X1 --Go--> X2
 // ══════════════════════════════════════════════════════════════════
 
+// Declared in document order, so a variant's discriminant is its `StateId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum LState {
     Root,
@@ -313,6 +329,9 @@ impl LinearPolicy {
     }
 }
 
+/// `x1`'s one transition, the first row of the transitions table.
+const X1_ON_GO: TransitionId = TransitionId(0);
+
 impl StatePolicy for LinearPolicy {
     type State = LState;
     type Event = LEvent;
@@ -323,74 +342,99 @@ impl StatePolicy for LinearPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
-    // Root with one of X1/X2 below it.
+    // Root with one of X1/X2 below it: two states, one atomic; three steps for
+    // each of the two levels and three of headroom for the walks.
+    type Workspace = Workspace<{ state_scratch(2) }, 1, 9, 0>;
+    type RunStore = RunStore<2, 0, 0>;
     type Configuration = BoundedVec<LState, 2>;
-    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
-    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
-    // Three steps for each of the two levels, and three of headroom.
-    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 9>;
-    const MAX_CONFIGURATION: usize = 2;
-    const MAX_ENABLED: usize = 1;
-    const MAX_DEPTH: usize = 2;
+
+    // The transitions: `x1 --go--> x2`, then `root`'s initial transition, then
+    // the document's.
+    const TABLES: &'static DocumentTables = &DocumentTables {
+        states: &[
+            // root
+            StateRow {
+                parent: None,
+                kind: StateKind::Compound,
+                last_descendant: StateId(2),
+                children: Span { start: 0, len: 2 },
+                initial: Some(TransitionId(1)),
+            },
+            // x1
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(1),
+                children: Span::EMPTY,
+                initial: None,
+            },
+            // x2
+            StateRow {
+                parent: Some(StateId(0)),
+                kind: StateKind::Atomic,
+                last_descendant: StateId(2),
+                children: Span::EMPTY,
+                initial: None,
+            },
+        ],
+        children: &[StateId(1), StateId(2)],
+        histories: &[],
+        transitions: &[
+            // x1: go -> x2
+            TransitionRow {
+                source: Some(StateId(1)),
+                targets: Span { start: 0, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // root's initial: x1
+            TransitionRow {
+                source: Some(StateId(0)),
+                targets: Span { start: 1, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+            // the document's initial: root
+            TransitionRow {
+                source: None,
+                targets: Span { start: 2, len: 1 },
+                internal: false,
+                has_content: false,
+            },
+        ],
+        targets: &[
+            Target::State(StateId(2)),
+            Target::State(StateId(1)),
+            Target::State(StateId(0)),
+        ],
+        initial: TransitionId(2),
+        history_records: 0,
+        max_configuration: 2,
+        max_enabled: 1,
+        max_history_defaults: 0,
+        max_walk: 9,
+    };
+    const STATES: &'static [LState] = &[LState::Root, LState::X1, LState::X2];
+    const HISTORIES: &'static [NoHistory] = &[];
+    const EVENTS: &'static [LEvent] = &[LEvent::None, LEvent::Go];
 
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
 
+    fn state_id(state: Self::State) -> StateId {
+        StateId(state as u16)
+    }
+
+    fn history_id(history: Self::History) -> HistoryId {
+        match history {}
+    }
+
+    fn event_id(event: Self::Event) -> EventId {
+        EventId(event as u16)
+    }
+
     fn initial_state() -> Self::State {
         LState::Root
-    }
-
-    fn is_final_state(_state: Self::State) -> bool {
-        false
-    }
-
-    fn get_parent(state: Self::State) -> Option<Self::State> {
-        match state {
-            LState::Root => None,
-            LState::X1 | LState::X2 => Some(LState::Root),
-        }
-    }
-
-    fn is_compound_state(state: Self::State) -> bool {
-        matches!(state, LState::Root)
-    }
-
-    fn get_child_states(state: Self::State) -> &'static [Self::State] {
-        match state {
-            LState::Root => &[LState::X1, LState::X2],
-            _ => &[],
-        }
-    }
-
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match state {
-            LState::Root => &[EntryTarget::State(LState::X1)],
-            _ => &[],
-        }
-    }
-
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
-        &[EntryTarget::State(LState::Root)]
-    }
-
-    fn get_history_parent(history: Self::History) -> Self::State {
-        match history {}
-    }
-
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>] {
-        match history {}
-    }
-
-    fn get_document_order(state: Self::State) -> u32 {
-        match state {
-            LState::Root => 0,
-            LState::X1 => 1,
-            LState::X2 => 2,
-        }
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
@@ -428,10 +472,6 @@ impl StatePolicy for LinearPolicy {
         LEvent::None
     }
 
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
-        match history {}
-    }
-
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -444,33 +484,32 @@ impl StatePolicy for LinearPolicy {
         }
     }
 
-    fn execute_exit_actions(
-        &mut self,
-        _state: Self::State,
-        _engine: &mut Engine<Self>,
-        _before: &[Self::State],
-    ) {
-    }
+    fn execute_exit_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
 
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+    ) -> Option<TransitionId> {
         match (state, event) {
-            (LState::X1, LEvent::Go) => Some(to(state, &[EntryTarget::State(LState::X2)])),
+            (LState::X1, LEvent::Go) => Some(X1_ON_GO),
             _ => None,
         }
     }
 
     fn execute_transition_content(
         &mut self,
-        _source: Self::State,
-        _index: usize,
+        _transition: TransitionId,
         _engine: &mut Engine<Self>,
     ) {
     }
+}
+
+#[test]
+fn the_hand_written_tables_keep_the_rules_the_procedures_assume() {
+    assert_eq!(ParallelPolicy::TABLES.check(), Ok(()));
+    assert_eq!(LinearPolicy::TABLES.check(), Ok(()));
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -503,20 +542,21 @@ fn parallel_configuration_round_trips_through_a_new_engine() {
 }
 
 #[test]
-fn linear_configuration_round_trips_without_a_policy_active_set() {
+fn linear_configuration_round_trips_without_a_parallel_region() {
     let mut ran = Engine::<LinearPolicy>::new(LinearPolicy::new());
     ran.initialize();
 
     let saved_configuration = ran.get_active_states();
     let saved_current = ran.get_current_state();
     assert_eq!(saved_current, LState::X2);
-    // No parallel regions: the chain is the parent walk, leaf first.
-    assert_eq!(saved_configuration, [LState::X2, LState::Root]);
+    // No parallel regions: the chain from the `<scxml>` element's child down to
+    // the leaf, in the order the states were entered.
+    assert_eq!(saved_configuration, [LState::Root, LState::X2]);
 
     let mut restored = Engine::<LinearPolicy>::new(LinearPolicy::new());
     restored
         .enter_at(&saved_configuration, saved_current)
-        .expect("a parent-walk configuration is a configuration");
+        .expect("a chain from the root down is a configuration");
 
     assert_eq!(restored.get_active_states(), saved_configuration);
     assert_eq!(restored.get_current_state(), saved_current);
