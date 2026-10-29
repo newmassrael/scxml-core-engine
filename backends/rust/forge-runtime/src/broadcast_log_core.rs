@@ -479,6 +479,18 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
     /// has not wrapped). If it does not, the publish of entry `RETENTION` began, so
     /// `h >= RETENTION`, and the oldest is `h - RETENTION` of the head loaded after.
     pub fn reader_oldest(&self) -> Reader {
+        // A 64-bit count does not wrap, so the oldest retained entry is the head
+        // less the retention, no lower than 0: one load, as the first version of
+        // this row had it. Asking the last slot as well adds a load that no
+        // outcome depends on here, and under loom it multiplies the schedules of
+        // every model that opens a reader (the wide `two_readers_each_hold_their_own_cursor`
+        // went from 0.7 s to 187 s when it did). Only a narrow count needs it.
+        if L::BITS >= 64 {
+            return Reader {
+                cursor: self.head().saturating_sub(Self::RETENTION),
+                lost: 0,
+            };
+        }
         let untouched = L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) == L::UNWRITTEN;
         let cursor = if untouched {
             0
