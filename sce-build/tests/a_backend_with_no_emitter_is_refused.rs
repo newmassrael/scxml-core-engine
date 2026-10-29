@@ -232,25 +232,28 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: a timer.
+    // A kind no backend of this list writes, in whole or in part: an observer.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="timer" name="diag_scheduler">
-  <sce:period>2s</sce:period>
-  <sce:reset-on event="diag.heartbeat"/>
-  <sce:cancel-on state-exit="diag.idle"/>
-  <sce:fire-event>diag.tick</sce:fire-event>
+       version="1.0" sce:kind="observer" name="coolant_watch">
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="warning" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 110.0"
+          sce:leave="coolantTemp &lt; 100.0"
+          sce:on-enter="emitWarning" sce:on-leave="clearWarning"/>
+  </datamodel>
 </scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "diag_scheduler",
-                diagnostic_label: "diag_scheduler.scxml",
+                identifier: "coolant_watch",
+                diagnostic_label: "coolant_watch.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated a timer it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated an observer it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
