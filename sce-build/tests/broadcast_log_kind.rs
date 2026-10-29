@@ -2279,6 +2279,321 @@ fn c11_and_rust_refuse_one_log_with_one_message() {
     assert_eq!(rust.replace("Rust", "C11"), c);
 }
 
+// --- C++ generates the log over its runtime row ---
+
+/// The generated C++ of the log `event_ring`, out of the outputs of a set that
+/// generated.
+fn generated_cpp_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    generated_file(outputs, "event_ring.h")
+}
+
+/// The generated C++ of the single document `xml`, compiled with `options`.
+fn compile_single_cpp(
+    xml: &str,
+    options: &ForgeCompileOptions,
+) -> Result<String, Located<ForgeError>> {
+    compile_single_as(Language::Cpp, "event_ring.h", xml, options)
+}
+
+#[test]
+fn cpp_generates_a_header_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; an entry is then
+    // 1 + (4 + 7) / 8 = 1 + 1 = 2 words, which the header computes from the
+    // constant and does not restate.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_cpp_log(
+        compile_documents(
+            Language::Cpp,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("c++ generates a broadcast log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            r#"// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "// Runtime: sce/forge/broadcast_log.h",
+            "#ifndef SCE_FORGE_EVENT_RING_H",
+            r#"#include "sce/forge/broadcast_log.h""#,
+            r#"#include "sce/forge/codec.h""#,
+            r#"#include "event_record.h""#,
+            "namespace SCE::Generated::EventRing {",
+            "using EventRecordType = ::SCE::Generated::EventRecord::EventRecord;",
+            "inline constexpr std::size_t RETENTION = 7;",
+            "inline constexpr std::size_t SLOTS = RETENTION + 1;",
+            "inline constexpr std::size_t MAX_ENCODED_BYTES = 4;",
+            "inline constexpr std::size_t WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8;",
+            r#"inline constexpr std::string_view DECLARED_PROGRESS = "wait-free";"#,
+            "using EventRing = ::SCE::Forge::Broadcast::BroadcastLog<WORDS, SLOTS>;",
+            "static_assert(EventRing::kRetention == RETENTION",
+            "using EventRingPublisher = EventRing::Publisher;",
+            "using EventRingReader = ::SCE::Forge::Broadcast::Reader;",
+            "struct EventRingPublished {",
+            "struct EventRingItem {",
+            "EventRecordType element;",
+            "struct EventRingEmpty {};",
+            "struct EventRingLagged {",
+            "struct EventRingMalformed {",
+            "using EventRingRead = std::variant<EventRingItem, EventRingEmpty, EventRingLagged, EventRingMalformed>;",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, const EventRecordType &element) noexcept {",
+            "::SCE::Forge::SpanSink sink(bytes.data(), MAX_ENCODED_BYTES);",
+            "[[nodiscard]] inline EventRingRead read(const EventRing &log, EventRingReader &reader) {",
+            "std::optional<EventRecordType> element = EventRecordType::decode(cursor);",
+            "#endif  // SCE_FORGE_EVENT_RING_H",
+        ],
+    );
+    // An element past the bound is refused by the codec before anything is
+    // published: the refusal returns ahead of the call that publishes.
+    let encode = code
+        .find("element.encode(sink)")
+        .expect("the element is encoded through the bounded sink");
+    let refusal = code[encode..]
+        .find("return EventRingPublished{refused, ::SCE::Forge::Broadcast::kNoSequence};")
+        .expect("a refused element publishes nothing");
+    let publish = code[encode..]
+        .find("publisher.publish(entry)")
+        .expect("the packed entry is handed to the runtime");
+    assert!(
+        refusal < publish,
+        "the refusal comes before the publish:\n{code}"
+    );
+    // A stored length above the bound is refused before any byte is cut by it.
+    let length_check = code
+        .find("if (stored > MAX_ENCODED_BYTES) {")
+        .expect("the stored length is checked against the bound");
+    let refusal = code[length_check..]
+        .find("return EventRingMalformed{answer.seq};")
+        .expect("a length above the bound is a malformed entry");
+    let cut = code[length_check..]
+        .find(
+            "bytes[index] = static_cast<std::uint8_t>(entry[1 + index / 8] >> (8 * (index % 8)));",
+        )
+        .expect("the entry's bytes are cut by the length");
+    assert!(
+        refusal < cut,
+        "the refusal comes before the copy the length bounds:\n{code}"
+    );
+}
+
+#[test]
+fn the_names_the_cpp_header_calls_are_the_ones_the_runtime_declares() {
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_cpp_log(
+        compile_documents(
+            Language::Cpp,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("c++ generates a broadcast log"),
+    );
+    let include = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../backends/cpp/forge-runtime/include/sce/forge");
+    // What the header writes, the file that must declare it, and the declaration.
+    let uses = [
+        (
+            "::SCE::Forge::Broadcast::BroadcastLog<WORDS, SLOTS>",
+            "broadcast_log.h",
+            "template <std::size_t W, std::size_t Slots> class BroadcastLog {",
+        ),
+        (
+            "::SCE::Forge::Broadcast::kNoSequence",
+            "broadcast_log.h",
+            "inline constexpr std::uint64_t kNoSequence = UINT64_MAX;",
+        ),
+        (
+            "::SCE::Forge::Broadcast::ReadKind::Empty",
+            "broadcast_log.h",
+            "enum class ReadKind : std::uint8_t {",
+        ),
+        (
+            "::SCE::Forge::Broadcast::Reader",
+            "broadcast_log.h",
+            "class Reader {",
+        ),
+        (
+            "EventRing::Publisher",
+            "broadcast_log.h",
+            "class Publisher {",
+        ),
+        (
+            "EventRing::Entry",
+            "broadcast_log.h",
+            "using Entry = std::array<std::uint64_t, W>;",
+        ),
+        (
+            "EventRing::kRetention",
+            "broadcast_log.h",
+            "static constexpr std::uint64_t kRetention = Slots - 1;",
+        ),
+        (
+            "publisher.publish(entry)",
+            "broadcast_log.h",
+            "std::uint64_t publish(const Entry &entry) noexcept {",
+        ),
+        (
+            "log.read(reader, entry)",
+            "broadcast_log.h",
+            "Read read(Reader &reader, Entry &out) const noexcept {",
+        ),
+        (
+            "::SCE::Forge::SpanSink sink(",
+            "codec.h",
+            "class SpanSink final : public SceSink {",
+        ),
+        (
+            "::SCE::Forge::SceCursor cursor(",
+            "codec.h",
+            "class SceCursor {",
+        ),
+        (
+            "::SCE::Forge::CodecError",
+            "codec.h",
+            "enum class CodecError : std::uint8_t {",
+        ),
+        (
+            "sink.position()",
+            "codec.h",
+            "[[nodiscard]] virtual std::size_t position() const noexcept = 0;",
+        ),
+    ];
+    for (written, file, declaration) in uses {
+        assert!(
+            code.contains(written),
+            "the header no longer writes `{written}`:\n{code}"
+        );
+        let runtime = fs::read_to_string(include.join(file))
+            .unwrap_or_else(|e| panic!("read the runtime's {file}: {e}"));
+        assert!(
+            runtime.contains(declaration),
+            "the runtime's {file} no longer declares `{declaration}`, which the header's \
+             `{written}` names"
+        );
+    }
+}
+
+#[test]
+fn cpp_states_the_resolved_retention_and_size_as_constants() {
+    // 9 bytes encode to words of 1 + (9 + 7) / 8 = 1 + 2 = 3, computed by the
+    // header from the constant below.
+    let code = compile_single_cpp(
+        &deploy_key_ring(),
+        &resolution_options(Some(15), 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a resolved log generates");
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t RETENTION = 15;",
+            "inline constexpr std::size_t MAX_ENCODED_BYTES = 9;",
+        ],
+    );
+    // A literal retention is the document's whatever the resolution says.
+    let code = compile_single_cpp(
+        &event_ring(),
+        &resolution_options(Some(99), 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("a literal needs no resolution of its own");
+    assert!(
+        code.contains("inline constexpr std::size_t RETENTION = 7;"),
+        "{code}"
+    );
+    assert!(!code.contains("= 99;"), "{code}");
+}
+
+#[test]
+fn cpp_reads_a_deploy_key_retention_from_the_target_machines_limits() {
+    // The element is one `uint32`: 4 bytes. The limit is 15 entries.
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_cpp_log(
+        compile_documents_with(
+            Language::Cpp,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&cfg),
+        )
+        .expect("the deploy resolves the key"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t RETENTION = 15;",
+            "inline constexpr std::size_t MAX_ENCODED_BYTES = 4;",
+        ],
+    );
+}
+
+#[test]
+fn cpp_refuses_an_element_that_asks_the_caller_for_more_and_names_its_template() {
+    // The C++ codec's `decode` takes the flag input as a parameter, which a log
+    // has none to give.
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::Cpp,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the C++ template"),
+        "{detail}"
+    );
+    assert!(detail.contains("flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_the_text() {
+    let xml = event_ring();
+    let facts = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    assert_eq!(
+        facts.refusal_for(Language::Cpp),
+        None,
+        "the C++ CBOR reader returns a std::string and a std::vector, which own their bytes"
+    );
+    assert!(
+        facts.refusal_for(Language::Rust).is_some(),
+        "Rust's decoded form borrows, so the same element is refused there"
+    );
+    // What a caller must give is refused whatever the entries are.
+    let tag = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..facts
+    };
+    assert!(tag.refusal_for(Language::Cpp).is_some());
+
+    // The same element, as the document set sees it: the string entry is read
+    // from the codec and the log is generated where Rust refuses it.
+    let codec = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let code = generated_cpp_log(
+        compile_documents(
+            Language::Cpp,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a string entry is owned by the C++ value, so c++ generates the log"),
+    );
+    assert_holds(
+        &code,
+        &["using EventRecordType = ::SCE::Generated::EventRecord::EventRecord;"],
+    );
+}
+
 // --- The set resolves a deploy key against the machine it is generated for ---
 
 #[test]
@@ -2633,7 +2948,7 @@ fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_python() {
 }
 
 #[test]
-fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_and_python() {
+fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_and_cpp() {
     // `blocking` is within the ceiling of every language, so none refuses the
     // progress and each reaches the checks that are the same for every
     // language: no resolution at all, a deploy key nothing resolved, a
@@ -2648,6 +2963,7 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_and_pytho
         (Language::Rust, "Rust"),
         (Language::Kotlin, "Kotlin"),
         (Language::Python, "Python"),
+        (Language::Cpp, "C++"),
     ]
     .into_iter()
     .map(|(language, name)| {
@@ -2670,6 +2986,7 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_and_pytho
     .collect();
     assert_eq!(details[0], details[1], "Rust and Kotlin");
     assert_eq!(details[0], details[2], "Rust and Python");
+    assert_eq!(details[0], details[3], "Rust and C++");
     assert!(
         details[0][3].contains("cannot be stored by the <language> template"),
         "{}",
