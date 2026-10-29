@@ -1,0 +1,523 @@
+# Mutation cases for "a specialised broadcast history check holds both conditions".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_specialised_broadcast_history_check_holds_both_conditions.cases`.
+#
+# The specialised checker of the one-producer broadcast log (ADR 0062, section 5) decides
+# linearizability without a search. Its module proves that a well-formed history has a
+# linearization if and only if (I) L_x <= U_x for every observer x, and (II) L_x <= U_y for
+# every pair of observers x < y. [L_x, U_x] is the window that the observer's own result (the
+# closed form of the heads that give it that result) and the clock (the publishes that
+# returned before it was invoked, the publishes invoked before it returned) leave for the
+# number of entries published at the instant it took effect. Each decision below is one the
+# proof leans on: how an end of a publish bounds each side of the window, whether each
+# comparison is strict, which observer a sweep has released, what the closed form of each call
+# and outcome admits (the window arithmetic with the retention among them), and when the
+# checker declines instead of answering. A mutant of any of them is a checker that agrees with
+# the general search on most histories and not on the ones this casefile builds.
+#
+# The oracles are the three test binaries that run the checker, and the library's own unit
+# tests, which sit in the checker's file:
+#
+# - `a_log_simulated_under_random_interleavings_is_linearizable_to_both`,
+#   `one_corrupting_change_leaves_the_two_checkers_in_agreement`,
+#   `every_refused_history_of_the_mutated_corpus_shrinks_with_the_checkers_agreeing` and
+#   `every_fixture_is_judged_alike_by_both_checkers` of
+#   `sce-build/tests/broadcast_history_differential.rs`: a seeded generator writes histories
+#   that are linearizable by construction, corrupts them one change at a time, and the two
+#   checkers must give one class;
+# - `the_window_is_exactly_the_retention`, the two tests on a read that overlaps a publish,
+#   and `every_fixture_is_judged_as_its_name_says` of
+#   `sce-build/tests/broadcast_history_format.rs`, which put the checker behind the command
+#   on hand-built histories and on the fixtures under
+#   `sce-build/tests/fixtures/broadcast_histories/`;
+# - the unit tests of `sce-build/src/broadcast_history/specialised.rs`, among them
+#   `the_closed_forms_are_the_sequential_log_at_every_head`, which holds each closed form
+#   equal to the sequential log at every head, for small numbers and at the edge of `u64`.
+#
+# Each case says which of them is meant to turn red. Where it says "sampled", no history
+# written by hand reaches the mutant: only the seeded generator of the differential test
+# can, with the seed fixed and the first round of CI the only judge of whether it does. The
+# others are constructed: a named history gives the mutant a different answer from the
+# original, traced by hand against the code.
+#
+# One selector names the library and both test binaries, with no filter: the harness runs
+# every binary it resolves without arguments, so a name after `--lib` would change nothing
+# that it runs, and the library's whole suite is what runs beside the two binaries.
+#
+# Mutants that are not cases, each with its reason, are at the end of the file.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test broadcast_history_differential --test broadcast_history_format
+mutation_targets sce-build/src/broadcast_history/specialised.rs sce-build/src/broadcast_history.rs
+mutation_oracles sce-build/src/broadcast_history/specialised.rs sce-build/tests/broadcast_history_differential.rs sce-build/tests/broadcast_history_format.rs
+
+# --- Condition (I): the window an observer leaves for the number of entries published ---
+
+# The lower end of the window is the larger of what the result needs and the publishes that
+# returned before the observer began. Without the second, an empty read after a publish that
+# had returned is either accepted or refused for another reason. Killed by
+# `an_empty_after_a_publish_returned_is_a_clock_window_that_does_not_meet` (the obstruction
+# is the clock window, and the mutant reports the open as having overtaken it), and by
+# `not_linearizable_empty_with_a_published_entry_unread.json` (the empty at [5, 6) after the
+# publish at [3, 4), whose open at [1, 2) has the window [0, 0], so that the mutant finds the
+# history linearizable).
+mutation_case "the lower end of a window ignores the publishes that returned before the observer began" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''let lower = from.max(at_least);''',
+     r'''let lower = from;''')
+PY
+
+# The upper end is the smaller of what the result allows and the publishes that began before
+# the observer returned. Without the second an item read before its entry was published is
+# admitted. Constructed: `not_linearizable_an_item_read_before_it_was_published.json` (the
+# item at [3, 4), the only publish at [10, 11)) has a window [1, 1] against a clock that
+# allows none, and under the mutant both windows are met and the history is linearizable.
+# Killed by `every_fixture_is_judged_alike_by_both_checkers` and
+# `every_fixture_is_judged_as_its_name_says`.
+mutation_case "the upper end of a window ignores the publishes that began before the observer returned" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''let upper = to.min(at_most);''',
+     r'''let upper = to;''')
+PY
+
+# Condition (I) is `<=`: a window of one point is a window. Killed by
+# `touching_intervals_are_ordered_and_overlapping_ones_are_not`, whose second history (a head
+# of 0 at [2, 4) beside a publish at [1, 3)) has the window [0, 0] and must be linearizable.
+mutation_case "a window of a single number is refused" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if lower <= upper {''',
+     r'''if lower < upper {''')
+PY
+
+# A publish that returned at the instant the observer was invoked precedes it, so it is
+# counted in `c_x` (`b_k <= x.invoked`). Killed by the first history of
+# `touching_intervals_are_ordered_and_overlapping_ones_are_not` (the head of 0 at [3, 4)
+# after the publish at [1, 3) must be refused).
+mutation_case "a publish that returned at the instant the observer began is not counted as before it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''|&b| b <= op.invoked''',
+     r'''|&b| b < op.invoked''')
+PY
+
+# `c_x` counts the publishes that returned before the observer was INVOKED. Counted against
+# the instant it returned, a publish that overlaps the observer is read as before it. Killed
+# by the second history of `touching_intervals_are_ordered_and_overlapping_ones_are_not`: the
+# publish at [1, 3) returns before the head's end at 4, and the head of 0 at [2, 4) must be
+# linearizable.
+mutation_case "a publish that returned before the observer returned is counted as before it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''let at_least = returned_at.partition_point(|&b| b <= op.invoked) as u64;''',
+     r'''let at_least = returned_at.partition_point(|&b| b <= op.returned) as u64;''')
+PY
+
+# `d_x` counts the publishes invoked STRICTLY before the observer returned: a publish invoked
+# at the instant the observer returned comes after it. Sampled: the `Retimed` change of the
+# differential test puts the end of an interval on the instant another operation was
+# invoked, and a read that needs that publish then cannot be linearizable, which the mutant
+# admits.
+mutation_case "a publish invoked at the instant the observer returned may be before it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''|&a| a < op.returned''',
+     r'''|&a| a <= op.returned''')
+PY
+
+# The publishes' two ends are not interchangeable: a publish is certainly before an observer
+# once it has RETURNED, and may be before it once it has BEGUN. With the two lists swapped a
+# read that overlaps a publish needs the entry before the publish could have given it.
+# Killed by `a_read_may_take_effect_before_an_overlapping_publish_moves_the_window` (the item
+# at [6, 7) against the publish at [5, 9) must be linearizable), and by
+# `linearizable_a_read_overlapping_the_publish_it_returns.json`.
+mutation_case "the invocations and the returns of the publishes are taken the wrong way round" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''.map(|op| (op.invoked, op.returned))''',
+     r'''.map(|op| (op.returned, op.invoked))''')
+PY
+
+# An observer whose own window is empty is a failure of its own, not only of the observers
+# that follow it. Killed by `an_empty_after_a_publish_returned_is_a_clock_window_that_does_not_meet`
+# (the history must be refused) and by every `not_linearizable_` fixture whose observer
+# fails alone.
+mutation_case "an observer whose own window is empty is not a failure" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Err(own) => Some(own.clone()),''',
+     r'''Err(_) => None,''')
+PY
+
+# --- Condition (II): what an observer that returned earlier forces ---
+
+# (II) is `L_x <= U_y`: an earlier observer that needs exactly as many entries as a later one
+# can have seen is not an overtaking. Killed by `linearizable_two_readers_and_the_head.json`:
+# the item of the first reader (window [2, 2]) returned at 10, before the same reader's head
+# of 2 (window [2, 2]) was invoked at 11, and the history must be accepted.
+mutation_case "an earlier observer that needs as many entries as a later one can have seen overtakes it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if needs > *upper =>''',
+     r'''if needs >= *upper =>''')
+PY
+
+# (II) measures an earlier observer's lower end against the later observer's UPPER end. The
+# lower end of the later one is not what it is held to: a later observer with a wide window
+# can have seen more than its own lower end. Sampled: a linearizable history in which an
+# observer with a wide window (an open at a position, an item with a retention above one)
+# follows another that needed more than that window's lower end is refused by the mutant.
+mutation_case "an earlier observer is measured against the lower end of a later one's window" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Ok((_, upper)) => match forcing {''',
+     r'''Ok((upper, _)) => match forcing {''')
+PY
+
+# What a later observer must not be forced below is the GREATEST lower end among the earlier
+# ones. Keeping the least misses an overtaking that only a later one of them shows. Sampled:
+# the corrupted histories of the differential test, where a head or a cursor is wrong after
+# several observers have returned.
+mutation_case "the sweep keeps the least lower end among the observers it has released" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''*lower > best''',
+     r'''*lower < best''')
+PY
+
+# The sweep visits the observers in order of invocation, and its pointer into the returns only
+# moves forward, so the order is what makes the released set the observers that precede the
+# one visited. In the order they were collected (the publisher's heads, then each reader), an
+# observer is visited before others that were invoked earlier, and is held to what observers
+# that do not precede it have forced. Sampled: the linearizable histories with two or three
+# readers, which the mutant refuses.
+mutation_case "the observers are visited in the order they were collected and not in order of invocation" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''by_invoked.sort_by_key(|&s| (slots[s].invoked, s));''',
+     r'''by_invoked.sort_by_key(|&s| s);''')
+PY
+
+# The pointer stops at the first observer that returned after the one visited was invoked,
+# which is only the right place to stop when the observers are in order of return. In the
+# order they were collected it stops early, and an earlier observer behind it is never
+# released. Sampled: a corrupted history whose overtaking is shown by an observer of a later
+# reader.
+mutation_case "the observers are released in the order they were collected and not in order of return" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''by_returned.sort_by_key(|&s| (slots[s].returned, s));''',
+     r'''by_returned.sort_by_key(|&s| s);''')
+PY
+
+# An observer that returned at the instant another was invoked precedes it (`x < y` is
+# `x.returned <= y.invoked`) and is released. Sampled: the `Retimed` change puts an
+# invocation on the instant another observer returned, and the later observer then follows
+# one that needs more than it can have seen.
+mutation_case "an observer that returned at the instant another began is not released for it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if slots[x].returned > slots[y].invoked {''',
+     r'''if slots[x].returned >= slots[y].invoked {''')
+PY
+
+# --- What is reported ---
+
+# `deepest` says, for each participant, the position of its FIRST operation that cannot be
+# placed. An operation of the same participant after it overwrites that when the least is
+# not kept. Sampled: after a wrong cursor every later read of that reader fails, and the
+# differential test asserts that `deepest` of the participant is no later than the operation
+# named.
+mutation_case "the position that cannot be placed is the last of a participant's and not the first" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''deepest[slot.participant] = deepest[slot.participant].min(slot.at);''',
+     r'''deepest[slot.participant] = slot.at;''')
+PY
+
+# An overtaking names the observer that forced it as participant and then position. Killed by
+# `a_head_that_goes_backwards_is_overtaken` (the first reader's head, participant 1,
+# position 0).
+mutation_case "an overtaking names the position of the observer before its participant" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''by: (slots[x].participant, slots[x].at),''',
+     r'''by: (slots[x].at, slots[x].participant),''')
+PY
+
+# --- The closed form of each call and outcome ---
+
+# A head that returned `s` is admitted at `h = s` alone. Killed by
+# `not_linearizable_a_head_that_went_stale.json` (the head of 0 after a publish that had
+# returned) and by `the_closed_forms_are_the_sequential_log_at_every_head`.
+mutation_case "a head is admitted at every number of entries from what it read up" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''(Call::Head, Outcome::Head(seen)) => Ok(within(total, seen, seen)),''',
+     r'''(Call::Head, Outcome::Head(seen)) => Ok(within(total, seen, total)),''')
+PY
+
+# An open at the oldest that set the cursor to 0 is admitted while the log holds at most the
+# retention. Killed by `linearizable_two_readers_and_the_head.json` (the second reader opens
+# at the oldest with cursor 0 after two publishes, retention 3) and by the closed forms.
+mutation_case "an open at the oldest with its cursor at zero is admitted only on an empty log" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''OpenFrom::Oldest if cursor == 0 => within(total, 0, retention),''',
+     r'''OpenFrom::Oldest if cursor == 0 => within(total, 0, 0),''')
+PY
+
+# An open at the oldest that set the cursor to `c > 0` is admitted at `h = c + retention`.
+# Killed by `linearizable_sequential.json` (the open with cursor 1 after three publishes,
+# retention 2) and by the closed forms.
+mutation_case "an open at the oldest is admitted with the cursor as the number of entries" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''.checked_add(retention)
+                .and_then(|h| within(total, h, h)),''',
+     r'''.checked_add(0)
+                .and_then(|h| within(total, h, h)),''')
+PY
+
+# An open at the head is admitted at `h = c` alone. Killed by the closed forms (a cursor
+# above the number of published entries is admitted from 0 up by the mutant, and the
+# sequential log gives it at no number).
+mutation_case "an open at the head is admitted at every number of entries up to its cursor" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''OpenFrom::Head => within(total, cursor, cursor),''',
+     r'''OpenFrom::Head => within(total, 0, cursor),''')
+PY
+
+# An open at a position that set the cursor to that position is admitted from there on, as
+# the cursor is the position once the log has reached it. Killed by
+# `linearizable_a_reader_that_fell_behind_resumes_at_the_oldest.json` (the open at 0 after
+# three publishes) and by the closed forms.
+mutation_case "an open at a position that was reached is admitted only at the position" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Ordering::Equal => within(total, n, u64::MAX),''',
+     r'''Ordering::Equal => within(total, n, n),''')
+PY
+
+# An open at a position cannot set the cursor beyond it. Killed by the closed forms, and
+# sampled by the `WrongOpenCursor` change of the differential test.
+mutation_case "an open at a position may set the cursor beyond it" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Ordering::Greater => None,''',
+     r'''Ordering::Greater => within(total, cursor, cursor),''')
+PY
+
+# An item is admitted only when it is read at the reader's cursor. Killed by
+# `not_linearizable_a_cursor_that_did_not_advance.json` (the second item at 0 after the first
+# moved the cursor to 1) and by the closed forms.
+mutation_case "an item is admitted at an entry other than the reader's cursor" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if cursor == seq && published == Some(&value) {''',
+     r'''if published == Some(&value) {''')
+PY
+
+# An item is admitted only with the value its entry held. Read as an upper bound, a value
+# above the entry's passes. Killed by `an_item_of_a_value_never_published_is_never_admitted`
+# (the item of 6 for an entry of 5) and by `not_linearizable_an_item_of_two_entries.json`.
+mutation_case "an item is admitted with any value at least what its entry held" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if cursor == seq && published == Some(&value) {''',
+     r'''if cursor == seq && published.is_some_and(|held| *held <= value) {''')
+PY
+
+# An item is admitted from `seq + 1` entries: the entry has to be published first. Killed by
+# `not_linearizable_an_item_read_before_it_was_published.json` (the item at [3, 4) before the
+# publish at [10, 11)) and by the closed forms.
+mutation_case "an item is admitted before its entry is published" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''within(total, seq.saturating_add(1), seq.saturating_add(retention))''',
+     r'''within(total, seq, seq.saturating_add(retention))''')
+PY
+
+# An item is admitted up to `seq + retention` entries: at `retention` entries after its own
+# the entry is the oldest retained, and one more drops it. Killed by
+# `the_window_is_exactly_the_retention` (the item of entry 0 after three publishes, retention
+# 2), by `not_linearizable_an_item_outside_the_window.json`, and by the closed forms.
+mutation_case "an item is admitted one entry past the window" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''within(total, seq.saturating_add(1), seq.saturating_add(retention))''',
+     r'''within(total, seq.saturating_add(1), seq.saturating_add(retention).saturating_add(1))''')
+PY
+
+# The end of an item's window is `seq + retention` taken without overflow, since a retention
+# at the edge of `u64` is a retention. Killed by the closed forms, which run a retention of
+# `u64::MAX` against an item at 1: the sum overflows (a panic in a debug build, a wrapped
+# number in a release one).
+mutation_case "the end of an item's window is the sum of the entry and the retention, unchecked" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r''', seq.saturating_add(retention))''',
+     r''', seq + retention)''')
+PY
+
+# An empty read is admitted at the cursor alone. Killed by
+# `an_empty_after_a_publish_returned_is_a_clock_window_that_does_not_meet` and by
+# `not_linearizable_empty_with_a_published_entry_unread.json`, and by the closed forms.
+mutation_case "an empty read is admitted at every number of entries from its cursor up" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Outcome::Empty => Ok(within(total, cursor, cursor)),''',
+     r'''Outcome::Empty => Ok(within(total, cursor, total)),''')
+PY
+
+# A lagged read that skipped nothing is not a lag. Killed by
+# `not_linearizable_a_lagged_that_skipped_nothing.json` (the lagged of 0 at the cursor 0
+# after two publishes, retention 2) and by the closed forms.
+mutation_case "a lagged read that skipped nothing is admitted" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''Outcome::Lagged { skipped } => Ok(if skipped == 0 {''',
+     r'''Outcome::Lagged { skipped } => Ok(if false {''')
+PY
+
+# A lagged read is admitted at `h = c + skipped + retention`: the window starts at `c +
+# skipped`, and `retention` entries lie after it. Without the retention the window is read
+# as ending where it starts. Killed by `the_window_is_exactly_the_retention` (the lagged of 1
+# from cursor 0 after three publishes, retention 2, must be accepted: the mutant asks for one
+# entry where three publishes returned before the read) and by the closed forms. Not by the
+# late lagged of `a_read_may_find_itself_behind_a_window_an_overlapping_publish_moved`, whose
+# numbers (retention 1, one publish returned and one running) give the same window either way.
+mutation_case "a lagged read is admitted when the window starts at the end of what it skipped" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''.and_then(|start| start.checked_add(retention))''',
+     r'''.and_then(Some)''')
+PY
+
+# The cursor plus what was skipped does not wrap: a lag that overflows `u64` is not a lag
+# anything records. Killed by the closed forms, which run a lag of `u64::MAX` from a cursor of
+# 3 with retention 1: the wrapped sum is a number the log has reached.
+mutation_case "a lagged read whose skipped entries overflow the cursor wraps" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''.checked_add(skipped)''',
+     r'''.checked_add(skipped).or_else(|| Some(cursor.wrapping_add(skipped)))''')
+PY
+
+# --- The numbers of entries a history can reach ---
+
+# The heads an observer is admitted at are cut to `0..=total`, the entries the history
+# publishes. Cut one higher, a closed form names a number the log never reaches. Killed by the
+# closed forms, which assert that no interval ends above the number of entries.
+mutation_case "the heads an observer is admitted at are cut one above the entries the history publishes" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''let to = to.min(total);''',
+     r'''let to = to.min(total.saturating_add(1));''')
+PY
+
+# An interval of one number is an interval. Killed by the closed forms (a head of 0 on an empty
+# log is admitted at 0 by the sequential log) and by every fixture whose observer is
+# admitted at one number.
+mutation_case "an interval of a single number is no interval" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''(from <= to).then_some((from, to))''',
+     r'''(from < to).then_some((from, to))''')
+PY
+
+# --- When the checker declines ---
+
+# Only a reader reads. A read by the publisher is a pairing the table has no row for and is
+# declined at the operation, and is not taken for a read before any open. Killed by
+# `a_pairing_the_table_does_not_cover_is_declined_where_it_stands` (the publisher's read).
+mutation_case "a read by the publisher is not declined" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''(Call::Read, _) if who == 0 => Err(unmodelled),''',
+     r'''(Call::Read, _) if who == usize::MAX => Err(unmodelled),''')
+PY
+
+# A read that returned an outcome no read returns is declined and not refused. Killed by the
+# same test (the read that returned `Opened`).
+mutation_case "a read that returned an outcome no read returns is refused and not declined" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''                _ => Err(unmodelled),''',
+     r'''                _ => Ok(None),''')
+PY
+
+# Any other pairing of call and outcome is declined and not refused. Killed by the same test
+# (the publish that returned a head).
+mutation_case "a pairing of call and outcome with no row is refused and not declined" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''_ => Err(unmodelled),
+    }
+}''',
+     r'''_ => Ok(None),
+    }
+}''')
+PY
+
+# A history that is not well formed is outside the theorem and is declined, for the general
+# search to call malformed. Killed by
+# `a_history_that_is_not_well_formed_is_declined_with_the_general_message`, and by the
+# `malformed_` fixtures, which the mutant accepts as linearizable, in both fixture tests.
+mutation_case "a history that is not well formed is decided and not declined" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if let Err(why) = well_formed(history, &participants) {''',
+     r'''if let Some(why) = well_formed(history, &participants).err().filter(|_| false) {''')
+PY
+
+# Only a publish is a publish: the publisher's head is an observer, and counted among the
+# publishes it would move every window after it. Killed by
+# `linearizable_two_readers_and_the_head.json` (the publisher's head at [3, 5) between its two
+# publishes).
+mutation_case "the publisher's head is counted among the publishes" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''.filter(|op| matches!(op.call, Call::Publish(_)))''',
+     r'''.filter(|_| true)''')
+PY
+
+# The publisher's head is an observer like a reader's. Skipped, a head with a wrong number is
+# never looked at. Sampled: the `WrongHead` change of the differential test picks the heads
+# of the publisher and of the readers alike, and the mutant accepts the history whose publisher
+# head is wrong, which is the one change the rest of the history does not show.
+mutation_case "the publisher's head is not an observer" <<'PY'
+edit("sce-build/src/broadcast_history/specialised.rs",
+     r'''if who == 0 && matches!(op.call, Call::Publish(_)) {''',
+     r'''if who == 0 {''')
+PY
+
+# --- The fall-back to the general search ---
+
+# `check` asks the specialised checker and goes on to the general search when it declines, so
+# a history that is not well formed is malformed whichever is asked. Without the fall-back
+# the decline is answered with a verdict of the call's own making. Killed by
+# `the_entry_points_say_which_method_decided` (a malformed history under `Ask::Auto` is
+# decided by the general search and is `Malformed`) and by
+# `a_retention_of_zero_cannot_have_come_from_a_run`.
+mutation_case "a history the specialised checker declines is judged linearizable without the general search" <<'PY'
+edit("sce-build/src/broadcast_history.rs",
+     r'''specialised_judgement(history).unwrap_or_else(|_| general_judgement(history))''',
+     r'''specialised_judgement(history).unwrap_or_else(|_| Judgement {
+        verdict: Verdict::Linearizable,
+        method: Method::General,
+        unplaceable: None,
+    })''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# The tie among equal lower ends in the sweep (`*lower > best`, read as `>=`). It decides
+# which of two observers with the same lower end an overtaking names as its cause. The verdict
+# does not depend on it, and no test builds two released observers with one lower end and
+# reads the cause: `a_head_that_goes_backwards_is_overtaken` has one released observer, and the
+# differential test compares classes, not causes.
+#
+# The first-observer rule of the report (`if culprit.is_none()`, read as always). It makes
+# the culprit the first observer in order of invocation that fails, where the mutant would name
+# the last. No test has two failing observers and reads which one is named: the hand-built
+# histories and the thousands of operations of the third differential test have exactly one,
+# and the others assert only that the observer named exists and is not a publish.
+#
+# The removal of the step of the release pointer (`released += 1`). The loop then never ends,
+# and a round would be told so by the clock of the harness and not by a test. It says nothing
+# about the code that a hung binary does not say of any code.
+#
+# The tie-break of the two sorts, `(slots[s].invoked, s)` and `(slots[s].returned, s)` read
+# without the index. The observers start in the order of their index and `sort_by_key` is
+# stable, so the two orders are the same on every history.
+#
+# The overflow guard on the lower end of an item (`seq.saturating_add(1)`, read as `seq + 1`).
+# The comparison `cursor == seq` and the lookup of the entry come first, so `seq` is the index
+# of an entry that exists, and `seq + 1` cannot overflow.
+#
+# The `who == 0 &&` of the test that skips the publishes (`if who == 0 && matches!(op.call,
+# Call::Publish(_))`, read without it). A publish in a reader's list is not well formed, and
+# `check` declines such a history before the loop that reads it.
+#
+# The decline of a pairing in `check` (`Err(declined) => return Decision::Declined(declined)`,
+# read as an answer of no window). A well-formed history has no operation the table lacks a
+# row for, so the arm is not reached by any history `check` is given; the table's own refusal
+# is held by the three cases above and the unit test that calls it directly.
+#
+# A read before any open (`return Ok(None)`, read as a decline). It is reached only by a
+# history that `well_formed` refuses, and neither the unit test of the closed forms nor any
+# other calls the table for one. That no test says which of the two the table answers is a gap
+# in the tests, not an equivalence; the answer of `check` is the same either way.
+#
+# The overflow guard on the open at the oldest (`.checked_add(retention)`, read as a wrapping
+# sum). It has the shape of the lagged read's guard, which the case above keeps; a second case
+# of the same shape on the same unit test is not written.
