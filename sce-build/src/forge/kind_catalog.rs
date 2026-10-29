@@ -620,9 +620,10 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "the loss is reported to the reader that suffered it and counted nowhere else: \
                  the log keeps no count of overwrites",
                 "the document names no algorithm and no memory ordering",
-                "only the rust backend generates it so far, from a document set that holds \
-                 the element's document: on every other backend a valid document is refused \
-                 by name (broadcast-log/runtime-missing) until that language has its template",
+                "a backend generates it from a document set that holds the element's \
+                 document, once that language has its template (the codegen matrix's \
+                 BROADCAST_LOG_BACKENDS lists them): on any other backend a valid document is \
+                 refused by name (broadcast-log/runtime-missing)",
             ],
             example: Example::Document(include_str!("../../kind-examples/broadcast-log.scxml")),
         },

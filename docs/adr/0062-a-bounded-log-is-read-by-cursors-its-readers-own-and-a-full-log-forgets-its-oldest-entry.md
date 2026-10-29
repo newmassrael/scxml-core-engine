@@ -348,6 +348,13 @@ time after the element's bound, which they are sized from: step 6a gave the boun
 ends `runtime-missing` for Rust. C11, then C++, Go, Kotlin and Python follow, each ending it for its language; Swift stays
 refused.
 
+**How a language lands.** `codegen_matrix::BROADCAST_LOG_BACKENDS` is the one list of the languages whose template has
+landed. `template_ships` and `awaits_runtime` are derived from it, so they cannot disagree, and every test that holds the
+kind to the backends that ship it (the matrix, the catalog's `backends`, the refusal of the others) reads it. A language's
+change therefore adds that one element and, with it, its template, its dispatch arm, its generated-code conformance, and
+the removal of its row from the accepted gaps of `a_backend_holds_what_the_other_backends_hold`. The list is not
+`Language::ALL` for the reason `STATIC_DATAMODEL_BACKENDS` is not: a backend joins a capability when it has it.
+
 ### What step 1 landed (2026-10-28)
 
 - **The checker and its form.** `sce-build/src/broadcast_history.rs`: the general search of §5, the JSON form

@@ -18,8 +18,8 @@ use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
 use sce_build::forge::codegen_matrix::{
-    awaits_runtime, broadcast_log_progress_ceiling, check, emitting, lookup, template_ships,
-    EmitOutcome, KindClass,
+    awaits_runtime, broadcast_log_progress_ceiling, check, emitting, language_wire_name, lookup,
+    template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS,
 };
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
@@ -989,7 +989,7 @@ fn options_for(language: Language) -> ForgeCompileOptions {
 }
 
 #[test]
-fn a_valid_document_is_refused_by_name_on_every_language_but_rust() {
+fn a_valid_document_is_refused_by_name_on_every_language_with_no_template() {
     let xml = simple_doc(
         "event_ring",
         "one",
@@ -999,7 +999,7 @@ fn a_valid_document_is_refused_by_name_on_every_language_but_rust() {
     for language in Language::ALL
         .iter()
         .copied()
-        .filter(|language| *language != Language::Rust)
+        .filter(|language| !BROADCAST_LOG_BACKENDS.contains(language))
     {
         let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
         let located = if language == Language::Swift {
@@ -1561,10 +1561,10 @@ fn a_deploy_key_naming_an_undeclared_limit_is_refused_with_the_limits_there_are(
     );
 }
 
-// --- The matrix: Rust emits, the other languages await their runtime ---
+// --- The matrix: the registered backends emit, the others await their runtime ---
 
 #[test]
-fn the_matrix_emits_for_rust_and_says_the_runtime_is_missing_elsewhere() {
+fn the_matrix_emits_for_the_registered_backends_and_says_the_runtime_is_missing_elsewhere() {
     assert!(!awaits_runtime(ForgeKind::Queue, Language::Rust));
     assert!(!awaits_runtime(ForgeKind::Queue, Language::Cpp));
     assert_eq!(
@@ -1572,20 +1572,20 @@ fn the_matrix_emits_for_rust_and_says_the_runtime_is_missing_elsewhere() {
         KindClass::Generic
     );
     for language in Language::ALL.iter().copied() {
-        let rust = language == Language::Rust;
+        let landed = BROADCAST_LOG_BACKENDS.contains(&language);
         assert_eq!(
             template_ships(ForgeKind::BroadcastLog, language),
-            rust,
+            landed,
             "{language:?}"
         );
         assert_eq!(
             awaits_runtime(ForgeKind::BroadcastLog, language),
-            !rust,
+            !landed,
             "{language:?}"
         );
         assert_eq!(
             lookup(ForgeKind::BroadcastLog, language),
-            if rust {
+            if landed {
                 EmitOutcome::Emit
             } else {
                 EmitOutcome::RuntimeMissing
@@ -1594,25 +1594,37 @@ fn the_matrix_emits_for_rust_and_says_the_runtime_is_missing_elsewhere() {
         );
         assert!(
             check(ForgeKind::BroadcastLog, language).is_ok(),
-            "Rust emits it and the dispatch of every other refuses it by name, so the matrix \
-             lets it through: {language:?}"
+            "a registered backend emits it and the dispatch of every other refuses it by \
+             name, so the matrix lets it through: {language:?}"
         );
     }
     assert_eq!(
         emitting(ForgeKind::BroadcastLog).collect::<Vec<_>>(),
-        vec![Language::Rust]
+        Language::ALL
+            .iter()
+            .copied()
+            .filter(|language| BROADCAST_LOG_BACKENDS.contains(language))
+            .collect::<Vec<_>>()
     );
 }
 
 // --- The catalog and the page ---
 
 #[test]
-fn the_catalog_teaches_the_kind_and_says_only_rust_emits_it() {
+fn the_catalog_teaches_the_kind_and_names_the_backends_that_emit_it() {
     let catalog = KindCatalog::new(Some(ForgeKind::BroadcastLog));
     assert_eq!(catalog.kinds.len(), 1);
     let record = &catalog.kinds[0];
     assert_eq!(record.name, ForgeKind::BroadcastLog);
-    assert_eq!(record.backends, ["rust"]);
+    // The catalog's `backends` is read from the matrix, in the order of
+    // `Language::ALL`.
+    let emitting_wire: Vec<&str> = Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| BROADCAST_LOG_BACKENDS.contains(language))
+        .map(language_wire_name)
+        .collect();
+    assert_eq!(record.backends, emitting_wire);
     assert!(!record.choose_when.is_empty());
     assert!(
         record

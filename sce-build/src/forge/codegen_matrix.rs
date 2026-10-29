@@ -314,22 +314,40 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         },
         // ADR 0062 BroadcastLog: the algorithm lives once per language in that
         // language's forge runtime, and the template that stores a document's
-        // element over it ships per language (the order of landing is Rust,
-        // then C11 and C++, then Go, Kotlin and Python; Swift stays refused).
-        // Rust's has landed (`forge/rust/broadcast_log.rs.jinja2`, over
-        // `sce_forge_runtime::broadcast_log`); each other backend flips to
-        // `true` in the change that gives it the template, and
-        // [`awaits_runtime`] stops answering for it then.
-        ForgeKind::BroadcastLog => match lang {
-            Language::Rust => true,
-            Language::Cpp
-            | Language::Go
-            | Language::Kotlin
-            | Language::Python
-            | Language::C11
-            | Language::Swift => false,
-        },
+        // element over it ships per language. Which languages have landed is
+        // [`BROADCAST_LOG_BACKENDS`], the one list both this answer and
+        // [`awaits_runtime`] read.
+        ForgeKind::BroadcastLog => lists(BROADCAST_LOG_BACKENDS, lang),
     }
+}
+
+/// The backends whose broadcast-log template has landed (ADR 0062, "Order of
+/// landing"). A backend joins this list in the change that gives it the
+/// template (`tools/codegen/templates/forge/<language>/broadcast_log.*.jinja2`)
+/// and the dispatch arm that renders it, and in no other change: a backend
+/// listed without them would be asked to emit what nothing writes, and one with
+/// them and not listed would refuse a document it can generate.
+///
+/// It is not [`Language::ALL`] on purpose, for the reason
+/// `STATIC_DATAMODEL_BACKENDS` is not: a new backend must not be admitted to a
+/// capability it does not have. [`template_ships`] and [`awaits_runtime`] are
+/// derived from it, so the two cannot disagree, and every test that holds the
+/// kind to the backends that ship it reads it, so a landing is this one line and
+/// the files that make it true.
+pub const BROADCAST_LOG_BACKENDS: &[Language] = &[Language::Rust];
+
+/// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by
+/// discriminant: `Language` derives `PartialEq`, which is not callable in a
+/// constant expression.
+const fn lists(list: &[Language], lang: Language) -> bool {
+    let mut i = 0;
+    while i < list.len() {
+        if list[i] as u8 == lang as u8 {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Whether `kind` is a valid kind whose absence of a template on `lang` is a
@@ -349,15 +367,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// kind stops being answered for at all when the last language has landed.
 pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
     match kind {
-        ForgeKind::BroadcastLog => match lang {
-            Language::Rust => false,
-            Language::Cpp
-            | Language::Go
-            | Language::Kotlin
-            | Language::Python
-            | Language::C11
-            | Language::Swift => true,
-        },
+        ForgeKind::BroadcastLog => !lists(BROADCAST_LOG_BACKENDS, lang),
         _ => false,
     }
 }
@@ -841,35 +851,62 @@ mod tests {
         }
     }
 
-    /// ADR 0062: a broadcast log is emitted by Rust, whose runtime row and
-    /// template have landed, and every other language still awaits its
-    /// runtime. The per-language answer of `awaits_runtime` and the matrix's
-    /// `template_ships` are never both true for one pair, and a pair that
-    /// ships is never the missing-runtime one.
+    /// ADR 0062: a broadcast log is emitted by the backends of
+    /// [`BROADCAST_LOG_BACKENDS`], whose template has landed, and every other
+    /// language still awaits its runtime. The per-language answer of
+    /// `awaits_runtime` and the matrix's `template_ships` are never both true for
+    /// one pair, and a pair that ships is never the missing-runtime one.
     #[test]
-    fn a_broadcast_log_is_emitted_by_rust_alone() {
-        assert_eq!(
-            lookup(ForgeKind::BroadcastLog, Language::Rust),
-            EmitOutcome::Emit
+    fn a_broadcast_log_is_emitted_by_the_registered_backends_alone() {
+        assert!(
+            !BROADCAST_LOG_BACKENDS.is_empty(),
+            "a registry with no backend holds nothing"
         );
-        assert!(template_ships(ForgeKind::BroadcastLog, Language::Rust));
-        assert!(!awaits_runtime(ForgeKind::BroadcastLog, Language::Rust));
         for &lang in Language::ALL {
-            if lang == Language::Rust {
-                continue;
-            }
+            let landed = BROADCAST_LOG_BACKENDS.contains(&lang);
             assert_eq!(
                 lookup(ForgeKind::BroadcastLog, lang),
-                EmitOutcome::RuntimeMissing,
+                if landed {
+                    EmitOutcome::Emit
+                } else {
+                    EmitOutcome::RuntimeMissing
+                },
                 "{lang:?}"
             );
-            assert!(!template_ships(ForgeKind::BroadcastLog, lang), "{lang:?}");
-            assert!(awaits_runtime(ForgeKind::BroadcastLog, lang), "{lang:?}");
+            assert_eq!(
+                template_ships(ForgeKind::BroadcastLog, lang),
+                landed,
+                "{lang:?}"
+            );
+            assert_eq!(
+                awaits_runtime(ForgeKind::BroadcastLog, lang),
+                !landed,
+                "{lang:?}"
+            );
         }
+        // `emitting` answers in the order of `Language::ALL`, whatever order the
+        // registry is written in.
         assert_eq!(
             emitting(ForgeKind::BroadcastLog).collect::<Vec<_>>(),
-            vec![Language::Rust]
+            Language::ALL
+                .iter()
+                .copied()
+                .filter(|lang| BROADCAST_LOG_BACKENDS.contains(lang))
+                .collect::<Vec<_>>()
         );
+    }
+
+    /// The registry holds a backend once, and holds only backends there are.
+    #[test]
+    fn the_broadcast_log_registry_lists_each_backend_once() {
+        for &lang in BROADCAST_LOG_BACKENDS {
+            let times = BROADCAST_LOG_BACKENDS
+                .iter()
+                .filter(|l| **l == lang)
+                .count();
+            assert_eq!(times, 1, "{lang:?}");
+            assert!(Language::ALL.contains(&lang), "{lang:?}");
+        }
     }
 
     /// No kind but the broadcast log awaits a runtime, and no pair that ships
