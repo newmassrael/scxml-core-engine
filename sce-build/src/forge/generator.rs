@@ -23660,8 +23660,8 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 .scalar()
                 .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
     }
-    // A `list<T>` read-only parameter is an `Array` of the element, of the same
-    // elements a value is: a list a body builds or returns is not lowered yet.
+    // A `list<T>` is an `Array` of the element, of the same elements a value is: a
+    // parameter, a buffer local a body appends to, and the list it returns.
     fn lowered_list(ty: &AlgorithmValueType) -> bool {
         ty.list_elem().is_some_and(|elem| match elem {
             ListElemType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
@@ -23678,10 +23678,14 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     };
     fn unlowered(stmts: &[AlgorithmStmt], reserved: &dyn Fn(&str) -> bool) -> Option<String> {
         stmts.iter().find_map(|s| match s {
-            AlgorithmStmt::Var { name, sce_type, .. } if !lowered(sce_type) => Some(format!(
-                "the <sce:var name=\"{name}\"> of {}",
-                sce_type.as_attr()
-            )),
+            AlgorithmStmt::Var { name, sce_type, .. }
+                if !lowered(sce_type) && !lowered_list(sce_type) =>
+            {
+                Some(format!(
+                    "the <sce:var name=\"{name}\"> of {}",
+                    sce_type.as_attr()
+                ))
+            }
             AlgorithmStmt::Var { name, .. } | AlgorithmStmt::RecordVar { name, .. }
                 if reserved(name) =>
             {
@@ -23693,6 +23697,9 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { .. }
+            // An element appended to a buffer local, which the buffer's own
+            // declaration has already held to a list Swift lowers.
+            | AlgorithmStmt::Append { .. }
             // A precondition of a may-fail body, thrown as `AlgorithmError.precondition`.
             | AlgorithmStmt::Require { .. } => None,
             AlgorithmStmt::If {
@@ -23704,7 +23711,6 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             AlgorithmStmt::RecordFromCall { name, .. } => Some(format!(
                 "the record <sce:var name=\"{name}\"> built from a call"
             )),
-            AlgorithmStmt::Append { .. } => Some("an <sce:append>".to_string()),
             AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
@@ -23758,7 +23764,12 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             p.name
         ));
     }
-    if let Some(ret) = m.signature.return_type.as_ref().filter(|t| !lowered(t)) {
+    if let Some(ret) = m
+        .signature
+        .return_type
+        .as_ref()
+        .filter(|t| !lowered(t) && !lowered_list(t))
+    {
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
     unlowered(&m.body, &reserved)
@@ -29760,7 +29771,9 @@ impl<'a> ListSpelling<'a> {
             Language::Python => format!("list[{t}]"),
             Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
-            Language::Swift => no_swift_emitter("ListSpelling::return_type"),
+            // The `Array` of the element, a value the caller owns: the parameter's
+            // type, since a list is one container whichever way it crosses.
+            Language::Swift => format!("[{t}]"),
         }
     }
 
@@ -29804,7 +29817,11 @@ impl<'a> ListSpelling<'a> {
                 format!("{pad}val {local} = ArrayList<{t}>({cap})\n")
             }
             Language::Kotlin => format!("{pad}val {local} = SceListBuf({cap})\n"),
-            Language::Swift => no_swift_emitter("ListSpelling::declare"),
+            // The capacity is reserved up front, as the C++ and Kotlin buffers do;
+            // `Array` grows past it, which the bounded backends refuse instead.
+            Language::Swift => {
+                format!("{pad}var {local}: [{t}] = []\n{pad}{local}.reserveCapacity({cap})\n")
+            }
         }
     }
 
@@ -29836,7 +29853,8 @@ impl<'a> ListSpelling<'a> {
             Language::Go => format!("{pad}{local} = append({local}, {t}({e}))\n"),
             Language::Python => format!("{pad}{local}.append({e})\n"),
             Language::Kotlin => format!("{pad}{local}.add({e})\n"),
-            Language::Swift => no_swift_emitter("ListSpelling::push"),
+            // A record is a struct, so the list holds its own copy of it.
+            Language::Swift => format!("{pad}{local}.append({e})\n"),
         }
     }
 
@@ -29855,8 +29873,8 @@ impl<'a> ListSpelling<'a> {
             | Language::Cpp
             | Language::C11
             | Language::Go
-            | Language::Python => local.to_string(),
-            Language::Swift => no_swift_emitter("ListSpelling::return_value"),
+            | Language::Python
+            | Language::Swift => local.to_string(),
         }
     }
 
@@ -30355,8 +30373,8 @@ fn lower_algorithm_stmt(
                         | Language::Cpp
                         | Language::Kotlin
                         | Language::Go
-                        | Language::Python => "",
-                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                        | Language::Python
+                        | Language::Swift => "",
                     };
                     out.push_str(
                         &ListSpelling::new(l, elem, imports)?
@@ -34466,7 +34484,8 @@ fn render_algorithm(
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
         ) if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
