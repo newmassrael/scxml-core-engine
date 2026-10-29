@@ -6482,6 +6482,15 @@ fn render_condition(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("func_name".into(), func_name.into());
     ctx.insert("params".into(), params.into());
+    // A Swift unit names the forge runtime only where its expression does.
+    ctx.insert(
+        "swift_uses_forge_runtime".into(),
+        (lang == crate::generator::Language::Swift
+            && SWIFT_FORGE_RUNTIME_ENUMS
+                .iter()
+                .any(|name| expr_val.contains(&format!("{name}."))))
+        .into(),
+    );
     ctx.insert("expr".into(), expr_val.into());
     l.insert_imports(&mut ctx, imports);
 
@@ -24376,6 +24385,9 @@ pub fn generate_swift_with_imports(
             swift_event_schema_unlowered(m, imports).map(|c| swift_event_schema_refusal(m, &c))
         }
         ForgeDocument::Enum(m) => swift_enum_unlowered(m).map(|c| swift_enum_refusal(m, &c)),
+        // A condition is one expression over scalars, which the expression emitter
+        // spells or refuses by name where it reads it.
+        ForgeDocument::Condition(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24401,6 +24413,7 @@ pub fn generate_swift_with_imports(
         }
         ForgeDocument::EventSchema(m) => render_event_schema(&env, m, imports, Language::Swift)?,
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -33299,8 +33312,10 @@ pub(crate) fn forge_stateless_def_symbol(
         | crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
-        | crate::generator::Language::Python => base.to_string(),
-        crate::generator::Language::Swift => no_swift_emitter("forge_stateless_def_symbol"),
+        | crate::generator::Language::Python
+        // A static member of the unit's caseless enum, which the enum's own name
+        // qualifies: nothing is prefixed.
+        | crate::generator::Language::Swift => base.to_string(),
     }
 }
 
@@ -33317,9 +33332,12 @@ pub(crate) fn forge_condition_symbol(name: &str, language: crate::generator::Lan
     match language {
         Language::Go => filters::to_pascal_case(name.to_string()),
         Language::Rust | Language::Python => filters::to_snake_case(name.to_string()),
-        Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
+        // Swift's is a static function of the caseless enum the document's `<Pascal>`
+        // names (`condition.swift.jinja2`), lowerCamelCase as Kotlin's.
+        Language::Cpp | Language::Kotlin | Language::Swift => {
+            filters::to_camel_case(name.to_string())
+        }
         Language::C11 => "check".to_string(),
-        Language::Swift => no_swift_emitter("forge_condition_symbol"),
     }
 }
 

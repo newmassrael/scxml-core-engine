@@ -1,0 +1,24 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="condition")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A named boolean guard: a static function of the caseless enum `{{ struct_name }}`, a
+// file of the module that calls it. A call is qualified by the enum
+// (`{{ struct_name }}.{{ func_name }}(…)`), which a member of the calling type cannot hide as
+// it would hide a free function of the same name.
+{% if swift_uses_forge_runtime %}
+
+import SceForgeRuntime
+{% endif %}
+
+public enum {{ struct_name }} {
+    public static func {{ func_name }}({{ params }}) -> Bool {
+        {{ expr }}
+    }
+}

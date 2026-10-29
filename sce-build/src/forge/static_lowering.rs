@@ -11688,10 +11688,11 @@ impl StaticTarget for SwiftTarget {
     // of the caseless enum its unit declares, in the machine's own module. A
     // transform, a condition, a lookup, an interpolation and a validator have no
     // Swift unit yet.
+    // An algorithm and a condition, the kinds a Swift unit is written for
+    // ([`crate::forge::codegen_matrix::ships_in_part`]) that a machine calls.
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
-        callee
-            .kind
-            .is_algorithm()
+        (callee.kind.is_algorithm()
+            || callee.kind.forge_kind() == crate::forge::model::ForgeKind::Condition)
             .then(|| generated_callee(Language::Swift, callee, None))
     }
     // A call that hands an algorithm a record, or takes one back, goes through an

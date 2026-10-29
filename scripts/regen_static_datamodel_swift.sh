@@ -127,15 +127,15 @@ for source in "${SOURCES[@]}"; do
         ALGORITHMS+=("$algorithm")
     done < <(algorithms_of "$source")
 done
-# The algorithms the fixture directory and the standard library declare, whether or not a
-# machine the Swift backend lowers calls one: an algorithm is compiled for what it is,
-# not for who happens to call it, so a construct Swift gains the lowering of is held
-# to the compiler before a machine reaches it. Derived, and a refusal by name (status
-# 7) is listed, as the machines' are.
+# The algorithms and conditions the fixture directory and the standard library declare,
+# whether or not a machine the Swift backend lowers calls one: a unit is compiled for
+# what it is, not for who happens to call it, so a construct Swift gains the lowering of
+# is held to the compiler before a machine reaches it. Derived, and a refusal by name
+# (status 7) is listed, as the machines' are.
 mapfile -t ALGORITHM_CANDIDATES < <(
     {
-        grep -l 'sce:kind="algorithm"' "$INPUT_ROOT"/*.scxml
-        grep -rl 'sce:kind="algorithm"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+        grep -lE 'sce:kind="(algorithm|condition)"' "$INPUT_ROOT"/*.scxml
+        grep -rlE 'sce:kind="(algorithm|condition)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
     } | LC_ALL=C sort -u
 )
 ALGORITHMS_REFUSED=()
