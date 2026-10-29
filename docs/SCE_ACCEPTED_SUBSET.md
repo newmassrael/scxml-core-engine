@@ -491,8 +491,10 @@ any number of readers read, each by a cursor of its own; a full log forgets
 its oldest entry and tells a reader that was too slow how many it missed. Its
 `<sce:element-type>`, `<sce:producers>`, `<sce:progress>` and `<sce:retention>`
 (`entries="N"`, or `source="deploy" key="…"`) are all required and none has a
-default. The document parses and is checked on every backend. The Rust backend
-lowers it over `sce_forge_runtime::broadcast_log`: a module that states the
+default. The document parses and is checked on every backend. The Rust and Python
+backends lower it, over `sce_forge_runtime::broadcast_log` and
+`sce_forge_runtime.broadcast_log` (the Python row is one ring under one lock and
+gives `blocking`): a module that states the
 retention, the slots (`retention + 1`), the element's largest encoded size and the
 words an entry holds, and gives typed `publish` and `read` over the element, whose
 wire bytes the log stores. It is generated from a document set that holds the
@@ -500,11 +502,13 @@ element's codec (`orchestrate`, or `check` with `--forge`), because the size is
 read from that document; a single-document compile has none to read and is refused,
 naming what is missing, as is a deploy-key retention given no deploy or no
 `--target-machine`. The other backends do not lower it yet, so generating one there
-is refused by name (`broadcast-log/runtime-missing`). The Rust template calls the
+is refused by name (`broadcast-log/runtime-missing`). The templates call the
 element's `encode` with a sink and its `decode` with a cursor and nothing else, so an
-element whose codec takes flag inputs or a variant tag from its caller, or is a CBOR
-map with a string or byte-string entry (whose decoded form borrows its buffer and
-has no owned mirror), is refused naming the element (`generate/invalid-config`). A
+element whose codec takes flag inputs or a variant tag from its caller is refused
+naming the element (`generate/invalid-config`) on every language that lowers the
+kind, and so is, on Rust, a CBOR map with a string or byte-string entry (whose
+decoded form borrows its buffer and has no owned mirror). Python holds that
+element: its decoded values own their bytes. A
 document is refused when `producers` is
 `many` (`broadcast-log/producers-many-unsupported`), when its
 `<sce:element-type>` names no codec or procedure of the build

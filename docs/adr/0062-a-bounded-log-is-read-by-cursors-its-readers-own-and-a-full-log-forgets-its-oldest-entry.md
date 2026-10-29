@@ -648,11 +648,62 @@ runner would let CI judge it, and is not built.
   have not been compiled or run, and neither the running time of the differential file (the aim is about ten seconds in a
   debug build) nor the counts it asserts have been observed.
 
+### What step 7 landed for Python (2026-10-29)
+
+- **The kind is generated for Python.** `sce-codegen` writes `<name>.py` for a `broadcast-log` document from
+  `tools/codegen/templates/forge/python/broadcast_log.py.jinja2`, through `render_broadcast_log_python`, and
+  `BROADCAST_LOG_BACKENDS` lists Python, so the matrix answers `Emit` for it and `broadcast-log/runtime-missing` is no
+  longer Python's answer. The module states `RETENTION`, `SLOTS = RETENTION + 1`, `MAX_ENCODED_BYTES`,
+  `WORDS = 1 + (MAX_ENCODED_BYTES + 7) // 8` (one length word, then the bytes, eight to a word, little-endian: the entry
+  every backend's log holds, so a Python log and a Rust log of one document store one thing) and `DECLARED_PROGRESS`;
+  names the log as the runtime's `BroadcastLog` with a `new_<snake>()` that builds it from `WORDS` and `SLOTS`, as the
+  queue's module names its queue; and gives typed `publish(publisher, element)` and `read(log, reader)`.
+- **One resolution for every language.** What the Rust renderer checked before it read its template (the progress
+  ceiling, a missing `BroadcastLogResolution`, an element the language cannot hold, a deploy-key retention nothing
+  resolved, a retention of 0) is now `resolve_broadcast_log_render_inputs`, which both renderers call, so two languages
+  cannot answer one document differently: what differs is `BroadcastLogElementFacts::refusal_for`, which each language
+  states in an arm of its own, and the name the refusal gives the template ("the Rust template", "the Python template").
+  Rust's refusals and their wording are unchanged. The renderer reads `options.broadcast_log_resolutions[log name]` as
+  Rust's does, so a single-document compile of a log is refused for Python as it is for Rust.
+- **Bytes in, bytes out.** `publish` encodes the element through the codec's own `encode` into a `MemoryviewSink` over a
+  buffer of `MAX_ENCODED_BYTES`, so an element that encodes to more raises `BufferOverflow` and nothing is published: an
+  entry is never a truncated element. `read` calls the runtime's `read` and decodes only on an `Item`; an `Empty` or a
+  `Lagged` is the runtime's own value, returned as it is. A stored length above `MAX_ENCODED_BYTES` raises
+  `LengthOutOfRange`, a new exception of the runtime's `codec` module that mirrors Rust's `CodecError::LengthOutOfRange`,
+  and no bytes are cut by it. Python's `decode` answers `None` for bytes that are not an element, so a stored entry
+  that does not decode raises `CodecError`, since the log wrote what the codec's `encode` produced and a refusal to
+  decode it means the slot is not one this log wrote. A typed read returns a `<Pascal>Item` (sequence number and decoded
+  element), where Rust returns an enum.
+- **A CBOR text or byte-string entry is held.** `BroadcastLogElementFacts::refusal_for` answers `None` for Python where it
+  answers a refusal for Rust. Python's decoded values own what they hold: the log hands `decode` a `bytes` and not a
+  `memoryview`, the generated CBOR codec reads an entry through `sce_forge_runtime.cbor`, whose `read_text` decodes to a
+  `str` and whose `read_bytes` copies, and a plain codec's byte field is `bytes(raw)`. There is no view of the log's buffer
+  to refuse, and no owned mirror to build. The two inputs a caller must give (flag inputs, a variant's tag) are refused
+  for Python as for every language.
+- **Progress.** Python gives `blocking`, so a document that declares `lock-free` or `wait-free` is refused by
+  `broadcast-log/progress-unreachable-on-backend` before anything else, for a single document and for a set. The
+  conformance documents the Rust crate compiles declare `wait-free`; the Python test derives its logs from them by
+  replacing that word, as the queue's Python test does, so one set of log documents is in the tree, and hands the generator
+  the unchanged ones for the refusal.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the renderer (the constants with their computed values, the typed
+  functions, the order of the length check and the cut, an element with a payload, the refusal of a progress Python cannot
+  give, a CBOR text entry that is held, what a caller must give, the resolution's numbers and the deploy's limit, and one
+  text of the shared refusals for Rust and Python). `backends/python/forge-runtime/tests/test_broadcast_log_generated.py`
+  generates the two logs as a document set through `sce-codegen orchestrate`, with a deploy for the second one's
+  retention, imports the modules over the runtime, and on one thread reads the entries back whole and in order, tells a
+  lapped reader how many it missed, keeps two readers' cursors apart, checks the words an entry packs, refuses an element
+  past its bound without publishing, and refuses a length word above the bound and bytes that do not decode.
+  `scripts/gates/forge-python.sh` runs it with the runtime's own tests.
+- **Not built.** The generated module has no mutation case of its own. Under several threads the Python log is the runtime
+  row's own test and history judgement. The change was written with nothing built: neither the renderer, the template,
+  the new tests nor the Python test have been compiled or run.
+
 ### What is still undone
 
-- **The generated code for the other languages.** Rust's template landed (step 6b). The C11, C++, Go, Kotlin and Python
-  templates, and generated tests that regenerate and build them, are next, one language at a time; each is refused by name
-  (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same `BroadcastLogResolution`.
+- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's (step 7). The C11, C++,
+  Go and Kotlin templates, and generated tests that regenerate and build them, are next, one language at a time; each is
+  refused by name (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same
+  `BroadcastLogResolution`.
   Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
   and stores, are not built, so `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
