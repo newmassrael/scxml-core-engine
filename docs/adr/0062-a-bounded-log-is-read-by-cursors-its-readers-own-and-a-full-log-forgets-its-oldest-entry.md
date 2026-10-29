@@ -1063,6 +1063,45 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   the script refuses it there. The run above used a copy that matches the pin. A lane that fetches it afresh would refuse
   it the same way.
 
+### What the caller inputs landed for Kotlin (2026-10-29)
+
+- **The template stores the context.** `broadcast_log.kt.jinja2` reads the `context` value that
+  `broadcast_log_context_value` computes for every language (the renderer passes it over 64-bit words), and `Language::Kotlin` is
+  in `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses a Kotlin log for flag inputs or a variant's tag. The
+  slot is `[length][context words][payload words]`: flag `i` is bit `i % 64` of context word `i / 64` in the `LongArray` the
+  runtime holds (the 64th is the sign bit, written with `shl 63` and read with `ushr`), the tag is one more word after the flag
+  words, and the bytes start at word `1 + CONTEXT_WORDS`. `CONTEXT_WORDS` is emitted only when the element has a caller
+  input, and then `WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8`; an element with none renders the file it always
+  did, line for line.
+- **The typed API.** `data class <Log>Flags(val <name>: Boolean, ...)` holds the flags, named as the codec names its parameters
+  (camelCase). `publish(publisher, element, flags, tag)` takes only what the element has, the tag as the `UByte` the codec's
+  `decode` takes, and `Item` carries `flags` and `tag` beside `element`; the sealed answer type and `Refused`/`Unreadable` are
+  unchanged. A flag crosses to the codec through one private `flagInput(Boolean): UByte` (1 or 0), so the value the codec
+  encodes under and the bit stored are the one Boolean, and `read` passes the stored bits, as the same conversion, to `decode`
+  ahead of the tag. The log does not derive the tag from the value: the publisher gives it.
+- **Tests.** In `sce-build/tests/broadcast_log_kind.rs` the Kotlin test that asserted the refusal of a flag input now asserts the
+  file the set compile writes for a flag-input codec, and four are added beside it: the flags and the tag in context words of
+  their own, a tag alone, 65 flags carried past one word (the sign-bit flag and the first flag of the second word), and an
+  element with no caller input keeping the entry and the signatures it had. The two registry-driven tests
+  (`what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere` and the shared refusals test)
+  read the list and so follow the registration. `BroadcastLogContextGeneratedTest` in the Kotlin forge runtime's `jvmTest`
+  compiles what the generator writes for the two logs over the six documents in
+  `tests/forge/conformance/broadcast_log_context/` (generated as one set by `generateBroadcastLogContextFixtures`): the
+  constants, the words of an entry as the runtime holds them (the context word between the length and the bytes), a reader
+  getting back the flag it was published under, two readers decoding every entry under the same flag, and a reader getting
+  back the tag.
+- **A difference from Rust that the conformance does not hide.** The Rust codec refuses a flag that disagrees with the element
+  (`PresentIfMismatch`, from the source form of ADR 0058), so a Rust log never holds an entry whose bytes and flag disagree. The
+  Kotlin codec has no such check for a field gated on a flag input: its encode writes a gated field whenever the field holds a
+  value and skips it when it does not, whatever the flag says (the chain-membership gates are the only ones it checks). A
+  Kotlin publisher that gives a flag the element contradicts is therefore not refused, and the entry reads back decoded under
+  the stored flag. No Kotlin test asserts the refusal the Rust test does, because the code does not do it; closing it is a
+  change to the Kotlin codec generator, and moves its goldens and every generated Kotlin tree that has a flag-gated field.
+- **Not run.** The change was written with nothing built: the renderer, the template, the new tests, the Gradle task and the
+  Kotlin conformance test have been neither compiled nor run. The least certain points are the exact text of the generated
+  file that the new assertions quote, the arm and class names the conformance test takes from the Kotlin codec generator for a
+  variant with no tag field, and whether `orchestrate` resolves the documents' relative imports from their own directory.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
