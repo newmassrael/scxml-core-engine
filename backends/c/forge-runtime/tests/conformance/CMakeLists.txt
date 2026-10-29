@@ -258,6 +258,21 @@ target_include_directories(codec_optional_test_c PRIVATE
 target_compile_options(codec_optional_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME codec_optional_c COMMAND codec_optional_test_c)
 
+# The encode of a byte string, a text, a list or a TLV chain whose length is above
+# the bound of the array that holds it: refused before the first byte is written,
+# for each shape of the generated encode (codec_tail, codec_length_ref,
+# codec_zenoh_locator, codec_present_if_tail, codec_repeat_basic,
+# codec_tlv_chain_basic), and the same length at the bound written whole.
+add_executable(codec_encode_bound_test_c "${CMAKE_CURRENT_SOURCE_DIR}/codec_encode_bound_test.c")
+add_dependencies(codec_encode_bound_test_c generate_forge_fixtures_c)
+target_include_directories(codec_encode_bound_test_c PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${CORE_RUNTIME_INCLUDE_DIR}"
+    "${GENERATED_DIR}"
+)
+target_compile_options(codec_encode_bound_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME codec_encode_bound_c COMMAND codec_encode_bound_test_c)
+
 # The runtime's CBOR items on their own (sce/forge/cbor.h), under the same
 # -Werror bar; what a generated CBOR codec does with them is judged by the
 # harness above (codec_cbor_map).
