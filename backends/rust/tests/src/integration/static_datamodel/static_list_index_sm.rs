@@ -148,7 +148,9 @@ pub type StaticListIndexConfiguration =
 /// the discriminant of its variant, and each transition by its row here — the
 /// written ones grouped by source state, then each compound state's initial
 /// transition, each history's default transition and the document's own
-/// initial transition. The last four fields size the microstep's buffers.
+/// initial transition. A state's children are not listed: the numbering is a
+/// pre-order walk, so they are the state's number plus one and each number past
+/// the subtree (`last_descendant`) of the child before.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -162,112 +164,37 @@ pub const STATIC_LIST_INDEX_TABLES: ::sce_rust_runtime::DocumentTables = {
     DocumentTables {
         states: &[
             // 0: reading
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(0),
-                children: Span { start: 0, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Atomic, StateId(0), None),
         ],
-        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-        // children, in document order — for a <parallel>, its regions — as the
-        // span its row names.
-        children: &[],
         histories: &[],
         transitions: &[
             // 0: reading, transition 0
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 1: reading, transition 1
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 2: reading, transition 2
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 3: reading, transition 3
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 4: reading, transition 4
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 5: reading, transition 5
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 6: reading, transition 6
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 7: reading, transition 7
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 8: reading, transition 8
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 9: reading, transition 9
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 10: reading, transition 10
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 11: the document's initial transition
-            TransitionRow {
-                source: None,
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 0, len: 1 }, false, false),
         ],
-        targets: &[Target::State(StateId(0))],
+        targets: &[Target::state(StateId(0))],
         initial: TransitionId(11),
-        history_records: 0,
-        max_configuration: 1,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 6,
     }
 };
 
@@ -971,19 +898,25 @@ impl StatePolicy for StaticListIndexPolicy {
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger, in both profiles. A configuration
-    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
-    // one from each atomic state of one; a microstep owes 0 history default(s) at
-    // most; and Appendix D's entry procedures, the effective targets and the
+    // this document's size and no larger, in both profiles. Every set of states
+    // the runtime keeps is a bit vector of this document's 1 state(s); a
+    // configuration holds 1 state(s) at most, the capacity of the
+    // `Configuration` a host reads; a selection enables 1 transition(s) at most, one from each atomic state
+    // of one configuration; a microstep owes 0 history default(s) at most;
+    // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
     // call needs no depth the program has to assume: 6 step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
-    // run store, the configuration and the 0 state(s) the histories record
-    // together, is the engine's.
+    // run store, the configuration and what each of the 0 `<history>`
+    // element(s) recorded, one such set each, is the engine's.
     type Workspace =
         ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
-    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<
+        { ::sce_rust_runtime::state_words(1) },
+        { ::sce_rust_runtime::record_words(1, 0) },
+        0,
+    >;
     type Configuration = StaticListIndexConfiguration;
 
     // W3C SCXML feature flags
@@ -1010,10 +943,10 @@ impl StatePolicy for StaticListIndexPolicy {
         StaticListIndexState::Reading
     }
 
-    // The document's structure — each state's parent, kind, children and
-    // initial transition, each history's parent and default, document order —
-    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
-    // of it is written here a second time.
+    // The document's structure — each state's parent, kind, subtree and
+    // initial transition, and so its children, each history's parent and
+    // default, document order — is read from `TABLES` by the trait's own
+    // methods (docs/adr/0064), so none of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {

@@ -156,7 +156,9 @@ pub type AncestorEntryIsNotDefaultEntryConfiguration =
 /// the discriminant of its variant, and each transition by its row here — the
 /// written ones grouped by source state, then each compound state's initial
 /// transition, each history's default transition and the document's own
-/// initial transition. The last four fields size the microstep's buffers.
+/// initial transition. A state's children are not listed: the numbering is a
+/// pre-order walk, so they are the state's number plus one and each number past
+/// the subtree (`last_descendant`) of the child before.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -170,237 +172,91 @@ pub const ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_TABLES: ::sce_rust_runtime::Docume
     DocumentTables {
         states: &[
             // 0: away
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(0),
-                children: Span { start: 0, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Atomic, StateId(0), None),
             // 1: run
-            StateRow {
-                parent: None,
-                kind: StateKind::Parallel,
-                last_descendant: StateId(8),
-                children: Span { start: 0, len: 2 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Parallel, StateId(8), None),
             // 2: drive
-            StateRow {
-                parent: Some(StateId(1)),
-                kind: StateKind::Compound,
-                last_descendant: StateId(6),
-                children: Span { start: 2, len: 2 },
-                initial: Some(TransitionId(8)),
-            },
+            StateRow::new(
+                Some(StateId(1)),
+                StateKind::Compound,
+                StateId(6),
+                Some(TransitionId(8)),
+            ),
             // 3: lobby
-            StateRow {
-                parent: Some(StateId(2)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(3),
-                children: Span { start: 4, len: 0 },
-                initial: None,
-            },
+            StateRow::new(Some(StateId(2)), StateKind::Atomic, StateId(3), None),
             // 4: outer
-            StateRow {
-                parent: Some(StateId(2)),
-                kind: StateKind::Compound,
-                last_descendant: StateId(6),
-                children: Span { start: 4, len: 2 },
-                initial: Some(TransitionId(9)),
-            },
+            StateRow::new(
+                Some(StateId(2)),
+                StateKind::Compound,
+                StateId(6),
+                Some(TransitionId(9)),
+            ),
             // 5: by_default
-            StateRow {
-                parent: Some(StateId(4)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(5),
-                children: Span { start: 6, len: 0 },
-                initial: None,
-            },
+            StateRow::new(Some(StateId(4)), StateKind::Atomic, StateId(5), None),
             // 6: chosen
-            StateRow {
-                parent: Some(StateId(4)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(6),
-                children: Span { start: 6, len: 0 },
-                initial: None,
-            },
+            StateRow::new(Some(StateId(4)), StateKind::Atomic, StateId(6), None),
             // 7: watch
-            StateRow {
-                parent: Some(StateId(1)),
-                kind: StateKind::Compound,
-                last_descendant: StateId(8),
-                children: Span { start: 6, len: 1 },
-                initial: Some(TransitionId(10)),
-            },
+            StateRow::new(
+                Some(StateId(1)),
+                StateKind::Compound,
+                StateId(8),
+                Some(TransitionId(10)),
+            ),
             // 8: idle
-            StateRow {
-                parent: Some(StateId(7)),
-                kind: StateKind::Atomic,
-                last_descendant: StateId(8),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
+            StateRow::new(Some(StateId(7)), StateKind::Atomic, StateId(8), None),
             // 9: settled
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(9),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Final, StateId(9), None),
             // 10: failDefaulted
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(10),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Final, StateId(10), None),
             // 11: failLobbied
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(11),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Final, StateId(11), None),
             // 12: failIdled
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(12),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Final, StateId(12), None),
             // 13: failTargeted
-            StateRow {
-                parent: None,
-                kind: StateKind::Final,
-                last_descendant: StateId(13),
-                children: Span { start: 7, len: 0 },
-                initial: None,
-            },
-        ],
-        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-        // children, in document order — for a <parallel>, its regions — as the
-        // span its row names.
-        children: &[
-            StateId(2),
-            StateId(7),
-            StateId(3),
-            StateId(4),
-            StateId(5),
-            StateId(6),
-            StateId(8),
+            StateRow::new(None, StateKind::Final, StateId(13), None),
         ],
         histories: &[],
         transitions: &[
             // 0: away, transition 0
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
             // 1: lobby, transition 0
-            TransitionRow {
-                source: Some(StateId(3)),
-                targets: Span { start: 1, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(3)), Span { start: 1, len: 1 }, false, false),
             // 2: chosen, transition 0
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 2, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 2, len: 1 }, false, false),
             // 3: chosen, transition 1
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 3, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 3, len: 1 }, false, false),
             // 4: chosen, transition 2
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 4, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 4, len: 1 }, false, false),
             // 5: chosen, transition 3
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 5, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 5, len: 1 }, false, false),
             // 6: chosen, transition 4
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 6, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 6, len: 1 }, false, false),
             // 7: chosen, transition 5
-            TransitionRow {
-                source: Some(StateId(6)),
-                targets: Span { start: 7, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(6)), Span { start: 7, len: 1 }, false, false),
             // 8: drive, initial
-            TransitionRow {
-                source: Some(StateId(2)),
-                targets: Span { start: 8, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(2)), Span { start: 8, len: 1 }, false, false),
             // 9: outer, initial
-            TransitionRow {
-                source: Some(StateId(4)),
-                targets: Span { start: 9, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(4)), Span { start: 9, len: 1 }, false, false),
             // 10: watch, initial
-            TransitionRow {
-                source: Some(StateId(7)),
-                targets: Span { start: 10, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(Some(StateId(7)), Span { start: 10, len: 1 }, false, false),
             // 11: the document's initial transition
-            TransitionRow {
-                source: None,
-                targets: Span { start: 11, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 11, len: 1 }, false, false),
         ],
         targets: &[
-            Target::State(StateId(6)),
-            Target::State(StateId(6)),
-            Target::State(StateId(3)),
-            Target::State(StateId(10)),
-            Target::State(StateId(11)),
-            Target::State(StateId(12)),
-            Target::State(StateId(13)),
-            Target::State(StateId(9)),
-            Target::State(StateId(3)),
-            Target::State(StateId(5)),
-            Target::State(StateId(8)),
-            Target::State(StateId(0)),
+            Target::state(StateId(6)),
+            Target::state(StateId(6)),
+            Target::state(StateId(3)),
+            Target::state(StateId(10)),
+            Target::state(StateId(11)),
+            Target::state(StateId(12)),
+            Target::state(StateId(13)),
+            Target::state(StateId(9)),
+            Target::state(StateId(3)),
+            Target::state(StateId(5)),
+            Target::state(StateId(8)),
+            Target::state(StateId(0)),
         ],
         initial: TransitionId(11),
-        history_records: 0,
-        max_configuration: 6,
-        max_enabled: 2,
-        max_history_defaults: 0,
-        max_walk: 15,
     }
 };
 
@@ -1035,19 +891,25 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger, in both profiles. A configuration
-    // holds 6 state(s) at most; a selection enables 2 transition(s) at most,
-    // one from each atomic state of one; a microstep owes 0 history default(s) at
-    // most; and Appendix D's entry procedures, the effective targets and the
+    // this document's size and no larger, in both profiles. Every set of states
+    // the runtime keeps is a bit vector of this document's 14 state(s); a
+    // configuration holds 6 state(s) at most, the capacity of the
+    // `Configuration` a host reads; a selection enables 2 transition(s) at most, one from each atomic state
+    // of one configuration; a microstep owes 0 history default(s) at most;
+    // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
     // call needs no depth the program has to assume: 15 step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
-    // run store, the configuration and the 0 state(s) the histories record
-    // together, is the engine's.
+    // run store, the configuration and what each of the 0 `<history>`
+    // element(s) recorded, one such set each, is the engine's.
     type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(6) }, 2, 15, 0>;
-    type RunStore = ::sce_rust_runtime::RunStore<6, 0, 0>;
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(14) }, 2, 15, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<
+        { ::sce_rust_runtime::state_words(14) },
+        { ::sce_rust_runtime::record_words(14, 0) },
+        0,
+    >;
     type Configuration = AncestorEntryIsNotDefaultEntryConfiguration;
 
     // W3C SCXML feature flags
@@ -1074,10 +936,10 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
         AncestorEntryIsNotDefaultEntryState::Away
     }
 
-    // The document's structure — each state's parent, kind, children and
-    // initial transition, each history's parent and default, document order —
-    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
-    // of it is written here a second time.
+    // The document's structure — each state's parent, kind, subtree and
+    // initial transition, and so its children, each history's parent and
+    // default, document order — is read from `TABLES` by the trait's own
+    // methods (docs/adr/0064), so none of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {

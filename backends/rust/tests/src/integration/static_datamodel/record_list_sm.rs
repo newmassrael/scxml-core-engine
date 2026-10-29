@@ -184,7 +184,9 @@ pub type RecordListConfiguration =
 /// the discriminant of its variant, and each transition by its row here — the
 /// written ones grouped by source state, then each compound state's initial
 /// transition, each history's default transition and the document's own
-/// initial transition. The last four fields size the microstep's buffers.
+/// initial transition. A state's children are not listed: the numbering is a
+/// pre-order walk, so they are the state's number plus one and each number past
+/// the subtree (`last_descendant`) of the child before.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -198,224 +200,69 @@ pub const RECORD_LIST_TABLES: ::sce_rust_runtime::DocumentTables = {
     DocumentTables {
         states: &[
             // 0: open
-            StateRow {
-                parent: None,
-                kind: StateKind::Atomic,
-                last_descendant: StateId(0),
-                children: Span { start: 0, len: 0 },
-                initial: None,
-            },
+            StateRow::new(None, StateKind::Atomic, StateId(0), None),
         ],
-        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-        // children, in document order — for a <parallel>, its regions — as the
-        // span its row names.
-        children: &[],
         histories: &[],
         transitions: &[
             // 0: open, transition 0
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 1: open, transition 1
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 2: open, transition 2
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 3: open, transition 3
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 4: open, transition 4
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 5: open, transition 5
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 6: open, transition 6
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 7: open, transition 7
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 8: open, transition 8
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 9: open, transition 9
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 10: open, transition 10
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 11: open, transition 11
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 12: open, transition 12
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 13: open, transition 13
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 14: open, transition 14
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 15: open, transition 15
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 16: open, transition 16
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 17: open, transition 17
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 18: open, transition 18
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 19: open, transition 19
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 20: open, transition 20
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 21: open, transition 21
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 22: open, transition 22
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 23: open, transition 23
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 24: open, transition 24
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 25: open, transition 25
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 26: open, transition 26
-            TransitionRow {
-                source: Some(StateId(0)),
-                targets: Span { start: 0, len: 0 },
-                internal: true,
-                has_content: true,
-            },
+            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
             // 27: the document's initial transition
-            TransitionRow {
-                source: None,
-                targets: Span { start: 0, len: 1 },
-                internal: false,
-                has_content: false,
-            },
+            TransitionRow::new(None, Span { start: 0, len: 1 }, false, false),
         ],
-        targets: &[Target::State(StateId(0))],
+        targets: &[Target::state(StateId(0))],
         initial: TransitionId(27),
-        history_records: 0,
-        max_configuration: 1,
-        max_enabled: 1,
-        max_history_defaults: 0,
-        max_walk: 6,
     }
 };
 
@@ -3791,19 +3638,25 @@ impl StatePolicy for RecordListPolicy {
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger, in both profiles. A configuration
-    // holds 1 state(s) at most; a selection enables 1 transition(s) at most,
-    // one from each atomic state of one; a microstep owes 0 history default(s) at
-    // most; and Appendix D's entry procedures, the effective targets and the
+    // this document's size and no larger, in both profiles. Every set of states
+    // the runtime keeps is a bit vector of this document's 1 state(s); a
+    // configuration holds 1 state(s) at most, the capacity of the
+    // `Configuration` a host reads; a selection enables 1 transition(s) at most, one from each atomic state
+    // of one configuration; a microstep owes 0 history default(s) at most;
+    // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
     // call needs no depth the program has to assume: 6 step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
-    // run store, the configuration and the 0 state(s) the histories record
-    // together, is the engine's.
+    // run store, the configuration and what each of the 0 `<history>`
+    // element(s) recorded, one such set each, is the engine's.
     type Workspace =
         ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;
-    type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;
+    type RunStore = ::sce_rust_runtime::RunStore<
+        { ::sce_rust_runtime::state_words(1) },
+        { ::sce_rust_runtime::record_words(1, 0) },
+        0,
+    >;
     type Configuration = RecordListConfiguration;
 
     // W3C SCXML feature flags
@@ -3830,10 +3683,10 @@ impl StatePolicy for RecordListPolicy {
         RecordListState::Open
     }
 
-    // The document's structure — each state's parent, kind, children and
-    // initial transition, each history's parent and default, document order —
-    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
-    // of it is written here a second time.
+    // The document's structure — each state's parent, kind, subtree and
+    // initial transition, and so its children, each history's parent and
+    // default, document order — is read from `TABLES` by the trait's own
+    // methods (docs/adr/0064), so none of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
