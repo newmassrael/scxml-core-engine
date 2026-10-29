@@ -91,8 +91,11 @@ const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 /// 4440 until section 5.Q (the session runtime of a tokio host) went in after
 /// 5.P, with the citations of sections 6 to 8 and Appendix C re-pointed (+44);
 /// 4484 until section 5.R (the queries a machine serves) went in after 5.Q,
-/// with the same citations re-pointed again (+60).
-const SYNTH_RFC_LINES: usize = 4544;
+/// with the same citations re-pointed again (+60);
+/// 4544 until section 5.S (the `broadcast-log` kind) went in after 5.R, with
+/// the one citation that sat past it re-pointed (`§synth-8 Q8`, 4233 to 4404,
+/// in eight places: the driver-class diagnostic and its text) (+171).
+const SYNTH_RFC_LINES: usize = 4715;
 
 /// The document the exclusion above is granted to.
 const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";
