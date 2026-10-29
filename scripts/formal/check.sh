@@ -22,6 +22,16 @@
 #   * BroadcastLog_without_extra_slot.cfg, BroadcastLog_without_revalidation.cfg: the ring with only R
 #     slots, and the read without its second stamp load. TLC must find an answer the specification does
 #     not give (a Lagged that skipped nothing; an Item made of two entries).
+#   * BroadcastLogWrapped.cfg, _r3.cfg, _oldest.cfg (docs/formal/BroadcastLogWrapped.tla, ADR 0062
+#     "Stamp width"): the narrow row, whose 3-bit stamp wraps, with one reader that opens at the head, one
+#     whose log keeps as many slots as half the stamp space, and one that opens at the oldest entry, each
+#     under the wrap bound. TLC must find no violation of AnswerRefines (order, wholeness, exact gaps),
+#     CursorNotPastHead, LostIsNonNegative, SlotIndexContinuous or OpenRefines.
+#   * BroadcastLogWrapped_without_bound.cfg: the same log whose reader may be held for as long as it
+#     likes. TLC must find the entry of a later lap handed as the one the reader wanted.
+#     BroadcastLogWrapped_non_divisor.cfg: a slot count (3) that does not divide the stamp space (8). TLC
+#     must find a reader whose cursor, known only modulo the stamp space, names another slot than the
+#     publisher's. Together they are the check that the bound and the divisor are needed.
 #
 # Needs Java 11 or later. TLC is fetched once into ~/.cache/sce-formal and checked against a pinned
 # SHA-256, or taken from $TLA2TOOLS.
@@ -99,6 +109,26 @@ for config in BroadcastLog_without_extra_slot BroadcastLog_without_revalidation;
     echo "== $config: a design the ADR rejects, a violation expected"
     set +e
     tlc "$config.cfg" BroadcastLog > "$config.log" 2>&1
+    status=$?
+    set -e
+    tail -n 25 "$config.log"
+    if [[ "$status" -ne 12 ]]; then
+        echo "check.sh: expected TLC to report an invariant violation (exit 12) for $config, got $status" >&2
+        exit 1
+    fi
+done
+for config in BroadcastLogWrapped BroadcastLogWrapped_r3 BroadcastLogWrapped_oldest; do
+    echo "== $config: the narrow bounded log under the wrap bound, no violation expected"
+    if ! tlc "$config.cfg" BroadcastLogWrapped; then
+        echo "check.sh: TLC found a violation of the narrow log's protocol ($config)" >&2
+        exit 1
+    fi
+done
+
+for config in BroadcastLogWrapped_without_bound BroadcastLogWrapped_non_divisor; do
+    echo "== $config: a narrow log the ADR refuses, a violation expected"
+    set +e
+    tlc "$config.cfg" BroadcastLogWrapped > "$config.log" 2>&1
     status=$?
     set -e
     tail -n 25 "$config.log"
