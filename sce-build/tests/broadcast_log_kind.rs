@@ -1143,15 +1143,23 @@ fn the_ceiling_of_each_language_is_its_runtimes() {
 
 // --- Rust generates the log over its runtime row ---
 
-/// The generated Rust of the log `event_ring`, out of the outputs of a set that
-/// generated.
-fn generated_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+/// The text of the file `name` among the outputs of a set that generated.
+fn generated_file(
+    outputs: Vec<(String, sce_build::generator::GeneratedOutput)>,
+    name: &str,
+) -> String {
     outputs
         .into_iter()
         .flat_map(|(_, output)| output.files)
-        .find(|(file, _)| file == "event_ring.rs")
+        .find(|(file, _)| file == name)
         .map(|(_, code)| code)
-        .expect("the set generated the log's module")
+        .unwrap_or_else(|| panic!("the set generated no file `{name}`"))
+}
+
+/// The generated Rust of the log `event_ring`, out of the outputs of a set that
+/// generated.
+fn generated_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    generated_file(outputs, "event_ring.rs")
 }
 
 /// The text of a generated module must hold every line of `needles`.
@@ -1401,21 +1409,27 @@ fn resolution_options(
 
 /// The generated Rust of the single document `xml`, compiled with `options`.
 fn compile_single(xml: &str, options: &ForgeCompileOptions) -> Result<String, Located<ForgeError>> {
-    compile_forge_with_imports(
-        xml,
-        label("event_ring"),
-        Language::Rust,
-        Path::new("."),
-        options,
+    compile_single_as(Language::Rust, "event_ring.rs", xml, options)
+}
+
+/// The file `file` generated for `language` from the single document `xml`,
+/// compiled with `options`.
+fn compile_single_as(
+    language: Language,
+    file: &str,
+    xml: &str,
+    options: &ForgeCompileOptions,
+) -> Result<String, Located<ForgeError>> {
+    compile_forge_with_imports(xml, label("event_ring"), language, Path::new("."), options).map(
+        |output| {
+            output
+                .files
+                .into_iter()
+                .find(|(name, _)| name == file)
+                .map(|(_, code)| code)
+                .unwrap_or_else(|| panic!("the log's module `{file}`"))
+        },
     )
-    .map(|output| {
-        output
-            .files
-            .into_iter()
-            .find(|(file, _)| file == "event_ring.rs")
-            .map(|(_, code)| code)
-            .expect("the log's module")
-    })
 }
 
 const DEPLOY_KEY_RETENTION: &str =
@@ -1584,18 +1598,274 @@ fn a_cbor_entry_that_borrows_is_refused_only_where_the_decoded_form_borrows() {
         .refusal_for(Language::Rust)
         .expect("Rust decodes a CBOR string to a borrowed view");
     assert!(why.contains("a CBOR map with a string"), "{why}");
-    // Python's and Kotlin's decoded values own their bytes (their arms of
-    // `refusal_for` say why), so each holds the element. The other languages have
-    // no template yet, so none
-    // has decided that its decoded form borrows; the change that gives one its
+    // Python's, Kotlin's and Go's decoded values own their bytes (their arms of
+    // `refusal_for` say why: each decode copies a text or byte-string entry out of
+    // the buffer it reads), so each holds the element, and a test of its own
+    // generates one. The other languages have no template yet, so none has
+    // decided that its decoded form borrows; the change that gives one its
     // template says which it is in its arm of `refusal_for`.
+    assert_eq!(facts.refusal_for(Language::Go), None);
     for language in Language::ALL
         .iter()
         .copied()
-        .filter(|language| *language != Language::Rust)
+        .filter(|language| *language != Language::Rust && *language != Language::Go)
     {
         assert_eq!(facts.refusal_for(language), None, "{language:?}");
     }
+}
+
+// --- Go generates the log over its runtime row ---
+
+/// The generated Go of the log `event_ring`, out of the outputs of a set that
+/// generated.
+fn generated_go_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    generated_file(outputs, "event_ring.go")
+}
+
+/// The options of a Go render with the numbers supplied by hand: the module
+/// prefix the element's package is imported by, and the resolution.
+fn go_resolution_options(
+    retention: Option<u32>,
+    element_max_bytes: u64,
+    element: BroadcastLogElementFacts,
+) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        go_module_prefix: options_for(Language::Go).go_module_prefix,
+        ..resolution_options(retention, element_max_bytes, element)
+    }
+}
+
+#[test]
+fn go_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; a slot is then
+    // 1 + (4 + 7) / 8 = 1 + 1 = 2 words, which the package computes and does not
+    // restate.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_go_log(
+        compile_documents(
+            Language::Go,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("go generates a broadcast log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            r#"// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "// Runtime: github.com/newmassrael/sce-forge-runtime/broadcastlog",
+            "package event_ring",
+            "\t\"github.com/newmassrael/sce-forge-runtime/broadcastlog\"",
+            "\t\"github.com/newmassrael/sce-forge-runtime/codec\"",
+            "\tsce_event_record \"github.com/acme/project/generated/event_record\"",
+            "const Retention = 7",
+            "const Slots = Retention + 1",
+            "const MaxEncodedBytes = 4",
+            "const Words = 1 + (MaxEncodedBytes+7)/8",
+            r#"const DeclaredProgress = "wait-free""#,
+            "type EventRing = broadcastlog.Log",
+            "func NewEventRing() *EventRing {",
+            "return broadcastlog.New(Words, Slots)",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord) (uint64, error) {",
+            "var buffer [MaxEncodedBytes]byte",
+            "sink := codec.NewBoundedSink(buffer[:])",
+            "return publisher.Publish(entry[:]), nil",
+            "func Read(log *EventRing, reader *broadcastlog.Reader) (broadcastlog.Read, *sce_event_record.EventRecord, error) {",
+            "answer := log.Read(reader, entry[:])",
+            "if answer.Kind != broadcastlog.ReadItem {",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor)",
+        ],
+    );
+    // An element the codec refuses is returned before anything is published.
+    let encode = code
+        .find("if err := element.Encode(sink); err != nil {\n\t\treturn 0, err\n\t}")
+        .expect("a refused encode returns its error");
+    let publish = code
+        .find("publisher.Publish(entry[:])")
+        .expect("the packed words are published");
+    assert!(
+        encode < publish,
+        "the encode, and its refusal, come before the publish:\n{code}"
+    );
+    // A stored length above the bound is refused before any slice is cut by it.
+    let length_check = code
+        .find("if stored > MaxEncodedBytes {")
+        .expect("the stored length is checked against the bound");
+    let refusal = code[length_check..]
+        .find("return answer, nil, codec.ErrLengthOutOfRange")
+        .expect("a length above the bound is a codec error");
+    let slice = code[length_check..]
+        .find("make([]byte, int(stored))")
+        .expect("the entry's bytes are cut by the length");
+    assert!(
+        refusal < slice,
+        "the refusal comes before the slice the length cuts:\n{code}"
+    );
+    assert!(
+        !code.contains("Owned"),
+        "Go has no owned mirror of an element, and a log needs none:\n{code}"
+    );
+}
+
+#[test]
+fn an_element_that_views_its_buffer_is_decoded_from_a_buffer_of_its_own() {
+    // A one-byte head and a payload of at most 64 bytes: 1 + 64 = 65 bytes, so
+    // a slot is 1 + (65 + 7) / 8 = 1 + 9 = 10 words. The payload is a slice of
+    // the buffer the record was decoded from (`raw[1:]`), which stays valid for as
+    // long as the record is held only if nothing else writes the buffer: each
+    // read makes one of its own, inside the function.
+    let xml = event_ring();
+    let codec = codec_with("event_record", "", BOUNDED_FIELDS);
+    let code = generated_go_log(
+        compile_documents(
+            Language::Go,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("go generates a broadcast log over an element that views its buffer"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "const MaxEncodedBytes = 65",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor)",
+        ],
+    );
+    let read = code.find("func Read(").expect("the typed read");
+    let buffer = code
+        .find("encoded := make([]byte, int(stored))")
+        .expect("the decode buffer is made from the stored length");
+    assert!(
+        read < buffer,
+        "the decode buffer is made inside the read, once per entry:\n{code}"
+    );
+    assert_eq!(
+        code.matches("make([]byte").count(),
+        1,
+        "no other buffer is shared between reads:\n{code}"
+    );
+}
+
+#[test]
+fn an_element_whose_signature_asks_the_caller_for_more_is_refused_by_name_for_go() {
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::Go,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the Go template"),
+        "{detail}"
+    );
+    assert!(detail.contains("flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn a_cbor_element_with_a_string_entry_is_held_by_go_because_its_decode_copies_it() {
+    // The same document Rust refuses: a text entry. Go's runtime copies the entry
+    // out of the cursor's buffer, so the element owns it and the log may hand it
+    // back.
+    let xml = event_ring();
+    let codec = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let code = generated_go_log(
+        compile_documents(
+            Language::Go,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a map whose decode copies its strings is held, so go generates the log"),
+    );
+    assert_holds(
+        &code,
+        &["element, err := sce_event_record.DecodeEventRecord(&cursor)"],
+    );
+}
+
+#[test]
+fn a_go_log_with_no_module_prefix_is_refused_naming_the_prefix() {
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let located = compile_documents_with(
+        Language::Go,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        &ForgeCompileOptions::default(),
+        None,
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the element's package has no import path without the prefix"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+    assert!(detail.contains("go_module_prefix"), "{detail}");
+}
+
+#[test]
+fn a_go_single_document_with_no_resolution_is_refused_as_every_language_is() {
+    let located = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &event_ring(),
+        &options_for(Language::Go),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("no number is guessed, so a log with no resolution is refused"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+    assert!(detail.contains("the element 'event_record'"), "{detail}");
+    assert!(
+        detail.contains("ForgeCompileOptions::broadcast_log_resolutions"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_resolved_retention_and_size_become_the_go_packages_constants() {
+    // 9 bytes encode to words of 1 + (9 + 7) / 8 = 1 + 2 = 3, computed by the
+    // package from the constant below.
+    let code = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &deploy_key_ring(),
+        &go_resolution_options(Some(15), 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a resolved log generates");
+    assert_holds(
+        &code,
+        &["const Retention = 15", "const MaxEncodedBytes = 9"],
+    );
+}
+
+#[test]
+fn a_go_element_the_template_cannot_hold_is_refused_in_the_words_every_language_uses() {
+    let xml = event_ring();
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let located = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &xml,
+        &go_resolution_options(None, 4, facts),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("cannot be stored by the Go template: its decode takes the variant's tag"),
+        "{detail}"
+    );
 }
 
 // --- The set resolves a deploy key against the machine it is generated for ---
