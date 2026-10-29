@@ -1147,6 +1147,11 @@ mutation_restore() {
 
 mutation_restore_quiet() {
     [[ -d "$WORK/snapshot" ]] || return 0
+    # `--check` writes nothing (the case bodies edit copies), so there is
+    # nothing to put back — and putting it back is not free: the restore
+    # touches every declared file, which makes every build that reads them
+    # recompile.
+    [[ "$MUTATION_MODE" != "check" ]] || return 0
     mutation_restore 2>/dev/null || true
 }
 
@@ -3746,12 +3751,24 @@ mutation_case() {
     mutation_inflight_case "$label"
 
     printf '%s\n' "$body" > "$WORK/case.py"
-    if ! MUTATION_DECLARED_FILES="$(printf '%s\n' \
+    local applied=0
+    MUTATION_DECLARED_FILES="$(printf '%s\n' \
             ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
             ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"})" \
-        python3 - "$WORK/case.py" <<'PY'
+        MUTATION_MODE="$MUTATION_MODE" \
+        python3 - "$WORK/case.py" <<'PY' || applied=$?
 import os
 import sys
+
+# `--check` asks whether a case still applies, and answers it without writing:
+# the edits are made to copies held here. A check that wrote the mutation into
+# the working tree and restored it afterwards left a window in which anything
+# else reading the tree read the mutant — measured 2026-10-30, when a
+# regeneration running beside a `--check` rebuilt `sce-codegen` from a mutated
+# `script_engine_analyzer.rs` and generated a `sce-static` machine with a script
+# engine. A full round still writes, because it builds what it mutated.
+_check_only = os.environ.get("MUTATION_MODE") == "check"
+_copies = {}
 
 # Only declared files are snapshotted, and only snapshotted files are restored.
 # An edit outside that set therefore outlives the round: the mutation stays in
@@ -3777,7 +3794,7 @@ def edit(path, old, new):
             "%s: this edit replaces its anchor with itself, so the case "
             "mutates nothing.\n  %r" % (path, old[:120])
         )
-    src = open(path).read()
+    src = _copies[path] if path in _copies else open(path).read()
     occurrences = src.count(old)
     if occurrences == 0:
         raise SystemExit(
@@ -3797,26 +3814,49 @@ def edit(path, old, new):
             "which one that is. Widen it with surrounding context:\n  %r"
             % (occurrences, path, old[:120])
         )
-    open(path, "w").write(src.replace(old, new, 1))
+    if _check_only:
+        _copies[path] = src.replace(old, new, 1)
+    else:
+        open(path, "w").write(src.replace(old, new, 1))
 
 
 exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), {"edit": edit})
+
+# The check's own reading of "the case changed the tree": every file it edited,
+# compared with what is on disk. Exit 3 says the edits left all of them as they
+# were, which the caller reports as it reports a round's identical hashes.
+if _check_only and all(open(path).read() == copy for path, copy in _copies.items()):
+    sys.exit(3)
 PY
-    then
+    if (( applied == 3 )); then
+        mutation_verdict INCONCLUSIVE "$label" \
+            "the case body left every target byte-identical —
+nothing was mutated, so nothing was tested"
+        return
+    fi
+    if (( applied != 0 )); then
         mutation_verdict INCONCLUSIVE "$label" "the case body did not apply"
-        mutation_restore
+        if [[ "$MUTATION_MODE" != "check" ]]; then
+            mutation_restore
+        fi
+        return
+    fi
+
+    # `--check` stops here, having established the whole of what it claims —
+    # the case still finds its anchors and still changes what it edits —
+    # without having written anything, so there is nothing to restore. It
+    # deliberately does not say CAUGHT: nothing was built and no test ran.
+    if [[ "$MUTATION_MODE" == "check" ]]; then
+        mutation_verdict applies "$label"
         return
     fi
 
     # Carry the mutation across any generation step the tests compile through,
     # before anything is hashed — the generated tree is a target like the
     # template that produced it, so the readings below have to see it settled.
-    #
-    # `--check` skips this: it neither builds nor runs, so a bridge would cost
-    # a corpus-wide gate one regeneration per case to establish nothing that
-    # mode reports. What it does report — does the anchor still apply — is
-    # answered by the case body alone.
-    if [[ "$MUTATION_MODE" != "check" ]] && ! mutation_regenerate; then
+    # `--check` has returned above: what it reports — does the anchor still
+    # apply — is answered by the case body alone.
+    if ! mutation_regenerate; then
         mutation_verdict INCONCLUSIVE "$label" \
             "a mutation_regen command failed; the tests never ran" \
             "" "$MUTATION_REGEN_ERROR"
@@ -3836,21 +3876,6 @@ PY
             "the case body left every target byte-identical —
 nothing was mutated, so nothing was tested"
         mutation_restore
-        return
-    fi
-
-    # `--check` stops here, having established the whole of what it claims:
-    # the case still finds its anchors and still changes the tree. It
-    # deliberately does not say CAUGHT — nothing was built and no test ran,
-    # so there is no verdict about a test to report.
-    if [[ "$MUTATION_MODE" == "check" ]]; then
-        mutation_verdict applies "$label"
-        mutation_restore
-        if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
-            red "              restore did not reproduce the baseline files"
-            red "              the snapshot it was restored from is at $WORK/snapshot"
-            mutation_stop_round "restore did not reproduce the baseline files"
-        fi
         return
     fi
 

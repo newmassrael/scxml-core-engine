@@ -323,6 +323,61 @@ fn a_case_that_replaces_its_anchor_with_itself_is_refused() {
     assert_rejected(&f, "replaces its anchor with itself");
 }
 
+/// A check reads its targets and writes nothing: not the mutation, and not a
+/// restore of the file it never changed.
+///
+/// The check used to write each case's mutation into the working tree and copy
+/// the snapshot back, touching every target. Anything else reading the tree in
+/// that window read the mutant — a regeneration running beside a check rebuilt
+/// `sce-codegen` from a mutated `script_engine_analyzer.rs` and generated a
+/// `sce-static` machine with a script engine (2026-10-30) — and every check
+/// left each target newer than the builds that had read it.
+#[test]
+fn a_check_leaves_every_target_as_it_was() {
+    let f = fixture(
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"the sum is off by one\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x + 2\")\n\
+         PY\n",
+    );
+    let before = fs::read(&f.target).expect("read the subject");
+    let modified = fs::metadata(&f.target)
+        .and_then(|meta| meta.modified())
+        .expect("the subject's modification time");
+
+    let (ok, output) = check(&f.casefile);
+    assert!(
+        ok,
+        "a case that applies was not reported as applying:\n{output}"
+    );
+    assert_eq!(
+        fs::read(&f.target).expect("read the subject"),
+        before,
+        "the check left the subject's bytes changed"
+    );
+    assert_eq!(
+        fs::metadata(&f.target)
+            .and_then(|meta| meta.modified())
+            .expect("the subject's modification time"),
+        modified,
+        "the check wrote the subject, though it changed nothing it kept"
+    );
+}
+
+#[test]
+fn a_case_whose_edits_undo_each_other_is_refused() {
+    // Each edit applies and changes its anchor, and together they change
+    // nothing: the case measures the unmutated code.
+    let f = fixture(
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"there and back\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x + 2\")\n\
+         edit(TARGET, \"x + 2\", \"x + 1\")\n\
+         PY\n",
+    );
+    assert_rejected(&f, "left every target byte-identical");
+}
+
 #[test]
 fn a_casefile_with_no_cases_is_refused() {
     // The emptiest form of the failure: declares a suite and a target, runs
