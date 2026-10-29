@@ -5990,6 +5990,18 @@ fn validate_and_enrich_imports(
                             ty: f.sce_type.clone(),
                             max_size: f.max_size,
                             limit: f.limit.clone(),
+                            // The schema's own enum imports are written relative to it.
+                            swift_enum_unlowered: match (language, f.sce_type.present_type()) {
+                                (
+                                    generator::Language::Swift,
+                                    forge::model::SceType::Enum(reference),
+                                ) => forge::static_imports::swift_enum_field_unlowered(
+                                    &parsed.imports,
+                                    source.path.parent().unwrap_or(base_dir),
+                                    &reference.alias,
+                                ),
+                                _ => None,
+                            },
                         })
                         .collect(),
                     id: forge::types::RecordId::intern(
@@ -6021,6 +6033,14 @@ fn validate_and_enrich_imports(
                         &parsed.imports,
                         &callee_base,
                     );
+                }
+            }
+            // A Swift caller holds a value of an imported enum in the type its unit
+            // declares, which is written only for a closed enum named for no reserved
+            // word.
+            if let forge::model::ForgeDocument::Enum(em) = &doc {
+                if *language == generator::Language::Swift {
+                    ctx.swift_unlowered = forge::generator::swift_enum_unlowered(em);
                 }
             }
             // Whether the imported transform keeps state is recorded here,

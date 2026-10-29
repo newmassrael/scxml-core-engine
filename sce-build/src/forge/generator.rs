@@ -138,10 +138,10 @@ pub struct ImportContext {
     #[serde(skip)]
     pub may_fail: bool,
 
-    /// For an imported algorithm, when the generation is for Swift: what of it the
-    /// Swift backend does not write (`None` when it writes all of it), read where the
-    /// algorithm is and through the algorithms it calls in turn. A caller is refused
-    /// for it, since the unit its call names is not written.
+    /// For an imported algorithm or enum, when the generation is for Swift: what of it
+    /// the Swift backend does not write (`None` when it writes all of it), read where
+    /// it is and, for an algorithm, through the algorithms it calls in turn. A caller
+    /// is refused for it, since the unit its call or its type names is not written.
     #[serde(skip)]
     pub swift_unlowered: Option<String>,
 
@@ -560,6 +560,10 @@ pub struct RecordField {
     /// The `sce:limit` that names [`Self::max_size`], when one does: what an
     /// algorithm reads the bound by (`_x.limits.<name>`, docs/adr/0050).
     pub limit: Option<String>,
+    /// For a field of an enum, when the generation is for Swift: what of the enum the
+    /// Swift backend does not write (`None` when it writes all of it, and for a field
+    /// of any other type). A record holding the field is held in the unit of the enum.
+    pub swift_enum_unlowered: Option<String>,
 }
 
 impl RecordField {
@@ -3229,6 +3233,13 @@ fn render_event_schema(
             let spelled = |plain: std::borrow::Cow<'static, str>| {
                 held.clone().map_or(plain, std::borrow::Cow::Owned)
             };
+            // An optional field is refused before this
+            // ([`swift_event_schema_unlowered`]), so the zero is a scalar's, or an
+            // enum's first case: the unit of the enum the schema imports names it.
+            let swift_zero = match f.sce_type.present_type() {
+                SceType::Enum(_) => format!("{resolved}.allCases[0]"),
+                present => swift_zero_value(present).to_string(),
+            };
             Ok(serde_json::json!({
                 "id": f.id,
                 "cpp_type": spelled(resolved.clone()),
@@ -3238,12 +3249,7 @@ fn render_event_schema(
                 "swift_type": spelled(resolved.clone()),
                 "py_type": spelled(resolved),
                 "c_type": spelled(c_type),
-                // An optional or enum field is refused before this
-                // ([`swift_event_schema_unlowered`]), so the zero is a scalar's.
-                "swift_zero": match f.sce_type.present_type() {
-                    SceType::Enum(_) => "",
-                    present => swift_zero_value(present),
-                },
+                "swift_zero": swift_zero,
                 "go_field_name": go_field_name,
                 "rs_field_name": rs_field_name,
             }))
@@ -24190,8 +24196,7 @@ pub fn generate_swift_with_imports(
                 .map(|c| swift_algorithm_refusal(m, &c))
         }
         ForgeDocument::EventSchema(m) => {
-            swift_event_schema_unlowered(m, imports.first().map(|i| i.alias.as_str()))
-                .map(|c| swift_event_schema_refusal(m, &c))
+            swift_event_schema_unlowered(m, imports).map(|c| swift_event_schema_refusal(m, &c))
         }
         ForgeDocument::Enum(m) => swift_enum_unlowered(m).map(|c| swift_enum_refusal(m, &c)),
         _ => {
@@ -24237,13 +24242,13 @@ pub fn generate_swift_with_imports(
 /// ([`crate::forge::type_ctx::StaticCallee::unlowered_by`]). `schema_fields` reads
 /// the `(id, type)` fields of the event schema an import of `doc` names, which the
 /// callee's own generation reads from the imports it resolved, and
-/// `algorithm_unlowered` what of the algorithm an import of `doc` names the Swift
+/// `import_unlowered` what of the algorithm or enum an import of `doc` names the Swift
 /// backend does not write, which the caller's unit would name a unit for.
 pub(crate) fn unlowered_in_part(
     doc: &ForgeDocument,
     imports: &[ForgeImport],
     schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
-    algorithm_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
+    import_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
 ) -> Vec<(crate::generator::Language, String)> {
     use crate::generator::Language;
     Language::ALL
@@ -24256,7 +24261,7 @@ pub(crate) fn unlowered_in_part(
                 // part, are never a callee.
                 Language::Swift => match doc {
                     ForgeDocument::Algorithm(m) => {
-                        swift_unlowered_construct(m, imports, schema_fields, algorithm_unlowered)
+                        swift_unlowered_construct(m, imports, schema_fields, import_unlowered)
                             .map(|construct| swift_algorithm_refusal(m, &construct))
                     }
                     _ => None,
@@ -24281,7 +24286,7 @@ pub(crate) fn swift_unlowered_construct(
     m: &AlgorithmModel,
     imports: &[ForgeImport],
     schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
-    algorithm_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
+    import_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
 ) -> Option<String> {
     let views: Vec<SwiftImport> = imports
         .iter()
@@ -24290,7 +24295,10 @@ pub(crate) fn swift_unlowered_construct(
             kind: match (imp.kind, schema_fields(imp)) {
                 (_, Some(fields)) => SwiftImportKind::Schema(fields),
                 (ForgeKind::Algorithm, None) => SwiftImportKind::Algorithm {
-                    unlowered: algorithm_unlowered(imp),
+                    unlowered: import_unlowered(imp),
+                },
+                (ForgeKind::Enum, None) => SwiftImportKind::Enum {
+                    unlowered: import_unlowered(imp),
                 },
                 _ => SwiftImportKind::Other,
             },
@@ -24323,15 +24331,13 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 /// what it does not write is refused, never emitted wrong. A `may-fail` signature
 /// is lowered: the function `throws`, and each integer operation is checked.
 fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Option<String> {
-    // A number, a `bool` or a string; a byte string is held in `[UInt8]`, whose
-    // view, buffer and owned forms are not spelled yet. A record is the struct of
-    // its schema's unit, which the check of the imports below has already held to
-    // fields Swift writes.
+    // A number, a `bool`, a string or a value of an enum; a byte string is held in
+    // `[UInt8]`, whose view, buffer and owned forms are not spelled yet. A record is
+    // the struct of its schema's unit, which the check of the imports below has
+    // already held to fields Swift writes, and an enum is the unit of its document,
+    // which that check has held to one Swift writes.
     fn lowered(ty: &AlgorithmValueType) -> bool {
-        ty.record_alias().is_some()
-            || ty
-                .scalar()
-                .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+        ty.record_alias().is_some() || ty.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
     }
     // A `list<T>` is an `Array` of the element, of the same elements a value is: a
     // parameter, a buffer local a body appends to, and the list it returns.
@@ -24416,10 +24422,21 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 ))
             }
             SwiftImportKind::Algorithm { unlowered: None } => {}
+            SwiftImportKind::Enum {
+                unlowered: Some(why),
+            } => {
+                return Some(format!(
+                    "the <sce:import as=\"{}\">, an enum with {why}",
+                    import.alias
+                ))
+            }
+            SwiftImportKind::Enum { unlowered: None } => {}
             SwiftImportKind::Schema(fields) => {
-                if let Some(why) =
-                    swift_schema_fields_unlowered(fields.iter().map(|(id, ty)| (id.as_str(), ty)))
-                {
+                if let Some(why) = swift_schema_fields_unlowered(
+                    fields
+                        .iter()
+                        .map(|(id, ty, enum_unlowered)| (id.as_str(), ty, enum_unlowered.clone())),
+                ) {
                     return Some(format!(
                         "the <sce:import as=\"{}\">, a schema with {why}",
                         import.alias
@@ -24464,18 +24481,19 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
 }
 
 /// What of the enum `m` the Swift backend does not lower yet, described for a refusal
-/// by name (`generate/unsupported-feature`): an open enum, whose value no variant
-/// declares and which a Swift enum cannot hold, and a variant whose Swift name is a
-/// word the language reserves.
-fn swift_enum_unlowered(m: &EnumModel) -> Option<String> {
+/// by name (`generate/unsupported-feature`): an open set of variants, whose value no
+/// variant declares and which a Swift enum cannot hold, and a variant whose Swift name
+/// is a word the language reserves. A noun phrase, which a document that imports the
+/// enum names it by as well (`an enum with …`): a type no unit is written for.
+pub(crate) fn swift_enum_unlowered(m: &EnumModel) -> Option<String> {
     use crate::generator::Language;
     if !m.strict_variants {
-        return Some("an open enum (`sce:strict-variants=\"false\"`)".to_string());
+        return Some("an open set of variants (`sce:strict-variants=\"false\"`)".to_string());
     }
     m.variants.iter().find_map(|v| {
         let ident = crate::forge::enum_naming::variant_ident(Language::Swift, &m.name, &v.name);
         crate::reader_names::is_reserved_word(Language::Swift, &ident)
-            .then(|| format!("the variant `{}`, a name Swift reserves,", v.name))
+            .then(|| format!("a variant `{}` named for a word Swift reserves", v.name))
     })
 }
 
@@ -24495,37 +24513,51 @@ fn swift_event_schema_refusal(m: &EventSchemaModel, construct: &str) -> String {
 }
 
 /// What of the event schema `m` the Swift backend does not lower yet, described for
-/// a refusal by name (`generate/unsupported-feature`); `first_import` is the alias
-/// of the first document `m` imports, if it imports any.
+/// a refusal by name (`generate/unsupported-feature`); `imports` are the documents `m`
+/// imports, which for a schema are the enums its fields hold values of.
 ///
-/// Swift lowers a schema of fields of a number, a `bool`, a string or a byte
-/// string: a struct of them in the schema's order, each named as the author wrote
-/// it, which is how a machine's record names the same field. A field of an enum
-/// (which needs the enum's unit, not written for Swift), a field that may be
-/// absent, and a name Swift reserves are named here until each is spelled.
-fn swift_event_schema_unlowered(
-    m: &EventSchemaModel,
-    first_import: Option<&str>,
-) -> Option<String> {
-    if let Some(alias) = first_import {
-        return Some(format!("the <sce:import as=\"{alias}\">"));
+/// Swift lowers a schema of fields of a number, a `bool`, a string, a byte string or
+/// a value of an enum the Swift backend writes: a struct of them in the schema's
+/// order, each named as the author wrote it, which is how a machine's record names
+/// the same field, and each at its zero (an enum's first case) until written. A
+/// field of an enum Swift does not write, a field that may be absent, and a name
+/// Swift reserves are named here until each is spelled.
+fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext]) -> Option<String> {
+    // The one kind of document a schema imports is an enum, the type a field holds a
+    // value in.
+    if let Some(import) = imports.iter().find(|i| i.kind != "enum") {
+        return Some(format!("the <sce:import as=\"{}\">", import.alias));
     }
-    swift_schema_fields_unlowered(m.fields.iter().map(|f| (f.id.as_str(), &f.sce_type)))
+    swift_schema_fields_unlowered(m.fields.iter().map(|f| {
+        let enum_unlowered = match f.sce_type.present_type() {
+            SceType::Enum(reference) => imports
+                .iter()
+                .find(|i| i.alias == reference.alias)
+                .map_or_else(
+                    || Some("an enum it does not import".to_string()),
+                    |import| import.swift_unlowered.clone(),
+                ),
+            _ => None,
+        };
+        (f.id.as_str(), &f.sce_type, enum_unlowered)
+    }))
 }
 
-/// What of the fields `(id, type)` of an event schema the Swift backend does not
+/// What of the fields `(id, type, enum)` of an event schema the Swift backend does not
 /// lower yet, described for a refusal: the one answer for the unit a schema is
 /// written as ([`swift_event_schema_unlowered`]) and for an algorithm that holds a
 /// record of it ([`swift_algorithm_unlowered`]), so an algorithm is never written
-/// against a payload type the schema's own generation refuses.
+/// against a payload type the schema's own generation refuses. A field of an enum is
+/// held in the unit of the enum, so `enum` says what of that enum is not written
+/// (`None` when all of it is, and for a field of any other type).
 fn swift_schema_fields_unlowered<'a>(
-    mut fields: impl Iterator<Item = (&'a str, &'a FieldType)>,
+    mut fields: impl Iterator<Item = (&'a str, &'a FieldType, Option<String>)>,
 ) -> Option<String> {
-    fields.find_map(|(id, ty)| {
+    fields.find_map(|(id, ty, enum_unlowered)| {
         if matches!(ty, FieldType::Optional { .. }) {
             Some(format!("the optional field `{id}`"))
-        } else if matches!(ty.present_type(), SceType::Enum(_)) {
-            Some(format!("the field `{id}` of an enum"))
+        } else if let (SceType::Enum(_), Some(why)) = (ty.present_type(), enum_unlowered) {
+            Some(format!("the field `{id}` of an enum with {why}"))
         } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, id) {
             Some(format!("the field `{id}`, a name Swift reserves,"))
         } else {
@@ -24552,12 +24584,18 @@ pub(crate) enum SwiftImportKind {
     /// says what of the callee is not (`None` when all of it is): a caller is refused
     /// for that, not left to name a unit nothing writes.
     Algorithm { unlowered: Option<String> },
+    /// An enum, the type a value of it is held in: the unit its document is written
+    /// as, which exists only when the enum is closed and named for no reserved word,
+    /// so `unlowered` says what of it is not (`None` when none).
+    Enum { unlowered: Option<String> },
     /// Any other kind, for which the Swift backend writes no unit yet.
     Other,
 }
 
-/// The `(id, type)` fields of an event schema, in declaration order.
-pub(crate) type SchemaFields = Vec<(String, FieldType)>;
+/// The `(id, type, enum)` fields of an event schema, in declaration order: for a field
+/// of an enum, `enum` says what of that enum the Swift backend does not write
+/// ([`swift_schema_fields_unlowered`]).
+pub(crate) type SchemaFields = Vec<(String, FieldType, Option<String>)>;
 
 /// The imports a generation resolved, as the Swift lowering reads them.
 fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
@@ -24570,10 +24608,13 @@ fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
                     record
                         .fields
                         .iter()
-                        .map(|f| (f.id.clone(), f.ty.clone()))
+                        .map(|f| (f.id.clone(), f.ty.clone(), f.swift_enum_unlowered.clone()))
                         .collect(),
                 ),
                 None if imp.kind == "algorithm" => SwiftImportKind::Algorithm {
+                    unlowered: imp.swift_unlowered.clone(),
+                },
+                None if imp.kind == "enum" => SwiftImportKind::Enum {
                     unlowered: imp.swift_unlowered.clone(),
                 },
                 None => SwiftImportKind::Other,

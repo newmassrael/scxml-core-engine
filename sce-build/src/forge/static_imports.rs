@@ -93,6 +93,33 @@ struct SchemaField {
     /// own imports; `None` for any other field, or one whose document cannot be
     /// read.
     enum_document: Option<EnumDocument>,
+    /// For an enum field, why the Swift backend writes no unit for the enum it holds
+    /// a value of (`None` when it writes one, and for any other field).
+    swift_enum_unlowered: Option<String>,
+}
+
+/// Why the Swift backend writes no unit for the enum the import `alias` of `imports`
+/// names, read from `base_dir` (`crate::forge::generator::swift_enum_unlowered`), or
+/// `None` when it writes one. An alias no enum import carries, and a document that
+/// cannot be read, are refused: a field naming one has no type to hold.
+pub(crate) fn swift_enum_field_unlowered(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+) -> Option<String> {
+    let Some(import) = imports
+        .iter()
+        .find(|i| i.alias == alias && i.kind == ForgeKind::Enum)
+    else {
+        return Some("an enum it does not import".to_string());
+    };
+    let parsed = crate::forge::import_source::ImportSource::read(base_dir, import)
+        .ok()
+        .and_then(|source| source.parse().ok().flatten());
+    match parsed.as_ref().map(|p| &p.document) {
+        Some(ForgeDocument::Enum(model)) => crate::forge::generator::swift_enum_unlowered(model),
+        _ => Some("an enum document that cannot be read".to_string()),
+    }
 }
 
 /// [`record_identity`], and the fields of the schema it names, each with the
@@ -128,6 +155,12 @@ fn record_schema(
                     }
                     _ => None,
                 },
+                swift_enum_unlowered: match f.sce_type.present_type() {
+                    SceType::Enum(reference) => {
+                        swift_enum_field_unlowered(&parsed.imports, schema_base, &reference.alias)
+                    }
+                    _ => None,
+                },
             })
             .collect(),
     ))
@@ -157,6 +190,12 @@ fn swift_callee_unlowered_at(
     base_dir: &Path,
     depth: usize,
 ) -> Option<String> {
+    // An enum is the type a value of it is held in, a unit when the enum is closed and
+    // named for no reserved word: the construct itself, which the caller's refusal
+    // names as `an enum with …`.
+    if let ForgeDocument::Enum(model) = document {
+        return crate::forge::generator::swift_enum_unlowered(model);
+    }
     let ForgeDocument::Algorithm(algorithm) = document else {
         return None;
     };
@@ -168,16 +207,21 @@ fn swift_callee_unlowered_at(
         imports,
         &|imp| {
             let (_, fields) = record_schema(imports, base_dir, &imp.alias)?;
-            Some(fields.into_iter().map(|f| (f.id, f.ty)).collect())
+            Some(
+                fields
+                    .into_iter()
+                    .map(|f| (f.id, f.ty, f.swift_enum_unlowered))
+                    .collect(),
+            )
         },
         &|imp| swift_imported_algorithm_unlowered(imp, base_dir, depth + 1),
     )
     .map(|construct| format!("holds {construct}"))
 }
 
-/// [`swift_callee_unlowered`] of the algorithm `import` names, found relative to
-/// `base_dir`, `depth` algorithms down; `None` for one that cannot be read, which the
-/// resolution of the import has already refused.
+/// [`swift_callee_unlowered`] of the algorithm or enum `import` names, found relative
+/// to `base_dir`, `depth` algorithms down; `None` for one that cannot be read, which
+/// the resolution of the import has already refused.
 pub(crate) fn swift_imported_algorithm_unlowered(
     import: &ForgeImport,
     base_dir: &Path,
@@ -611,7 +655,12 @@ pub(crate) fn resolve(
                 &parsed.imports,
                 &|imp| {
                     let (_, fields) = record_schema(&parsed.imports, callee_base, &imp.alias)?;
-                    Some(fields.into_iter().map(|f| (f.id, f.ty)).collect())
+                    Some(
+                        fields
+                            .into_iter()
+                            .map(|f| (f.id, f.ty, f.swift_enum_unlowered))
+                            .collect(),
+                    )
                 },
                 // The algorithms it calls in turn are read where it is.
                 &|imp| swift_imported_algorithm_unlowered(imp, callee_base, 1),
