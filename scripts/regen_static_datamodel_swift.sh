@@ -30,6 +30,14 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 INPUT_ROOT="sce-build/tests/fixtures/static_datamodel"
+# The conformance corpus: the documents of every forge kind that the numerical conformance
+# harness runs on each backend (`tests/forge/conformance/fixtures.json`). A kind with no
+# document in the fixture directory or the standard library is held to the compiler here.
+# The directory holds documents that are not fixtures (one is invalid on purpose), so the
+# documents to generate are the catalog's, asked of the generator as the other backends'
+# harnesses ask; the event schemas and enums they import are read from the directory.
+CORPUS_ROOT="tests/forge/resources"
+CORPUS_MANIFEST="tests/forge/conformance/fixtures.json"
 GENERATED_DIR="backends/swift/tests/Sources/StaticDatamodelMachines"
 
 # Derived, not listed: every statechart the fixture directory declares under
@@ -137,6 +145,14 @@ mapfile -t ALGORITHM_CANDIDATES < <(
     {
         grep -lE 'sce:kind="(algorithm|condition|lookup|interpolation)"' "$INPUT_ROOT"/*.scxml
         grep -rlE 'sce:kind="(algorithm|condition|lookup|interpolation)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+        # The catalog's documents of the kinds Swift writes: a path under the corpus, or
+        # the `sce:std/...` name of a standard document (which stdlib already lists).
+        while IFS= read -r document; do
+            case "$document" in
+                sce:std/*) ;;
+                *) grep -lE 'sce:kind="(algorithm|condition|lookup|interpolation)"' "$document" || true ;;
+            esac
+        done < <("$CODEGEN" list-fixtures --manifest "$CORPUS_MANIFEST" --resource-dir "$CORPUS_ROOT" --format plain --documents)
     } | LC_ALL=C sort -u
 )
 ALGORITHMS_REFUSED=()
@@ -168,7 +184,7 @@ fi
 # variant in is a unit of the same target, written for what it is.
 mapfile -t SCHEMA_CANDIDATES < <(
     {
-        grep -lE 'sce:kind="(event-schema|enum)"' "$INPUT_ROOT"/*.scxml
+        grep -lE 'sce:kind="(event-schema|enum)"' "$INPUT_ROOT"/*.scxml "$CORPUS_ROOT"/*.scxml
         grep -rlE 'sce:kind="(event-schema|enum)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
     } | LC_ALL=C sort -u
 )
@@ -234,8 +250,16 @@ done
 SCHEMA_UNITS=()
 for i in "${!SCHEMAS[@]}"; do
     for generated in "$TMP/schema_$i"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        # The same defect as two algorithms of one name, and a schema or an enum is no
+        # exception: the copy of the later would replace the earlier without a word.
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and ${SCHEMAS[$i]} are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
         cp "$generated" "$GENERATED_DIR/"
-        SCHEMA_UNITS+=("$(basename "$generated" .swift)")
+        UNIT_FROM[$unit]="${SCHEMAS[$i]}"
+        SCHEMA_UNITS+=("$unit")
     done
 done
 
