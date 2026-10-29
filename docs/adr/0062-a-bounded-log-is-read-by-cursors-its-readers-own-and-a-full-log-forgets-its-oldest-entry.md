@@ -788,12 +788,50 @@ runner would let CI judge it, and is not built.
   so `judge_broadcast_log_stamp` is not asked anything for Go, as for Rust. The generated package has no mutation case of
   its own.
 
+### What step 7 landed for C11 (2026-10-29)
+
+- **The kind is generated for C11.** `sce-codegen` writes `<name>.h` for a `broadcast-log` document from
+  `tools/codegen/templates/forge/c/broadcast_log.h.jinja2`, through `render_broadcast_log_c`, and the codegen matrix answers
+  `Emit` for C11 (`C11` joined `BROADCAST_LOG_BACKENDS`). The renderer asks the same shared judgement as Rust's first
+  (`resolve_broadcast_log_render_inputs`: progress ceiling, missing resolution, the element's shape per language, an
+  unresolved deploy key, a retention of 0), so the two cannot refuse one document in two ways. The header states
+  `RETENTION`, `SLOTS = RETENTION + 1`, `MAX_ENCODED_BYTES`, `WORDS = 1 + ceil(MAX_ENCODED_BYTES / 8)` and
+  `DECLARED_PROGRESS` as macros, defines the log type as the runtime's `sce_blog_t` with its storage laid out statically
+  beside it (nothing allocates), and gives typed `publish` and `read` over the element's generated struct. `publish`
+  encodes with the codec's own `<element>_encode_to_buf` into a buffer of `MAX_ENCODED_BYTES`, packs the length and the
+  bytes little-endian into the entry's words, and calls the runtime's publish; a codec status other than OK is a failed
+  publish and nothing reaches the runtime, and a log past its horizon answers `PUBLISH_HORIZON`. `read` calls the
+  runtime's read and decodes only on an item, which the runtime returns after the copy was validated; a stored length above
+  `MAX_ENCODED_BYTES` is `READ_BAD_LENGTH` and is never copied. Both results are small structs, as the runtime's own, and a
+  failed encode or decode carries the codec's status.
+- **The element is the codec's, and C11's struct owns its bytes.** The C codec decodes a CBOR text entry into a `char[N]`
+  and a byte-string entry into a `uint8_t[N]`, each with its length beside it (the runtime's `sce_forge_cbor_read_text`
+  and `_read_bytes` copy), so a decoded element outlives the buffer it was read from and a CBOR map with a text or byte
+  string entry, which the Rust template refuses, is held. The arm of `BroadcastLogElementFacts::refusal_for` says so. The
+  flag inputs and variant tag a caller must give are refused for C11 as for every language.
+- **The runtime counts a log's slots and an entry's words in 32 bits**, so a retention above `4294967294` and an element
+  that needs more than `4294967295` words are refused where the numbers are (`generate/invalid-config`, on the retention
+  and element-type rows), and the header repeats the arithmetic as a static assertion against the target's address space.
+  The header does not read `platform.atomic_rmw_width`: a target without the 64-bit `sce_atomic_*` symbols the runtime row
+  needs finds out at link time, where a queue is refused at generation.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the renderer (the macros and the typed functions as text, the order
+  of the refusals before the copies, no allocation or abort, the empty element, the 32-bit limits at their edges, the shared
+  refusal, a deploy-key retention). `backends/c/forge-runtime/tests/conformance/broadcast_log_generated_test.c`, built by
+  that directory's `CMakeLists.txt` and registered as `broadcast_log_generated_c`, compiles what `sce-codegen orchestrate`
+  writes for three logs (a literal retention over a three-byte element, a deploy-limit retention over a record with a payload
+  whose bytes cross a word, and a log over a CBOR map with a text and byte strings) and runs, on one thread, the entries in
+  order, a lapped reader told how many it missed, two readers with cursors of their own, the publisher's single place, the
+  horizon, a stored length above the bound, a stored frame the codec refuses, and a CBOR element the codec refuses and the
+  log does not store. The positional codec writes nothing of a payload whose length member is above its bound instead of
+  refusing it, so the refusal of an oversize element is shown through the CBOR codec, which refuses.
+- **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the C
+  conformance target have been compiled or run, and the empty-element branch of the template has no generated-code test.
+
 ### What is still undone
 
-- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's, Kotlin's and Go's
-  (step 7). The C11 and C++ templates, and generated tests that regenerate and build them, are next, one language at a
-  time; each is refused by name (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same
-  `BroadcastLogResolution`.
+- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's, Kotlin's, Go's and C11's
+  (step 7). The C++ template, and its generated tests that regenerate and build it, is next; it is refused by name
+  (`broadcast-log/runtime-missing`) until its change flips the matrix, and it reads the same `BroadcastLogResolution`.
   Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
   and stores, are not built, so `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.

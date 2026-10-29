@@ -492,9 +492,9 @@ its oldest entry and tells a reader that was too slow how many it missed. Its
 `<sce:element-type>`, `<sce:producers>`, `<sce:progress>` and `<sce:retention>`
 (`entries="N"`, or `source="deploy" key="…"`) are all required and none has a
 default. The document parses and is checked on every backend. The Rust, Kotlin,
-Python and Go backends lower it, over `sce_forge_runtime::broadcast_log`,
-`com.sce.forge.runtime.broadcastlog`, `sce_forge_runtime.broadcast_log` and
-`sce-forge-runtime/broadcastlog` (the Python row is one ring under one lock and gives
+Python, Go and C11 backends lower it, over `sce_forge_runtime::broadcast_log`,
+`com.sce.forge.runtime.broadcastlog`, `sce_forge_runtime.broadcast_log`,
+`sce-forge-runtime/broadcastlog` and `sce/forge/broadcast_log.h` (the Python row is one ring under one lock and gives
 `blocking`; Kotlin's sizes are `Int`s, so a retention or an element size that would
 overflow one is refused): a module that states the
 retention, the slots (`retention + 1`), the element's largest encoded size and the
@@ -506,15 +506,19 @@ naming what is missing, as is a deploy-key retention given no deploy or no
 `--target-machine`. The Go backend lowers it the same way over
 `sce-forge-runtime/broadcastlog`, as a package whose typed `Publish` and `Read` take
 and return the element package's struct, from the same document set and with the same
-refusals, and needs `--go-module-prefix` to import the element's package. The other
-backends do not lower it yet, so generating one there is refused by name
-(`broadcast-log/runtime-missing`). The templates call the element's `encode` with a sink
-and its `decode` with a cursor and nothing else, so an element whose codec takes flag
-inputs or a variant tag from its caller is refused naming the element
-(`generate/invalid-config`) on every language that lowers the kind, and so is, on Rust, a
-CBOR map with a string or byte-string entry (whose decoded form borrows its buffer and has
-no owned mirror). Python, Kotlin and Go hold that element: their decoded values own their
-bytes. A
+refusals, and needs `--go-module-prefix` to import the element's package. The C11
+backend lowers it over `sce/forge/broadcast_log.h`: a header whose macros state the
+same numbers and whose typed `publish` and `read` call the element codec's
+`<element>_encode_to_buf` and `<element>_decode`; it refuses a retention above
+4294967294 and an element of more than 4294967295 words, which the runtime cannot
+count. The other backends do not lower it yet, so generating one there is refused by
+name (`broadcast-log/runtime-missing`). The templates call the element's `encode` with
+a sink and its `decode` with a cursor and nothing else, so an element whose codec takes
+flag inputs or a variant tag from its caller is refused naming the element
+(`generate/invalid-config`) on every language that lowers the kind, and so is, on Rust,
+a CBOR map with a string or byte-string entry (whose decoded form borrows its buffer and
+has no owned mirror). Python, Kotlin, Go and C11 hold that element: their decoded values
+own their bytes. A
 document is refused when `producers` is
 `many` (`broadcast-log/producers-many-unsupported`), when its
 `<sce:element-type>` names no codec or procedure of the build
