@@ -437,6 +437,68 @@ target_compile_options(broadcast_log_runtime_test PRIVATE -Wall -Wextra -Wpedant
 target_link_libraries(broadcast_log_runtime_test PRIVATE Threads::Threads)
 add_test(NAME broadcast_log_runtime COMMAND broadcast_log_runtime_test)
 
+# What the generator writes for a broadcast log, compiled against that runtime. A
+# log is generated from its document SET and not document by document: an entry
+# is sized from the element document, which only the set compile reads, and the
+# second log's retention is a deploy key, resolved against the one machine of the
+# deploy written below (`event_retention: 5`). The two element codecs and the two
+# logs come from fixtures the numerical catalog does not list, and are generated
+# into the same directory the catalog's headers are, so the logs'
+# `#include "broadcast_log_conformance_event.h"` resolves. One command writes all
+# four, so the outputs are one rule's and every document it reads is a
+# dependency of it.
+set(BROADCAST_LOG_GENERATED_FIXTURES
+    broadcast_log_conformance_event
+    broadcast_log_conformance_record
+    broadcast_log_conformance_literal
+    broadcast_log_conformance_deployed
+)
+set(BROADCAST_LOG_DEPLOY "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_deploy.yaml")
+file(WRITE "${BROADCAST_LOG_DEPLOY}"
+"version: \"1.0\"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+          event_retention: 5
+")
+set(BROADCAST_LOG_GENERATED_HEADERS "")
+set(BROADCAST_LOG_DOCUMENTS "")
+set(BROADCAST_LOG_FORGE_ARGS "")
+foreach(_log_fixture IN LISTS BROADCAST_LOG_GENERATED_FIXTURES)
+    list(APPEND BROADCAST_LOG_GENERATED_HEADERS "${GENERATED_DIR}/${_log_fixture}.h")
+    list(APPEND BROADCAST_LOG_DOCUMENTS "${RESOURCE_DIR}/${_log_fixture}.scxml")
+    list(APPEND BROADCAST_LOG_FORGE_ARGS --forge "${RESOURCE_DIR}/${_log_fixture}.scxml")
+endforeach()
+add_custom_command(
+    OUTPUT ${BROADCAST_LOG_GENERATED_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate ${BROADCAST_LOG_FORGE_ARGS}
+            --language cpp
+            --output-dir "${GENERATED_DIR}"
+            --deploy "${BROADCAST_LOG_DEPLOY}"
+            --target-machine mcu_node
+    DEPENDS ${BROADCAST_LOG_DOCUMENTS} "${BROADCAST_LOG_DEPLOY}" "${SCE_CODEGEN}"
+    COMMENT "Generating C++ broadcast-log fixtures (one document set)"
+    VERBATIM
+)
+add_custom_target(generate_broadcast_log_fixtures_cpp DEPENDS ${BROADCAST_LOG_GENERATED_HEADERS})
+
+add_executable(broadcast_log_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_generated_test.cpp")
+add_dependencies(broadcast_log_generated_test generate_broadcast_log_fixtures_cpp)
+# The test itself is C++20 (designated initializers for its own elements), as
+# `queue_generated_test` is above; the generated headers it includes are held to
+# C++17 by the gate (docs/adr/0059, section 7).
+target_compile_features(broadcast_log_generated_test PRIVATE cxx_std_20)
+target_include_directories(broadcast_log_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${GENERATED_DIR}"
+)
+target_compile_options(broadcast_log_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_generated_test PRIVATE Threads::Threads)
+add_test(NAME broadcast_log_generated COMMAND broadcast_log_generated_test)
+
 # The log on real threads, written as histories and judged by the command every
 # backend's broadcast-log histories are judged by (verification layer 3). The
 # recorder writes one history per run; the second test hands the files to
