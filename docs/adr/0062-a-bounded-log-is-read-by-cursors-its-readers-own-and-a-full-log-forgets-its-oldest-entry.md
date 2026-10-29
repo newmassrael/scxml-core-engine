@@ -827,13 +827,49 @@ runner would let CI judge it, and is not built.
 - **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the C
   conformance target have been compiled or run, and the empty-element branch of the template has no generated-code test.
 
+### What step 7 landed for C++ (2026-10-29)
+
+- **The kind is generated for C++.** `sce-codegen` writes `<name>.h` for a `broadcast-log` document from
+  `tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2`, through `render_broadcast_log_cpp`, and `BROADCAST_LOG_BACKENDS`
+  lists `Language::Cpp`, so the matrix answers `Emit` for it and `broadcast-log/runtime-missing` is no longer its refusal. The
+  renderer asks the one function every language asks first (`resolve_broadcast_log_render_inputs`: the progress ceiling, a
+  missing resolution, the language's verdict on the element, an unresolved deploy key, a retention of 0), so its refusals are
+  Rust's word for word, and only the template's name differs. The header states `RETENTION`, `SLOTS = RETENTION + 1`,
+  `MAX_ENCODED_BYTES`, `WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8` (one length word, then the bytes, eight to a word,
+  little-endian) and `DECLARED_PROGRESS`; defines the log as `SCE::Forge::Broadcast::BroadcastLog<WORDS, SLOTS>` with aliases
+  for its publisher and reader; and gives typed `publish(publisher, element)` and `read(log, reader)` in the namespace named
+  after the log. A `static_assert` ties the runtime's retention to the header's, so the one number said twice cannot differ.
+- **Where C++ differs from Rust, on purpose.** The answers are sum types, because C++17 has no `Result`. `publish` returns a
+  `Published` holding the codec's refusal, if any, and the sequence number, which is the runtime's `kNoSequence` whenever
+  nothing was published (a refused element, or the horizon). `read` returns a `std::variant` of `Item`, `Empty`, `Lagged` and
+  `Malformed`: C++'s `CodecError` has no `LengthOutOfRange` and its decode convention is `std::nullopt`, so an entry whose stored
+  length is above `MAX_ENCODED_BYTES`, or whose bytes the element does not decode, is a `Malformed{seq}` that names the entry and
+  moves the reader past it, and is never a copy out of bounds. `publish` encodes through the runtime's bounded `SpanSink`
+  into a staging array of whole words (never empty, even for an element that encodes to nothing) with the sink bounded at
+  `MAX_ENCODED_BYTES`, so a longer element is refused with `BufferOverflow` and nothing is published.
+- **C++ holds a CBOR map with a text or byte-string entry.** The decoded value owns its bytes: the C++ CBOR reader returns a
+  `std::string` and a `std::vector<std::uint8_t>`, and every other codec encoding holds a string and a byte field as those
+  types too. The arm of `BroadcastLogElementFacts::refusal_for` for C++ therefore refuses only what a caller must give (flag
+  inputs, a variant tag), and no mirror of the element is needed.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the header's constants with their computed values, its typed
+  functions, the order of its two refusals, each name it calls against the runtime header that declares it, the set's deploy
+  resolution, and the C++ verdict on a CBOR string entry; the shared refusals' test now runs for Rust, C++ and Python. The
+  tests that used C++ as the language with no row use Swift. `backends/cpp/forge-runtime/tests/conformance/` compiles what the
+  generator writes for the four Rust conformance documents, generated as one set with a deploy (`sce-codegen orchestrate`; no
+  document was added) into `broadcast_log_generated_test`, run as ctest `broadcast_log_generated`: on one thread the entries
+  come back whole and in order, a lapped reader is told it missed 3 and resumes at the oldest, two readers keep their cursors, a
+  payload past the bound is refused without publishing, the packed words are the documented ones, and a length above the
+  bound and undecodable bytes are `Malformed`.
+- **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the C++
+  conformance target have been compiled or run, and the generated header has not been through the interface-standard gate at
+  C++17. The generated header has no mutation case of its own.
+
 ### What is still undone
 
-- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's, Kotlin's, Go's and C11's
-  (step 7). The C++ template, and its generated tests that regenerate and build it, is next; it is refused by name
-  (`broadcast-log/runtime-missing`) until its change flips the matrix, and it reads the same `BroadcastLogResolution`.
-  Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
-  and stores, are not built, so `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
+- **The generated code for the other languages.** Every backend but Swift has its template: Rust's (step 6b), and Python's,
+  Kotlin's, Go's, C11's and C++'s (step 7). Swift is refused by name (`broadcast-log/runtime-missing`) until it has a forge
+  runtime. The rows with a narrower stamp, and the form for a target with only loads and stores, are not built, so
+  `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
 - **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
   with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
