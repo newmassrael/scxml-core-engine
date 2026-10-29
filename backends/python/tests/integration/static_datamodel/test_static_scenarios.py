@@ -792,6 +792,13 @@ def test_a_guard_calls_an_imported_algorithm() -> None:
     replay("static_record")
 
 
+# A record is handed to an imported algorithm and the record it answers is taken
+# back whole: the machine's own class crosses to the one the algorithm's module
+# declares and back, for a record the machine holds and for an event's payload.
+def test_a_record_is_handed_to_an_algorithm_and_taken_back_whole() -> None:
+    replay("static_record_call")
+
+
 # A sync run composed of the standard sync rules: each rule an imported
 # algorithm, called from a guard or an assignment, and the run's payloads the
 # standard event schemas'.

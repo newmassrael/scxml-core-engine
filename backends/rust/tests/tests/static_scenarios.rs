@@ -128,6 +128,9 @@ use sce_rust_tests::integration::static_datamodel::static_real_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_bytes_sm::{
     StaticRecordBytesPersist, StaticRecordBytesPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_call_sm::{
+    StaticRecordCallPersist, StaticRecordCallPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_enum_sm::{
     StaticRecordEnumPersist, StaticRecordEnumPolicy,
 };
@@ -433,6 +436,17 @@ fn static_record_steps_no_further_than_the_month_allows() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_call_hands_a_record_to_an_algorithm_and_takes_it_back_whole() {
+    replay(
+        Engine::new(StaticRecordCallPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_call.json"
         ),
     );
 }

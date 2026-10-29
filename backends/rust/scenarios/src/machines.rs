@@ -240,6 +240,7 @@ scenarios! {
     "static_real32" => static_real32_sm::{StaticReal32Policy, StaticReal32Persist};
     "static_record" => static_record_sm::{StaticRecordPolicy, StaticRecordPersist};
     "static_record_bytes" => static_record_bytes_sm::{StaticRecordBytesPolicy, StaticRecordBytesPersist};
+    "static_record_call" => static_record_call_sm::{StaticRecordCallPolicy, StaticRecordCallPersist};
     "static_record_enum" => static_record_enum_sm::{StaticRecordEnumPolicy, StaticRecordEnumPersist};
     "static_record_fields" => static_record_fields_sm::{StaticRecordFieldsPolicy, StaticRecordFieldsPersist};
     "static_record_list" => static_record_list_sm::{StaticRecordListPolicy, StaticRecordListPersist};

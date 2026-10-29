@@ -80,6 +80,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_bytes"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
@@ -2288,6 +2289,20 @@ func TestAGuardCallsAnImportedAlgorithm(t *testing.T) {
 	replay(t, "static_record", drive[static_record.StaticRecordState, static_record.StaticRecordEvent](&policy, map[string]func() any{
 		"shown":    func() any { return dayJSON(policy.Shown()) },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A record is handed to an imported algorithm and the record it answers is taken
+// back whole: the machine's own type crosses to the one the algorithm's package
+// declares and back, for a record the machine holds and for an event's payload.
+func TestARecordIsHandedToAnImportedAlgorithmAndTakenBackWhole(t *testing.T) {
+	policy := static_record_call.NewStaticRecordCallPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_call", drive[static_record_call.StaticRecordCallState, static_record_call.StaticRecordCallEvent](&policy, map[string]func() any{
+		"best":  func() any { return entryJSON(policy.Best()) },
+		"large": func() any { return policy.Large() },
+		"debts": func() any { return policy.Debts() },
+		"peaks": func() any { return policy.Peaks() },
 	}))
 }
 
