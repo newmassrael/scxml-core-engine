@@ -677,6 +677,111 @@ private func wireWide() -> Machine {
     )
 }
 
+private func optionalWidened() -> Machine {
+    let policy = StaticOptionalWidenedPolicy()
+    return drive(
+        policy,
+        variables: [
+            "entry": { integer(policy.entry) },
+            "due": { optionalInteger(policy.due) },
+            "remind": { optionalInteger(policy.remind) },
+            "taken": { integer(policy.taken) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func pickedItem(_ item: StaticOptionalRecordItemRecord) -> JSONValue {
+    .object([
+        (key: "id", value: integer(item.id)),
+        (key: "title", value: .text(item.title)),
+        (key: "count", value: integer(item.count)),
+    ])
+}
+
+private func optionalRecord() -> Machine {
+    let policy = StaticOptionalRecordPolicy()
+    return drive(
+        policy,
+        variables: [
+            "pick": { policy.pick.map(pickedItem) ?? .null },
+            "found": { policy.found.map(pickedItem) ?? .null },
+            "draft": { pickedItem(policy.draft) },
+            "items": { .array(policy.items.map(pickedItem)) },
+            "title": { .text(policy.title) },
+            "count": { integer(policy.count) },
+            "shown": { integer(policy.shown) },
+            "known": { .bool(policy.known) },
+            "absent": { .bool(policy.absent) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func goal(_ goal: StaticStateAlgorithmOptionalGoalRecord) -> JSONValue {
+    .object([
+        (key: "id", value: integer(goal.id)),
+        (key: "day", value: optionalDigits(goal.day)),
+        (key: "weight", value: integer(goal.weight)),
+    ])
+}
+
+private func stateAlgorithmOptional() -> Machine {
+    let policy = StaticStateAlgorithmOptionalPolicy()
+    return drive(
+        policy,
+        variables: [
+            "goals": { .array(policy.goals.map(goal)) },
+            "first": { optionalInteger(policy.first) },
+            "left": { optionalInteger(policy.left) },
+            "undated": { integer(policy.undated) },
+            "total": { integer(policy.total) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func dueEntry(_ entry: StaticOptionalDueRecord) -> JSONValue {
+    .object([
+        (key: "id", value: integer(entry.id)),
+        (key: "due", value: optionalDigits(entry.due)),
+        (key: "title", value: optionalText(entry.title)),
+        (key: "status", value: optionalText(entry.status?.declaredName)),
+    ])
+}
+
+private func optionalValues() -> Machine {
+    let policy = StaticOptionalPolicy()
+    return drive(
+        policy,
+        variables: [
+            "due": { optionalInteger(policy.due) },
+            "other": { optionalInteger(policy.other) },
+            "title": { optionalText(policy.title) },
+            "status": { optionalText(policy.status?.declaredName) },
+            "item": { dueEntry(policy.item) },
+            "items": { .array(policy.items.map(dueEntry)) },
+            "days": { integer(policy.days) },
+            "following": { integer(policy.following) },
+            "late": { .bool(policy.late) },
+            "early": { .bool(policy.early) },
+            "label": { .text(policy.label) },
+            "plain": { .text(policy.plain.declaredName) },
+            "kept": { integer(policy.kept) },
+            "listed": { integer(policy.listed) },
+            "missing": { integer(policy.missing) },
+            "same": { .bool(policy.same) },
+            "absent": { .bool(policy.absent) },
+            "statusDone": { .bool(policy.statusDone) },
+            "echoed": { integer(policy.echoed) },
+            "echoTitle": { optionalText(policy.echoTitle) },
+            "echoStatus": { optionalText(policy.echoStatus?.declaredName) },
+            "fallbacks": { integer(policy.fallbacks) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 private func recordEnum() -> Machine {
     let policy = StaticRecordEnumPolicy()
     return drive(
@@ -1077,6 +1182,33 @@ private func recordBytes() -> Machine {
 }
 
 // MARK: - Event payloads
+
+// A schema that widened a field to one that may be absent: an entry of the first
+// revision reads present where it carries the day and absent where it lacks the
+// reminder, and an entry that lacks a field of the first revision is refused.
+@Test func aWidenedFieldReadsAbsentWhereAnOlderEntryLacksIt() {
+    replay("static_optional_widened", optionalWidened())
+}
+
+// A value that may be absent is held by a variable, a record's field and a list's
+// element, read with a default and proven present by a test, handed on as a send's
+// params and a final's donedata, and compared: an absent value is a value, not a
+// zero.
+@Test func aValueThatMayBeAbsentIsHeldReadAndHandedOn() {
+    replay("static_optional", optionalValues())
+}
+
+// A record that may be absent is taken whole from a payload, a record variable and a
+// list's element, and a field of it is read only where a test proves it present.
+@Test func aRecordThatMayBeAbsentIsTakenWholeAndReadWhereProvenPresent() {
+    replay("static_optional_record", optionalRecord())
+}
+
+// An imported algorithm is handed a list of records whose field may be absent and a
+// value that may be absent, and the value that may be absent it answers is held.
+@Test func anAlgorithmIsHandedValuesThatMayBeAbsentAndAnswersOne() {
+    replay("static_state_algorithm_optional", stateAlgorithmOptional())
+}
 
 // An event's typed payload is read in a guard and in assignments, at the width its
 // schema declares: a value that does not fit is refused as `error.execution`, and

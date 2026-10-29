@@ -87,6 +87,32 @@ func integers<T: BinaryInteger>(_ values: [T]) -> JSONValue {
     .array(values.map { integer($0) })
 }
 
+/// An integer variable that may be absent as a scenario writes it: its digits when it is
+/// present, `null` when it is not. A zero is a value, not an absence.
+func optionalInteger<T: BinaryInteger>(_ value: T?) -> JSONValue {
+    guard let value else {
+        return .null
+    }
+    return integer(value)
+}
+
+/// A 64-bit integer that may be absent, as a scenario writes one held in a record: the
+/// text of its digits, exactly, or `null`.
+func optionalDigits(_ value: Int64?) -> JSONValue {
+    guard let value else {
+        return .null
+    }
+    return .text(String(value))
+}
+
+/// A text that may be absent as a scenario writes it: the text or `null`.
+func optionalText(_ value: String?) -> JSONValue {
+    guard let value else {
+        return .null
+    }
+    return .text(value)
+}
+
 /// A real variable as a scenario writes it. A single widens to the double it is,
 /// exactly, wherever it crosses a boundary (SCE_FORGE.md §3.4.1).
 func real<T: BinaryFloatingPoint>(_ value: T) -> JSONValue {
