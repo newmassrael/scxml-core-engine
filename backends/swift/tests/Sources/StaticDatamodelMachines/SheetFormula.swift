@@ -1,0 +1,54 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
+// SCE-MAP: sheet_formula.scxml:11 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
+// Runtime: none
+// Event name: sheet.formula
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+/// The event this schema types and its revision, as a host names them. A caseless
+/// enum of the module, as an algorithm's is, so two schemas never share a constant.
+public enum SheetFormula {
+    /// The event this schema types (`sce:event-name`).
+    public static let eventName: String = "sheet.formula"
+
+    /// The revision of the schema (`sce:revision`, 1 when the document declares none).
+    public static let revision: UInt32 = 1
+}
+
+/// The payload of the event: a struct of the schema's fields in the schema's order,
+/// each at its zero until written. A value, so a host that reads one holds a copy.
+public struct SheetFormulaPayload: Equatable, Sendable, SceDefault {
+    public var row: UInt64 = 0
+    public var col: UInt64 = 0
+    public var op: UInt8 = 0
+    public var aRef: Bool = false
+    public var aRow: UInt64 = 0
+    public var aCol: UInt64 = 0
+    public var aVal: Int64 = 0
+    public var bRef: Bool = false
+    public var bRow: UInt64 = 0
+    public var bCol: UInt64 = 0
+    public var bVal: Int64 = 0
+    public var now: Int64 = 0
+
+    public init() {}
+
+    public init(row: UInt64, col: UInt64, op: UInt8, aRef: Bool, aRow: UInt64, aCol: UInt64, aVal: Int64, bRef: Bool, bRow: UInt64, bCol: UInt64, bVal: Int64, now: Int64) {
+        self.row = row
+        self.col = col
+        self.op = op
+        self.aRef = aRef
+        self.aRow = aRow
+        self.aCol = aCol
+        self.aVal = aVal
+        self.bRef = bRef
+        self.bRow = bRow
+        self.bCol = bCol
+        self.bVal = bVal
+        self.now = now
+    }
+}
