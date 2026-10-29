@@ -4,7 +4,8 @@
 // A backend that is in `Language::ALL` before it has an emitter must say so,
 // by name, at every door a document comes in by. Swift was the first: it is
 // decided at every site that decides per backend, and renders every kind but a
-// statechart and an algorithm not at all, which it renders in part.
+// statechart, an algorithm and an event schema not at all, which it renders in
+// part.
 //
 // The alternative is worse than a refusal. A backend with no arm in a
 // dispatch either panics in a helper the document reached by chance, or falls
@@ -250,6 +251,50 @@ fn a_forge_document_is_refused_through_the_string_entry() {
         assert!(
             text.contains(language_wire_name(language)),
             "{language:?}: the refusal does not name the backend: {text}"
+        );
+    }
+}
+
+#[test]
+fn an_event_schema_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by_name() {
+    let in_part: Vec<Language> = emitting_in_part(ForgeKind::EventSchema)
+        .filter(|language| emitting(ForgeKind::EventSchema).all(|emits| emits != *language))
+        .collect();
+    assert!(
+        !in_part.is_empty(),
+        "no backend writes an event schema in part, so this measures nothing; delete it \
+         when the last one moves to `template_ships`"
+    );
+    let label = DocumentLabel {
+        identifier: "schema_line",
+        diagnostic_label: "schema_line.scxml",
+    };
+    for language in in_part {
+        // A schema of scalar fields is generated.
+        let lowered = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+          version="1.0" sce:kind="event-schema" name="schema_line" sce:event-name="line.add">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="note" sce:type="string" sce:max-size="16" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+        let output = compile_forge_from_string(lowered, label, language)
+            .unwrap_or_else(|e| panic!("{language:?} refused a schema it lowers: {e:?}"));
+        assert!(!output.files.is_empty(), "{language:?} wrote nothing");
+
+        // A field it does not lower is refused by the field, naming the backend.
+        let unlowered = lowered.replace(
+            r#"sce:type="uint32""#,
+            r#"sce:type="optional&lt;uint32&gt;""#,
+        );
+        assert_ne!(unlowered, lowered, "the replacement did not apply");
+        let error = compile_forge_from_string(&unlowered, label, language)
+            .err()
+            .unwrap_or_else(|| panic!("{language:?} generated a schema it does not lower"));
+        let text = format!("{error:?}");
+        assert!(
+            text.contains(&format!("{language:?}")) && text.contains("optional field `id`"),
+            "{language:?}: the refusal names neither the backend nor the field: {text}"
         );
     }
 }

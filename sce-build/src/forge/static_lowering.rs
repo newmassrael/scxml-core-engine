@@ -11800,14 +11800,9 @@ impl StaticTarget for SwiftTarget {
                         let zero = format!("{held}.allCases[0]");
                         (held, zero)
                     }
-                    SceType::Bool => ("Bool".to_string(), "false".to_string()),
-                    SceType::String => ("String".to_string(), "\"\"".to_string()),
-                    SceType::Bytes => ("[UInt8]".to_string(), "[]".to_string()),
-                    SceType::Float32 => ("Float".to_string(), "0.0".to_string()),
-                    SceType::Float64 => ("Double".to_string(), "0.0".to_string()),
                     other => (
                         crate::forge::generator::swift_type(other).to_string(),
-                        "0".to_string(),
+                        crate::forge::generator::swift_zero_value(other).to_string(),
                     ),
                 };
                 format!(

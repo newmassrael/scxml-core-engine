@@ -4,7 +4,8 @@
 #
 # Regenerate backends/swift/tests/Sources/StaticDatamodelMachines/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
-# the Swift backend lowers, and every algorithm those machines call.
+# the Swift backend lowers, every algorithm those machines call, and every event
+# schema the Swift backend lowers.
 #
 # The Swift compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -129,6 +130,29 @@ if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | LC_ALL=C sort -u)
 fi
 
+# The event schemas the fixture directory declares that the generator lowers for Swift,
+# each a unit of the same SwiftPM target: the struct a record is handed to an algorithm
+# in. Derived for the reason the machines are, and a refusal by name (status 7) is
+# listed, not skipped: a schema of a field Swift does not lower yet is one more thing
+# standing between it and the rest of the fixtures.
+mapfile -t SCHEMA_CANDIDATES < <(grep -l 'sce:kind="event-schema"' "$INPUT_ROOT"/*.scxml | LC_ALL=C sort)
+SCHEMAS=()
+SCHEMAS_REFUSED=()
+for source in "${SCHEMA_CANDIDATES[@]}"; do
+    status=0
+    verdict="$("$CODEGEN" check -l swift --error-format=json "$source" 2>&1)" || status=$?
+    case "$status" in
+        0) SCHEMAS+=("$source") ;;
+        7)
+            SCHEMAS_REFUSED+=("$(basename "$source" .scxml): $(printf '%s' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c1-170)")
+            ;;
+        *)
+            echo "error: sce-codegen check -l swift $source failed with status $status" >&2
+            exit 1
+            ;;
+    esac
+done
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -138,6 +162,9 @@ done
 # A file is named for the document's own name, not for the path it was read from.
 for i in "${!ALGORITHMS[@]}"; do
     "$CODEGEN" generate "${ALGORITHMS[$i]}" -l swift -o "$TMP/algorithm_$i/"
+done
+for i in "${!SCHEMAS[@]}"; do
+    "$CODEGEN" generate "${SCHEMAS[$i]}" -l swift -o "$TMP/schema_$i/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -155,9 +182,20 @@ for i in "${!ALGORITHMS[@]}"; do
         UNITS+=("$(basename "$generated" .swift)")
     done
 done
+SCHEMA_UNITS=()
+for i in "${!SCHEMAS[@]}"; do
+    for generated in "$TMP/schema_$i"/*.swift; do
+        cp "$generated" "$GENERATED_DIR/"
+        SCHEMA_UNITS+=("$(basename "$generated" .swift)")
+    done
+done
 
-echo "Regenerated: ${MACHINES[*]} and the algorithms ${UNITS[*]:-none} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none} and the event schemas ${SCHEMA_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"
+fi
+if [ "${#SCHEMAS_REFUSED[@]}" -gt 0 ]; then
+    echo "Event schemas not lowered yet (${#SCHEMAS_REFUSED[@]}), refused by name:"
+    printf '  %s\n' "${SCHEMAS_REFUSED[@]}"
 fi

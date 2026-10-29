@@ -1,0 +1,48 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
+// Runtime: {{ runtime_dep }}
+// Event name: {{ event_name }}
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+/// The event this schema types and its revision, as a host names them. A caseless
+/// enum of the module, as an algorithm's is, so two schemas never share a constant.
+public enum {{ struct_name }} {
+    /// The event this schema types (`sce:event-name`).
+    public static let eventName: String = {{ event_name_literal }}
+
+    /// The revision of the schema (`sce:revision`, 1 when the document declares none).
+    public static let revision: UInt32 = {{ schema_revision }}
+{% for b in field_bounds %}
+
+    /// The most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it.
+    public static let {{ b.id }}MaxSize: UInt32 = {{ b.value }}
+{% endfor %}
+}
+{% if fields %}
+
+/// The payload of the event: a struct of the schema's fields in the schema's order,
+/// each at its zero until written. A value, so a host that reads one holds a copy.
+public struct {{ payload_struct_name }}: Equatable, Sendable, SceDefault {
+{% for f in fields %}
+    public var {{ f.id }}: {{ f.swift_type }} = {{ f.swift_zero }}
+{% endfor %}
+
+    public init() {}
+
+    public init({% for f in fields %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for f in fields %}
+        self.{{ f.id }} = {{ f.id }}
+{% endfor %}
+    }
+}
+{% else %}
+
+// This schema declares no field: the event carries no data, so no payload type is generated.
+{% endif %}

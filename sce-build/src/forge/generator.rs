@@ -1275,6 +1275,33 @@ pub(crate) fn swift_type(ty: &SceType) -> &'static str {
     }
 }
 
+/// The value a Swift field of `ty` holds before anything is written to it: the
+/// zero a record of that type stands on, spelled as a Swift literal. One answer for
+/// the struct a schema declares, the one a machine holds a record in and the one a
+/// machine holds an event's payload in, so a value built whole from `init()` is the
+/// same value in all three.
+pub(crate) fn swift_zero_value(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Bool => "false",
+        SceType::String => "\"\"",
+        SceType::Bytes => "[]",
+        SceType::Float32 | SceType::Float64 => "0.0",
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Uint64
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32
+        | SceType::Int64 => "0",
+        // An enum's zero is its first case, in the type the document that holds it
+        // names (`<type>.allCases[0]`), which only that document can spell.
+        SceType::Enum(_) => unreachable!(
+            "swift_zero_value called on SceType::Enum — the holder names the enum's type"
+        ),
+    }
+}
+
 /// Map SceType to Kotlin type name (SCE_FORGE.md Section 3.3).
 pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
     match ty {
@@ -2769,8 +2796,12 @@ pub(crate) fn event_schema_field_ident(id: &str, lang: crate::generator::Languag
     match lang {
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust => filters::to_snake_case(id.to_string()),
-        Language::Cpp | Language::C11 | Language::Kotlin | Language::Python => id.to_string(),
-        Language::Swift => no_swift_emitter("event_schema_field_ident"),
+        // As written, which is how a machine's record names the same field
+        // (`StaticTarget::record_field`); a name Swift reserves is refused where the
+        // schema is read ([`swift_event_schema_unlowered`]).
+        Language::Cpp | Language::C11 | Language::Kotlin | Language::Python | Language::Swift => {
+            id.to_string()
+        }
     }
 }
 
@@ -2792,7 +2823,9 @@ pub(crate) fn event_schema_payload_type(
         Language::Go => format!("{}.{pascal}Payload", go_package_alias(&snake)),
         Language::Python => format!("{}.{pascal}Payload", python_module_alias(&snake)),
         Language::C11 => format!("{pascal}Payload_t"),
-        Language::Swift => no_swift_emitter("event_schema_payload_type"),
+        // A file of the module that imports it, so the type is named as it is
+        // declared.
+        Language::Swift => format!("{pascal}Payload"),
     }
 }
 
@@ -3094,8 +3127,15 @@ fn render_event_schema(
                 "rs_type": spelled(rs_type),
                 "kt_type": spelled(resolved.clone()),
                 "go_type": spelled(resolved.clone()),
+                "swift_type": spelled(resolved.clone()),
                 "py_type": spelled(resolved),
                 "c_type": spelled(c_type),
+                // An optional or enum field is refused before this
+                // ([`swift_event_schema_unlowered`]), so the zero is a scalar's.
+                "swift_zero": match f.sce_type.present_type() {
+                    SceType::Enum(_) => "",
+                    present => swift_zero_value(present),
+                },
                 "go_field_name": go_field_name,
                 "rs_field_name": rs_field_name,
             }))
@@ -3170,12 +3210,15 @@ fn render_event_schema(
     let quoted = serde_json::to_string(&m.event_name).expect("a string serialises");
     let event_name_literal = match l.lang {
         crate::generator::Language::Kotlin => quoted.replace('$', "\\$"),
+        // JSON writes a control character `\u00XX`, which Swift does not read.
+        crate::generator::Language::Swift => {
+            format!("\"{}\"", filters::escape_swift(m.event_name.clone()))
+        }
         crate::generator::Language::Rust
         | crate::generator::Language::Cpp
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11
-        | crate::generator::Language::Swift => quoted,
+        | crate::generator::Language::C11 => quoted,
     };
     ctx.insert("event_name_literal".into(), event_name_literal.into());
     ctx.insert("schema_revision".into(), m.revision().into());
@@ -5066,14 +5109,7 @@ pub fn build_swift_event_payload(
                 }
                 present => (
                     swift_type(present).to_string(),
-                    match present {
-                        SceType::Bool => "false",
-                        SceType::String => "\"\"",
-                        SceType::Bytes => "[]",
-                        SceType::Float32 | SceType::Float64 => "0.0",
-                        _ => "0",
-                    }
-                    .to_string(),
+                    swift_zero_value(present).to_string(),
                 ),
             };
             field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
@@ -23305,13 +23341,14 @@ pub fn generate_swift(
 /// Generate Swift code with cross-file import support.
 ///
 /// Swift emits no kind whole yet ([`crate::forge::codegen_matrix::template_ships`]
-/// is `false` for every kind). It writes an algorithm in part
-/// ([`crate::forge::codegen_matrix::ships_in_part`]), refusing by name what the
-/// algorithm holds past a body of scalars ([`swift_algorithm_unlowered`]), and a
-/// declaration, which writes no file; every other kind is
-/// `codegen/generic-kind-backend-emit-missing`, except a kind that is parsed and
-/// checked before any runtime has its row, which is refused by its own code
-/// (`refuse_broadcast_log`).
+/// is `false` for every kind). It writes an algorithm
+/// ([`swift_algorithm_unlowered`]) and an event schema
+/// ([`swift_event_schema_unlowered`]) in part
+/// ([`crate::forge::codegen_matrix::ships_in_part`]), refusing by name what each
+/// holds past what is lowered, and a declaration, which writes no file; every
+/// other kind is `codegen/generic-kind-backend-emit-missing`, except a kind that is
+/// parsed and checked before any runtime has its row, which is refused by its own
+/// code (`refuse_broadcast_log`).
 pub fn generate_swift_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
@@ -23323,26 +23360,40 @@ pub fn generate_swift_with_imports(
         return Err(refuse_broadcast_log(m, Language::Swift));
     }
     crate::forge::codegen_matrix::check(doc.kind(), Language::Swift)?;
-    let ForgeDocument::Algorithm(m) = doc else {
-        return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
-            crate::forge::codegen_matrix::EmitOutcome::Declaration => {
-                Ok(GeneratedOutput::default())
-            }
-            _ => Err(ForgeError::from(
-                crate::forge::codegen_matrix::emit_missing(doc.kind(), Language::Swift),
-            )),
-        };
+    let first_import = imports.first().map(|i| i.alias.as_str());
+    let refused = match doc {
+        ForgeDocument::Algorithm(m) => {
+            swift_algorithm_unlowered(m, first_import).map(|c| swift_algorithm_refusal(m, &c))
+        }
+        ForgeDocument::EventSchema(m) => {
+            swift_event_schema_unlowered(m, first_import).map(|c| swift_event_schema_refusal(m, &c))
+        }
+        _ => {
+            return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
+                crate::forge::codegen_matrix::EmitOutcome::Declaration => {
+                    Ok(GeneratedOutput::default())
+                }
+                _ => Err(ForgeError::from(
+                    crate::forge::codegen_matrix::emit_missing(doc.kind(), Language::Swift),
+                )),
+            };
+        }
     };
-    if let Some(construct) = swift_algorithm_unlowered(m, imports.first().map(|i| i.alias.as_str()))
-    {
-        return Err(GenerateError::unsupported(swift_algorithm_refusal(m, &construct)).into());
+    if let Some(why) = refused {
+        return Err(GenerateError::unsupported(why).into());
     }
     let forge_dir = template_dir.join("forge/swift");
     let mut env = generator::new_env();
     load_forge_templates(&mut env, &forge_dir, Language::Swift, options)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
-    let code = render_algorithm(&env, m, imports, Language::Swift, options)?;
+    let code = match doc {
+        ForgeDocument::Algorithm(m) => {
+            render_algorithm(&env, m, imports, Language::Swift, options)?
+        }
+        ForgeDocument::EventSchema(m) => render_event_schema(&env, m, imports, Language::Swift)?,
+        _ => unreachable!("every other kind returned above"),
+    };
     Ok(GeneratedOutput {
         files: vec![(
             format!("{}.swift", filters::to_pascal_case(doc.name().to_string())),
@@ -23368,8 +23419,8 @@ pub(crate) fn unlowered_in_part(
         .filter(|lang| crate::forge::codegen_matrix::ships_in_part(doc.kind(), *lang))
         .filter_map(|lang| {
             let construct = match lang {
-                // A statechart, the other kind Swift writes in part, is never a
-                // callee.
+                // A statechart and an event schema, the other kinds Swift writes in
+                // part, are never a callee.
                 Language::Swift => match doc {
                     ForgeDocument::Algorithm(m) => {
                         swift_algorithm_unlowered(m, imports.first().map(|i| i.alias.as_str()))
@@ -23489,6 +23540,44 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
     unlowered(&m.body, &reserved)
+}
+
+/// The refusal of the event schema `m` for the Swift construct `construct` it holds
+/// ([`swift_event_schema_unlowered`]).
+fn swift_event_schema_refusal(m: &EventSchemaModel, construct: &str) -> String {
+    format!(
+        "event schema '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
+}
+
+/// What of the event schema `m` the Swift backend does not lower yet, described for
+/// a refusal by name (`generate/unsupported-feature`); `first_import` is the alias
+/// of the first document `m` imports, if it imports any.
+///
+/// Swift lowers a schema of fields of a number, a `bool`, a string or a byte
+/// string: a struct of them in the schema's order, each named as the author wrote
+/// it, which is how a machine's record names the same field. A field of an enum
+/// (which needs the enum's unit, not written for Swift), a field that may be
+/// absent, and a name Swift reserves are named here until each is spelled.
+fn swift_event_schema_unlowered(
+    m: &EventSchemaModel,
+    first_import: Option<&str>,
+) -> Option<String> {
+    if let Some(alias) = first_import {
+        return Some(format!("the <sce:import as=\"{alias}\">"));
+    }
+    m.fields.iter().find_map(|f| {
+        if matches!(f.sce_type, FieldType::Optional { .. }) {
+            Some(format!("the optional field `{}`", f.id))
+        } else if matches!(f.sce_type.present_type(), SceType::Enum(_)) {
+            Some(format!("the field `{}` of an enum", f.id))
+        } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &f.id) {
+            Some(format!("the field `{}`, a name Swift reserves,", f.id))
+        } else {
+            None
+        }
+    })
 }
 
 // ══════════════════════════════════════════════════════════════
