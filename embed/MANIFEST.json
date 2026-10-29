@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "2283a0680d",
+  "embed_version": "8636e2cf91",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 462,
+  "symbol_count": 473,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -2643,8 +2643,74 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Detail::fromRing<T>",
+      "signature": "T SCE::Forge::Detail::fromRing<T>(Ring<T>) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::toRing<T>",
+      "signature": "Ring<T> SCE::Forge::Detail::toRing<T>(T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Saturating::add<T>",
+      "signature": "T SCE::Forge::Saturating::add<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Saturating::mul<T>",
+      "signature": "T SCE::Forge::Saturating::mul<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Saturating::neg<T>",
+      "signature": "T SCE::Forge::Saturating::neg<T>(T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Saturating::sub<T>",
+      "signature": "T SCE::Forge::Saturating::sub<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::add<T>",
+      "signature": "T SCE::Forge::Wrapping::add<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::mul<T>",
+      "signature": "T SCE::Forge::Wrapping::mul<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::neg<T>",
+      "signature": "T SCE::Forge::Wrapping::neg<T>(T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Wrapping::sub<T>",
+      "signature": "T SCE::Forge::Wrapping::sub<T>(T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::contractName",
       "signature": "const char * SCE::Forge::contractName(AlgorithmError) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::Ring",
+      "type": "std::common_type_t<unsigned int, std::make_unsigned_t<T>>"
     },
     {
       "header": "sce/forge/broadcast_log.h",
