@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ADR 0062: the one-byte arm of `broadcast_log_conformance_choice`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little"
+       name="broadcast_log_conformance_choice_small" version="1.0">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

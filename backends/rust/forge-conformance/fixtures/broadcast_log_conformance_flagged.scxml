@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): a log over an element that asks its caller for a
+  flag input (`broadcast_log_conformance_flagged_event`). One producer, wait-free,
+  a retention of three. The generator stores the flag in a context word of each
+  entry, takes it on `publish` and gives it back with the item, so that every
+  reader decodes an entry under what it was published under. An entry is a length
+  word, a context word and one word of bytes (at most three bytes).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_flagged"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_flagged_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>

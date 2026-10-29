@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind, "Caller inputs are part of the element"): an
+  element whose codec asks its caller for one flag input. The wire form carries
+  no bit that says whether the value is there; the caller says it, on `encode`
+  and on `decode`, and `sce:present-if` gates the field on it. A log that
+  stored only the bytes could not tell a reader which of the two a frame was
+  published under, so it stores the flag in the entry beside them. The sensor id
+  is always there (byte 0); the value is two bytes and is there only under the
+  flag, so the element encodes to one byte or to three.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little"
+       name="broadcast_log_conformance_flagged_event" version="1.0">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_value" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="sensor_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="value" sce:type="uint16" sce:byte="1" sce:bit-size="16"
+               sce:present-if="has_value"/>
+  </datamodel>
+</scxml>

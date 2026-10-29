@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind, "Caller inputs are part of the element"): an
+  element that is a variant whose wire form carries no tag. Which arm a frame
+  holds is not in its bytes: the caller gives the tag on `decode`, as the parent
+  codec that embeds this one does. A log that stored only the bytes could not say
+  which arm an entry was published as, so it stores the tag in the entry. The small
+  arm is one byte and the large arm two; tag 1 selects the small one and any other
+  tag the large one (the default arm).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little"
+       name="broadcast_log_conformance_choice" version="1.0">
+  <sce:import src="broadcast_log_conformance_choice_small.scxml" kind="codec"
+              as="broadcast_log_conformance_choice_small"/>
+  <sce:import src="broadcast_log_conformance_choice_large.scxml" kind="codec"
+              as="broadcast_log_conformance_choice_large"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="broadcast_log_conformance_choice_large" default="true"/>
+      <sce:arm value="0x01" type="broadcast_log_conformance_choice_small"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

@@ -3610,19 +3610,23 @@ pub struct BroadcastLogResolution {
 }
 
 /// What the document-set compile reads of a broadcast log's element codec that
-/// bears on whether a template can store it, stated as facts of the codec and not
-/// as any language's verdict on them. A log's typed `publish` and `read` call the
-/// element's `encode` with a sink and its `decode` with a cursor and nothing
-/// else, so an element whose signature asks the caller for more cannot be
-/// stored, in any language; whether the form a language decodes to can outlive
-/// the buffer it was read from depends on the language.
+/// bears on how a template stores it, stated as facts of the codec and not as any
+/// language's verdict on them. What the element's wire form does not carry and its
+/// signature asks the caller for (the flag inputs, and a variant's tag) is the
+/// element's **context**: the log stores it in the slot beside the bytes, so that
+/// every reader decodes an entry under what it was published under (ADR 0062
+/// section 4, "Caller inputs are part of the element"). Whether the form a
+/// language decodes to can outlive the buffer it was read from depends on the
+/// language, and is the one fact a language may still refuse.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BroadcastLogElementFacts {
     /// The flag inputs the element's `encode` and `decode` take from the caller,
-    /// by name. Empty when it takes none.
+    /// by name, in the order of the codec's signature. Empty when it takes none.
+    /// Each is one bit: the parser refuses a wider flag input, and a widening
+    /// would have to carry its width here before a template read it.
     pub caller_flag_inputs: Vec<String>,
     /// The element is a variant whose tag the caller supplies, because the wire
-    /// form carries no tag field.
+    /// form carries no tag field. The tag is a `u8` on decode.
     pub caller_variant_tag: bool,
     /// The element is a CBOR map with a string or byte-string entry: the one
     /// shape whose decoded form can hold a view into the buffer it was read from.
@@ -3630,30 +3634,53 @@ pub struct BroadcastLogElementFacts {
 }
 
 impl BroadcastLogElementFacts {
+    /// The words of an entry that hold the element's context, for words of
+    /// `word_bits` bits: the flag inputs, one bit each in declaration order and
+    /// `ceil(n / word_bits)` words of them, and then, when the variant takes its
+    /// tag from the caller, one word that holds the tag. Zero for an element that
+    /// asks its caller for nothing, whose entry is the length word and the bytes.
+    pub fn context_words(&self, word_bits: u32) -> u32 {
+        self.flag_words(word_bits) + u32::from(self.caller_variant_tag)
+    }
+
+    /// The words of the context that hold flag inputs (see
+    /// [`Self::context_words`]).
+    pub fn flag_words(&self, word_bits: u32) -> u32 {
+        (self.caller_flag_inputs.len() as u32).div_ceil(word_bits)
+    }
+
     /// Why the template of `language` cannot store an element of this shape, or
     /// `None` when it can.
     ///
-    /// The two inputs a caller must give are refused for every language. The
-    /// third fact is each language's own: a language whose decode of a CBOR
-    /// text or byte-string entry yields a value that owns its bytes (a copy
-    /// into the value) holds the element, and one whose value borrows the
-    /// buffer does not unless it has an owned form to copy into. Every arm is
-    /// written out, so that a language added to [`generator::Language`] is
-    /// decided here and does not inherit another's answer, and the change that
-    /// gives a language its template states, in its arm, which it is and why.
+    /// What a caller must give is not a refusal: it is stored with the entry
+    /// ([`Self::context_words`]). The one fact left is each language's own: a
+    /// language whose decode of a CBOR text or byte-string entry yields a value
+    /// that owns its bytes (a copy into the value) holds the element, and one
+    /// whose value borrows the buffer does not unless it has an owned form to
+    /// copy into. Every arm is written out, so that a language added to
+    /// [`generator::Language`] is decided here and does not inherit another's
+    /// answer, and the change that gives a language its template states, in its
+    /// arm, which it is and why.
     pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
         use generator::Language;
-        if !self.caller_flag_inputs.is_empty() {
-            return Some(format!(
-                "its encode and decode take the flag input(s) {} from the caller, and a log has none to give",
-                self.caller_flag_inputs.join(", ")
-            ));
-        }
-        if self.caller_variant_tag {
-            return Some(
-                "its decode takes the variant's tag from the caller, and a log has none to give"
-                    .to_string(),
-            );
+        // A language whose template has not yet given the slot its context
+        // words ([`forge::codegen_matrix::BROADCAST_LOG_CONTEXT_BACKENDS`]) cannot
+        // store what the codec asks its caller for, and says so by name.
+        if !forge::codegen_matrix::broadcast_log_stores_context(language) {
+            let language_name = forge::codegen_matrix::language_wire_name(language);
+            if !self.caller_flag_inputs.is_empty() {
+                return Some(format!(
+                    "its encode and decode take the flag input(s) {} from the caller, and the {language_name} \
+                     log template does not yet store them with the entry",
+                    self.caller_flag_inputs.join(", ")
+                ));
+            }
+            if self.caller_variant_tag {
+                return Some(format!(
+                    "its decode takes the variant's tag from the caller, and the {language_name} \
+                     log template does not yet store it with the entry"
+                ));
+            }
         }
         let borrows = match language {
             // The decoded form is `<'a>` over the cursor's buffer and has no

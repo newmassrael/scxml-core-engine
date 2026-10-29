@@ -21093,6 +21093,64 @@ struct BroadcastLogRenderInputs {
     atomic_rmw_width: Option<u32>,
     target: Option<String>,
     min_wrap_ops: Option<u64>,
+    /// What the element's codec asks its caller for, which an entry stores beside
+    /// the bytes ([`broadcast_log_context_value`]).
+    element: crate::BroadcastLogElementFacts,
+}
+
+/// The context of an entry, as a template reads it: what the element's codec
+/// asks its caller for and the log stores with the entry (ADR 0062 section 4,
+/// "Caller inputs are part of the element"), laid out for words of `word_bits`
+/// bits.
+///
+/// The slot is `[length][context words][payload words]`. The flag inputs come
+/// first, one bit each in declaration order: flag `i` is bit `i % word_bits` of
+/// context word `i / word_bits`. A variant that takes its tag from the caller adds
+/// one more context word, after the flag words, that holds the tag. The value
+/// has, for a template:
+///
+/// * `flags`: one `{name, snake, camel, pascal, bit, word, shift}` per flag
+///   input, in the order of the codec's signature (`word` is relative to the
+///   first context word, so the slot index is `1 + word`);
+/// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
+///   `1 + tag_word`), `context_words`, and `payload_start`, the slot index of
+///   the first payload word.
+///
+/// An element that asks its caller for nothing has no flags, no tag and
+/// `context_words` of 0, so a template that branches on them writes the module it
+/// always wrote.
+fn broadcast_log_context_value(
+    element: &crate::BroadcastLogElementFacts,
+    word_bits: u32,
+) -> minijinja::Value {
+    let flags: Vec<minijinja::Value> = element
+        .caller_flag_inputs
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let index = index as u32;
+            minijinja::context! {
+                name => name,
+                snake => filters::to_snake_case(name.clone()),
+                camel => filters::to_camel_case(name.clone()),
+                pascal => filters::to_pascal_case(name.clone()),
+                bit => index,
+                word => index / word_bits,
+                shift => index % word_bits,
+            }
+        })
+        .collect();
+    let flag_words = element.flag_words(word_bits);
+    let context_words = element.context_words(word_bits);
+    minijinja::context! {
+        flags => flags,
+        flag_words => flag_words,
+        has_tag => element.caller_variant_tag,
+        tag_word => flag_words,
+        context_words => context_words,
+        payload_start => 1 + context_words,
+        present => context_words > 0,
+    }
 }
 
 /// The name a language's broadcast-log template goes by in a refusal. Every
@@ -21159,9 +21217,9 @@ fn resolve_broadcast_log_render_inputs(
         return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
             "broadcast-log '{name}': the element '{element}' cannot be stored by the {template} \
              template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \
-             form, and its typed publish and read call the element's encode with a sink and \
-             its decode with a cursor alone. This document is valid and is refused rather than \
-             lowered to a log that could not read back what it stores.",
+             form, and a reader decodes them after the buffer they were written from is gone, so \
+             a decoded form that borrows its input cannot be handed back. This document is valid \
+             and is refused rather than lowered to a log that could not read back what it stores.",
             name = m.name,
             element = m.element_type,
             template = broadcast_log_template_label(language),
@@ -21204,6 +21262,7 @@ fn resolve_broadcast_log_render_inputs(
         atomic_rmw_width: resolution.atomic_rmw_width,
         target: resolution.target.clone(),
         min_wrap_ops: resolution.min_wrap_ops,
+        element: resolution.element.clone(),
     })
 }
 
@@ -21281,6 +21340,7 @@ fn render_broadcast_log_rust(
         word_bytes => word_bytes,
         word_bytes_word => word_bytes_word,
         log_name => &m.name,
+        context => broadcast_log_context_value(&inputs.element, word_bits),
         wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
             crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
             inputs.retention,

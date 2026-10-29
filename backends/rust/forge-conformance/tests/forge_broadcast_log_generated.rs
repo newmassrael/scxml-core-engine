@@ -72,6 +72,51 @@ mod log_modules {
             "/broadcast_log_conformance_ownership.rs"
         ));
     }
+    // The two logs over elements whose codec asks its caller for something its wire
+    // form does not carry (ADR 0062, "Caller inputs are part of the element"): a flag
+    // input, and a variant whose tag the caller gives.
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_flagged_event {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_flagged_event.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_flagged {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_flagged.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_choice_small {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_choice_small.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_choice_large {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_choice_large.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_choice {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_choice.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_chosen {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_chosen.rs"
+        ));
+    }
 }
 
 use log_modules::broadcast_log_conformance_deployed as deployed;
@@ -470,4 +515,175 @@ fn a_log_in_a_static_takes_its_publisher_on_the_callers_word() {
             element: event(3, 30)
         })
     );
+}
+
+// ─── Caller inputs are part of the entry (ADR 0062, section 4) ───
+//
+// An element's codec may ask its caller for what its wire form does not carry: a
+// flag input that gates a field, and the tag of a variant that has no tag field. The
+// log stores each beside the bytes, takes it on `publish` and returns it with the
+// item, so a reader decodes an entry under what it was published under and not under
+// whatever it happens to hold.
+
+use log_modules::broadcast_log_conformance_choice::{
+    BroadcastLogConformanceChoice as Choice, BroadcastLogConformanceChoiceVariant as ChoiceArm,
+};
+use log_modules::broadcast_log_conformance_choice_large::BroadcastLogConformanceChoiceLarge;
+use log_modules::broadcast_log_conformance_choice_small::BroadcastLogConformanceChoiceSmall;
+use log_modules::broadcast_log_conformance_chosen as chosen;
+use log_modules::broadcast_log_conformance_chosen::BroadcastLogConformanceChosenRead as ChosenRead;
+use log_modules::broadcast_log_conformance_flagged as flagged;
+use log_modules::broadcast_log_conformance_flagged::BroadcastLogConformanceFlaggedFlags as Flags;
+use log_modules::broadcast_log_conformance_flagged::BroadcastLogConformanceFlaggedRead as FlaggedRead;
+use log_modules::broadcast_log_conformance_flagged_event::BroadcastLogConformanceFlaggedEvent as FlaggedEvent;
+
+fn flagged_event(sensor_id: u8, value: Option<u16>) -> FlaggedEvent {
+    FlaggedEvent { sensor_id, value }
+}
+
+fn small(payload: u8) -> Choice {
+    Choice {
+        body: ChoiceArm::BroadcastLogConformanceChoiceSmall(BroadcastLogConformanceChoiceSmall {
+            payload,
+        }),
+    }
+}
+
+fn large(payload: u16) -> Choice {
+    Choice {
+        body: ChoiceArm::BroadcastLogConformanceChoiceLarge(BroadcastLogConformanceChoiceLarge {
+            payload,
+        }),
+    }
+}
+
+#[test]
+fn an_entry_holds_its_context_words_between_the_length_and_the_bytes() {
+    // The flagged element is an 8-bit id and a gated 16-bit value: at most 3 bytes.
+    // One length word, one context word (one flag), one word of bytes.
+    assert_eq!(flagged::MAX_ENCODED_BYTES, 3);
+    assert_eq!(flagged::CONTEXT_WORDS, 1);
+    assert_eq!(flagged::WORDS, 3);
+    // The choice is the larger of its arms, two bytes; the tag is one context word.
+    assert_eq!(chosen::MAX_ENCODED_BYTES, 2);
+    assert_eq!(chosen::CONTEXT_WORDS, 1);
+    assert_eq!(chosen::WORDS, 3);
+}
+
+#[test]
+fn a_reader_gets_back_the_flag_an_entry_was_published_under() {
+    let log = flagged::BroadcastLogConformanceFlagged::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut reader = log.reader_oldest();
+
+    // The same element shape, published under each answer of the flag: the value is
+    // on the wire under `true` and absent under `false`, so the two frames are three
+    // bytes and one, and neither can be decoded under the other's flag.
+    let with = (flagged_event(1, Some(0x0203)), Flags { has_value: true });
+    let without = (flagged_event(2, None), Flags { has_value: false });
+    for (element, flags) in [&with, &without] {
+        flagged::publish(&mut publisher, element, *flags).expect("an entry within the bound");
+    }
+    for (seq, (element, flags)) in [with, without].into_iter().enumerate() {
+        assert_eq!(
+            flagged::read(&log, &mut reader),
+            Ok(FlaggedRead::Item {
+                seq: seq as u64,
+                element,
+                flags
+            }),
+            "entry {seq} comes back whole, with the flag it was published under"
+        );
+    }
+    assert_eq!(flagged::read(&log, &mut reader), Ok(FlaggedRead::Empty));
+}
+
+#[test]
+fn every_reader_of_an_entry_decodes_it_under_the_same_flag() {
+    let log = flagged::BroadcastLogConformanceFlagged::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut early = log.reader_oldest();
+    let mut late = log.reader_oldest();
+    flagged::publish(
+        &mut publisher,
+        &flagged_event(5, Some(500)),
+        Flags { has_value: true },
+    )
+    .expect("an entry within the bound");
+    flagged::publish(
+        &mut publisher,
+        &flagged_event(6, None),
+        Flags { has_value: false },
+    )
+    .expect("an entry within the bound");
+    for reader in [&mut early, &mut late] {
+        assert_eq!(
+            flagged::read(&log, reader),
+            Ok(FlaggedRead::Item {
+                seq: 0,
+                element: flagged_event(5, Some(500)),
+                flags: Flags { has_value: true }
+            })
+        );
+        assert_eq!(
+            flagged::read(&log, reader),
+            Ok(FlaggedRead::Item {
+                seq: 1,
+                element: flagged_event(6, None),
+                flags: Flags { has_value: false }
+            })
+        );
+    }
+}
+
+#[test]
+fn a_flag_that_disagrees_with_the_element_is_refused_and_nothing_is_published() {
+    let log = flagged::BroadcastLogConformanceFlagged::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    // The value is there and the flag says it is not, and the other way about: the
+    // codec's gate refuses each, so the log never holds an entry whose bytes and flag
+    // disagree.
+    assert_eq!(
+        flagged::publish(
+            &mut publisher,
+            &flagged_event(7, Some(1)),
+            Flags { has_value: false }
+        ),
+        Err(CodecError::PresentIfMismatch)
+    );
+    assert_eq!(
+        flagged::publish(
+            &mut publisher,
+            &flagged_event(7, None),
+            Flags { has_value: true }
+        ),
+        Err(CodecError::PresentIfMismatch)
+    );
+    assert_eq!(log.head(), 0, "nothing was published");
+}
+
+#[test]
+fn a_reader_gets_back_the_tag_an_entry_was_published_under() {
+    let log = chosen::BroadcastLogConformanceChosen::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut reader = log.reader_oldest();
+
+    // The wire form of an arm carries no tag, so the two arms' bytes are the
+    // arm's own and which arm a frame is comes from the tag stored beside it.
+    let sent = [(small(9), 1u8), (large(0x0102), 0u8), (small(255), 1u8)];
+    for (element, tag) in &sent {
+        chosen::publish(&mut publisher, element, *tag).expect("an entry within the bound");
+    }
+    for (seq, (element, tag)) in sent.into_iter().enumerate() {
+        assert_eq!(
+            chosen::read(&log, &mut reader),
+            Ok(ChosenRead::Item {
+                seq: seq as u64,
+                element,
+                tag
+            }),
+            "entry {seq} comes back as the arm it was published as"
+        );
+    }
+    assert_eq!(chosen::read(&log, &mut reader), Ok(ChosenRead::Empty));
 }

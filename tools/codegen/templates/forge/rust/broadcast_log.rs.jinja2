@@ -21,8 +21,19 @@
 //
 // Operations (from `sce_forge_runtime::{{ runtime_module }}`, typed here over the
 // element):
+{% if context.present %}
+//   publish(&mut publisher, &element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) -> Result<u64, CodecError>   wait-free; the entry's sequence number
+{% else %}
 //   publish(&mut publisher, &element) -> Result<u64, CodecError>   wait-free; the entry's sequence number
+{% endif %}
 //   read(&log, &mut reader)           -> Result<Read, CodecError>  wait-free; an item, nothing new, or how many were missed
+{% if context.present %}
+//
+// The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+// part of the entry: `publish` takes them, the log stores them in the entry's context
+// words beside the bytes, and an `Item` returns them, so every reader decodes an entry
+// under what it was published under (ADR 0062 section 4).
+{% endif %}
 {% if narrow %}
 // A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
 // and owns its cursor.
@@ -90,10 +101,23 @@ pub const SLOTS: usize = RETENTION + 1;
 /// document when this module was generated.
 pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
 
+{% if context.present %}
+/// The words of an entry that hold what the element's codec asks its caller for
+/// (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+/// codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}.
+pub const CONTEXT_WORDS: usize = {{ context.context_words }};
+
+{% endif %}
 /// The {{ word_bits }}-bit words an entry holds: one for the length of the encoded element,
+{% if context.present %}
+/// `CONTEXT_WORDS` for its context, then as many as `MAX_ENCODED_BYTES` bytes take at
+/// {{ word_bytes_word }} to a word, that is `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / {{ word_bytes }})`.
+pub const WORDS: usize = 1 + CONTEXT_WORDS + MAX_ENCODED_BYTES.div_ceil({{ word_bytes }});
+{% else %}
 /// then as many as `MAX_ENCODED_BYTES` bytes take at {{ word_bytes_word }} to a word, that is
 /// `1 + ceil(MAX_ENCODED_BYTES / {{ word_bytes }})`.
 pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil({{ word_bytes }});
+{% endif %}
 {% if narrow %}
 
 /// The length word holds the length of the encoded element in 32 bits.
@@ -119,11 +143,38 @@ pub type {{ pascal }} = runtime::BroadcastLog<WORDS, SLOTS>;
 {% endif %}
 pub type {{ pascal }}Publisher<'a> = runtime::Publisher<'a, WORDS, SLOTS>;
 
+{% if context.flags %}
+/// The flag inputs the element's codec takes from its caller, which the log stores with
+/// each entry: what `publish` was given is what a reader gets back, and what the entry
+/// is decoded under.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct {{ pascal }}Flags {
+{% for flag in context.flags %}
+    pub {{ flag.snake }}: bool,
+{% endfor %}
+}
+
+{% endif %}
 /// What a typed read found: the runtime's three answers, with the entry decoded.
 #[derive(Debug, Clone, PartialEq)]
 pub enum {{ pascal }}Read {
+{% if context.present %}
+    /// The entry `seq`, decoded, with what it was published under; the reader now holds
+    /// `seq + 1`.
+    Item {
+        seq: u64,
+        element: {{ element_stored }},
+{% if context.flags %}
+        flags: {{ pascal }}Flags,
+{% endif %}
+{% if context.has_tag %}
+        tag: u8,
+{% endif %}
+    },
+{% else %}
     /// The entry `seq`, decoded; the reader now holds `seq + 1`.
     Item { seq: u64, element: {{ element_stored }} },
+{% endif %}
     /// The reader is at the head: nothing newer is published.
     Empty,
     /// The reader had fallen behind the window and missed `skipped` (at least
@@ -142,18 +193,37 @@ pub enum {{ pascal }}Read {
 /// An element that encodes to more than `MAX_ENCODED_BYTES` bytes is refused by
 /// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
 /// published: an entry is never a truncated element.
+{% if context.present %}
+///
+/// {% if context.flags %}`flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+/// they are encoded under here and stored in the entry's context words, so that every reader
+/// decodes the entry under what it was published under. The log does not check that
+/// {% if context.has_tag %}`tag` is the tag of the arm `element` holds{% else %}the flags agree with `element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
 pub fn publish(
     publisher: &mut {{ pascal }}Publisher<'_>,
     element: &{{ element_pascal }},
+{% if context.flags %}
+    flags: {{ pascal }}Flags,
+{% endif %}
+{% if context.has_tag %}
+    tag: u8,
+{% endif %}
 ) -> Result<u64, CodecError> {
     let mut bytes = [0u8; MAX_ENCODED_BYTES];
     let mut sink = SliceSink::new(&mut bytes);
-    element.encode(&mut sink)?;
+    element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %})?;
     let length = sink.position();
     let mut entry = [0{{ word_type }}; WORDS];
     entry[0] = length as {{ word_type }};
+{% for flag in context.flags %}
+    entry[1 + {{ flag.word }}] |= {{ word_type }}::from(flags.{{ flag.snake }}) << {{ flag.shift }};
+{% endfor %}
+{% if context.has_tag %}
+    entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(tag);
+{% endif %}
     for (index, byte) in bytes[..length].iter().enumerate() {
-        entry[1 + index / {{ word_bytes }}] |= {{ word_type }}::from(*byte) << (8 * (index % {{ word_bytes }}));
+        entry[{{ context.payload_start }} + index / {{ word_bytes }}] |= {{ word_type }}::from(*byte) << (8 * (index % {{ word_bytes }}));
     }
     Ok(publisher.publish(&entry))
 }
@@ -183,18 +253,43 @@ pub fn read(
             let length = stored as usize;
             let mut bytes = [0u8; MAX_ENCODED_BYTES];
             for (index, byte) in bytes[..length].iter_mut().enumerate() {
-                *byte = (entry[1 + index / {{ word_bytes }}] >> (8 * (index % {{ word_bytes }}))) as u8;
+                *byte = (entry[{{ context.payload_start }} + index / {{ word_bytes }}] >> (8 * (index % {{ word_bytes }}))) as u8;
             }
+{% if context.flags %}
+            // What the entry was published under: the context words are written by `publish`
+            // alone and a torn copy is never decoded, so a flag is a bit and the tag a `u8`.
+            let flags = {{ pascal }}Flags {
+{% for flag in context.flags %}
+                {{ flag.snake }}: ((entry[1 + {{ flag.word }}] >> {{ flag.shift }}) & 1) == 1,
+{% endfor %}
+            };
+{% endif %}
+{% if context.has_tag %}
+            let tag = entry[1 + {{ context.tag_word }}] as u8;
+{% endif %}
             let mut cursor = SceCursor::new(&bytes[..length]);
 {% if element_borrowed %}
             // The decoded form borrows `bytes`, which does not outlive this call:
             // the entry is returned as the element's owned form.
-            let element = {{ element_pascal }}::decode(&mut cursor)?
+            let element = {{ element_pascal }}::decode(&mut cursor{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %})?
                 .try_into_owned_in::<::sce_forge_runtime::codec::Inline>()?;
 {% else %}
-            let element = {{ element_pascal }}::decode(&mut cursor)?;
+            let element = {{ element_pascal }}::decode(&mut cursor{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %})?;
 {% endif %}
+{% if context.present %}
+            Ok({{ pascal }}Read::Item {
+                seq,
+                element,
+{% if context.flags %}
+                flags,
+{% endif %}
+{% if context.has_tag %}
+                tag,
+{% endif %}
+            })
+{% else %}
             Ok({{ pascal }}Read::Item { seq, element })
+{% endif %}
         }
         runtime::Read::Empty => Ok({{ pascal }}Read::Empty),
         runtime::Read::Lagged { skipped } => Ok({{ pascal }}Read::Lagged { skipped }),

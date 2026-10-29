@@ -343,6 +343,25 @@ pub const BROADCAST_LOG_BACKENDS: &[Language] = &[
     Language::Cpp,
 ];
 
+/// The backends whose broadcast-log template stores the context of an element
+/// (ADR 0062 section 4, "Caller inputs are part of the element"): the flag inputs
+/// and the variant tag its codec asks its caller for, kept in the slot beside the
+/// bytes so that every reader decodes an entry under what it was published under.
+///
+/// A subset of [`BROADCAST_LOG_BACKENDS`], by the same rule as that list: a
+/// language joins it in the change that gives its template the context words and
+/// the typed `publish` and `read` that carry them, and in no other, so that a
+/// language whose template does not store the context refuses an element that
+/// has one ([`crate::BroadcastLogElementFacts::refusal_for`]) and never lowers it
+/// to a module that calls the codec without the arguments it needs.
+pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[Language::Rust];
+
+/// Whether the broadcast-log template of `lang` stores the context of an element
+/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`]).
+pub const fn broadcast_log_stores_context(lang: Language) -> bool {
+    lists(BROADCAST_LOG_CONTEXT_BACKENDS, lang)
+}
+
 /// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by
 /// discriminant: `Language` derives `PartialEq`, which is not callable in a
 /// constant expression.

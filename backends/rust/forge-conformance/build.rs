@@ -325,6 +325,31 @@ fn main() {
         BROADCAST_LOG_OWNERSHIP_DEPLOY,
         &out_dir,
     );
+    // Logs over elements whose codec asks its caller for what its wire form does not
+    // carry (ADR 0062, "Caller inputs are part of the element"): one flag input,
+    // and a variant whose tag the caller gives. The log stores each in a context
+    // word of the entry, so these compile the typed `publish` and `read` that carry
+    // them and show a reader gets back what the publisher gave.
+    generate_broadcast_log_set(
+        &[
+            "broadcast_log_conformance_flagged_event",
+            "broadcast_log_conformance_flagged",
+        ]
+        .map(|name| source_fixtures.join(format!("{name}.scxml"))),
+        BROADCAST_LOG_DEPLOY,
+        &out_dir,
+    );
+    generate_broadcast_log_set(
+        &[
+            "broadcast_log_conformance_choice_small",
+            "broadcast_log_conformance_choice_large",
+            "broadcast_log_conformance_choice",
+            "broadcast_log_conformance_chosen",
+        ]
+        .map(|name| source_fixtures.join(format!("{name}.scxml"))),
+        BROADCAST_LOG_DEPLOY,
+        &out_dir,
+    );
 }
 
 /// Frames a codec's document gives as its wire oracle in a comment, for a codec

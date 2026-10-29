@@ -1298,8 +1298,8 @@ fn an_element_that_borrows_its_buffer_is_stored_as_its_owned_form() {
     );
 }
 
-/// A codec `event_record` that no log can hold: its `encode` and `decode` take a
-/// flag input from the caller.
+/// A codec `event_record` whose `encode` and `decode` take a flag input from the
+/// caller, which a log stores with the entry.
 fn flag_input_codec() -> String {
     r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -1331,30 +1331,152 @@ fn cbor_codec_with(entry: &str) -> String {
     )
 }
 
+/// Whether the language's broadcast-log template stores the context of an element, the
+/// flag inputs and the variant tag its codec asks its caller for
+/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`]).
+fn stores_context(language: Language) -> bool {
+    sce_build::forge::codegen_matrix::broadcast_log_stores_context(language)
+}
+
 #[test]
-fn an_element_whose_signature_asks_the_caller_for_more_is_refused_by_name() {
+fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
+    // `decode`. The log stores it in a context word of the entry, takes it on `publish`
+    // as a bool, and gives it back with the item, so that every reader decodes the entry
+    // under what it was published under. The element is a `uint8` and an optional
+    // `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
-    let located = compile_documents(
-        Language::Rust,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
-    )
-    .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
+    let code = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
     );
-    match generate_error(located) {
-        GenerateError::InvalidConfig(detail) => {
-            assert!(
-                detail.contains("the element 'event_record' cannot be stored by the Rust template"),
-                "{detail}"
-            );
-            assert!(detail.contains("flag input(s) S"), "{detail}");
-        }
-        other => panic!("expected InvalidConfig, got {other:?}"),
-    }
+    assert_holds(
+        &code,
+        &[
+            "pub const MAX_ENCODED_BYTES: usize = 2;",
+            "pub const CONTEXT_WORDS: usize = 1;",
+            "pub const WORDS: usize = 1 + CONTEXT_WORDS + MAX_ENCODED_BYTES.div_ceil(8);",
+            "pub struct EventRingFlags {",
+            "pub s: bool,",
+            "flags: EventRingFlags,",
+            "element.encode(&mut sink, u8::from(flags.s))?;",
+            "entry[1 + 0] |= u64::from(flags.s) << 0;",
+            "entry[2 + index / 8] |= u64::from(*byte)",
+            "s: ((entry[1 + 0] >> 0) & 1) == 1,",
+            "let element = EventRecord::decode(&mut cursor, u8::from(flags.s))?;",
+            "Ok(EventRingRead::Item {",
+        ],
+    );
+    assert!(!code.contains("tag: u8"), "the element has no tag:\n{code}");
+}
+
+#[test]
+fn rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "pub const CONTEXT_WORDS: usize = 2;",
+            "pub const WORDS: usize = 1 + CONTEXT_WORDS + MAX_ENCODED_BYTES.div_ceil(8);",
+            "pub s: bool,",
+            "pub t: bool,",
+            "flags: EventRingFlags,",
+            "tag: u8,",
+            "element.encode(&mut sink, u8::from(flags.s), u8::from(flags.t))?;",
+            "entry[1 + 0] |= u64::from(flags.s) << 0;",
+            "entry[1 + 0] |= u64::from(flags.t) << 1;",
+            "entry[1 + 1] = u64::from(tag);",
+            "entry[3 + index / 8] |= u64::from(*byte)",
+            "let tag = entry[1 + 1] as u8;",
+            "EventRecord::decode(&mut cursor, u8::from(flags.s), u8::from(flags.t), tag)?",
+        ],
+    );
+}
+
+#[test]
+fn a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "pub const CONTEXT_WORDS: usize = 1;",
+            "tag: u8,",
+            "entry[1 + 0] = u64::from(tag);",
+            "entry[2 + index / 8] |= u64::from(*byte)",
+            "let tag = entry[1 + 0] as u8;",
+            "EventRecord::decode(&mut cursor, tag)?",
+        ],
+    );
+    assert!(
+        !code.contains("Flags"),
+        "the element has no flag input:\n{code}"
+    );
+}
+
+#[test]
+fn the_narrow_row_stores_the_context_in_32_bit_words() {
+    // The same entry over 32-bit words: 33 flags need two flag words, the tag a third.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..33).map(|index| format!("f{index}")).collect(),
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let mut options = target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+    options
+        .broadcast_log_resolutions
+        .as_mut()
+        .and_then(|resolutions| resolutions.get_mut("event_ring"))
+        .expect("the log has a resolution")
+        .element = facts;
+    let code = compile_single(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target stores the context: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "pub const CONTEXT_WORDS: usize = 3;",
+            "entry[1 + 0] |= u32::from(flags.f0) << 0;",
+            "entry[1 + 0] |= u32::from(flags.f31) << 31;",
+            "entry[1 + 1] |= u32::from(flags.f32) << 0;",
+            "entry[1 + 2] = u32::from(tag);",
+            "entry[4 + index / 4] |= u32::from(*byte)",
+        ],
+    );
+}
+
+#[test]
+fn an_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single(
+        &event_ring(),
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("CONTEXT_WORDS"), "{code}");
+    assert!(!code.contains("Flags"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);",
+            "Item { seq: u64, element: EventRecord },",
+            "entry[1 + index / 8] |= u64::from(*byte)",
+        ],
+    );
 }
 
 #[test]
@@ -1538,9 +1660,9 @@ fn a_retention_that_resolves_to_nothing_is_refused() {
 #[test]
 fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
     let xml = event_ring();
-    let why = "its decode takes the variant's tag from the caller, and a log has none to give";
+    let why = "a CBOR map with a string or byte string entry decodes to a value that borrows";
     let facts = BroadcastLogElementFacts {
-        caller_variant_tag: true,
+        cbor_text_or_bytes_entry: true,
         ..BroadcastLogElementFacts::default()
     };
     let located = compile_single(&xml, &resolution_options(None, 4, facts))
@@ -1561,7 +1683,7 @@ fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
 // --- The facts of an element are the codec's; the verdict on them is a language's ---
 
 #[test]
-fn what_a_caller_must_give_is_refused_for_every_language() {
+fn what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere() {
     let flags = BroadcastLogElementFacts {
         caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
         ..BroadcastLogElementFacts::default()
@@ -1571,14 +1693,52 @@ fn what_a_caller_must_give_is_refused_for_every_language() {
         ..BroadcastLogElementFacts::default()
     };
     for language in Language::ALL.iter().copied() {
+        if stores_context(language) {
+            assert_eq!(flags.refusal_for(language), None, "{language:?}");
+            assert_eq!(tag.refusal_for(language), None, "{language:?}");
+            continue;
+        }
+        let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
         let why = flags
             .refusal_for(language)
-            .unwrap_or_else(|| panic!("{language:?} has no flag input to give"));
+            .unwrap_or_else(|| panic!("{language:?} does not store a flag input yet"));
         assert!(why.contains("flag input(s) S, T"), "{why}");
+        assert!(
+            why.contains(&format!("the {wire} log template does not yet store")),
+            "{why}"
+        );
         let why = tag
             .refusal_for(language)
-            .unwrap_or_else(|| panic!("{language:?} has no variant tag to give"));
+            .unwrap_or_else(|| panic!("{language:?} does not store a variant tag yet"));
         assert!(why.contains("the variant's tag"), "{why}");
+    }
+}
+
+#[test]
+fn the_context_of_an_element_is_the_flag_words_and_one_word_for_the_tag() {
+    let none = BroadcastLogElementFacts::default();
+    assert_eq!((none.flag_words(64), none.context_words(64)), (0, 0));
+    let flags = |count: usize, tag: bool| BroadcastLogElementFacts {
+        caller_flag_inputs: (0..count).map(|index| format!("f{index}")).collect(),
+        caller_variant_tag: tag,
+        ..BroadcastLogElementFacts::default()
+    };
+    // One bit a flag, `ceil(n / w)` words of them, the tag a word after those.
+    for (count, tag, bits, flag_words, words) in [
+        (1, false, 64, 1, 1),
+        (64, false, 64, 1, 1),
+        (65, false, 64, 2, 2),
+        (1, true, 64, 1, 2),
+        (0, true, 64, 0, 1),
+        (32, false, 32, 1, 1),
+        (33, true, 32, 2, 3),
+    ] {
+        let facts = flags(count, tag);
+        assert_eq!(
+            (facts.flag_words(bits), facts.context_words(bits)),
+            (flag_words, words),
+            "{count} flags, tag {tag}, {bits}-bit words"
+        );
     }
 }
 
@@ -2264,13 +2424,10 @@ fn c11_reads_a_deploy_key_retention_from_the_target_machines_limits() {
 #[test]
 fn c11_and_rust_refuse_one_log_with_one_message() {
     // The two renderers judge a log through one function, so the refusal of a log
-    // that neither can generate differs only in the name of the language.
-    let facts = BroadcastLogElementFacts {
-        caller_flag_inputs: vec!["S".to_string()],
-        ..BroadcastLogElementFacts::default()
-    };
-    let xml = event_ring();
-    let options = resolution_options(None, 4, facts);
+    // that neither can generate differs only in the name of the language. A retention
+    // of 0 is refused by both, with a text that names no language.
+    let xml = deploy_key_ring();
+    let options = resolution_options(Some(0), 4, BroadcastLogElementFacts::default());
     let rust = invalid_config(
         compile_single(&xml, &options)
             .err()
@@ -2960,43 +3117,61 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_an
     // retention of 0, and an element the language cannot hold (the one place
     // the language's name is written).
     let xml = simple_doc("event_ring", "one", "blocking", DEPLOY_KEY_RETENTION);
-    let tag = BroadcastLogElementFacts {
-        caller_variant_tag: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    let details: Vec<Vec<String>> = [
+    let languages = [
         (Language::Rust, "Rust"),
         (Language::Kotlin, "Kotlin"),
         (Language::Python, "Python"),
         (Language::Cpp, "C++"),
-    ]
-    .into_iter()
-    .map(|(language, name)| {
-        vec![
-            single_refusal(language, &xml, &ForgeCompileOptions::default()),
-            single_refusal(
-                language,
-                &xml,
-                &resolution_options(None, 4, BroadcastLogElementFacts::default()),
-            ),
-            single_refusal(
-                language,
-                &xml,
-                &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
-            ),
-            single_refusal(language, &xml, &resolution_options(Some(3), 4, tag.clone()))
-                .replace(name, "<language>"),
-        ]
-    })
-    .collect();
+    ];
+    let details: Vec<Vec<String>> = languages
+        .into_iter()
+        .map(|(language, _)| {
+            vec![
+                single_refusal(language, &xml, &ForgeCompileOptions::default()),
+                single_refusal(
+                    language,
+                    &xml,
+                    &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+                ),
+                single_refusal(
+                    language,
+                    &xml,
+                    &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+                ),
+            ]
+        })
+        .collect();
     assert_eq!(details[0], details[1], "Rust and Kotlin");
     assert_eq!(details[0], details[2], "Rust and Python");
     assert_eq!(details[0], details[3], "Rust and C++");
-    assert!(
-        details[0][3].contains("cannot be stored by the <language> template"),
-        "{}",
-        details[0][3]
-    );
+    // What an element a language cannot hold is refused with differs by the fact
+    // that language refuses (Rust borrows a CBOR string, a language whose template
+    // does not store the context refuses a tag), and the sentence that names it is
+    // the same one.
+    for (language, name) in languages {
+        let element = if stores_context(language) {
+            BroadcastLogElementFacts {
+                cbor_text_or_bytes_entry: true,
+                ..BroadcastLogElementFacts::default()
+            }
+        } else {
+            BroadcastLogElementFacts {
+                caller_variant_tag: true,
+                ..BroadcastLogElementFacts::default()
+            }
+        };
+        if language != Language::Rust && stores_context(language) {
+            // Holds the CBOR entry, and stores a tag: nothing is refused.
+            continue;
+        }
+        let detail = single_refusal(language, &xml, &resolution_options(Some(3), 4, element));
+        assert!(
+            detail.contains(&format!(
+                "the element 'event_record' cannot be stored by the {name} template"
+            )),
+            "{language:?}: {detail}"
+        );
+    }
 }
 
 // --- Kotlin generates the log over its runtime row ---
