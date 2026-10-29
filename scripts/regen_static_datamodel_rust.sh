@@ -77,7 +77,7 @@ mapfile -t STANDARD_MACHINES < <(grep -ho '"machine": "sce:std/[^"]*"' "$INPUT_R
 # algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
 # its list is what static_list_assign takes whole. A machine's import names
 # each as `super::<name>`, so it is generated beside the machines.
-ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids ledger_larger)
+ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids ledger_larger ledger_has ids_above)
 # static_state_algorithm_enum's: a list of records with an enum field, and a value
 # of the enum, in and out.
 ALGORITHMS+=(item_status_set item_status_count item_status_of)

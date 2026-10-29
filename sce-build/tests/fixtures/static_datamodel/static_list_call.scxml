@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"): a statechart hands an imported algorithm a list it keeps, to
+  be read, with nothing that can fail and no list taken back.
+
+  A ledger keeps its lines in `entries`, a list of records, and the ids of them in
+  `ids`, a list of numbers. `Has` is asked of `entries` before a line is put in (a list
+  of records and a number in, a truth value out), which counts a line whose id is
+  already there as a repeat, and `Above` is asked of `ids` after (a list of numbers and
+  a number in), which counts a line that leaves an id above a hundred in the list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_list_call">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_has.scxml" as="Has"/>
+  <sce:import kind="algorithm" src="algorithm_ids_above.scxml" as="Above"/>
+  <datamodel>
+    <data id="entries" sce:type="list&lt;record:Entry&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="ids" sce:type="list&lt;uint32&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="line" sce:type="record:Entry" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="amount" expr="0"/>
+    </data>
+    <data id="repeats" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="high" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="ledger.entry" type="internal">
+      <if cond="Has(entries, _event.data.id)">
+        <assign location="repeats" expr="repeats + 1"/>
+      </if>
+      <assign location="line" expr="_event.data"/>
+      <sce:append target="entries" expr="line"/>
+      <sce:append target="ids" expr="_event.data.id"/>
+      <if cond="Above(ids, 100)">
+        <assign location="high" expr="high + 1"/>
+      </if>
+    </transition>
+  </state>
+</scxml>

@@ -78,6 +78,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_relay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real32"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_call"
@@ -2289,6 +2290,20 @@ func TestAGuardCallsAnImportedAlgorithm(t *testing.T) {
 	replay(t, "static_record", drive[static_record.StaticRecordState, static_record.StaticRecordEvent](&policy, map[string]func() any{
 		"shown":    func() any { return dayJSON(policy.Shown()) },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A list the machine keeps is handed to an imported algorithm to be read: a list of
+// records is mapped into the type the algorithm's package declares, a list of
+// numbers crosses as it is, and the algorithm cannot write the list it was given.
+func TestAListIsHandedToAnImportedAlgorithmToBeRead(t *testing.T) {
+	policy := static_list_call.NewStaticListCallPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_list_call", drive[static_list_call.StaticListCallState, static_list_call.StaticListCallEvent](&policy, map[string]func() any{
+		"entries": func() any { return entriesJSON(policy.Entries()) },
+		"ids":     func() any { return policy.Ids() },
+		"repeats": func() any { return policy.Repeats() },
+		"high":    func() any { return policy.High() },
 	}))
 }
 

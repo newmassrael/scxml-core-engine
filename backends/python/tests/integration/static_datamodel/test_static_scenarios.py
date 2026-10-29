@@ -792,6 +792,13 @@ def test_a_guard_calls_an_imported_algorithm() -> None:
     replay("static_record")
 
 
+# A list the machine keeps is handed to an imported algorithm to be read: a list of
+# records is mapped into the class the algorithm's module declares, a list of
+# numbers crosses as it is, and the algorithm cannot write the list it was given.
+def test_a_list_is_handed_to_an_algorithm_to_be_read() -> None:
+    replay("static_list_call")
+
+
 # A record is handed to an imported algorithm and the record it answers is taken
 # back whole: the machine's own class crosses to the one the algorithm's module
 # declares and back, for a record the machine holds and for an event's payload.

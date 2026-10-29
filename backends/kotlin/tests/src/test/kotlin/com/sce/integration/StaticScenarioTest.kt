@@ -69,6 +69,7 @@ import com.sce.integration.static_payload_enum.StaticPayloadEnumStateMachine
 import com.sce.integration.static_payload_relay.StaticPayloadRelayStateMachine
 import com.sce.integration.static_real.StaticRealStateMachine
 import com.sce.integration.static_real32.StaticReal32StateMachine
+import com.sce.integration.static_list_call.StaticListCallStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_call.StaticRecordCallStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
@@ -522,6 +523,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticListCallHandsAListToAnAlgorithmToBeRead() {
+        val sm = StaticListCallStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_list_call"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -165,6 +165,7 @@
 #include "static_invoke_string_sm.h"
 #include "static_invoke_tree_sm.h"
 #include "static_list_assign_sm.h"
+#include "static_list_call_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
 #include "static_optional_record_sm.h"
@@ -178,6 +179,7 @@
 #include "static_real32_sm.h"
 #include "static_real_sm.h"
 #include "static_record_bytes_sm.h"
+#include "static_record_call_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_index_sm.h"
@@ -1788,6 +1790,44 @@ static const record_variable_t state_algorithm_records[] = {RECORD_ROW(static_st
                                                             {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_state_algorithm, state_algorithm_states, state_algorithm_variables, NULL, state_algorithm_lists,
                 state_algorithm_records)
+
+// static_record_call: an algorithm is handed a record the machine holds and the
+// event's own payload, and answers a record, which the machine takes whole; another
+// is asked of a record and answers a number. Nothing in a call can fail.
+VARIABLE_READER(static_record_call, large)
+VARIABLE_READER(static_record_call, debts)
+VARIABLE_READER(static_record_call, peaks)
+RECORD_READER(static_record_call, best, static_record_call_record_entry_t, ENTRY_FIELDS)
+static const name_value_t record_call_states[] = {
+    {"open", STATIC_RECORD_CALL_STATE_OPEN},
+};
+static const variable_t record_call_variables[] = {
+    {"large", static_record_call_read_large},
+    {"debts", static_record_call_read_debts},
+    {"peaks", static_record_call_read_peaks},
+};
+static const record_variable_t record_call_records[] = {RECORD_ROW(static_record_call, best), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_call, record_call_states, record_call_variables, NULL, no_lists, record_call_records)
+
+// static_list_call: algorithms are handed the lists the machine keeps, a list of
+// records and a list of numbers, to be read; neither is written and nothing in a
+// call can fail.
+VARIABLE_READER(static_list_call, repeats)
+VARIABLE_READER(static_list_call, high)
+LIST_READER(static_list_call, ids, sce_forge_uint32_view_t)
+RECORD_LIST_READER(static_list_call, entries, static_list_call_record_entry_view_t, static_list_call_record_entry_t,
+                   ENTRY_FIELDS)
+static const name_value_t list_call_states[] = {
+    {"open", STATIC_LIST_CALL_STATE_OPEN},
+};
+static const variable_t list_call_variables[] = {
+    {"repeats", static_list_call_read_repeats},
+    {"high", static_list_call_read_high},
+};
+static const list_variable_t list_call_lists[] = {{"ids", static_list_call_read_list_ids}, {NULL, NULL}};
+static const record_variable_t list_call_records[] = {RECORD_LIST_ROW(static_list_call, entries),
+                                                      {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_list_call, list_call_states, list_call_variables, NULL, list_call_lists, list_call_records)
 
 // static_state_algorithm_enum: the algorithms are handed records whose field is a
 // value of an enum, and a value of the enum itself, and give back a list of those
@@ -3601,6 +3641,8 @@ int main(void) {
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_state_algorithm_scenario("static_state_algorithm", 17);
+    bad |= static_record_call_scenario("static_record_call", 7);
+    bad |= static_list_call_scenario("static_list_call", 6);
     bad |= static_state_algorithm_enum_scenario("static_state_algorithm_enum", 18);
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);

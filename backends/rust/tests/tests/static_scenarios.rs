@@ -89,6 +89,9 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
 use sce_rust_tests::integration::static_datamodel::static_list_assign_sm::{
     StaticListAssignPersist, StaticListAssignPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_list_call_sm::{
+    StaticListCallPersist, StaticListCallPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
     StaticListIndexPersist, StaticListIndexPolicy,
 };
@@ -436,6 +439,17 @@ fn static_record_steps_no_further_than_the_month_allows() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record.json"
+        ),
+    );
+}
+
+#[test]
+fn static_list_call_hands_a_list_to_an_algorithm_to_be_read() {
+    replay(
+        Engine::new(StaticListCallPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list_call.json"
         ),
     );
 }

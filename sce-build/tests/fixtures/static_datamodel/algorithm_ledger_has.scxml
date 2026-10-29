@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether a ledger holds a line of an id: a list of records and a number in, a truth
+  value out. A statechart asks it before it puts a line in, to tell a line it has
+  from a new one. The list is read and never written, and nothing in the call can fail.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_has"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="entries" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="id" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="e" in="entries">
+      <sce:if cond="e.id === id">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

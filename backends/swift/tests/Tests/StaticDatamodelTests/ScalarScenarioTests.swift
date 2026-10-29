@@ -314,6 +314,19 @@ private func recordCall() -> Machine {
     )
 }
 
+private func listCall() -> Machine {
+    let policy = StaticListCallPolicy()
+    return drive(
+        policy,
+        variables: [
+            "entries": { .array(policy.entries.map { entry($0.id, $0.amount) }) },
+            "ids": { integers(policy.ids) },
+            "repeats": { integer(policy.repeats) },
+            "high": { integer(policy.high) },
+        ]
+    )
+}
+
 private func recordFields() -> Machine {
     let policy = StaticRecordFieldsPolicy()
     return drive(
@@ -728,6 +741,13 @@ private func recordBytes() -> Machine {
 // declares and back by field, for a record the machine holds and for an event's payload.
 @Test func aRecordIsHandedToAnImportedAlgorithmAndTakenBackWhole() {
     replay("static_record_call", recordCall())
+}
+
+// A list the machine keeps is handed to an imported algorithm to be read, a list of
+// records mapped into the schema's struct and a list of numbers as it is, and the
+// algorithm cannot write the list it was given.
+@Test func aListIsHandedToAnImportedAlgorithmToBeRead() {
+    replay("static_list_call", listCall())
 }
 
 // A record is taken into a list by name, and the list holds a copy of it: a record

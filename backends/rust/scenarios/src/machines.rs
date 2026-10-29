@@ -227,6 +227,7 @@ scenarios! {
     "static_invoke_tree" => static_invoke_tree_sm::{StaticInvokeTreePolicy, StaticInvokeTreePersist} @ Manual;
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
+    "static_list_call" => static_list_call_sm::{StaticListCallPolicy, StaticListCallPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
     "static_optional" => static_optional_sm::{StaticOptionalPolicy, StaticOptionalPersist};
     "static_optional_record" => static_optional_record_sm::{StaticOptionalRecordPolicy, StaticOptionalRecordPersist};

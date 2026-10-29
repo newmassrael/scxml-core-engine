@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether any id of a list is above a floor: a list of numbers and a number in, a truth
+  value out. The list is read and never written, and nothing in the call can fail.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ids_above"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="ids" type="list&lt;uint32&gt;"/>
+    <sce:param name="floor" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="above" type="bool" init="false"/>
+    <sce:foreach item="id" in="ids">
+      <sce:if cond="id &gt; floor">
+        <sce:assign target="above" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="above"/>
+  </sce:body>
+</scxml>

@@ -2653,8 +2653,23 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    algorithm_item_status_set.scxml algorithm_item_status_count.scxml
                    algorithm_item_status_of.scxml
     )
+    # A machine hands algorithms a record it holds, an event's payload and a record
+    # it takes back whole, with nothing that can fail. Each header is generated once
+    # beside the machines that include it, below.
+    sce_generate_static_integration_c_test(static_record_call
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_call.scxml"
+        STAGE_ALSO schema_entry.scxml algorithm_ledger_larger.scxml algorithm_ledger_amount.scxml
+    )
+    # ... and the lists it keeps, a list of records and a list of numbers, to be read.
+    sce_generate_static_integration_c_test(static_list_call
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_call.scxml"
+        STAGE_ALSO schema_entry.scxml algorithm_ledger_has.scxml algorithm_ids_above.scxml
+    )
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
+                          ledger_larger ledger_has ids_above
                           schema_item enum_item_status item_status_set item_status_count item_status_of
                           schema_goal goal_earliest goal_until goal_undated goal_day_sum
                           schema_item_pick item_pick_first)
@@ -3180,6 +3195,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_DAY_REPEAT_HEADER}
         ${INTEGRATION_C_TEST_static_state_algorithm_SOURCES}
         ${INTEGRATION_C_TEST_static_state_algorithm_enum_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_call_SOURCES}
+        ${INTEGRATION_C_TEST_static_list_call_SOURCES}
         ${_STATE_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
