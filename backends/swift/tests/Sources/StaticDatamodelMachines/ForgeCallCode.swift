@@ -18,6 +18,6 @@ public enum ForgeCallCode {
     private static let sceValues: [Int32] = [100, 200]
 
     public static func lookupCode(_ gear: UInt8) -> Int32? {
-        Lookup.find(sceKeys, sceValues, gear)
+        SceForgeRuntime.Lookup.find(sceKeys, sceValues, gear)
     }
 }

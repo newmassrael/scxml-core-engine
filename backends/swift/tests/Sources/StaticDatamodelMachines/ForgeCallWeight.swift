@@ -18,6 +18,6 @@ public enum ForgeCallWeight {
     private static let sceValues: [ForgeCallLevel] = [ForgeCallLevel.light, ForgeCallLevel.heavy]
 
     public static func lookupWeight(_ status: ForgeCallStatus) -> ForgeCallLevel? {
-        Lookup.find(sceKeys, sceValues, status)
+        SceForgeRuntime.Lookup.find(sceKeys, sceValues, status)
     }
 }

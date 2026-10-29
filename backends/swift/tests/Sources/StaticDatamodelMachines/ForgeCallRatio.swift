@@ -17,6 +17,6 @@ public enum ForgeCallRatio {
     private static let sceValues: [Int32] = [35, 20, 14]
 
     public static func lookupRatio(_ gear: UInt8) -> Int32 {
-        Lookup.find(sceKeys, sceValues, gear) ?? 0
+        SceForgeRuntime.Lookup.find(sceKeys, sceValues, gear) ?? 0
     }
 }
