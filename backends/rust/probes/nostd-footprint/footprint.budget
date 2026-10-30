@@ -75,9 +75,12 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # scheduler (`engine::PullScheduler`, compiled once for each kind of send id the
 # program's machines keep; a machine whose kind of send id no other machine
 # shares carries its copy inlined into its own `tick`, which this path does not
-# match). A machine's implementation of the core's traits
+# match), and the bookkeeping that opens and closes a host call's turn
+# (`engine::EngineCore`: the clock reading latched for the turn and the count of
+# steps taken before any tick, which every machine's entry points call out of
+# line). A machine's implementation of the core's traits
 # names the trait inside its `<.. as ..>` and is not matched.
-CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::(Turn[>:]|PullScheduler<))'
+CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::(Turn[>:]|PullScheduler<|EngineCore[>:]))'
 
 # The probe machines' crates (an extended regular expression): a core symbol
 # that names one was instantiated for that machine.
