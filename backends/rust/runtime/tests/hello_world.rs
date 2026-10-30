@@ -57,6 +57,7 @@ impl StatePolicy for HwPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ScheduledSendId = sce_rust_runtime::SceString;
     // What the generator gives this document: it has no delayed send, no
     // `<cancel>` and no `<donedata>`, so its machine keeps neither a
     // delayed-send queue nor a donedata slot. The tests at the end of this file

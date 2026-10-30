@@ -81,6 +81,7 @@ impl StatePolicy for ParallelPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ScheduledSendId = sce_rust_runtime::SceString;
     // No delayed send, no `<cancel>`, no `<donedata>`: no queue, no slot.
     type Scheduler = sce_rust_runtime::NoDelayedSends;
     type DoneData = sce_rust_runtime::NoDoneData;
@@ -285,6 +286,7 @@ impl StatePolicy for LinearPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ScheduledSendId = sce_rust_runtime::SceString;
     // No delayed send, no `<cancel>`, no `<donedata>`: no queue, no slot.
     type Scheduler = sce_rust_runtime::NoDelayedSends;
     type DoneData = sce_rust_runtime::NoDoneData;
