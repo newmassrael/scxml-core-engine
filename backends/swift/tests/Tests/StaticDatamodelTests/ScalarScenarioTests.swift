@@ -223,6 +223,72 @@ private func hostDuty() -> Machine {
     )
 }
 
+/// What the `worker` child of `static_child_host` asked of the host it was given, as a
+/// scenario writes it, and forgotten once read.
+private func workerCalls(_ host: RecordingStaticChildHostSceSynthInvokeWorkerActions) -> [JSONValue] {
+    defer { host.clear() }
+    return host.calls.map { call in
+        switch call {
+        case .started: return hostCall("started")
+        case .finished(let steps): return hostCall("finished", [integer(steps)])
+        }
+    }
+}
+
+private func childHost() -> Machine {
+    let book = ChildHostBook()
+    // The parent declares no act of its own: its host is there for the child alone, and
+    // answers one host for `worker` each time the child is started.
+    let host = RecordingStaticChildHostActions(actionsForWorkerSource: {
+        let child = RecordingStaticChildHostSceSynthInvokeWorkerActions()
+        book.open("worker") { workerCalls(child) }
+        return child
+    })
+    let policy = StaticChildHostPolicy(actions: host)
+    return drive(
+        policy,
+        variables: ["completed": { integer(policy.completed) }],
+        childHosts: { book.take() }
+    )
+}
+
+private func childHostHybrid() -> Machine {
+    let book = ChildHostBook()
+    // One host for each candidate, asked for only when the value names that candidate.
+    let host = RecordingStaticChildHostHybridActions(
+        actionsForWork0jStaticHostedFirstSource: {
+            let child = RecordingStaticHostedFirstActions()
+            book.open("work", candidate: "static_hosted_first") {
+                defer { child.clear() }
+                return child.calls.map { call in
+                    switch call {
+                    case .firstRan: return hostCall("first_ran")
+                    }
+                }
+            }
+            return child
+        },
+        actionsForWork0jStaticHostedSecondSource: {
+            let child = RecordingStaticHostedSecondActions()
+            book.open("work", candidate: "static_hosted_second") {
+                defer { child.clear() }
+                return child.calls.map { call in
+                    switch call {
+                    case .secondRan: return hostCall("second_ran")
+                    }
+                }
+            }
+            return child
+        }
+    )
+    let policy = StaticChildHostHybridPolicy(actions: host)
+    return drive(
+        policy,
+        variables: ["completed": { integer(policy.completed) }],
+        childHosts: { book.take() }
+    )
+}
+
 private func invokeParams() -> Machine {
     let policy = StaticInvokeParamsPolicy()
     return drive(policy, variables: ["completed": { integer(policy.completed) }])
@@ -1379,6 +1445,14 @@ private func recordBytes() -> Machine {
 
 @Test func aDutyIsTakenOnEntryAndGivenBackOnExitThroughTheHost() {
     replay("static_host_duty", hostDuty())
+}
+
+@Test func aChildThatDeclaresActsIsBuiltWithTheHostItsParentGives() {
+    replay("static_child_host", childHost())
+}
+
+@Test func aCandidateIsBuiltWithTheHostOfItsOwnAndNoOtherCandidatesHost() {
+    replay("static_child_host_hybrid", childHostHybrid())
 }
 
 @Test func aChildIsHandedTheValuesItsInvokeNames() {

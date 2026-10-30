@@ -292,13 +292,7 @@ fn an_argument_the_candidate_keeps_nowhere_is_evaluated_and_left_out() {
 /// construct and its state in the message.
 #[test]
 fn what_is_not_lowered_is_refused_by_name() {
-    for (machine, construct) in [
-        ("static_invoke_tree.scxml", "an <invoke idlocation>"),
-        (
-            "static_child_host_hybrid.scxml",
-            "a candidate that runs a script engine or declares host acts",
-        ),
-    ] {
+    for (machine, construct) in [("static_invoke_tree.scxml", "an <invoke idlocation>")] {
         let (status, files, said) = generate(machine);
         assert_eq!(status, Some(7), "{machine} is refused, not written: {said}");
         assert!(

@@ -56,6 +56,68 @@ struct Machine {
     /// arguments in the order the document gives them, an absent one as `null`. Asking
     /// forgets what was asked. Nil for a machine whose host is not one that records.
     var hostCalls: (() -> [JSONValue])? = nil
+
+    /// The child hosts the machine's host was asked for since it was last asked, oldest asked
+    /// first, and what each child asked of the host it was given, each as a scenario's
+    /// `child_hosts` writes it (`ChildHostBook.take`). Asking forgets what was asked. Nil for a
+    /// machine whose host gives no child one.
+    var childHosts: (() -> [JSONValue])? = nil
+}
+
+/// The child hosts a machine's host was asked for, in the order asked, and what each child
+/// asked of its host. A child owns the host it was given, so each host is made by the test
+/// and opened here, and what it was asked to do is read through `calls`, which answers the
+/// calls made since it was last asked and forgets them.
+final class ChildHostBook {
+    private final class Booked {
+        let invoke: String
+        let start: Int
+        let candidate: String
+        let calls: () -> [JSONValue]
+        var announced = false
+
+        init(invoke: String, start: Int, candidate: String, calls: @escaping () -> [JSONValue]) {
+            self.invoke = invoke
+            self.start = start
+            self.candidate = candidate
+            self.calls = calls
+        }
+    }
+
+    private var children: [Booked] = []
+
+    /// The machine's host being asked for the host of a child its `invoke` started:
+    /// `candidate` is the stem of the document when the invoke names one of several, and
+    /// empty for a child written inline.
+    func open(_ invoke: String, candidate: String = "", calls: @escaping () -> [JSONValue]) {
+        let start = children.filter { $0.invoke == invoke }.count + 1
+        children.append(Booked(invoke: invoke, start: start, candidate: candidate, calls: calls))
+    }
+
+    /// The children asked for or called since it was last called, oldest asked first, each as
+    /// a scenario's `child_hosts` writes it: the invoke, the start of that invoke, the
+    /// candidate's document stem where the invoke names one, and the calls made in this step
+    /// alone. A child asked for earlier that called nothing since has no entry.
+    func take() -> [JSONValue] {
+        var fresh: [JSONValue] = []
+        for child in children {
+            let calls = child.calls()
+            if child.announced && calls.isEmpty {
+                continue
+            }
+            child.announced = true
+            var members: [(key: String, value: JSONValue)] = [
+                (key: "invoke", value: .text(child.invoke)),
+                (key: "start", value: .number(String(child.start))),
+            ]
+            if !child.candidate.isEmpty {
+                members.append((key: "candidate", value: .text(child.candidate)))
+            }
+            members.append((key: "host_calls", value: .array(calls)))
+            fresh.append(.object(members))
+        }
+        return fresh
+    }
 }
 
 /// One call of a host as a scenario's `host_calls` writes it.
@@ -75,7 +137,8 @@ private let settleTicks = 5
 func drive<Policy: StatePolicy>(
     _ policy: Policy,
     variables: [String: () -> JSONValue],
-    hostCalls: (() -> [JSONValue])? = nil
+    hostCalls: (() -> [JSONValue])? = nil,
+    childHosts: (() -> [JSONValue])? = nil
 ) -> Machine {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
@@ -108,7 +171,8 @@ func drive<Policy: StatePolicy>(
         ended: { engine.isInFinalState },
         donedata: { engine.donedataAtFinal },
         variables: variables,
-        hostCalls: hostCalls
+        hostCalls: hostCalls,
+        childHosts: childHosts
     )
 }
 
@@ -208,7 +272,7 @@ private let scenarioDirectory: String = {
 private let unreplayedStepMembers = ["restore", "invoke"]
 
 /// The members of a step's `expect` this driver does not judge yet.
-private let unreplayedExpectMembers = ["child_hosts", "sent"]
+private let unreplayedExpectMembers = ["sent"]
 
 /// Fails the test that is replaying, at the line of the test that asked for it.
 private func record(_ message: String, _ at: SourceLocation) {
@@ -274,6 +338,9 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
         // a step which states nothing does not hand its calls to the next, and a step
         // that states some needs a driver that records them.
         let asked = machine.hostCalls?()
+        // The child hosts asked for in this step, and what each child asked of its host,
+        // read and held for the same reason.
+        let children = machine.childHosts?()
         guard let expect = step.member("expect") else {
             continue
         }
@@ -287,6 +354,15 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
                 }
             } else {
                 fail("this driver records no host calls, so it cannot hold a step to them")
+            }
+        }
+        if let want = expect.member("child_hosts") {
+            if let children {
+                if !sameValue(.array(children), want) {
+                    fail("the child hosts were \(writeJSON(.array(children))), not \(writeJSON(want))")
+                }
+            } else {
+                fail("this driver records no child hosts, so it cannot hold a step to them")
             }
         }
         if case .bool(true)? = expect.member("ended") {

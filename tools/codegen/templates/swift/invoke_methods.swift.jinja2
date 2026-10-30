@@ -131,7 +131,10 @@
         // keys the invocation on, so the origin of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
-        let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy()
+{# A child that declares acts is built with the host its parent's host answers, asked here
+   once for each start (`native_action::lower_child_hosts`, W3C SCXML 6.4: the child is a
+   session of its own, so what the host answers for one start is not carried into the next). #}
+        let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy({{ 'actions: ' ~ invoke_info.child_host_call if invoke_info.child_host_call else '' }})
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
 {{ seed_child(invoke_info.child_name | to_pascal_case ~ 'Policy', invoke_info.params, [], model, machine_name, '        ') }}
@@ -190,7 +193,7 @@
         {{ 'if' if loop.first else '} else if' }} sceSelected.utf8.elementsEqual("{{ candidate.stem | escape_swift }}".utf8) {
             // The stem names the document the build wrote a child for, and its
             // arguments are read only now that the value has chosen it (6.4.3).
-            let childPolicy = {{ candidate.stem | to_pascal_case }}Policy()
+            let childPolicy = {{ candidate.stem | to_pascal_case }}Policy({{ 'actions: ' ~ candidate.child_host_call if candidate.child_host_call else '' }})
 {{ seed_child(candidate.stem | to_pascal_case ~ 'Policy', candidate.seeds, candidate.unkept, model, machine_name, '            ') }}
             let session = InvokedSession(
                 policy: childPolicy,

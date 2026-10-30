@@ -184,6 +184,88 @@ fn a_machine_that_states_a_duty_refuses_a_host_that_only_simulates_it() {
     );
 }
 
+/// A child that declares acts is built with a host its parent's host answers, asked once
+/// for each start: the parent's interface has an operation for the child, the recorder
+/// takes a source for it and records the question, and the child is built with what the
+/// host answered. The parent declares no act of its own.
+#[test]
+fn a_parents_host_answers_the_host_of_the_child_it_starts() {
+    let code = machine_of("static_child_host.scxml", "static_child_host_sm.swift");
+    holds_each(
+        &code,
+        &[
+            "    func actionsForWorker() -> any StaticChildHostSceSynthInvokeWorkerActions\n",
+            "public init(actionsForWorkerSource: @escaping () -> any StaticChildHostSceSynthInvokeWorkerActions) {",
+            "calls.append(.actionsForWorker)",
+            "StaticChildHostSceSynthInvokeWorkerPolicy(actions: self.actions.actionsForWorker())",
+        ],
+    );
+}
+
+/// Each candidate of a hybrid `<invoke>` is its own document with acts of its own, so the
+/// parent's host answers a host for each, and a candidate is built with the host of its own
+/// and with no other's.
+#[test]
+fn a_candidate_is_built_with_the_host_of_its_own() {
+    let code = machine_of(
+        "static_child_host_hybrid.scxml",
+        "static_child_host_hybrid_sm.swift",
+    );
+    holds_each(
+        &code,
+        &[
+            "    func actionsForWork0jStaticHostedFirst() -> any StaticHostedFirstActions\n",
+            "    func actionsForWork0jStaticHostedSecond() -> any StaticHostedSecondActions\n",
+            "StaticHostedFirstPolicy(actions: self.actions.actionsForWork0jStaticHostedFirst())",
+            "StaticHostedSecondPolicy(actions: self.actions.actionsForWork0jStaticHostedSecond())",
+        ],
+    );
+}
+
+/// A child that states a duty is built under its parent's own statement about a host that
+/// only simulates, which the parent's policy does not hold yet: it is named in a refusal and
+/// not written wrong.
+#[test]
+fn a_child_that_states_a_duty_is_refused_by_name() {
+    let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="duty_parent">
+  <state id="working">
+    <invoke type="scxml" id="worker">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="busy" datamodel="sce-static">
+          <state id="busy">
+            <onentry>
+              <sce:action name="start_keepalive" effect="duty" released-by="stop_keepalive"/>
+            </onentry>
+            <onexit>
+              <sce:action name="stop_keepalive" effect="duty"/>
+            </onexit>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>
+"#;
+    let (status, files, said) = generate("duty_parent.scxml", &[("duty_parent.scxml", document)]);
+    assert_eq!(
+        status,
+        Some(7),
+        "the document is refused, not written: {said}"
+    );
+    assert!(
+        said.contains("a child that states a duty"),
+        "the refusal names the child's duty: {said}"
+    );
+    assert!(
+        files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
+        "a refused document writes no machine: {:?}",
+        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
+}
+
 /// An argument that reads the data of the event is named in a refusal, not written
 /// wrong: the typed payload a call reads is bound by a guard Swift has not got.
 #[test]

@@ -4284,8 +4284,12 @@ pub(crate) fn swift_invoke_unlowered(
     if info.common.child_needs_script_engine {
         return Some("an <invoke> of a child that runs a script engine".to_string());
     }
-    if info.common.child_declares_host_acts || !info.common.child_host_call.is_empty() {
-        return Some("an <invoke> of a child that declares host acts".to_string());
+    // A child that declares acts is built with the host its parent's host answers
+    // (`native_action::lower_child_hosts`). A child that states a duty is built under the
+    // parent's own statement about a simulated host, which the parent's policy does not
+    // hold yet.
+    if info.common.child_declares_host_duties {
+        return Some("an <invoke> of a child that states a duty".to_string());
     }
     None
 }
@@ -4367,11 +4371,13 @@ fn swift_hybrid_invoke_unlowered(
     if !info.common.base.idlocation.is_empty() {
         return Some("an <invoke srcexpr idlocation>".to_string());
     }
-    if info.candidates.iter().any(|c| {
-        c.child_needs_script_engine || c.child_declares_host_acts || !c.child_host_call.is_empty()
-    }) {
+    if info
+        .candidates
+        .iter()
+        .any(|c| c.child_needs_script_engine || c.child_declares_host_duties)
+    {
         return Some(
-            "an <invoke srcexpr> with a candidate that runs a script engine or declares host acts"
+            "an <invoke srcexpr> with a candidate that runs a script engine or states a duty"
                 .to_string(),
         );
     }

@@ -1472,10 +1472,12 @@ impl ChildHost {
 fn machine_token(lang: Language, child_name: &str) -> String {
     match lang {
         Language::C11 => child_name.to_string(),
-        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-            filters::to_pascal_case(child_name.to_string())
-        }
-        Language::Swift => no_swift_emitter("machine_token"),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::Swift => filters::to_pascal_case(child_name.to_string()),
     }
 }
 
@@ -1490,8 +1492,10 @@ fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str
         // A sibling module of the parent's, as the machine names the child it
         // starts (`super::<child>_sm::<Child>Policy`).
         Language::Rust => format!("super::{child_name}_sm::{bare}"),
-        Language::Kotlin | Language::Go | Language::Python | Language::C11 => bare,
-        Language::Swift => no_swift_emitter("child_interface_type"),
+        // The child's machine is a file of the one module the parent is in.
+        Language::Kotlin | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+            bare
+        }
     }
 }
 
@@ -1517,10 +1521,12 @@ fn lower_child_hosts(
         };
         let host_type = match lang {
             Language::Rust => format!("<A as {parent_interface}>::{}", host.associated_type()),
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
-                String::new()
-            }
-            Language::Swift => no_swift_emitter("lower_child_hosts"),
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => String::new(),
         };
         hosts.entry(operation).or_insert(host);
         (call, host_type)
@@ -2134,13 +2140,7 @@ fn build_interface(
         }
         Language::Swift => {
             // A host is an object the machine holds and does not own the identity of, so
-            // the interface is a class-bound protocol and a recorder is a class. A child
-            // that declares acts is refused before a renderer runs
-            // (`swift_invoke_unlowered`), so no operation answers a child's host here.
-            debug_assert!(
-                children.is_empty(),
-                "a Swift machine builds no child with a host"
-            );
+            // the interface is a class-bound protocol and a recorder is a class.
             for (name, sig) in sigs {
                 methods.push_str(&format!(
                     "    func {}({})\n",
@@ -2148,10 +2148,19 @@ fn build_interface(
                     plist(sig).join(", ")
                 ));
             }
+            // The host of a child is an object the parent's host gives, one for each start
+            // of the invoke: an existential of the child's own interface.
+            for child in children {
+                methods.push_str(&format!(
+                    "    func {}() -> any {}\n",
+                    method_name(lang, &child.operation),
+                    child.child_interface
+                ));
+            }
             format!(
                 "{}public protocol {interface_name}: AnyObject {{\n{methods}}}\n\n{}",
                 doc("/// "),
-                swift_recording_host(interface_name, sigs, has_duty)
+                swift_recording_host(interface_name, sigs, children, has_duty)
             )
         }
     }
@@ -2164,14 +2173,44 @@ fn build_interface(
 /// Generated from the same signatures as the interface, so a new `<sce:action>` is a
 /// new recorded call and a changed argument a changed payload. A call is a case of
 /// [`Call`] and compares by value; a call with no argument is a case with none.
+///
+/// A host that answers a child's host cannot invent one, so the recorder of such a parent
+/// takes one source per child, a function the test gives, and records each question beside
+/// the acts. The test keeps what the source answers, which is where it reads what the child
+/// was asked to do.
 fn swift_recording_host(
     interface_name: &str,
     sigs: &BTreeMap<String, Signature>,
+    children: &[ChildHost],
     has_duty: bool,
 ) -> String {
     let lang = Language::Swift;
     let mut cases = String::new();
     let mut methods = String::new();
+    let mut sources = String::new();
+    let mut source_params: Vec<String> = Vec::new();
+    let mut source_inits = String::new();
+    for child in children {
+        let method = method_name(lang, &child.operation);
+        // A backticked name is a source's name without them.
+        let source = format!("{}Source", method.trim_matches('`'));
+        sources.push_str(&format!(
+            "    /// Answers the host `{method}` is asked for; the test keeps what it answers.\n    \
+             private let {source}: () -> any {}\n",
+            child.child_interface
+        ));
+        source_params.push(format!(
+            "{source}: @escaping () -> any {}",
+            child.child_interface
+        ));
+        source_inits.push_str(&format!("        self.{source} = {source}\n"));
+        cases.push_str(&format!("        case {method}\n"));
+        methods.push_str(&format!(
+            "\n    public func {method}() -> any {} {{\n        calls.append(.{method})\n        \
+             return {source}()\n    }}\n",
+            child.child_interface
+        ));
+    }
     for (name, sig) in sigs {
         let method = method_name(lang, name);
         let types: Vec<String> = sig.iter().map(|(_, t)| host_param_type(lang, t)).collect();
@@ -2202,14 +2241,27 @@ fn swift_recording_host(
     } else {
         ""
     };
+    let init = if children.is_empty() {
+        "    public init() {}\n".to_string()
+    } else {
+        format!(
+            "    public init({}) {{\n{source_inits}    }}\n",
+            source_params.join(", ")
+        )
+    };
+    let sources = if sources.is_empty() {
+        String::new()
+    } else {
+        format!("{sources}\n")
+    };
     format!(
         "/// [`{interface_name}`] that performs nothing and records every call in order: the\n\
          /// host a test drives the machine with. Read `calls` after the machine has run; each\n\
          /// call is compared by value.\n\
          public final class Recording{interface_name}: {interface_name} {{\n    \
          /// One recorded host call.\n    public enum Call: Equatable {{\n{cases}    }}\n\n    \
-         /// Every call so far, oldest first.\n    public private(set) var calls: [Call] = []\n\n    \
-         public init() {{}}\n\n{realization}    \
+         /// Every call so far, oldest first.\n    public private(set) var calls: [Call] = []\n\n\
+         {sources}{init}\n{realization}    \
          /// Forgets the calls recorded so far.\n    public func clear() {{\n        \
          calls.removeAll()\n    }}\n{methods}}}\n"
     )
