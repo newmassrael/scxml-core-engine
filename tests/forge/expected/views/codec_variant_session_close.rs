@@ -206,6 +206,11 @@ impl CodecVariantSessionClose {
     /// Fill `_out` with what this value says, as the view of any other codec
     /// does (`CodecVariantSessionCloseView` is this type, so it takes part in the same
     /// call).
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
     pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
         _out.clone_from(self);
         Ok(())
