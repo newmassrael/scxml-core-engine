@@ -15786,7 +15786,7 @@ mod tests {
                     feature: "request-put-del".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0000000000000000","code":"codec/variant-feature-on-required-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'request': <sce:arm value=0x3 default=\"true\"> names the build feature 'request-put-del', and every build must hold that arm: the codec's Default value is built from it; remove feature=\"request-put-del\" from it","actual":"request-put-del"}"#,
+                r#"{"v":1,"id":"fnv1a:adde1aedd18a1d68","code":"codec/variant-feature-on-required-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'request': <sce:arm value=0x3 default=\"true\"> names the build feature 'request-put-del', and every build must hold that arm: the codec's Default value is built from it; remove feature=\"request-put-del\" from it","actual":"request-put-del"}"#,
             ),
             // ── RFC variant-default-overlay — deploy.yaml overlay ─
             (
