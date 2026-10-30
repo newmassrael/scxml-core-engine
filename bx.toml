@@ -340,6 +340,7 @@ outputs = [
     "backends/go/tests/**",
     "backends/go/forge-runtime/round_trip/generated/**",
     "backends/swift/tests/Sources/**",
+    "backends/swift/tests/Tests/StaticDatamodelTests/NumericalConformanceTests.swift",
     "backends/python/tests/**",
     "integration_resources/**",
     "sce/src/mesh/generated/**",

@@ -1175,6 +1175,49 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
     }
 }
 
+/// The Swift type a canonical conformance type is held as: the width the algorithm's
+/// parameter declares, so a value read from the oracle crosses the call as it is.
+pub fn swift_type_for(ty: &str) -> &'static str {
+    match ty {
+        "bool" => "Bool",
+        "f64" => "Double",
+        "f32" => "Float",
+        "i8" => "Int8",
+        "i16" => "Int16",
+        "i32" => "Int32",
+        "i64" => "Int64",
+        "u8" => "UInt8",
+        "u16" => "UInt16",
+        "u32" => "UInt32",
+        "u64" => "UInt64",
+        "string" => "String",
+        "bytes" => "[UInt8]",
+        _ => "/* unknown canonical type */ Any",
+    }
+}
+
+/// Build a Swift expression that reads `raw` (an expression of the harness's `JSONValue`)
+/// as a value of canonical type `ty`, through the typed readers the harness scaffold
+/// defines (`oracleInteger`, `oracleReal`, ...). Each throws for a value of another shape,
+/// which is a defect of the oracle or the manifest and fails the test that read it.
+///
+/// An integer is read from the text the number was written in, so the whole range of a
+/// 64-bit type round-trips (the same reason the Kotlin reader goes through the content
+/// for `u64`).
+pub fn swift_unmarshal_expr(raw: &str, ty: &str) -> String {
+    match ty {
+        "bool" => format!("try oracleTruth({raw})"),
+        "f64" => format!("try oracleReal({raw})"),
+        "f32" => format!("Float(try oracleReal({raw}))"),
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" => {
+            format!("try oracleInteger({raw}, as: {}.self)", swift_type_for(ty))
+        }
+        "string" => format!("try oracleText({raw})"),
+        "bytes" => format!("try oracleBytes({raw})"),
+        _ => format!("/* unknown canonical type {ty} */"),
+    }
+}
+
 /// Register the conformance-specific type-mapping filters on a minijinja
 /// environment. Called from `render_harness` for every language so the
 /// same filter names are available to every template — but note that not
@@ -1201,6 +1244,9 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     env.add_filter("kt_type", |ty: String| kt_type_for(&ty).to_string());
     env.add_filter("kt_unmarshal", |raw: String, ty: String| {
         kt_unmarshal_expr(&raw, &ty)
+    });
+    env.add_filter("swift_unmarshal", |raw: String, ty: String| {
+        swift_unmarshal_expr(&raw, &ty)
     });
     // C11: `c_type` is the type-name mapping the harness
     // template uses for pre-baked oracle struct fields. `c_literal` is
@@ -1826,7 +1872,14 @@ pub fn lang_supports_fixture(
         return Ok(false);
     };
     if !crate::forge::codegen_matrix::template_ships(kind, language) {
-        return Ok(false);
+        // A backend that writes the kind in part is scheduled for the fixtures its
+        // generator writes, which it alone can say: it refuses the rest by name.
+        if !crate::forge::codegen_matrix::ships_in_part(kind, language)
+            || !has_conformance_fragment(language, fixture.spec.kind_str())
+            || !generator_writes_fixture(fixture, language, resource_dir)?
+        {
+            return Ok(false);
+        }
     }
     if matches!(language, crate::generator::Language::C11) && !c11_supported_kind(&fixture.spec) {
         return Ok(false);
@@ -1884,6 +1937,47 @@ pub fn lang_supports_fixture(
         }
     }
     Ok(true)
+}
+
+/// Whether the template tree holds the conformance fragment of `kind` for `language`
+/// (`<template_subdir>/kinds/<kind>.*`). A harness cannot render a fixture of a kind it has
+/// no fragment for, so a backend that writes the kind in part is scheduled for it only once
+/// the fragment is written: the harness grows one kind at a time, and a fixture is never
+/// skipped for want of a fragment that exists.
+fn has_conformance_fragment(language: crate::generator::Language, kind: &str) -> bool {
+    let layout = harness_layout(language);
+    crate::template_registry::embedded_template_with_prefix_exists(&format!(
+        "{}/kinds/{kind}.",
+        layout.template_subdir
+    ))
+}
+
+/// Whether the generator of `language`, which writes the fixture's kind in part, writes
+/// the fixture's document: the answer `sce-codegen check` gives. A refusal by name
+/// (`generate/unsupported-feature`, exit status 7) is a document the backend does not
+/// lower yet and the harness leaves out; any other failure is a defect and is returned,
+/// since a fixture skipped for it would be a conformance claim nobody made.
+fn generator_writes_fixture(
+    fixture: &Fixture,
+    language: crate::generator::Language,
+    resource_dir: &Path,
+) -> Result<bool, String> {
+    let path = fixture.document_path(resource_dir);
+    if !document_exists(&path) {
+        return Ok(false);
+    }
+    match crate::compile_forge_file(&path, language, &[], &crate::ForgeCompileOptions::default()) {
+        Ok(_) => Ok(true),
+        Err(refused) if refused.error.exit_code() == 7 => Ok(false),
+        Err(failed) => Err(format!(
+            "fixture {}: the {} generator failed on {} with something other than a refusal by \
+             name: {}",
+            fixture.name,
+            language.canonical_name(),
+            path.display(),
+            failed.error
+        )),
+    }
 }
 
 pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
@@ -3135,6 +3229,46 @@ pub fn render_harness(
     // (lookup's `function` id + procedure's `helpers_ordered` list) without
     // mutating the loaded manifest.
     let mut fixtures = manifest.fixtures.clone();
+
+    // Matrix-aware fixture filter (RFC §synth-5-J-4 single source of truth).
+    // The forge codegen matrix at `forge::codegen_matrix::template_ships`
+    // declares which `(kind, language)` pairs have a shipped product
+    // template. The conformance harness piggy-backs on the same gate
+    // because the conformance fragment is co-shipped with the product
+    // template — there is no fixture whose product emits but whose
+    // conformance fragment is missing, so a single matrix flip closes
+    // both sides at once. C11 layers an extra C11-specific predicate
+    // on top via `c11_supported_kind` (kept as a separate function so
+    // a C11-internal subset stays expressible without polluting
+    // the language-agnostic matrix). A backend that writes a kind in part
+    // is scheduled for the fixtures its generator writes
+    // (`generator_writes_fixture`).
+    // Single per-fixture gate (kind-matrix + C11 kind subset +
+    // MCU-only-on-non-MCU exclusion). Mirrors the same predicate
+    // applied by `sce-codegen list-fixtures --language <X>` so
+    // `cargo test` and `cmake --build` see identical fixture sets.
+    //
+    // Applied before the derived fields are filled, which read each fixture's
+    // document by the rules of its kind: a fixture this backend does not write
+    // has no symbol here to derive, and a derivation that has none for it is no
+    // defect of the document.
+    let mut filter_err: Option<String> = None;
+    fixtures.retain(|f| {
+        if filter_err.is_some() {
+            return false;
+        }
+        match lang_supports_fixture(f, language, resource_dir) {
+            Ok(b) => b,
+            Err(e) => {
+                filter_err = Some(e);
+                false
+            }
+        }
+    });
+    if let Some(e) = filter_err {
+        return Err(e);
+    }
+
     for f in fixtures.iter_mut() {
         let fixture_name = f.name.clone();
         let scxml_path = f.document_path(resource_dir);
@@ -3378,38 +3512,6 @@ pub fn render_harness(
             }
             _ => {}
         }
-    }
-
-    // Matrix-aware fixture filter (RFC §synth-5-J-4 single source of truth).
-    // The forge codegen matrix at `forge::codegen_matrix::template_ships`
-    // declares which `(kind, language)` pairs have a shipped product
-    // template. The conformance harness piggy-backs on the same gate
-    // because the conformance fragment is co-shipped with the product
-    // template — there is no fixture whose product emits but whose
-    // conformance fragment is missing, so a single matrix flip closes
-    // both sides at once. C11 layers an extra C11-specific predicate
-    // on top via `c11_supported_kind` (kept as a separate function so
-    // a C11-internal subset stays expressible without polluting
-    // the language-agnostic matrix).
-    // Single per-fixture gate (kind-matrix + C11 kind subset +
-    // MCU-only-on-non-MCU exclusion). Mirrors the same predicate
-    // applied by `sce-codegen list-fixtures --language <X>` so
-    // `cargo test` and `cmake --build` see identical fixture sets.
-    let mut filter_err: Option<String> = None;
-    fixtures.retain(|f| {
-        if filter_err.is_some() {
-            return false;
-        }
-        match lang_supports_fixture(f, language, resource_dir) {
-            Ok(b) => b,
-            Err(e) => {
-                filter_err = Some(e);
-                false
-            }
-        }
-    });
-    if let Some(e) = filter_err {
-        return Err(e);
     }
 
     // Per-kind presence flags let per-language harness scaffolds pull in

@@ -1,0 +1,26 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Enum kind: the oracle compares VALUES and keys on the source spelling; `v.ident` is the
+   member the declaration emits. The number a member holds is its raw value, compared as the
+   text the oracle wrote so no integer type is in the way, and the name the declaration
+   answers is the one the document wrote. #}
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == {{ f.variants | length }}, "{{ f.name }}: oracle variant count")
+    guard variants.count == {{ f.variants | length }} else {
+        return
+    }
+
+{% for v in f.variants %}
+    #expect(try oracleText(variants[{{ loop.index0 }}].member("name")) == "{{ v.name }}", "{{ f.name }} variant {{ loop.index0 }} name")
+    #expect(
+        try oracleNumberText(variants[{{ loop.index0 }}].member("value")) == String({{ f.name | to_pascal_case }}.{{ v.ident }}.rawValue),
+        "{{ f.name }}.{{ v.name }}"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect({{ f.name | to_pascal_case }}.{{ v.ident }}.declaredName == "{{ v.name }}", "{{ f.name }}.{{ v.name }} declared name")
+{% endfor %}

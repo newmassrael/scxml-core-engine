@@ -1,0 +1,109 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Algorithm kind: a single-output static function of its unit, the cross-language
+   byte-equivalence gate.
+
+   An argument is a scalar, a byte string (`[UInt8]`; the oracle writes an array of
+   integers), a list of scalars, a record (SCE_FORGE.md §4.12: the event schema's payload
+   struct, built field by field with its memberwise initializer) or a list of records.
+   Every scalar goes through the typed oracle readers of the scaffold, so it crosses the call
+   at the width the parameter declares.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) `throws`. A case that names a failure
+   (`"fails": "overflow"`) carries no `expected`; it is judged by the error's contract name
+   before anything reads `expected`, and every other case needs a value. #}
+{% set call %}{{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A record's field, read from the oracle as the struct holds it. A field that holds a value
+   of an enum is the enum fixture's own type, which the oracle writes as the name a variant
+   declares: the value is the variant of that name, built the same way for an expected value
+   and compared as the enum. #}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}try { () throws -> {{ fld.enum_document | to_pascal_case }} in switch try oracleText({{ raw }}) { {% for v in fld.variants %}case "{{ v.name }}": return {{ fld.enum_document | to_pascal_case }}.{{ v.ident }}; {% endfor %}default: throw OracleError(description: "{{ fixture }}.{{ fld.name }}: no variant is declared as the name the case writes") } }(){% else %}{{ raw | swift_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+    for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+{% set i = loop.index0 %}
+{% if arg_ty.record is defined %}
+        let arg{{ i }} = {{ arg_ty.record | to_pascal_case }}Payload(
+{% for fld in arg_ty.fields %}
+            {{ fld.ident }}: {{ field_value(fld, "args[" ~ i ~ "].member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
+{% endfor %}
+        )
+{% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
+{# A list of records is an `Array` of the schema's payload struct. #}
+{% set r = arg_ty.list_of %}
+        let arg{{ i }} = try oracleArray(args[{{ i }}]).map { element in
+            {{ r.record | to_pascal_case }}Payload(
+{% for fld in r.fields %}
+                {{ fld.ident }}: {{ field_value(fld, "element.member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
+{% endfor %}
+            )
+        }
+{% elif arg_ty.list_of is defined %}
+        let arg{{ i }} = try oracleArray(args[{{ i }}]).map { {{ "$0" | swift_unmarshal(arg_ty.list_of) }} }
+{% else %}
+        let arg{{ i }} = {{ ("args[" ~ i ~ "]") | swift_unmarshal(arg_ty) }}
+{% endif %}
+{% endfor %}
+{% if f.may_fail %}
+        let outcome = Result { try {{ call }} }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "{{ f.name }}")
+            case .failure(let error):
+                Issue.record("{{ f.name }}: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("{{ f.name }}: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("{{ f.name }}: the case expects a value, got \(outcome)")
+            continue
+        }
+{% else %}
+        let returned = {{ call }}
+{% endif %}
+{% if f.output.record is defined %}
+        let expected = testCase.member("expected")
+{# `try` cannot stand to the right of `==`, so each expected field is read first. #}
+{% for fld in f.output.fields %}
+        let expected{{ fld.name | to_pascal_case }} = {{ field_value(fld, "expected?.member(\"" ~ fld.name ~ "\")", f.name) }}
+        #expect(returned.{{ fld.ident }} == expected{{ fld.name | to_pascal_case }}, "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+{% elif f.output.list_of is defined and f.output.list_of.record is defined %}
+{# A list of records is an `Array` of the payload struct: compared by length, then field by
+   field. #}
+        let expected = try oracleArray(testCase.member("expected"))
+        #expect(returned.count == expected.count, "{{ f.name }} length")
+        for k in expected.indices where k < returned.count {
+            let e = expected[k]
+{% for fld in f.output.list_of.fields %}
+            let expected{{ fld.name | to_pascal_case }} = {{ field_value(fld, "e.member(\"" ~ fld.name ~ "\")", f.name) }}
+            #expect(returned[k].{{ fld.ident }} == expected{{ fld.name | to_pascal_case }}, "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+        }
+{% elif f.output.list_of is defined %}
+{# A `list<T>` return (SCE_FORGE.md §4.12) is an `Array` of the element. #}
+        let expected = try oracleArray(testCase.member("expected")).map { {{ "$0" | swift_unmarshal(f.output.list_of) }} }
+{% if f.output.compare == "tolerance" %}
+        #expect(returned.count == expected.count, "{{ f.name }} length")
+        for i in expected.indices where i < returned.count {
+            expectClose(Double(returned[i]), Double(expected[i]), "{{ f.name }}")
+        }
+{% else %}
+        #expect(returned == expected, "{{ f.name }}")
+{% endif %}
+{% elif f.output.type == "bytes" %}
+        let expected = try oracleBytes(testCase.member("expected"))
+        #expect(returned == expected, "{{ f.name }}")
+{% else %}
+        let expected = {{ "testCase.member(\"expected\")" | swift_unmarshal(f.output.type) }}
+{% if f.output.compare == "tolerance" %}
+        expectClose(Double(returned), Double(expected), "{{ f.name }}")
+{% else %}
+        #expect(returned == expected, "{{ f.name }}")
+{% endif %}
+{% endif %}
+    }

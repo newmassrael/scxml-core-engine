@@ -141,14 +141,18 @@ impl LanguageRoute {
             LanguageRoute::Check | LanguageRoute::ListFixtures => Language::ALL,
             LanguageRoute::Generate | LanguageRoute::Orchestrate => EMITTING.as_slice(),
             // The numerical harness is a Forge kind's, rendered per backend:
-            // a backend that emits statecharts and no Forge kind has none.
+            // a backend that emits statecharts and no Forge kind has none. One that
+            // writes a kind in part has one for the fixtures it writes
+            // (`conformance::lang_supports_fixture`): the harness is one of the checks
+            // written for a partial backend, and it is how the part it writes is held
+            // to the oracle.
             LanguageRoute::GenerateConformance => {
                 static SERVED: LazyLock<Vec<Language>> = LazyLock::new(|| {
                     EMITTING
                         .iter()
                         .copied()
                         .filter(|language| {
-                            crate::forge::codegen_matrix::emitting(
+                            crate::forge::codegen_matrix::emitting_in_part(
                                 crate::forge::model::ForgeKind::Transform,
                             )
                             .any(|emits| emits == *language)
@@ -219,11 +223,14 @@ impl LanguageRoute {
                  fixtures are not generated yet{}",
                 emitless_sentence(". ", " too"),
             )),
-            LanguageRoute::GenerateConformance => Some(format!(
-                "swift is absent because it emits no Forge kind yet, and the numerical harness \
-                 is one{}",
-                emitless_sentence(". ", " too"),
-            )),
+            LanguageRoute::GenerateConformance => (self.languages().len() < Language::ALL.len())
+                .then(|| {
+                    format!(
+                        "a backend that writes no Forge kind has no numerical harness to \
+                         render{}",
+                        emitless_sentence(". ", " too"),
+                    )
+                }),
             LanguageRoute::Generate | LanguageRoute::Orchestrate => {
                 let emitless = emitless_sentence("", "");
                 (!emitless.is_empty()).then_some(emitless)

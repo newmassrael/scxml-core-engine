@@ -1,0 +1,32 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Transform kind: pure static function(s) of its unit, a single output or a compound one.
+   A document that reads a field through previous() keeps a holder, which the generator
+   refuses (`swift_transform_unlowered`), so none reaches this fragment. #}
+    for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+{% if f.output %}
+        let expected = {{ "testCase.member(\"expected\")" | swift_unmarshal(f.output["type"]) }}
+        let actual = {{ f.name | to_pascal_case }}.{{ f.output.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.compare == "tolerance" %}
+        expectClose(Double(actual), Double(expected), "{{ f.name }}")
+{% else %}
+        #expect(actual == expected, "{{ f.name }}")
+{% endif %}
+{% else %}
+        let expected = testCase.member("expected")
+{% for co in f.compound_outputs %}
+        let expected_{{ co.key }} = {{ ("expected?.member(\"" ~ co.key ~ "\")") | swift_unmarshal(co["type"]) }}
+        let actual_{{ co.key }} = {{ f.name | to_pascal_case }}.{{ co.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if co.compare == "tolerance" %}
+        expectClose(Double(actual_{{ co.key }}), Double(expected_{{ co.key }}), "{{ f.name }} {{ co.key }}")
+{% else %}
+        #expect(actual_{{ co.key }} == expected_{{ co.key }}, "{{ f.name }} {{ co.key }}")
+{% endif %}
+{% endfor %}
+{% endif %}
+    }

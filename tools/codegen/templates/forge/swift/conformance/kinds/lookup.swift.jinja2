@@ -1,0 +1,28 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Lookup kind: a finite key-to-value table, a static function of its unit. A table that
+   answers a text is refused by the generator (`swift_lookup_unlowered`), so no fixture of
+   it reaches this fragment. `on_miss="error"` answers an optional, whose miss is a hard
+   failure here, since every case of the oracle is a key the table holds; `on_miss="default"`
+   answers the value itself. #}
+    for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+        let expected = {{ "testCase.member(\"expected\")" | swift_unmarshal(f.output.type) }}
+{% if f.on_miss == "error" %}
+        guard let actual = {{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}) else {
+            Issue.record("{{ f.name }} happy-path lookup miss")
+            continue
+        }
+{% else %}
+        let actual = {{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endif %}
+{% if f.output.compare == "tolerance" %}
+        expectClose(Double(actual), Double(expected), "{{ f.name }}")
+{% else %}
+        #expect(actual == expected, "{{ f.name }}")
+{% endif %}
+    }

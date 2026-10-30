@@ -1,0 +1,13 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Condition kind: a pure boolean predicate, a static function of its unit. #}
+    for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+        let expected = try oracleTruth(testCase.member("expected"))
+        let actual = {{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+        #expect(actual == expected, "{{ f.name }}")
+    }

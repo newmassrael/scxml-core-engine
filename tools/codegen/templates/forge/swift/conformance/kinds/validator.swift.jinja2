@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Validator kind: a stateful `validate(args...)` driven over the oracle's sequence. The
+   state it keeps advances only on a success, which the sequence is written to state: a
+   failing step asserts that the value it was handed was not kept. A validator that imports
+   another document is refused by the generator, so none reaches this fragment. #}
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let validator = {{ f.name | to_pascal_case }}()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+        let expected = step.member("expected")
+{% for field in f.output %}
+        let expected{{ field.name | to_pascal_case }} = {{ ('expected?.member("' ~ field.name ~ '")') | swift_unmarshal(field.type) }}
+{% endfor %}
+        let result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% for field in f.output %}
+{% if field.compare == "tolerance" %}
+        expectClose(Double(result.{{ field.name | to_camel_case }}), Double(expected{{ field.name | to_pascal_case }}), "{{ f.name }} step \(i) {{ field.name }}")
+{% else %}
+        #expect(result.{{ field.name | to_camel_case }} == expected{{ field.name | to_pascal_case }}, "{{ f.name }} step \(i) {{ field.name }}")
+{% endif %}
+{% endfor %}
+    }

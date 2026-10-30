@@ -392,7 +392,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // The CLI routes that write files serve the backends that write something.
     (Language::Swift, "`generate-w3c` route", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "`generate-integration` route", Why::NotYet(SWIFT_NO_EMITTER)),
-    (Language::Swift, "`generate-conformance` route", Why::NotYet(SWIFT_NO_EMITTER)),
     // The kind matrix.
     (Language::Swift, "forge kind `statechart`", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "forge kind `transform`", Why::NotYet(SWIFT_NO_FORGE)),
@@ -440,21 +439,12 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Why::NotYet("it lowers no expression yet, so no lowered artifact for the gate to read"),
     ),
     // The numerical conformance harness and its kind fragments.
-    (Language::Swift, "numerical conformance harness", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `algorithm`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `codec`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `condition`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `enum`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `event-schema`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `filter`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `interpolation`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `lookup`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `timer`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `transform`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `validator`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
     (Language::Swift, "W3C gate", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "Forge conformance gate", Why::NotYet(SWIFT_NO_FORGE)),

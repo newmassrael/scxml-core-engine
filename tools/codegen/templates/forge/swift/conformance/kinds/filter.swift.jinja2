@@ -1,0 +1,17 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Filter kind: a stateful `update(input)` driven over the oracle's sequence, each answer
+   held to the step's expected value. #}
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let filter = {{ f.name | to_pascal_case }}()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let input = {{ "step.member(\"input\")" | swift_unmarshal(f.input) }}
+        let expected = {{ "step.member(\"expected\")" | swift_unmarshal(f.output["type"]) }}
+        let actual = filter.update(input)
+{% if f.output.compare == "tolerance" %}
+        expectClose(Double(actual), Double(expected), "{{ f.name }} step \(i) input=\(input)")
+{% else %}
+        #expect(actual == expected, "{{ f.name }} step \(i) input=\(input)")
+{% endif %}
+    }

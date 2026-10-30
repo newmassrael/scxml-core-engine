@@ -58,6 +58,17 @@ pub fn embedded_templates_for(language: Language) -> Vec<(&'static str, &'static
         .collect()
 }
 
+/// Whether the embedded tree holds a template whose full name starts with `prefix`, the
+/// names the tree is addressed by from its root (`forge/swift/conformance/kinds/condition.`).
+///
+/// For a question about what a backend ships, which the tree answers and no per-language
+/// scope should: a language's own view of the tree strips its directory off.
+pub fn embedded_template_with_prefix_exists(prefix: &str) -> bool {
+    EMBEDDED_TEMPLATES
+        .iter()
+        .any(|&(name, _)| name.starts_with(prefix))
+}
+
 /// Every language the embedded registry can serve.
 ///
 /// Callers that present a language menu should derive it from this

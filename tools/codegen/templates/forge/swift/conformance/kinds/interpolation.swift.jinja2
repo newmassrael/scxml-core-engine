@@ -1,0 +1,14 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Interpolation kind: a pure static function of its unit, answering a real that is
+   compared within the oracle's tolerance. #}
+    for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+        let expected = try oracleReal(testCase.member("expected"))
+        let actual = {{ f.name | to_pascal_case }}.{{ f.symbol }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+        expectClose(actual, expected, "{{ f.name }}")
+    }

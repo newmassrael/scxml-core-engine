@@ -265,6 +265,16 @@ for i in "${!SCHEMAS[@]}"; do
     done
 done
 
+# The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
+# units above, held to what each computes. The harness lists the fixtures this backend's
+# generator writes and nothing else (`conformance::lang_supports_fixture`), so it holds
+# exactly the units the sweep wrote and a refusal by name leaves a fixture out of both.
+HARNESS_DIR="backends/swift/tests/Tests/StaticDatamodelTests"
+"$CODEGEN" generate-conformance \
+    --language swift \
+    --manifest "$CORPUS_MANIFEST" \
+    --output-dir "$HARNESS_DIR" > /dev/null
+
 echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none} and the event schemas ${SCHEMA_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
