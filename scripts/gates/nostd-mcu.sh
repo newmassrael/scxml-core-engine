@@ -155,7 +155,11 @@ cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
 #      `.text` plus `.rodata`: the figure a consumer multiplies by its machines;
 #   2. what the program pays once — the shared core's `.text`, by module path;
 #   3. that the core is not instantiated per machine — no core symbol carries a
-#      probe machine's type.
+#      probe machine's type;
+#   4. that a program pays for the Appendix D features its documents use
+#      (docs/adr/0066): the procedures only a `<history>` or a `<parallel>`
+#      reaches are linked when the first machine uses both, and absent from a
+#      third configuration, `plain-documents`, whose two machines use neither.
 sce_gate_step "MCU footprint budget (what a machine costs, what the core costs)"
 # Regenerated here rather than trusted: the native-action step above stages a
 # DIFFERENT machine into this same path, so whichever ran last decides what the
@@ -165,6 +169,12 @@ sce_gate_step "MCU footprint budget (what a machine costs, what the core costs)"
     -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \
     sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
     || sce_gate_fail "footprint probe generation"
+# The first machine of the `plain-documents` configuration: neither a `<history>` nor a
+# `<parallel>` (docs/adr/0066, decision 4).
+"$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
+    -l rust --no-std --output-dir backends/rust/probes/nostd-footprint/plain-machine/src \
+    sce-build/tests/fixtures/no_std/plain_footprint_probe.scxml >/dev/null 2>&1 \
+    || sce_gate_fail "footprint probe generation (plain documents)"
 
 FOOTPRINT_LIB="backends/rust/probes/nostd-footprint/target/thumbv7em-none-eabihf/release/libsce_nostd_footprint_probe.a"
 FOOTPRINT_BUDGET="backends/rust/probes/nostd-footprint/footprint.budget"
@@ -215,14 +225,59 @@ sce_footprint_core_symbols() {
             '$3 ~ /^[tTwW]$/ { name = substr($0, index($0, $4)); if (name ~ core) print $2 + 0, name }'
 }
 
+# The procedures only a `<history>` or a `<parallel>` reaches (FEATURE_PROCEDURES) that the image
+# links, one name per line.
+sce_footprint_feature_procedures() {
+    nm -C "$FOOTPRINT_LIB" 2>/dev/null |
+        awk -v pattern="^${FEATURE_PROCEDURE_PATTERN}\$" \
+            '$2 ~ /^[tTwW]$/ { name = substr($0, index($0, $3)); if (name ~ pattern) print name }' |
+        sort -u
+}
+
+# Whether the image links the feature procedures as its documents decide (docs/adr/0066): every
+# one of them when a document uses both features (`linked`), none when no document uses either
+# (`absent`). Held both ways for the reason every figure here is: a check that only ever finds
+# nothing would pass on an instrument that stopped seeing.
+sce_footprint_features() {
+    local label="$1" expected="$2"
+    local linked name missing=()
+    linked="$(sce_footprint_feature_procedures)"
+    case "$expected" in
+        linked)
+            for name in $FEATURE_PROCEDURES; do
+                grep -qx "sce_rust_runtime::helpers::microstep::$name" <<<"$linked" \
+                    || missing+=("$name")
+            done
+            if (( ${#missing[@]} > 0 )); then
+                printf '  [nostd-mcu] %s: not linked, though a document uses its feature: %s\n' \
+                    "$label" "${missing[*]}" >&2
+                printf '  [nostd-mcu] a renamed procedure, or a module FEATURE_PROCEDURES no longer names.\n' >&2
+                sce_gate_fail "MCU feature procedures not seen ($label)"
+            fi
+            ;;
+        absent)
+            if [[ -n "$linked" ]]; then
+                printf '  [nostd-mcu] %s: linked, though no document uses its feature:\n' "$label" >&2
+                printf '%s\n' "$linked" >&2
+                printf '  [nostd-mcu] the core reaches a feature only through the tables of a document that\n' >&2
+                printf '  [nostd-mcu] uses it (docs/adr/0066); a direct call is the whole feature in every program.\n' >&2
+                sce_gate_fail "MCU feature code in a program that uses no feature ($label)"
+            fi
+            ;;
+    esac
+    printf '  [nostd-mcu] %-16s feature procedures %s\n' "$label:" "$expected"
+}
+
 # One configuration: the image with one machine, then with two, and the core
 # read off the second, where it is a function of its own rather than inlined
 # into the only caller. Each figure held to its budget in both directions.
 sce_footprint_weigh() {
-    local label="$1" machine_budget="$2" core_budget="$3"; shift 3
+    local label="$1" machine_budget="$2" core_budget="$3" features="$4"
+    local stack_roots="$5" stack_budget="$6"; shift 6
     local one two machine core_syms core_total typed lo hi
     one="$(sce_footprint_image "$label, one machine" "$@")"
     two="$(sce_footprint_image "$label, two machines" "$@" --features second-machine)"
+    sce_footprint_features "$label" "$features"
     machine=$(( two - one ))
     read -r core_syms core_total < <(
         sce_footprint_core_symbols | awk '{ n++; s += $1 } END { printf "%d %d\n", n, s }'
@@ -275,7 +330,7 @@ sce_footprint_weigh() {
         sce_gate_fail "MCU shared core outside its budget ($label)"
     fi
 
-    sce_footprint_stack "$label"
+    sce_footprint_stack "$label" "$stack_roots" "$stack_budget"
 }
 
 # A disassembler for ARM Thumb: binutils for ARM when the machine has it, else LLVM's, which is
@@ -300,7 +355,7 @@ sce_stack_objdump() {
 # directions, for the reason the footprint is: a number that falls without a reason means the
 # instrument stopped seeing.
 sce_footprint_stack() {
-    local label="$1"
+    local label="$1" stack_roots="$2" stack_budget="$3"
     local objdump disassembly lo hi bytes report
     objdump="$(sce_stack_objdump)"
     [[ -n "$objdump" ]] \
@@ -312,15 +367,20 @@ sce_footprint_stack() {
 
     local roots=() recursion=() assume=() dispatch=()
     local item
-    for item in $STACK_ROOTS; do roots+=(--root "$item"); done
+    for item in $stack_roots; do roots+=(--root "$item"); done
     for item in $STACK_RECURSION; do recursion+=(--recursion "$item"); done
     for item in $STACK_ASSUME; do assume+=(--assume "$item"); done
-    for item in $STACK_DYN; do dispatch+=(--dyn "$item"); done
+    # Split with `read`, not by an unquoted expansion: the patterns hold `?` and `[`, which the
+    # shell would otherwise take as a glob against the files of the working directory.
+    local dyn_items=()
+    read -r -a dyn_items <<<"$STACK_DYN"
+    for item in "${dyn_items[@]}"; do dispatch+=(--dyn "$item"); done
 
     # `${recursion[@]+...}`: the list is empty while no walk recurses, and an empty array is an
     # unbound variable to `set -u` on a bash older than 4.4.
     report="$(python3 tools/mcu_stack/worst_case_stack.py "$disassembly" \
         "${roots[@]}" ${recursion[@]+"${recursion[@]}"} "${assume[@]}" "${dispatch[@]}" \
+        --dyn-complete "$STACK_DYN_COMPLETE" \
         --indirect "$STACK_INDIRECT_BYTES" \
         --min-functions "$STACK_MIN_FUNCTIONS" --report)" \
         || sce_gate_fail "worst-case stack could not be computed ($label)"
@@ -329,10 +389,10 @@ sce_footprint_stack() {
     [[ "$bytes" =~ ^[0-9]+$ ]] \
         || sce_gate_fail "worst-case stack gave no number ($label)"
 
-    lo=$(( STACK_BYTES - STACK_TOLERANCE_BYTES ))
-    hi=$(( STACK_BYTES + STACK_TOLERANCE_BYTES ))
+    lo=$(( stack_budget - STACK_TOLERANCE_BYTES ))
+    hi=$(( stack_budget + STACK_TOLERANCE_BYTES ))
     printf '  [nostd-mcu] %-16s worst-case stack %5d byte(s) (budget %d, band %d..%d; static, %s assumed)\n' \
-        "$label:" "$bytes" "$STACK_BYTES" "$lo" "$hi" \
+        "$label:" "$bytes" "$stack_budget" "$lo" "$hi" \
         "fmt $STACK_ASSUME, host callbacks $STACK_INDIRECT_BYTES B"
 
     if (( bytes > hi || bytes < lo )); then
@@ -340,7 +400,7 @@ sce_footprint_stack() {
         printf '%s\n' "$report" >&2
         printf '  [nostd-mcu] running %s; the budget was measured with %s\n' \
             "$(rustc --version)" "$MEASURED_WITH" >&2
-        printf '  [nostd-mcu] re-pin STACK_BYTES in %s if the change is meant, and say in the\n' \
+        printf '  [nostd-mcu] re-pin its stack budget in %s if the change is meant, and say in the\n' \
             "$FOOTPRINT_BUDGET" >&2
         printf '  [nostd-mcu] commit message what the stack bought.\n' >&2
         sce_gate_fail "MCU worst-case stack outside its budget ($label)"
@@ -352,9 +412,15 @@ sce_footprint_stack() {
 # no feature builds it (docs/adr/0053). Both builds are weighed: a feature
 # nothing builds is one that stops compiling and nobody finds out until a
 # consumer sets it.
-sce_footprint_weigh "diagnostics on" "$MACHINE_BYTES" "$CORE_BYTES" \
-    --features macrostep-diagnostics
-sce_footprint_weigh "diagnostics off" "$MACHINE_BYTES_NO_DIAGNOSTICS" "$CORE_BYTES_NO_DIAGNOSTICS"
+sce_footprint_weigh "diagnostics on" "$MACHINE_BYTES" "$CORE_BYTES" linked \
+    "$STACK_ROOTS" "$STACK_BYTES" --features macrostep-diagnostics
+sce_footprint_weigh "diagnostics off" "$MACHINE_BYTES_NO_DIAGNOSTICS" "$CORE_BYTES_NO_DIAGNOSTICS" \
+    linked "$STACK_ROOTS" "$STACK_BYTES"
+# A program none of whose documents has a `<history>` or a `<parallel>`, built as a bare-metal
+# crate that asks for no feature builds it: the shape of a consumer whose machines are flat or
+# nested compound states, which pays for neither feature (docs/adr/0066, decision 4).
+sce_footprint_weigh "plain documents" "$MACHINE_BYTES_PLAIN" "$CORE_BYTES_PLAIN" absent \
+    "$STACK_ROOTS_PLAIN" "$STACK_BYTES_PLAIN" --features plain-documents
 
 # The stack tool's own cases: a trait object's call is followed into every
 # implementation it may reach, which is what the stack above rests on.

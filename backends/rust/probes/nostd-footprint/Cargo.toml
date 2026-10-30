@@ -45,6 +45,9 @@ sce-nostd-build-probe = { path = "../nostd-build" }
 # The second machine of the image, linked only with `second-machine`. A
 # different document from the first, so nothing of one can stand for the other.
 sce-nostd-queue-size-machine = { path = "../nostd-queue-size/machine", optional = true }
+# The first machine of the image with `plain-documents`, in place of the
+# `<parallel>` and `<history>` one.
+sce-nostd-plain-machine = { path = "plain-machine", optional = true }
 
 [features]
 # A pass-through so the gate can weigh the same engine twice — once reporting
@@ -61,6 +64,11 @@ macrostep-diagnostics = ["sce-rust-runtime/macrostep-diagnostics"]
 # consumer multiplies by its machine count, whatever the inliner attributes to
 # which symbol.
 second-machine = ["dep:sce-nostd-queue-size-machine"]
+# A program none of whose documents has a `<history>` or a `<parallel>`
+# (docs/adr/0066, decision 4): the first machine is one without either, so with
+# `second-machine` the image is the shape of a consumer whose machines are flat
+# or nested compound states, which links neither feature's procedures.
+plain-documents = ["dep:sce-nostd-plain-machine"]
 
 # Release, because a debug build measures the inliner's day off. The consumer
 # reports on `--release`, and a footprint compared across two profiles is two

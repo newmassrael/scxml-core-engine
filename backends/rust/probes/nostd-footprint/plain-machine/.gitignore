@@ -1,0 +1,3 @@
+# Generated no_std machine + sourcemap (produced fresh by the gate step; never committed).
+src/*_sm.rs
+src/sce_sourcemap.json

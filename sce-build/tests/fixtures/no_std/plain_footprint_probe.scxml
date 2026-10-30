@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The footprint instrument's document of a program that uses neither a
+  <history> nor a <parallel> (docs/adr/0066, decision 4).
+
+  Consumed by sce-nostd-footprint-probe with its `plain-documents` feature,
+  which links this machine and the queue-size probe's, neither of which has
+  either feature: the shape of a consumer whose machines are flat or nested
+  compound states. The gate holds that image's shared core to a budget of its
+  own and refuses it if a procedure only a <history> or a <parallel> reaches
+  is linked, so a change that pulls feature code back into every program is a
+  red rather than a few hundred bytes nobody reads.
+
+  It holds what such a machine does use: nested compound states with initial
+  transitions, an external self-transition that exits and re-enters its
+  subtree, an internal transition, a targetless one, an eventless one, a
+  raised event and a delayed send. No script, invoke or external data, so the
+  document is no_std-eligible.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="plain_footprint_probe"
+       version="1.0"
+       initial="link"
+       datamodel="ecmascript">
+  <state id="link" initial="down">
+    <transition event="reset" target="link"/>
+    <state id="down">
+      <transition event="e1" target="settling"/>
+    </state>
+    <state id="settling">
+      <transition target="up"/>
+    </state>
+    <state id="up" initial="idle">
+      <transition event="e2" type="internal" target="busy"/>
+      <state id="idle">
+        <onentry>
+          <raise event="e2"/>
+        </onentry>
+      </state>
+      <state id="busy">
+        <onentry>
+          <send event="stop" delay="5ms"/>
+        </onentry>
+        <transition event="e3"/>
+        <transition event="stop" target="done"/>
+      </state>
+    </state>
+  </state>
+  <final id="done"/>
+</scxml>

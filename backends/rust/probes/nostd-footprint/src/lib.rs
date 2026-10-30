@@ -27,8 +27,19 @@
 #![no_std]
 #![deny(warnings)]
 
-use sce_nostd_build_probe::{ParallelHistoryProbeEvent, ParallelHistoryProbePolicy};
 use sce_rust_runtime::Engine;
+
+// The first machine: a `<parallel>` with two `<history>`, or with
+// `plain-documents` one with neither (docs/adr/0066, decision 4). The image
+// links only the one named here.
+#[cfg(not(feature = "plain-documents"))]
+use sce_nostd_build_probe::{
+    ParallelHistoryProbeEvent as FirstEvent, ParallelHistoryProbePolicy as FirstPolicy,
+};
+#[cfg(feature = "plain-documents")]
+use sce_nostd_plain_machine::{
+    PlainFootprintProbeEvent as FirstEvent, PlainFootprintProbePolicy as FirstPolicy,
+};
 
 /// A staticlib for a bare target has to name what happens on panic. Halting is
 /// the honest answer for something that is never run — this crate is compiled
@@ -52,7 +63,7 @@ const PROBE_SESSION_ID: &str = "footprint-probe";
 /// having no observable result.
 #[no_mangle]
 pub extern "C" fn sce_footprint_step() -> bool {
-    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
         return false;
     };
     let mut engine = Engine::new(policy);
@@ -66,12 +77,32 @@ pub extern "C" fn sce_footprint_step() -> bool {
 /// from an interrupt handler uses.
 #[no_mangle]
 pub extern "C" fn sce_footprint_process_event() -> bool {
-    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
         return false;
     };
     let mut engine = Engine::new(policy);
     engine.initialize();
-    engine.process_event(ParallelHistoryProbeEvent::E1);
+    engine.process_event(FirstEvent::E1);
+    engine.is_running()
+}
+
+/// A second machine of a different document, driven the way the first is, with
+/// the `second-machine` feature only (docs/adr/0064, decision 7). The gate
+/// weighs the image with and without it: the difference is what one more
+/// machine costs, and the code the machines share is in both.
+#[cfg(feature = "second-machine")]
+#[no_mangle]
+pub extern "C" fn sce_footprint_second_machine() -> bool {
+    use sce_nostd_queue_size_machine::{
+        EventQueueCapacityProbeEvent, EventQueueCapacityProbePolicy,
+    };
+    let Ok(policy) = EventQueueCapacityProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return false;
+    };
+    let mut engine = Engine::new(policy);
+    engine.initialize();
+    engine.step();
+    engine.process_event(EventQueueCapacityProbeEvent::Stop);
     engine.is_running()
 }
 
@@ -85,28 +116,10 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 /// leaving this out is how the two configurations are weighed against each
 /// other, and an entry point that called an accessor the build does not have
 /// would just be a build error dressed as a measurement.
-/// A second machine of a different document, driven the way the first is, with
-/// the `second-machine` feature only (docs/adr/0064, decision 7). The gate
-/// weighs the image with and without it: the difference is what one more
-/// machine costs, and the code the machines share is in both.
-#[cfg(feature = "second-machine")]
-#[no_mangle]
-pub extern "C" fn sce_footprint_second_machine() -> bool {
-    use sce_nostd_queue_size_machine::{EventQueueCapacityProbeEvent, EventQueueCapacityProbePolicy};
-    let Ok(policy) = EventQueueCapacityProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return false;
-    };
-    let mut engine = Engine::new(policy);
-    engine.initialize();
-    engine.step();
-    engine.process_event(EventQueueCapacityProbeEvent::Stop);
-    engine.is_running()
-}
-
 #[cfg(feature = "macrostep-diagnostics")]
 #[no_mangle]
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {
-    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
         return 0;
     };
     let mut engine = Engine::new(policy);

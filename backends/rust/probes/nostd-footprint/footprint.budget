@@ -74,8 +74,17 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables)::|engine::Turn[>:])'
 
 # The probe machines' crates (an extended regular expression): a core symbol
-# that names either was instantiated for that machine.
-MACHINE_TYPES='sce_nostd_build_probe::|sce_nostd_queue_size_machine::'
+# that names one was instantiated for that machine.
+MACHINE_TYPES='sce_nostd_build_probe::|sce_nostd_queue_size_machine::|sce_nostd_plain_machine::'
+
+# The procedures of Appendix D only a `<history>` or a `<parallel>` reaches, by
+# their names in `helpers::microstep`: the functions `HISTORY` and `PARALLEL`
+# hold (docs/adr/0066). The core reaches them only through a document's tables,
+# so an image links them when one of its documents uses the feature and not
+# otherwise; the gate holds both (`linked` with the first machine's `<parallel>`
+# and `<history>`, `absent` with `plain-documents`).
+FEATURE_PROCEDURES='effective_history_targets descend_into_history history_recorded_from record_histories default_regions remove_conflicting_transitions parallel_in_final_state'
+FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROCEDURES// /|})"
 
 # What one more machine costs with the macrostep report: the probe built with
 # its `macrostep-diagnostics` feature, which turns on the runtime's feature of
@@ -88,7 +97,10 @@ MACHINE_TYPES='sce_nostd_build_probe::|sce_nostd_queue_size_machine::'
 #
 # 1774 -> 1734 (2026-10-30): the probe is built at the consumer's
 # `opt-level = "s"` (see the probe's Cargo.toml), images of 193380 and 195114.
-MACHINE_BYTES=1734
+#
+# 1734 -> 1750 (2026-10-30): the tables carry the feature procedures
+# (docs/adr/0066), images of 194038 and 195788.
+MACHINE_BYTES=1750
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -107,7 +119,10 @@ MACHINE_BYTES=1734
 # machine, so two machines are 1894 bytes larger than before and the second
 # machine saves 495. The consumer's kit measured +2444 at two machines, its
 # machines being larger: this figure is what the work after ADR 0064 is held to.
-MACHINE_BYTES_NO_DIAGNOSTICS=1630
+#
+# 1630 -> 1648 (2026-10-30): the tables carry the feature procedures
+# (docs/adr/0066), images of 193718 and 195366.
+MACHINE_BYTES_NO_DIAGNOSTICS=1648
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -116,14 +131,41 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1630
 # 5356 -> 6066 over 13 symbols (2026-10-30): at `opt-level = "s"` the core's
 # small functions are inlined into the large ones, which is what the consumer's
 # image carries (6.5 KB there).
-CORE_BYTES=6066
+#
+# 6066 -> 6696 over 20 symbols (2026-10-30): the procedures only a `<history>`
+# or a `<parallel>` reaches are called through the tables (docs/adr/0066), so
+# they are functions of their own and are not inlined into their callers. A
+# program that uses the features pays this; one that does not pays the far
+# smaller CORE_BYTES_PLAIN below.
+CORE_BYTES=6696
 
 # The same without the report.
 #
 # 5346 over 37 symbols (2026-10-30), on rustc 1.99.1.
 #
 # 5346 -> 6048 over 13 symbols (2026-10-30), at `opt-level = "s"`.
-CORE_BYTES_NO_DIAGNOSTICS=6048
+#
+# 6048 -> 6678 over 20 symbols (2026-10-30), the feature procedures called
+# through the tables (docs/adr/0066), as above.
+CORE_BYTES_NO_DIAGNOSTICS=6678
+
+# A program none of whose documents has a `<history>` or a `<parallel>`, without
+# the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
+# first machine is `plain_footprint_probe.scxml` and whose second is the
+# queue-size probe's. What one more such machine costs, and the core such a
+# program pays once — the figure a consumer of flat or nested compound
+# machines carries, and the one the features' procedures must stay out of.
+#
+# 1618 and 4528 over 11 symbols (2026-10-30), on rustc 1.99.1: images of 190566
+# and 192184. The core of such a program before docs/adr/0066 was the 6048 of
+# the configuration above: 1520 bytes of it were the features'. The same two
+# documents at 49e40c9a72, the tree before Appendix D ran over tables, measure
+# 188064 and 190137: two of them still cost 2047 bytes more than they did
+# there, because each machine's own engine (`Engine<P>` and its hooks) is
+# 1.0-1.5 KB where its copy of the algorithm was 1.8-3.8 KB, and the core is
+# paid once on top. That is the figure the engine's next change is held to.
+MACHINE_BYTES_PLAIN=1618
+CORE_BYTES_PLAIN=4528
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -135,8 +177,10 @@ TOLERANCE_BYTES=133
 # The instrument's own floor: below this many core symbols the probe is not
 # measuring the core at all — a moved module, a bitcode staticlib, a driver
 # that stopped driving. 37 and 38 at `opt-level = "z"`; 13 at "s", where the
-# small functions are inlined into the large ones. The floor sits under that,
-# above the none a blind instrument sees.
+# small functions are inlined into the large ones; 20 once the feature
+# procedures became functions of their own (docs/adr/0066), and 11 in the
+# `plain-documents` image, which links none of them. The floor sits under
+# those, above the none a blind instrument sees.
 MIN_CORE_SYMBOLS=8
 
 # ── The worst-case stack ────────────────────────────────────────────────────
@@ -148,9 +192,10 @@ MIN_CORE_SYMBOLS=8
 # disassembly: each function's frame (what its prologue takes, the return address among it) and
 # the largest sum along the calls of the object, from the roots below.
 #
-# WHAT IT IS NOT. Static, and the probe's own profile (`opt-level = "z"`, fat LTO): inlining
-# moves a frame from one function to its caller, so the number is a property of this build and
-# a consumer's own profile will differ; what it holds is that the engine's chain does not grow
+# WHAT IT IS NOT. Static, and the probe's own profile (`opt-level = "s"`, fat LTO): inlining
+# moves a frame from one function to its caller, so the number is a property of this build, and
+# a consumer's image, with its own code and toolchain around the engine, will differ even at the
+# same `opt-level`; what it holds is that the engine's chain does not grow
 # unseen. It is read off the two-machine image, where the core reaches each machine through a
 # trait object and the calls are indirect.
 #
@@ -186,13 +231,60 @@ MIN_CORE_SYMBOLS=8
 #
 # 1232 -> 1368 (2026-10-30): the probe is built at the consumer's `opt-level = "s"`, which
 # inlines the core's small functions into its large ones and their frames with them.
+#
+# 1368 -> 1392 (2026-10-30): the feature procedures are reached through the tables
+# (docs/adr/0066), and the chain is `initialize` (360) through `run_main_event_loop` (328),
+# `Turn::run_main_event_loop`, `take_event`, `take_microstep` (232), `enter_states` (224),
+# `walk_entry` (136) and `default_regions` (48), now a function of its own.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
 STACK_INDIRECT_BYTES=64
-# Space-separated `caller=callees` pairs; `\s` rather than a space inside a pattern, since the
-# list is split on whitespace.
-STACK_DYN='sce_rust_runtime::helpers::microstep::=\sas\ssce_rust_runtime::helpers::microstep::Behaviour>:: sce_rust_runtime::engine::Turn=\sas\ssce_rust_runtime::(engine::MainLoop|helpers::microstep::Behaviour)>::'
+# Space-separated `caller=callees` pairs of regular expressions; `\s` rather than a space inside
+# a pattern, since the list is split on whitespace.
+#
+# The core calls through two kinds of pointer: a machine's hooks (`Behaviour`, `MainLoop`), and
+# since docs/adr/0066 the feature procedures a document's tables carry. The private fields of
+# `HistoryProcedures` and `ParallelProcedures` make `HISTORY` and `PARALLEL` their only values,
+# so a call through one reaches FEATURE_PROCEDURES and nothing else. Which field a call reads is
+# not in the disassembly, but which calls a function's source makes is: a function's pointer
+# calls reach the hooks and the feature procedures its own source calls lead to, and an inlining
+# moves code only along those calls. So each core function below names what its calls may
+# reach, and no more. Following every pointer call into every hook and procedure would be sound
+# too, but it charges impossible paths and makes cycles that do not exist (a `Behaviour` hook
+# asks isInFinalState, whose `<parallel>` procedure would then "reach" a procedure that reaches
+# the hook again).
+#
+# STACK_DYN_COMPLETE names the core's own functions: an indirect call in one that no caller
+# below matches fails the run, rather than passing as a host callback of STACK_INDIRECT_BYTES,
+# and what its callers state is all it reaches. A machine's own functions keep the allowance,
+# for the host's pointers (its clock) an inlining may put there; what they may reach of the
+# core's pointers is named as well: a `Behaviour` hook asks isInFinalState and nothing else of
+# the features, and the machine's `Engine` and `MainLoop` code drives the whole main loop.
+P='sce_rust_runtime::helpers::microstep::'
+HOOKS='\sas\ssce_rust_runtime::(engine::MainLoop|helpers::microstep::Behaviour)>::'
+EFFECTIVE="^${P}effective_history_targets\$"
+WALK="^${P}(descend_into_history|history_recorded_from|default_regions)\$"
+ALL_FEATURES="^${FEATURE_PROCEDURE_PATTERN}\$"
+STACK_DYN="^${P}(effective_target_states_on|compute_exit_set|remove_conflicting_transitions)\$=${EFFECTIVE}"
+STACK_DYN+=" ^${P}(walk_entry|listed_target)\$=${WALK}"
+STACK_DYN+=" ^${P}(add_transition_to_entry_set|compute_entry_set|current_state|enter_states|enter_entry_set)\$=(${HOOKS}|${EFFECTIVE}|${WALK})"
+STACK_DYN+=" ^${P}select_transitions\$=(${HOOKS}|^${P}remove_conflicting_transitions\$|${EFFECTIVE})"
+STACK_DYN+=" ^${P}(exit_states|compute_states_to_exit|exit_interpreter|execute_transition_content)\$=(${HOOKS}|^${P}record_histories\$|${EFFECTIVE})"
+STACK_DYN+=" ^${P}is_in_final_state\$=^${P}parallel_in_final_state\$"
+STACK_DYN+=" ^(${P}microstep\$|<sce_rust_runtime::engine::Turn>)=(${HOOKS}|${ALL_FEATURES})"
+STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
+STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<|\sas\ssce_rust_runtime::engine::MainLoop>::=${ALL_FEATURES}"
+STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[>:])'
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1368
+STACK_BYTES=1392
+
+# The roots and the worst-case stack of the `plain-documents` image, whose first machine is
+# `PlainFootprintProbePolicy`.
+#
+# 1152 (2026-10-30): `initialize` (272) through `run_main_event_loop` (240), the shared main
+# loop, `take_microstep` (216), `enter_states` (224) and `walk_entry` (136); no feature
+# procedure is linked, so none is on it.
+STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::step Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::initialize Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::process_event'
+STACK_BYTES_PLAIN=1152
 STACK_TOLERANCE_BYTES=256
