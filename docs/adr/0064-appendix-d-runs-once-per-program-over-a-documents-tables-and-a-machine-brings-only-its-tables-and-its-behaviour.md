@@ -273,7 +273,7 @@ probe image it cost 156 bytes (a ring buffer that does not carry its capacity) a
 (numbered entries on the existing deque). Converting at the queue's two ends costs more than
 the sharing saves while the code on both sides still speaks the machine's types. That move
 pays only as part of the whole engine speaking numbers, which is a change of a different size;
-it is ADR 0065's to decide.
+it is an ADR of its own to decide.
 
 **The gate (decision 7)**, in `scripts/gates/nostd-mcu.sh` and `footprint.budget`:
 
