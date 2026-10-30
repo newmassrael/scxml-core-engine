@@ -417,7 +417,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (
         Language::Swift,
         "forge kind `broadcast-log`",
-        Why::NotYet("a broadcast log needs the sequence-locked ring and its fences, and Swift has no forge runtime yet; it is built after the other kinds"),
+        Why::NotYet("a broadcast log needs the sequence-locked ring and its fences, which Swift's forge runtime does not have yet; it is built after the other kinds"),
     ),
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),
@@ -467,17 +467,23 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
-    "Swift writes a datamodel null statechart so far; the rest of the emitter is built after it";
+    "Swift writes a statechart in part, a datamodel null one or a sce-static one whose constructs it \
+     lowers, and refuses the rest by name (`generator::reject_swift_unsupported_features`); the \
+     emitters for the W3C, integration and conformance suites are built after it, and the W3C \
+     documents need a script engine Swift has not got";
 
-/// Swift lowers the scalar core of the static data model and refuses the rest by
-/// name (`generator::lowers_static_datamodel_in_part`).
+/// Swift lowers a sce-static machine in part and refuses the rest by name
+/// (`generator::lowers_static_datamodel_in_part`).
 const SWIFT_STATIC_IN_PART: &str =
-    "Swift lowers the scalar variables, guards and executable content of a sce-static machine; \
-     its payloads, enums, records, lists, optionals, sends and invokes are built after them";
+    "Swift lowers the variables, payloads, enums, records, lists, optionals, sends to its own \
+     queues and parent, child sessions and host actions of a sce-static machine; a send to a Mesh \
+     peer or over HTTP, a host-run invoke, a child that declares host acts and an invoke \
+     idlocation are refused by name";
 
-/// Swift's Forge emitters are built after its statechart emitter and runtime.
+/// Swift writes the Forge kinds in part (`codegen_matrix::ships_in_part`).
 const SWIFT_NO_FORGE: &str =
-    "Swift's Forge emitters are built after its statechart emitter and runtime";
+    "Swift writes each Forge kind in part and refuses the rest of it by name; the codecs, the \
+     procedure and observer kinds and the numerical conformance harness are built after them";
 
 /// Swift has no host Mesh core, as Go, Python and C11 have none.
 const SWIFT_NO_MESH: &str =
