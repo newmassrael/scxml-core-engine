@@ -69,8 +69,11 @@
             "{{ f.name }}.{{ field.name }}"
         );
 {% else %}
+{# A field declared `int64` is already the `i64` the oracle is read as; any
+   other width is widened to it, and a cast of an `i64` to itself is noise the
+   lints refuse. #}
         assert_eq!(
-            payload.{{ field.name | to_snake_case }} as i64,
+            payload.{{ field.name | to_snake_case }}{% if field.sce_type != "int64" %} as i64{% endif %},
             fields[{{ loop.index0 }}]["value"].as_i64().unwrap(),
             "{{ f.name }}.{{ field.name }}"
         );
