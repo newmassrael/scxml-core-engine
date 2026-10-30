@@ -1071,23 +1071,6 @@ pub struct Engine<P: StatePolicy> {
     /// for cancel-free machines (no_std ring shrinks by the per-entry
     /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
     pub(crate) scheduler: PullScheduler<P::ScheduledSendId>,
-    /// Where this engine reads "now" from — see [`SceClock`].
-    pub(crate) clock: SceClock,
-    /// The reading [`clock`](Self::clock) gave when the current turn began, or
-    /// `None` between turns. See [`begin_turn`](Self::begin_turn).
-    pub(crate) turn_now: Option<SchedTimePoint>,
-    /// Whether [`tick`](Self::tick) has ever run on this engine.
-    ///
-    /// A machine whose policy sets
-    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) has delayed
-    /// events that only `tick` can deliver, so a host driving it with `step`
-    /// alone waits forever with nothing said. This flag is what tells the two
-    /// cases apart: once `tick` has run the host owns a clock and its `step`
-    /// calls are its own business, so the count below stops.
-    pub(crate) tick_has_run: bool,
-    /// Macrosteps taken on a scheduler-driven machine before any
-    /// [`tick`](Self::tick) — see [`unattended_scheduler_steps`](Self::unattended_scheduler_steps).
-    pub(crate) unattended_scheduler_steps: u32,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -1147,10 +1130,6 @@ macro_rules! engine_initial_fields {
             #[cfg(feature = "http-send")]
             on_http_send: None,
             scheduler: PullScheduler::new(),
-            clock: SceClock::START,
-            turn_now: None,
-            tick_has_run: false,
-            unattended_scheduler_steps: 0,
             donedata_at_final: SceString::new(),
             auto_send_seq: 0,
         }
@@ -1260,21 +1239,10 @@ impl<P: StatePolicy> Engine<P> {
     // Scheduler clock readers (per-build cfg-branched, HAL-routed under no_std)
     // ════════════════════════════════════════
 
-    /// Take a fresh reading from [`clock`](Self::clock), whatever turn the
-    /// engine is in.
-    ///
-    /// Only [`begin_turn`](Self::begin_turn) and the between-turn branch of
-    /// [`sched_now`](Self::sched_now) call this — everything else asks
-    /// `sched_now`, so that the turn latch is the default and a live reading
-    /// is the exception that has to be spelled.
-    #[inline]
-    fn clock_read(&self) -> SchedTimePoint {
-        match self.clock {
-            SceClock::Hal => <P::Hal as Hal>::now_ticks_ms(),
-            SceClock::Manual(now) => now,
-            SceClock::Source(read) => read(),
-        }
-    }
+    /// The one part of reading the [`clock`](Self::clock) that is this
+    /// machine's: what its HAL answers for [`SceClock::Hal`]. Handed to the
+    /// clock code in [`EngineCore`], which is one copy for every machine.
+    const HAL_NOW: fn() -> SchedTimePoint = <P::Hal as Hal>::now_ticks_ms;
 
     /// §scxml-3.13: what time it is, for everything this turn arms or judges.
     ///
@@ -1284,12 +1252,12 @@ impl<P: StatePolicy> Engine<P> {
     /// there is no turn for it to be a property of, and the host's queries
     /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms),
     /// [`now_ms`](Self::now_ms)) read the clock live.
+    ///
+    /// The latch and the reading are [`EngineCore::sched_now`], one copy for
+    /// every machine; this hands it the machine's HAL.
     #[inline]
     fn sched_now(&self) -> SchedTimePoint {
-        match self.turn_now {
-            Some(latched) => latched,
-            None => self.clock_read(),
-        }
+        self.core.sched_now(Self::HAL_NOW)
     }
 
     /// Open a turn: take the single [`clock`](Self::clock) reading that
@@ -1320,27 +1288,28 @@ impl<P: StatePolicy> Engine<P> {
     ///   slowness created, in a loop the host cannot get between.
     ///
     /// Neither is reachable from a clock that is read once per turn.
+    ///
+    /// The reading and the latch are [`EngineCore::open_turn`], one copy for
+    /// every machine. What stays here is what needs the machine: its HAL, and
+    /// the sessions it invoked.
     #[inline]
     fn begin_turn(&mut self) -> bool {
-        if self.turn_now.is_some() {
-            return false;
-        }
-        self.turn_now = Some(self.clock_read());
+        let opened = self.core.open_turn(Self::HAL_NOW);
         // §scxml-6.4: a host-owned clock is a value, so the sessions this one
         // invoked hold the reading of the moment they started; they are moved
-        // to this turn's before anything in it reaches them.
-        if let SceClock::Manual(_) = self.clock {
-            self.policy.follow_clock_in_children(self.clock);
+        // to this turn's before anything in it reaches them. Only by the call
+        // that opened the turn: a nested one finds them moved already.
+        if opened && matches!(self.core.clock, SceClock::Manual(_)) {
+            self.policy.follow_clock_in_children(self.core.clock);
         }
-        true
+        opened
     }
 
-    /// Close a turn opened by [`begin_turn`](Self::begin_turn).
+    /// Close a turn opened by [`begin_turn`](Self::begin_turn) — see
+    /// [`EngineCore::close_turn`].
     #[inline]
     fn end_turn(&mut self, opened: bool) {
-        if opened {
-            self.turn_now = None;
-        }
+        self.core.close_turn(opened);
     }
 
     /// Resolve `now + delay` for scheduling.
@@ -1709,14 +1678,10 @@ impl<P: StatePolicy> Engine<P> {
         // `run_main_event_loop` never consults the scheduler, so the event is
         // neither delivered nor refused. Say it once — the host is driving with
         // the wrong call, and every later macrostep would repeat the same word.
-        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {
-            self.unattended_scheduler_steps = self.unattended_scheduler_steps.saturating_add(1);
-            if self.unattended_scheduler_steps == 1 {
-                sce_log_error!(
-                    "Engine::step: this machine has delayed sends and no tick() has run; \
-                     delayed events will never fire — drive it with Engine::tick()"
-                );
-            }
+        // Whether the machine has delayed sends is the generator's answer, a
+        // constant; the count and the word are the core's.
+        if concepts::needs_event_scheduler::<P>() {
+            self.core.note_unattended_step();
         }
 
         self.run_main_event_loop();
@@ -1757,7 +1722,7 @@ impl<P: StatePolicy> Engine<P> {
         // Recorded before the running check: a host that calls `tick` owns a
         // clock whatever the engine's lifecycle says, and the count exists to
         // find hosts that never call it at all.
-        self.tick_has_run = true;
+        self.core.tick_has_run = true;
         if !self.core.main_loop.is_running {
             return;
         }
@@ -1947,7 +1912,7 @@ impl<P: StatePolicy> Engine<P> {
     /// way the wiring mistake becomes something a program can see, which is
     /// what a `step`-only loop otherwise never offers.
     pub fn unattended_scheduler_steps(&self) -> u32 {
-        self.unattended_scheduler_steps
+        self.core.unattended_scheduler_steps
     }
 
     /// How many events this engine took off the external queue and discarded
@@ -3327,7 +3292,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Where this engine reads "now" from — see [`SceClock`].
     pub fn clock(&self) -> SceClock {
-        self.clock
+        self.core.clock
     }
 
     /// Install the [`SceClock`] this engine measures its `<send delay>`
@@ -3351,7 +3316,7 @@ impl<P: StatePolicy> Engine<P> {
              already armed its entry configuration against the previous clock, and \
              deadlines from two clocks do not compare"
         );
-        self.clock = clock;
+        self.core.clock = clock;
     }
 
     /// §scxml-6.4: move an invoked session's host-owned clock to its parent's
@@ -3371,8 +3336,8 @@ impl<P: StatePolicy> Engine<P> {
     /// Only ever forward: a parent's reading is never behind its child's, and
     /// a clock is required to be non-decreasing.
     pub fn follow_clock(&mut self, parent: SceClock) {
-        if let (SceClock::Manual(own), SceClock::Manual(theirs)) = (self.clock, parent) {
-            self.clock = SceClock::Manual(own.max(theirs));
+        if let (SceClock::Manual(own), SceClock::Manual(theirs)) = (self.core.clock, parent) {
+            self.core.clock = SceClock::Manual(own.max(theirs));
         }
     }
 
@@ -3394,7 +3359,7 @@ impl<P: StatePolicy> Engine<P> {
     /// did not choose. Refusing loudly is the same call the Kotlin and Python
     /// channels make on the same contract.
     pub fn advance_time_ms(&mut self, ms: u64) {
-        let SceClock::Manual(now) = self.clock else {
+        let SceClock::Manual(now) = self.core.clock else {
             panic!(
                 "Engine::advance_time_ms needs SceClock::Manual; this engine has a \
                  clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \
@@ -3402,7 +3367,7 @@ impl<P: StatePolicy> Engine<P> {
                  time_until_next_scheduled_ms()"
             );
         };
-        self.clock = SceClock::Manual(now.saturating_add(ms));
+        self.core.clock = SceClock::Manual(now.saturating_add(ms));
         self.tick();
     }
 
@@ -5085,6 +5050,24 @@ pub(crate) struct EngineCore {
     /// `Engine::last_truncated_macrostep_state`.
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_macrostep_state: Option<StateId>,
+    /// Where this engine reads "now" from — see [`SceClock`] and
+    /// [`Engine::clock`].
+    pub(crate) clock: SceClock,
+    /// The reading [`clock`](Self::clock) gave when the current turn began, or
+    /// `None` between turns. See [`open_turn`](Self::open_turn).
+    pub(crate) turn_now: Option<SchedTimePoint>,
+    /// Whether [`Engine::tick`] has ever run on this engine.
+    ///
+    /// A machine whose policy sets
+    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) has delayed
+    /// events that only `tick` can deliver, so a host driving it with `step`
+    /// alone waits forever with nothing said. This flag is what tells the two
+    /// cases apart: once `tick` has run the host owns a clock and its `step`
+    /// calls are its own business, so the count below stops.
+    pub(crate) tick_has_run: bool,
+    /// Macrosteps taken on a scheduler-driven machine before any
+    /// [`Engine::tick`] — see [`Engine::unattended_scheduler_steps`].
+    pub(crate) unattended_scheduler_steps: u32,
 }
 
 impl EngineCore {
@@ -5115,6 +5098,83 @@ impl EngineCore {
             truncated_macrosteps: 0,
             #[cfg(feature = "macrostep-diagnostics")]
             last_truncated_macrostep_state: None,
+            clock: SceClock::START,
+            turn_now: None,
+            tick_has_run: false,
+            unattended_scheduler_steps: 0,
+        }
+    }
+
+    /// Take a fresh reading from [`clock`](Self::clock), whatever turn the
+    /// engine is in. `hal_now` is what the machine's HAL answers for
+    /// [`SceClock::Hal`], the one part of the reading that is the machine's.
+    ///
+    /// Only [`open_turn`](Self::open_turn) and the between-turn branch of
+    /// [`sched_now`](Self::sched_now) call this — everything else asks
+    /// `sched_now`, so that the turn latch is the default and a live reading
+    /// is the exception that has to be spelled.
+    #[inline]
+    fn clock_read(&self, hal_now: fn() -> SchedTimePoint) -> SchedTimePoint {
+        match self.clock {
+            SceClock::Hal => hal_now(),
+            SceClock::Manual(now) => now,
+            SceClock::Source(read) => read(),
+        }
+    }
+
+    /// What time it is for the turn the engine is in: the latched reading
+    /// inside one, a live reading between them. Why "now" belongs to the turn
+    /// is on `Engine::sched_now`, which every machine reaches this through.
+    #[inline(never)]
+    pub(crate) fn sched_now(&self, hal_now: fn() -> SchedTimePoint) -> SchedTimePoint {
+        match self.turn_now {
+            Some(latched) => latched,
+            None => self.clock_read(hal_now),
+        }
+    }
+
+    /// Open a turn: latch the single [`clock`](Self::clock) reading that
+    /// everything inside it uses, and return whether this call is the one
+    /// that opened it. A call made inside an open turn changes nothing and
+    /// returns `false`, so it does not close the outer turn early through
+    /// [`close_turn`](Self::close_turn).
+    ///
+    /// Why a turn reads the clock once, and what reading it per statement did,
+    /// is on `Engine::begin_turn`, which also moves the invoked sessions'
+    /// clocks: that part needs the machine.
+    #[inline(never)]
+    pub(crate) fn open_turn(&mut self, hal_now: fn() -> SchedTimePoint) -> bool {
+        if self.turn_now.is_some() {
+            return false;
+        }
+        self.turn_now = Some(self.clock_read(hal_now));
+        true
+    }
+
+    /// Close a turn [`open_turn`](Self::open_turn) opened: release the latch
+    /// only if `opened`, so a nested entry point leaves its caller's turn open.
+    #[inline]
+    pub(crate) fn close_turn(&mut self, opened: bool) {
+        if opened {
+            self.turn_now = None;
+        }
+    }
+
+    /// Count one macrostep [`Engine::step`] took on a machine whose delayed
+    /// events only [`Engine::tick`] delivers, until a tick has run, and say so
+    /// the first time. The caller asks only for a machine that has delayed
+    /// sends — see [`Engine::unattended_scheduler_steps`].
+    #[inline(never)]
+    pub(crate) fn note_unattended_step(&mut self) {
+        if self.tick_has_run {
+            return;
+        }
+        self.unattended_scheduler_steps = self.unattended_scheduler_steps.saturating_add(1);
+        if self.unattended_scheduler_steps == 1 {
+            sce_log_error!(
+                "Engine::step: this machine has delayed sends and no tick() has run; \
+                 delayed events will never fire — drive it with Engine::tick()"
+            );
         }
     }
 

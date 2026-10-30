@@ -122,9 +122,9 @@ mutation_case "the engine reads its clock per statement instead of once per turn
 edit("backends/rust/runtime/src/engine.rs",
      """        match self.turn_now {
             Some(latched) => latched,
-            None => self.clock_read(),
+            None => self.clock_read(hal_now),
         }""",
-     """        self.clock_read()""")
+     """        self.clock_read(hal_now)""")
 PY
 
 # A turn that never opens is the same defect reached from the other side: the
@@ -133,11 +133,12 @@ PY
 # the whole body of `begin_turn` until a §scxml-6.4 block that moves the
 # invoked sessions' clock was added between that line and the `true` below
 # it, and an anchor that quotes a body goes stale the first time the body
-# grows. The defect is the same: the latch is consulted and never set.
+# grows. The defect is the same: the latch is consulted and never set. The
+# latch is `EngineCore::open_turn`'s now, one copy every machine calls.
 mutation_case "the turn is never opened, so every reading is live" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.turn_now = Some(self.clock_read());""",
-     """        let _ = self.clock_read();""")
+     """        self.turn_now = Some(self.clock_read(hal_now));""",
+     """        let _ = self.clock_read(hal_now);""")
 PY
 
 # A latch that never releases is the mirror defect: the machine keeps answering
@@ -147,23 +148,24 @@ PY
 # is `tick` delegating to `step` as its tail call, so releasing early has
 # nothing after it to observe. The `opened` bookkeeping is a re-entrancy
 # invariant, and a contract a mutation defends has to be observable at run time.
+# The release is `EngineCore::close_turn`, which `Engine::end_turn` calls.
 mutation_case "the turn latch is never released" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """    fn end_turn(&mut self, opened: bool) {
+     """    pub(crate) fn close_turn(&mut self, opened: bool) {
         if opened {
             self.turn_now = None;
         }
     }""",
-     """    fn end_turn(&mut self, _opened: bool) {}""")
+     """    pub(crate) fn close_turn(&mut self, _opened: bool) {}""")
 PY
 
 # ── The host-owned clock ───────────────────────────────────────────
 
 mutation_case "advance_time_ms moves the clock without running what it made due" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.clock = SceClock::Manual(now.saturating_add(ms));
+     """        self.core.clock = SceClock::Manual(now.saturating_add(ms));
         self.tick();""",
-     """        self.clock = SceClock::Manual(now.saturating_add(ms));""")
+     """        self.core.clock = SceClock::Manual(now.saturating_add(ms));""")
 PY
 
 # Silently doing nothing is the failure mode the panic exists to prevent: the
@@ -171,7 +173,7 @@ PY
 # choose.
 mutation_case "advance_time_ms accepts a clock the host does not own" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        let SceClock::Manual(now) = self.clock else {
+     """        let SceClock::Manual(now) = self.core.clock else {
             panic!(
                 "Engine::advance_time_ms needs SceClock::Manual; this engine has a \\
                  clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \\
@@ -179,7 +181,7 @@ edit("backends/rust/runtime/src/engine.rs",
                  time_until_next_scheduled_ms()"
             );
         };""",
-     """        let SceClock::Manual(now) = self.clock else {
+     """        let SceClock::Manual(now) = self.core.clock else {
             return;
         };""")
 PY
@@ -192,6 +194,6 @@ edit("backends/rust/runtime/src/engine.rs",
              already armed its entry configuration against the previous clock, and \\
              deadlines from two clocks do not compare"
         );
-        self.clock = clock;""",
-     """        self.clock = clock;""")
+        self.core.clock = clock;""",
+     """        self.core.clock = clock;""")
 PY

@@ -91,8 +91,10 @@ PY
 
 mutation_case "the engine stops counting the unattended macrosteps" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {",
-     "        if false {")
+     """        if concepts::needs_event_scheduler::<P>() {
+            self.core.note_unattended_step();""",
+     """        if false {
+            self.core.note_unattended_step();""")
 PY
 
 # ── …or accuses a host that did nothing wrong ───────────────────────
@@ -104,15 +106,17 @@ PY
 
 mutation_case "a host that ticks is counted anyway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.tick_has_run = true;
+     """        self.core.tick_has_run = true;
         if !self.core.main_loop.is_running {""",
      """        if !self.core.main_loop.is_running {""")
 PY
 
 mutation_case "every machine is treated as scheduler-driven" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {",
-     "        if !self.tick_has_run {")
+     """        if concepts::needs_event_scheduler::<P>() {
+            self.core.note_unattended_step();""",
+     """        if true {
+            self.core.note_unattended_step();""")
 PY
 
 # ── The other five backends stop answering ─────────────────────────
