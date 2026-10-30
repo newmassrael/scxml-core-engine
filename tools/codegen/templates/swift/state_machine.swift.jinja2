@@ -149,7 +149,7 @@ public enum {{ machine_name }}Event: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class {{ machine_name }}Policy: StatePolicy {
+public final class {{ machine_name }}Policy: InvocablePolicy {
     public typealias State = {{ machine_name }}State
     public typealias Event = {{ machine_name }}Event
 
@@ -464,10 +464,10 @@ public final class {{ machine_name }}Policy: StatePolicy {
     public var hasParallelStates: Bool { {{ 'true' if model.has_parallel_states else 'false' }} }
     public var needsScriptEngine: Bool { false }
     public var needsDataModelInit: Bool { false }
-    public var hasInvokeSupport: Bool { false }
-    public var hasChildTick: Bool { false }
+    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml else 'false' }} }
+    public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml else 'false' }} }
     public var hasFinalize: Bool { false }
-    public var hasAutoforward: Bool { false }
+    public var hasAutoforward: Bool { {{ 'true' if model.invokes | scxml | selectattr('autoforward') | list else 'false' }} }
 
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
@@ -485,6 +485,7 @@ public final class {{ machine_name }}Policy: StatePolicy {
 {{ event_payload_clear }}
 {% endif %}
 
+{% include 'invoke_methods.swift.jinja2' %}
 {% include 'entry_exit_actions.swift.jinja2' %}
 {% include 'process_transition.swift.jinja2' %}
 }

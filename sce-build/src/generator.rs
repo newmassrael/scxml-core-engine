@@ -4038,6 +4038,51 @@ fn swift_unsupported(
     GenerateError::unsupported_at(format!("{what} has no Swift codegen path yet"), at)
 }
 
+/// What of an `<invoke>` the Swift statechart templates do not lower yet, in the
+/// words the refusal names it by; `None` for one they do.
+///
+/// A static child session is lowered (§scxml-6.4): one the document carries or names
+/// by a file, started when its state is entered, driven by its parent, forwarded
+/// what the parent receives when it autoforwards, and cancelled when the state exits.
+/// What the invocation hands the child, what the child hands back through
+/// `<finalize>`, and every other way of running one are not, and each is named.
+pub(crate) fn swift_invoke_unlowered(invoke: &crate::model::Invoke) -> Option<String> {
+    let info = match invoke {
+        crate::model::Invoke::Scxml(info) => info,
+        crate::model::Invoke::Hybrid(_) => {
+            return Some("an <invoke> whose child a srcexpr or contentexpr chooses".to_string())
+        }
+        crate::model::Invoke::MeshRpc(_) => {
+            return Some("a Mesh remote-procedure <invoke>".to_string())
+        }
+        crate::model::Invoke::Unsupported(info) => {
+            return Some(format!(
+                "an <invoke type=\"{}\"> a host runs",
+                info.invoke_type
+            ))
+        }
+    };
+    if info.remote_mesh_target.is_some() {
+        return Some("an <invoke> of a Mesh peer".to_string());
+    }
+    if !info.common.base.params.is_empty() || !info.namelist.is_empty() {
+        return Some("an <invoke> with a <param> or a namelist".to_string());
+    }
+    if !info.common.base.idlocation.is_empty() {
+        return Some("an <invoke idlocation>".to_string());
+    }
+    if !info.finalize_content.is_empty() {
+        return Some("an <invoke> with a <finalize>".to_string());
+    }
+    if info.common.child_needs_script_engine {
+        return Some("an <invoke> of a child that runs a script engine".to_string());
+    }
+    if info.common.child_declares_host_acts || !info.common.child_host_call.is_empty() {
+        return Some("an <invoke> of a child that declares host acts".to_string());
+    }
+    None
+}
+
 /// Whether `actions` hold, at any depth, an executable element the Swift
 /// templates do not lower: the first one's type and position.
 fn first_unlowered_swift_action(
@@ -4087,11 +4132,13 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|state| state.document_order);
     for state in states {
-        if let Some(invoke) = state.invokes.first() {
-            return Err(swift_unsupported(
-                format!("an <invoke> in state '{}'", state.id),
-                invoke.base().source_location.clone(),
-            ));
+        for invoke in &state.invokes {
+            if let Some(what) = swift_invoke_unlowered(invoke) {
+                return Err(swift_unsupported(
+                    format!("{what} in state '{}'", state.id),
+                    invoke.base().source_location.clone(),
+                ));
+            }
         }
         // A `sce-static` document's <donedata> is native code the lowering has finished
         // (SCE Accepted Subset §2.15); any other data model would need a script engine.

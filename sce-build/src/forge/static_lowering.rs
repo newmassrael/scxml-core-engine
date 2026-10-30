@@ -12040,8 +12040,13 @@ impl StaticTarget for SwiftTarget {
                     return Some(found);
                 }
             }
-            if !state.invokes.is_empty() {
-                return Some("an <invoke>".to_string());
+            // The same judgment the statechart generator makes of a document of any data
+            // model: a static child session is lowered, and each other kind of
+            // `<invoke>` is named.
+            for invoke in &state.invokes {
+                if let Some(found) = crate::generator::swift_invoke_unlowered(invoke) {
+                    return Some(found);
+                }
             }
         }
         None

@@ -150,6 +150,11 @@ private func cancelExpr() -> Machine {
     )
 }
 
+private func invoke() -> Machine {
+    let policy = StaticInvokePolicy()
+    return drive(policy, variables: ["completed": { integer(policy.completed) }])
+}
+
 private func sendIdLocation() -> Machine {
     let policy = StaticSendIdlocationPolicy()
     return drive(
@@ -1263,6 +1268,10 @@ private func recordBytes() -> Machine {
 
 @Test func aCancelNamesTheSendItRemovesByAComputedId() {
     replay("static_cancel_expr", cancelExpr())
+}
+
+@Test func aChildSessionIsStartedDrivenAndEndedByItsParent() {
+    replay("static_invoke", invoke())
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {

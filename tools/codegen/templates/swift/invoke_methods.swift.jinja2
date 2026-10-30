@@ -1,0 +1,232 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Invoke Methods Template (Swift Jinja2)
+
+    W3C SCXML 6.4: the child sessions a machine's `<invoke>`s start.
+
+    Generates, for the static child sessions of the document:
+    - the pending and the active invocations, and each one's session
+    - executePendingInvokes(engine:), tickChildren(engine:), settleChildren(engine:)
+    - forwardToAutoforwardChildren(eventName:metadata:engine:)
+    - the delivery and the running questions a `<send>` to a child asks
+    - nextChildDeadline()
+
+    The Swift twin of go/invoke_methods.go.jinja2. A child is an `InvokedSession`
+    of its own policy type, one conformance written once in the runtime where Go
+    writes a wrapper type per invoke. The entry that defers an invoke is in
+    entry_exit_actions.swift.jinja2, and the exit that cancels it.
+
+    What an invocation hands its child (`<param>`, `namelist`, `idlocation`), what
+    the child hands back (`<finalize>`), and every other way of running one are
+    refused before this template runs (`swift_invoke_unlowered`).
+#}
+{% set static_invokes = model.invokes | scxml %}
+{% if static_invokes %}
+
+    // ------------------------------------------------------------------
+    // Child sessions (W3C SCXML 6.4)
+    // ------------------------------------------------------------------
+
+    /// W3C SCXML 6.4: the `<invoke>`s a state's entry deferred to the end of the
+    /// macrostep. A state exited before then drops its own.
+    private var pendingInvokes: [PendingInvoke<{{ machine_name }}State>] = []
+
+    /// W3C SCXML 6.4.1: the invocations running, by the id their `<invoke>` carries.
+    private var activeInvokes: [String: ChildSession] = [:]
+{% for invoke_info in static_invokes %}
+
+    /// The session `<invoke>` `{{ invoke_info.invoke_id }}` started, while its state is active.
+    private var sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}: InvokedSession<{{ invoke_info.child_name | to_pascal_case }}Policy>?
+
+    /// Whether that session has ended and `done.invoke` was raised for it: once.
+    private var sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} = false
+
+    /// How many times that `<invoke>` has started: each start's id is told apart by it.
+    private var sceInvokeStarts{{ invoke_info.field_suffix | to_pascal_case }} = 0
+{% endfor %}
+
+    /// Starts the sessions the macrostep's entries deferred (W3C SCXML 6.4), now that
+    /// the macrostep is over.
+    public func executePendingInvokes(engine: Engine<{{ machine_name }}Policy>) {
+        SceRuntime.executePendingInvokes(&pendingInvokes) { pending in
+{% for invoke_info in static_invokes %}
+            if pending.documentID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
+                sceStartInvoke{{ invoke_info.field_suffix | to_pascal_case }}(pending, engine: engine)
+                return
+            }
+{% endfor %}
+        }
+    }
+{% for invoke_info in static_invokes %}
+
+    /// Starts the session of `<invoke>` `{{ invoke_info.invoke_id }}` (W3C SCXML 6.4).
+    private func sceStartInvoke{{ invoke_info.field_suffix | to_pascal_case }}(_ pending: PendingInvoke<{{ machine_name }}State>, engine: Engine<{{ machine_name }}Policy>) {
+        // W3C SCXML C.1: the child is known by the id its parent mints for it and
+        // keys the invocation on, so the origin of what it sends is the id it
+        // publishes in `_ioprocessors`.
+        let childSessionID = "\(sessionID).\(pending.invokeID)"
+        let session = InvokedSession(
+            policy: {{ invoke_info.child_name | to_pascal_case }}Policy(),
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        // W3C SCXML 6.4.1: tracked before the child initializes.
+        activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = ChildSession(
+            sessionID: childSessionID,
+            invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
+            parentSessionID: sessionID,
+            autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
+            finalizeScript: ""
+        )
+        // W3C SCXML 6.4: the child's delayed sends are measured on this machine's
+        // clock, so a delay on either side of the boundary is the same instant and a
+        // clock its host advances moves the child too.
+        session.engine.setClock(engine.clock())
+        session.initialize()
+        sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = session
+        // W3C SCXML 6.4: what the child sent while it initialized, and whether it
+        // ended doing so.
+        sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+    }
+
+    /// Takes what the session of `<invoke>` `{{ invoke_info.invoke_id }}` sent this machine, and
+    /// raises `done.invoke` once it has ended (W3C SCXML 5.5 + 6.3.1: with the donedata its
+    /// top-level `<final>` stashed).
+    private func sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: Engine<{{ machine_name }}Policy>) {
+        guard let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}, !sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} else {
+            return
+        }
+        drainAndRaiseChildEvents(
+            childEngine: child,
+            activeInvokes: activeInvokes,
+            invokeKey: "{{ invoke_info.invoke_id | escape_swift }}",
+            engine: engine
+        )
+        if child.isInFinalState {
+            sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} = true
+            raiseDoneInvoke(invokeID: "{{ invoke_info.invoke_id | escape_swift }}", donedata: child.donedataAtFinal, engine: engine)
+        }
+    }
+{% endfor %}
+
+    /// Ticks the running sessions (W3C SCXML 6.4): what a child sent before is taken
+    /// first, then the child takes its turn, then what it sent in it.
+    public func tickChildren(engine: Engine<{{ machine_name }}Policy>) {
+{% for invoke_info in static_invokes %}
+        if !sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }}, let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} {
+            drainAndRaiseChildEvents(
+                childEngine: child,
+                activeInvokes: activeInvokes,
+                invokeKey: "{{ invoke_info.invoke_id | escape_swift }}",
+                engine: engine
+            )
+            child.tick()
+            sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+        }
+{% endfor %}
+    }
+
+    /// Settles what every running child sent this machine while a delivery drove it
+    /// (docs/adr/0045): one body for every drive of a child, so a save at any boundary
+    /// of this session finds its buffer empty.
+    public func settleChildren(engine: Engine<{{ machine_name }}Policy>) {
+{% for invoke_info in static_invokes %}
+        sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+{% endfor %}
+    }
+
+    /// The nearest deadline of a running child (W3C SCXML 6.4), so a host that walks
+    /// time by `timeUntilNextScheduled` does not step over a timer a child armed. A
+    /// child that has ended is skipped: the policy keeps it until its state exits, and
+    /// what it armed is no longer owed.
+    public func nextChildDeadline() -> Duration? {
+        var soonest: Duration?
+{% for invoke_info in static_invokes %}
+        if !sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }}, let due = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}?.timeUntilNextScheduled() {
+            soonest = soonest.map { min($0, due) } ?? due
+        }
+{% endfor %}
+        return soonest
+    }
+{% set autoforward_invokes = static_invokes | selectattr('autoforward') | list %}
+{% if autoforward_invokes %}
+
+    /// Forwards what this machine received to the children that autoforward
+    /// (W3C SCXML 6.4.1). The copy is exact: the child sees the `_event` fields the
+    /// parent saw. The event's name is not consulted, since Appendix D forwards what
+    /// it dequeued from the external queue, and `done.invoke.<id>` comes back onto that
+    /// queue (6.4.2), so a sibling still running sees it.
+    public func forwardToAutoforwardChildren(eventName: String, metadata: EventMetadata, engine: Engine<{{ machine_name }}Policy>) {
+{% for invoke_info in autoforward_invokes %}
+        if let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}, activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"]?.autoforward == true {
+            child.raiseExternalByNameWithMeta(eventName, metadata: metadata)
+        }
+{% endfor %}
+    }
+{% endif %}
+
+    /// Delivers a delayed `<send target="#_<invokeid>">` whose wait is over, by name:
+    /// a child need not declare every event its parent sends (W3C SCXML 6.2 + 6.4).
+    /// Whether the invocation was there to take it: one whose session has reached its
+    /// final state has ended, and the engine reports the send it could not deliver
+    /// (W3C SCXML C.1).
+    public func deliverToInvocation(invokeID: String, eventName: String, eventData: String, sendID: String) -> Bool {
+{% for invoke_info in static_invokes %}
+        if invokeID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
+            if let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}, !child.isInFinalState {
+                deliverToChild(child, eventName: eventName, eventData: eventData)
+                return true
+            }
+            return false
+        }
+{% endfor %}
+        return false
+    }
+
+    /// Whether `#_<invokeid>` names an invocation running now (W3C SCXML 6.4 + C.1):
+    /// one whose session has reached its final state has ended, and a send naming it
+    /// is reported when it is made.
+    public func isInvocationRunning(_ invokeID: String) -> Bool {
+{% for invoke_info in static_invokes %}
+        if invokeID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
+            return sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}.map { !$0.isInFinalState } ?? false
+        }
+{% endfor %}
+        return false
+    }
+
+    /// Whether a session id names a child of this machine that is running now
+    /// (W3C SCXML C.1): the test `deliverToChildSession` makes.
+    public func isChildSessionRunning(_ childSessionID: String) -> Bool {
+        if childSessionID.isEmpty {
+            return false
+        }
+{% for invoke_info in static_invokes %}
+        if let session = activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"], session.sessionID.utf8.elementsEqual(childSessionID.utf8) {
+            return sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}.map { !$0.isInFinalState } ?? false
+        }
+{% endfor %}
+        return false
+    }
+
+    /// Delivers an event addressed to a child's published location (W3C SCXML C.1).
+    /// The parent mints `parentSession.invokeId` for each child and that id is what the
+    /// child's `_ioprocessors` entry names, so a `<send>` whose target decodes to one of
+    /// them is addressed to that child and not to this machine. False names no live
+    /// child of ours, and the event takes the ordinary external path.
+    public func deliverToChildSession(childSessionID: String, eventName: String, eventData: String) -> Bool {
+        if !isChildSessionRunning(childSessionID) {
+            return false
+        }
+{% for invoke_info in static_invokes %}
+        if let session = activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
+           let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} {
+            deliverToChild(child, eventName: eventName, eventData: eventData)
+            return true
+        }
+{% endfor %}
+        return false
+    }
+{% endif %}

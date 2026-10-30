@@ -52,6 +52,13 @@ struct Machine {
     var variables: [String: () -> JSONValue]
 }
 
+/// How many rounds a host gives a machine that runs child sessions after an event
+/// before it reads the machine back. A child takes an event its parent forwarded in
+/// one round and its end reaches the parent in the next, which is two for each level
+/// of child; a round that finds nothing to do changes nothing. The count the other
+/// backends' suites give a machine.
+private let settleTicks = 5
+
 /// Starts `policy` on a manual clock and returns it as a machine.
 func drive<Policy: StatePolicy>(
     _ policy: Policy,
@@ -60,10 +67,26 @@ func drive<Policy: StatePolicy>(
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
     engine.initialize()
+    // `step` drains the queues and nothing else: a child session is run by the
+    // parent's `tick`, so a machine that has one is driven by rounds of it.
+    let settle = {
+        guard policy.hasChildTick else {
+            engine.step()
+            return
+        }
+        for _ in 0..<settleTicks {
+            engine.tick()
+        }
+    }
+    // A machine that starts a child in its first state has that child running, and
+    // maybe ended, before any event arrives.
+    if policy.hasChildTick {
+        settle()
+    }
     return Machine(
         send: { name, data in
             engine.raiseExternalByName(name, eventData: data)
-            engine.step()
+            settle()
         },
         resolves: { engine.resolveEventByName($0) != nil },
         advance: { engine.advanceTimeMs($0) },
