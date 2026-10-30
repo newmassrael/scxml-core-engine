@@ -386,7 +386,8 @@ fn the_kotlin_parent_writes_k_from_the_body_alone() {
 
 /// A fresh directory for one run, holding every file of extension `ext` the
 /// fixture generates for `language`; a Go file is in a directory of its own,
-/// named by its package.
+/// named by its package, and the Python modules are in the package
+/// `PYTHON_PACKAGE`, since they import each other relatively.
 fn project(language: Language, ext: &str, label: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -399,6 +400,11 @@ fn project(language: Language, ext: &str, label: &str) -> PathBuf {
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).expect("make the project directory");
+    if matches!(language, Language::Python) {
+        let package = dir.join(PYTHON_PACKAGE);
+        std::fs::create_dir_all(&package).expect("make the Python package");
+        std::fs::write(package.join("__init__.py"), "").expect("write __init__.py");
+    }
     for (name, code) in files {
         let path = Path::new(&name);
         if path.extension().and_then(|e| e.to_str()) != Some(ext) {
@@ -408,6 +414,8 @@ fn project(language: Language, ext: &str, label: &str) -> PathBuf {
             let package = dir.join(path.file_stem().expect("a Go file has a stem"));
             std::fs::create_dir_all(&package).expect("make a package directory");
             package
+        } else if matches!(language, Language::Python) {
+            dir.join(PYTHON_PACKAGE)
         } else {
             dir.clone()
         };
@@ -548,13 +556,17 @@ int main() {
 }
 "#;
 
+/// The package the Python run puts the generated modules in; the driver
+/// imports from it.
+const PYTHON_PACKAGE: &str = "ca";
+
 const PYTHON_DRIVER: &str = r#"# Decode each frame, store stale bits in K, and hold the encode to the
 # frame: K comes from the body, not from the stored header.
 import sys
 
 from sce_forge_runtime.codec import SceCursor
 
-from ca_parent import CaParent
+from ca.ca_parent import CaParent
 
 failed = False
 
