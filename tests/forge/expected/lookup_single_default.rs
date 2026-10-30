@@ -15,10 +15,10 @@ pub enum Quality {
 
 pub fn lookup_quality(level: u8) -> Quality {
     match level {
-        3 => Quality::High,
-        1 => Quality::Low,
-        2 => Quality::Medium,
-        0 => Quality::None,
+        3 =>Quality::High,
+        1 =>Quality::Low,
+        2 =>Quality::Medium,
+        0 =>Quality::None,
         _ => Quality::None,
     }
 }

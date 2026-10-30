@@ -49,6 +49,9 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -58,7 +61,7 @@ pub enum Event {
 pub struct ProcedureDiamond {
     sensor_value: u16,
     mode: String,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -100,7 +103,18 @@ impl ProcedureDiamond {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for ProcedureDiamond {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for ProcedureDiamond {
     type State = State;
     type Event = Event;
@@ -127,50 +141,31 @@ impl ProcedurePolicy for ProcedureDiamond {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            _ => {}
-        }
+        let _ = state; // no state has an entry action
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::Classify => {
-                if event == Event::None {
-                    if self.sensor_value > 1000 {
-                        return Some((State::HighPath, 0, false));
-                    }
-                }
-                if event == Event::None {
-                    if self.sensor_value > 500 {
-                        return Some((State::MidPath, 1, false));
-                    }
-                }
-                if event == Event::None {
-                    return Some((State::LowPath, 2, false));
-                }
-            }
-            State::HighPath => {
-                if event == Event::None {
-                    if self.mode == "strict" {
-                        return Some((State::Reject, 0, false));
-                    }
-                }
-                if event == Event::None {
-                    return Some((State::Accept, 1, false));
-                }
-            }
-            State::MidPath => {
-                if event == Event::None {
-                    return Some((State::Accept, 0, false));
-                }
-            }
-            State::LowPath => {
-                if event == Event::None {
-                    return Some((State::Accept, 0, false));
-                }
-            }
-            _ => {}
+        if state == State::Classify && event == Event::None && (self.sensor_value > 1000) {
+            return Some((State::HighPath, 0, false));
+        }
+        if state == State::Classify && event == Event::None && (self.sensor_value > 500) {
+            return Some((State::MidPath, 1, false));
+        }
+        if state == State::Classify && event == Event::None {
+            return Some((State::LowPath, 2, false));
+        }
+        if state == State::HighPath && event == Event::None && (self.mode == "strict") {
+            return Some((State::Reject, 0, false));
+        }
+        if state == State::HighPath && event == Event::None {
+            return Some((State::Accept, 1, false));
+        }
+        if state == State::MidPath && event == Event::None {
+            return Some((State::Accept, 0, false));
+        }
+        if state == State::LowPath && event == Event::None {
+            return Some((State::Accept, 0, false));
         }
         None
     }

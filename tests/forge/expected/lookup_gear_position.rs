@@ -16,11 +16,11 @@ pub enum Gear {
 
 pub fn lookup_gear(gear_raw: u8) -> Gear {
     match gear_raw {
-        3 => Gear::Drive,
-        2 => Gear::Neutral,
-        0 => Gear::Park,
-        1 => Gear::Reverse,
-        4 => Gear::Sport,
+        3 =>Gear::Drive,
+        2 =>Gear::Neutral,
+        0 =>Gear::Park,
+        1 =>Gear::Reverse,
+        4 =>Gear::Sport,
         _ => Gear::Neutral,
     }
 }

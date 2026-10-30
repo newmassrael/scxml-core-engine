@@ -52,6 +52,9 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -62,7 +65,7 @@ pub struct CrossfileProcedureCodecMutate {
     msg_id: u8,
     // Imported kinds (cross-file composition)
     pub frame: CodecSimpleFrame,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -100,7 +103,18 @@ impl CrossfileProcedureCodecMutate {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for CrossfileProcedureCodecMutate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for CrossfileProcedureCodecMutate {
     type State = State;
     type Event = Event;
@@ -127,47 +141,37 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            State::Send => {
-                if let Some(ref handler) = self.service_handler {
-                    let req = ProcedureServiceRequest {
-                        service: "transport".to_string(),
-                        subfunc: None,
-                        addr: None,
-                        payload: Some(self.frame.encode_to_vec()),
-                    };
-                    let resp = handler(&req);
-                    let event = if resp.success { Event::Ok } else { Event::Fail };
-                    return (event, resp.data);
-                }
+        if state == State::Send {
+            if let Some(ref handler) = self.service_handler {
+                let req = ProcedureServiceRequest {
+                    service: "transport".to_string(),
+                    subfunc: None,
+                    addr: None,
+                    payload: Some(self.frame.encode_to_vec()),
+                };
+                let resp = handler(&req);
+                let event = if resp.success { Event::Ok } else { Event::Fail };
+                return (event, resp.data);
             }
-            State::Done => {
-                self.done_data.insert("result".to_string(), "success".to_string());
-            }
-            State::Error => {
-                self.done_data.insert("result".to_string(), "failure".to_string());
-            }
-            _ => {}
+        }
+        if state == State::Done {
+            self.done_data.insert("result".to_string(), "success".to_string());
+        }
+        if state == State::Error {
+            self.done_data.insert("result".to_string(), "failure".to_string());
         }
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::Start => {
-                if event == Event::None {
-                    return Some((State::Send, 0, true));
-                }
-            }
-            State::Send => {
-                if event == Event::Ok {
-                    return Some((State::Done, 0, false));
-                }
-                if event == Event::Fail {
-                    return Some((State::Error, 1, false));
-                }
-            }
-            _ => {}
+        if state == State::Start && event == Event::None {
+            return Some((State::Send, 0, true));
+        }
+        if state == State::Send && event == Event::Ok {
+            return Some((State::Done, 0, false));
+        }
+        if state == State::Send && event == Event::Fail {
+            return Some((State::Error, 1, false));
         }
         None
     }
@@ -177,10 +181,8 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
         // bytes-cap check raises an internal event that the shared
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
-        if source == State::Start {
-            if tr_index == 0 {
-                self.frame.msg_id = self.msg_id;
-            }
+        if source == State::Start && tr_index == 0 {
+            self.frame.msg_id = self.msg_id;
         }
         None
     }

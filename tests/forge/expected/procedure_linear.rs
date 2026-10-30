@@ -47,6 +47,9 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -55,7 +58,7 @@ pub enum Event {
 #[allow(dead_code)]
 pub struct ProcedureLinear {
     value: i32,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -92,7 +95,18 @@ impl ProcedureLinear {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for ProcedureLinear {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for ProcedureLinear {
     type State = State;
     type Event = Event;
@@ -118,30 +132,19 @@ impl ProcedurePolicy for ProcedureLinear {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            _ => {}
-        }
+        let _ = state; // no state has an entry action
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::StageA => {
-                if event == Event::None {
-                    return Some((State::StageB, 0, false));
-                }
-            }
-            State::StageB => {
-                if event == Event::None {
-                    return Some((State::StageC, 0, false));
-                }
-            }
-            State::StageC => {
-                if event == Event::None {
-                    return Some((State::Done, 0, false));
-                }
-            }
-            _ => {}
+        if state == State::StageA && event == Event::None {
+            return Some((State::StageB, 0, false));
+        }
+        if state == State::StageB && event == Event::None {
+            return Some((State::StageC, 0, false));
+        }
+        if state == State::StageC && event == Event::None {
+            return Some((State::Done, 0, false));
         }
         None
     }

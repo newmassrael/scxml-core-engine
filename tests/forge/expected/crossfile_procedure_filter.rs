@@ -47,6 +47,9 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -58,7 +61,7 @@ pub struct CrossfileProcedureFilter {
     smoothed: f64,
     // Imported kinds (cross-file composition)
     pub smoother: FilterLowPass,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -97,7 +100,18 @@ impl CrossfileProcedureFilter {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for CrossfileProcedureFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for CrossfileProcedureFilter {
     type State = State;
     type Event = Event;
@@ -123,23 +137,15 @@ impl ProcedurePolicy for CrossfileProcedureFilter {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            State::Done => {
-                self.done_data.insert("result".to_string(), "success".to_string());
-            }
-            _ => {}
+        if state == State::Done {
+            self.done_data.insert("result".to_string(), "success".to_string());
         }
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::Sample => {
-                if event == Event::None {
-                    return Some((State::Done, 0, true));
-                }
-            }
-            _ => {}
+        if state == State::Sample && event == Event::None {
+            return Some((State::Done, 0, true));
         }
         None
     }
@@ -149,10 +155,8 @@ impl ProcedurePolicy for CrossfileProcedureFilter {
         // bytes-cap check raises an internal event that the shared
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
-        if source == State::Sample {
-            if tr_index == 0 {
-                self.smoothed = self.smoother.update(self.raw_sample);
-            }
+        if source == State::Sample && tr_index == 0 {
+            self.smoothed = self.smoother.update(self.raw_sample);
         }
         None
     }

@@ -52,6 +52,11 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+/// The `compute_key` helper a procedure's expressions call.
+type ComputeKeyHelper = Box<dyn Fn(&[u8]) -> Vec<u8>>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -63,8 +68,8 @@ pub struct ProcedureSecurityAccess {
     seed: Vec<u8>,
     max_retries: i32,
     retry_count: i32,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
-    compute_key: Box<dyn Fn(&[u8]) -> Vec<u8>>,
+    service_handler: Option<BoxedServiceHandler>,
+    compute_key: ComputeKeyHelper,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -109,7 +114,18 @@ impl ProcedureSecurityAccess {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for ProcedureSecurityAccess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for ProcedureSecurityAccess {
     type State = State;
     type Event = Event;
@@ -136,96 +152,78 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            State::SendTesterPresent => {
-                if let Some(ref handler) = self.service_handler {
-                    let req = ProcedureServiceRequest {
-                        service: "TesterPresent".to_string(),
-                        subfunc: None,
-                        addr: Some((self.ecu_addr).to_string()),
-                        payload: None,
-                    };
-                    let resp = handler(&req);
-                    let event = if resp.success { Event::Ok } else { Event::Fail };
-                    return (event, resp.data);
-                }
+        if state == State::SendTesterPresent {
+            if let Some(ref handler) = self.service_handler {
+                let req = ProcedureServiceRequest {
+                    service: "TesterPresent".to_string(),
+                    subfunc: None,
+                    addr: Some((self.ecu_addr).to_string()),
+                    payload: None,
+                };
+                let resp = handler(&req);
+                let event = if resp.success { Event::Ok } else { Event::Fail };
+                return (event, resp.data);
             }
-            State::RequestSeed => {
-                if let Some(ref handler) = self.service_handler {
-                    let req = ProcedureServiceRequest {
-                        service: "SecurityAccess".to_string(),
-                        subfunc: Some("0x01".to_string()),
-                        addr: None,
-                        payload: None,
-                    };
-                    let resp = handler(&req);
-                    let event = if resp.success { Event::Ok } else { Event::Fail };
-                    return (event, resp.data);
-                }
+        }
+        if state == State::RequestSeed {
+            if let Some(ref handler) = self.service_handler {
+                let req = ProcedureServiceRequest {
+                    service: "SecurityAccess".to_string(),
+                    subfunc: Some("0x01".to_string()),
+                    addr: None,
+                    payload: None,
+                };
+                let resp = handler(&req);
+                let event = if resp.success { Event::Ok } else { Event::Fail };
+                return (event, resp.data);
             }
-            State::SendKey => {
-                if let Some(ref handler) = self.service_handler {
-                    let req = ProcedureServiceRequest {
-                        service: "SecurityAccess".to_string(),
-                        subfunc: Some("0x02".to_string()),
-                        addr: None,
-                        payload: Some((self.compute_key)(&self.seed)),
-                    };
-                    let resp = handler(&req);
-                    let event = if resp.success { Event::Ok } else { Event::Fail };
-                    return (event, resp.data);
-                }
+        }
+        if state == State::SendKey {
+            if let Some(ref handler) = self.service_handler {
+                let req = ProcedureServiceRequest {
+                    service: "SecurityAccess".to_string(),
+                    subfunc: Some("0x02".to_string()),
+                    addr: None,
+                    payload: Some((self.compute_key)(&self.seed)),
+                };
+                let resp = handler(&req);
+                let event = if resp.success { Event::Ok } else { Event::Fail };
+                return (event, resp.data);
             }
-            State::Done => {
-                self.done_data.insert("result".to_string(), "success".to_string());
-            }
-            State::Error => {
-                self.done_data.insert("result".to_string(), "failure".to_string());
-            }
-            _ => {}
+        }
+        if state == State::Done {
+            self.done_data.insert("result".to_string(), "success".to_string());
+        }
+        if state == State::Error {
+            self.done_data.insert("result".to_string(), "failure".to_string());
         }
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::SendTesterPresent => {
-                if event == Event::Ok {
-                    return Some((State::RequestSeed, 0, false));
-                }
-                if event == Event::Fail {
-                    return Some((State::Error, 1, false));
-                }
-            }
-            State::RequestSeed => {
-                if event == Event::Ok {
-                    return Some((State::SendKey, 0, true));
-                }
-                if event == Event::Fail {
-                    return Some((State::Retry, 1, false));
-                }
-            }
-            State::SendKey => {
-                if event == Event::Ok {
-                    return Some((State::Done, 0, false));
-                }
-                if event == Event::Fail {
-                    return Some((State::Retry, 1, false));
-                }
-            }
-            State::Retry => {
-                if event == Event::None {
-                    if self.retry_count < self.max_retries {
-                        return Some((State::RequestSeed, 0, true));
-                    }
-                }
-                if event == Event::None {
-                    if self.retry_count >= self.max_retries {
-                        return Some((State::Error, 1, false));
-                    }
-                }
-            }
-            _ => {}
+        if state == State::SendTesterPresent && event == Event::Ok {
+            return Some((State::RequestSeed, 0, false));
+        }
+        if state == State::SendTesterPresent && event == Event::Fail {
+            return Some((State::Error, 1, false));
+        }
+        if state == State::RequestSeed && event == Event::Ok {
+            return Some((State::SendKey, 0, true));
+        }
+        if state == State::RequestSeed && event == Event::Fail {
+            return Some((State::Retry, 1, false));
+        }
+        if state == State::SendKey && event == Event::Ok {
+            return Some((State::Done, 0, false));
+        }
+        if state == State::SendKey && event == Event::Fail {
+            return Some((State::Retry, 1, false));
+        }
+        if state == State::Retry && event == Event::None && (self.retry_count < self.max_retries) {
+            return Some((State::RequestSeed, 0, true));
+        }
+        if state == State::Retry && event == Event::None && (self.retry_count >= self.max_retries) {
+            return Some((State::Error, 1, false));
         }
         None
     }
@@ -235,21 +233,17 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
         // bytes-cap check raises an internal event that the shared
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
-        if source == State::RequestSeed {
-            if tr_index == 0 {
-                {
-                    let _scope_tmp = self.pending_event_data.as_bytes().to_vec();
-                    if _scope_tmp.len() > 64 {
-                        return Some(Event::ErrorExecution);
-                    }
-                    self.seed = _scope_tmp;
+        if source == State::RequestSeed && tr_index == 0 {
+            {
+                let _scope_tmp = self.pending_event_data.as_bytes().to_vec();
+                if _scope_tmp.len() > 64 {
+                    return Some(Event::ErrorExecution);
                 }
+                self.seed = _scope_tmp;
             }
         }
-        if source == State::Retry {
-            if tr_index == 0 {
-                self.retry_count = self.retry_count + 1;
-            }
+        if source == State::Retry && tr_index == 0 {
+            self.retry_count = self.retry_count + 1;
         }
         None
     }

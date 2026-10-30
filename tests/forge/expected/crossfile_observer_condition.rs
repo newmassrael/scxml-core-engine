@@ -39,7 +39,11 @@ impl CrossfileObserverCondition {
         }
     }
 
-    #[allow(clippy::comparison_to_empty)]
+    #[allow(
+        clippy::bool_comparison,
+        clippy::comparison_to_empty,
+        clippy::manual_range_contains
+    )]
     pub fn update(&mut self, coolant_temp: f64, oil_temp: f64) -> EventQueue<ForgeDomain> {
         let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
         if self.alarm.enter_if(condition_threshold::condition_threshold(coolant_temp, oil_temp, 110.0)) {

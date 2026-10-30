@@ -9,7 +9,11 @@
 
 use super::forge_call_status;
 
-#[allow(clippy::comparison_to_empty)]
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn compute_after(
     status: forge_call_status::ForgeCallStatus,
 ) -> forge_call_status::ForgeCallStatus {

@@ -19,7 +19,7 @@ impl FilterDebounce {
     }
 
     pub fn update(&mut self, raw_button: bool) -> bool {
-        self.impl_.update(raw_button as bool)
+        self.impl_.update(raw_button)
     }
 
     pub fn reset(&mut self) {

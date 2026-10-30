@@ -7,7 +7,11 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-#[allow(clippy::comparison_to_empty)]
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn compute_offset(level: i32) -> i32 {
     level - 10
 }

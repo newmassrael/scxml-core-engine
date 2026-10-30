@@ -5,7 +5,11 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-#[allow(clippy::comparison_to_empty)]
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn compute_temperature(raw: u16) -> f64 {
     raw as f64 * 0.1 - 40.0
 }

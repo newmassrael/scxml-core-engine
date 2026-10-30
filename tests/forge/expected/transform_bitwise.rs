@@ -5,12 +5,20 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-#[allow(clippy::comparison_to_empty)]
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn compute_high_nibble(byte: u8) -> u8 {
     byte >> 4 & 0x0F
 }
 
-#[allow(clippy::comparison_to_empty)]
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn compute_low_nibble(byte: u8) -> u8 {
     byte & 0x0F
 }

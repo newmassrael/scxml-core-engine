@@ -33,6 +33,7 @@ impl ValidatorRpmCheck {
     }
 
     #[allow(
+        clippy::bool_comparison,
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
         clippy::neg_cmp_op_on_partial_ord,
@@ -43,7 +44,7 @@ impl ValidatorRpmCheck {
             return ValidationResult { valid: false, reason: "rpm_out_of_range".to_string() };
         }
         {
-            let delta = if rpm > self.prev_rpm { rpm - self.prev_rpm } else { self.prev_rpm - rpm };
+            let delta = rpm.abs_diff(self.prev_rpm);
             if delta > 500 {
                 return ValidationResult { valid: false, reason: "rpm_rate_of_change_exceeded".to_string() };
             }

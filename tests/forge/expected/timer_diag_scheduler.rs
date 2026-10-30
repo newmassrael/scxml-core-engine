@@ -34,14 +34,14 @@ pub const PERIOD_MS: u32 = 2000u32;
 /// the host SCXML, the consumer calls
 /// `TimerDiagScheduler::on_reset_diag_heartbeat()` to
 /// restart the timer's deadline.
-pub const RESET_ON_EVENT: &'static str = "diag.heartbeat";
+pub const RESET_ON_EVENT: &str = "diag.heartbeat";
 
 /// `<sce:cancel-on state-exit="diag.idle"/>` — when
 /// the host SCXML exits state `diag.idle`, the
 /// consumer calls
 /// `TimerDiagScheduler::on_cancel_diag_idle_exit()` to
 /// cancel the timer.
-pub const CANCEL_ON_STATE_EXIT: &'static str = "diag.idle";
+pub const CANCEL_ON_STATE_EXIT: &str = "diag.idle";
 
 /// Generated single-timer scheduler per SCE Protocol-Synthesis RFC §synth-5-D.
 /// Generic over a concrete platform [`Timer`] type and a user-supplied

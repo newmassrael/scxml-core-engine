@@ -48,6 +48,9 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -57,7 +60,7 @@ pub enum Event {
 pub struct ProcedureStartupCheck {
     voltage: f32,
     temperature: f32,
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -99,7 +102,18 @@ impl ProcedureStartupCheck {
     }
 }
 
-#[allow(clippy::comparison_to_empty)]
+impl Default for ProcedureStartupCheck {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for ProcedureStartupCheck {
     type State = State;
     type Event = Event;
@@ -127,35 +141,22 @@ impl ProcedurePolicy for ProcedureStartupCheck {
     }
 
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
-            _ => {}
-        }
+        let _ = state; // no state has an entry action
         (Event::None, String::new())
     }
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
-            State::CheckVoltage => {
-                if event == Event::None {
-                    if self.voltage >= 11.5 && self.voltage <= 14.5 {
-                        return Some((State::CheckTemp, 0, false));
-                    }
-                }
-                if event == Event::None {
-                    return Some((State::FailVoltage, 1, false));
-                }
-            }
-            State::CheckTemp => {
-                if event == Event::None {
-                    if self.temperature < 80.0 {
-                        return Some((State::Success, 0, false));
-                    }
-                }
-                if event == Event::None {
-                    return Some((State::FailOvertemp, 1, false));
-                }
-            }
-            _ => {}
+        if state == State::CheckVoltage && event == Event::None && (self.voltage >= 11.5 && self.voltage <= 14.5) {
+            return Some((State::CheckTemp, 0, false));
+        }
+        if state == State::CheckVoltage && event == Event::None {
+            return Some((State::FailVoltage, 1, false));
+        }
+        if state == State::CheckTemp && event == Event::None && (self.temperature < 80.0) {
+            return Some((State::Success, 0, false));
+        }
+        if state == State::CheckTemp && event == Event::None {
+            return Some((State::FailOvertemp, 1, false));
         }
         None
     }

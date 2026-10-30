@@ -19,7 +19,7 @@ impl FilterLowPass {
     }
 
     pub fn update(&mut self, raw_signal: f64) -> f64 {
-        self.impl_.update(raw_signal as f64)
+        self.impl_.update(raw_signal)
     }
 
     pub fn reset(&mut self) {
