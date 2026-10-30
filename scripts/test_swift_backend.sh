@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate the Swift backend's committed machines and run its three SwiftPM
+# Regenerate the Swift backend's committed machines and run its four SwiftPM
 # packages: the statechart runtime (backends/swift/runtime), the forge runtime
-# (backends/swift/forge-runtime) and the generated machines with the tests that drive
+# (backends/swift/forge-runtime), the reference host of the standard host features
+# (backends/swift/host-features) and the generated machines with the tests that drive
 # them (backends/swift/tests).
 #
 # Like `./gradlew test` for Kotlin, it writes: the machines under
@@ -14,7 +15,7 @@
 # rewritten files stay there, and `bx --action regen` is what brings them back.
 #
 # Usage (from repo root):
-#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, tests
+#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests
 #
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing) and a
@@ -40,7 +41,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime forge-runtime tests)
+    PACKAGES=(runtime forge-runtime host-features tests)
 fi
 
 for package in "${PACKAGES[@]}"; do

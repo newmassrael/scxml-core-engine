@@ -17,6 +17,7 @@ let package = Package(
     dependencies: [
         .package(path: "../runtime"),
         .package(path: "../forge-runtime"),
+        .package(path: "../host-features"),
     ],
     targets: [
         .target(
@@ -46,6 +47,7 @@ let package = Package(
                 "StaticDatamodelMachines",
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
+                .product(name: "SceHostFeatures", package: "host-features"),
             ]
         ),
     ]

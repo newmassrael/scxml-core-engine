@@ -293,6 +293,7 @@ machine and replays the scenarios:
 | Python | `backends/python/host-features` | `backends/python/tests/integration/static_datamodel/test_host_features.py` | system, scripted | `http.client` |
 | C++ | `sce/include/host/StandardHost.h` | `tests/integration/AStandardHostScenarioTest.cpp` | system, scripted | cpp-httplib (`HttplibTransport.h`) |
 | C | `backends/c/host-features` | `backends/c/tests/integration/test_host_features.c` | system, scripted | none |
+| Swift | `backends/swift/host-features` | `backends/swift/tests/Tests/StaticDatamodelTests/HostFeaturesTests.swift` | system, scripted | none |
 
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a

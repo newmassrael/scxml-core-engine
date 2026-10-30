@@ -12,7 +12,7 @@ name: Swift backend (runtime, forge runtime, generated machines)
 #
 # What it runs is `scripts/gate swift-backend`, the gate the pre-push hook runs too:
 # `scripts/test_swift_backend.sh` regenerates the machines from the templates and runs the
-# three packages (`backends/swift/runtime`, `forge-runtime`, `tests`), and the gate reads
+# four packages (`backends/swift/runtime`, `forge-runtime`, `host-features`, `tests`), and the gate reads
 # the verdict from the output as well as the exit status, so a package whose tests were not
 # discovered is red and not a silent pass. Whether the COMMITTED machines are what the
 # generator writes is `regen-reproduces`' question and is kept there.

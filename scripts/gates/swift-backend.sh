@@ -4,11 +4,12 @@
 #
 # Mirrors: swift-backend.yml
 #
-# The Swift backend's own lane: the three SwiftPM packages under `backends/swift/`
+# The Swift backend's own lane: the four SwiftPM packages under `backends/swift/`
 # built and tested with the toolchain the workflow pins.
 #
 #   runtime          the statechart runtime (`SceRuntime`)
 #   forge-runtime    the checked arithmetic and bounded values the generated code calls
+#   host-features    the reference host of the standard host features (`SceHostFeatures`)
 #   tests            the machines the generator writes, replayed against the shared
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
 #
@@ -47,10 +48,10 @@ set -e
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 
 # One `Test run with N tests` line per test target that ran: the runtime, the forge runtime,
-# and the tests package's two targets.
+# the reference host, and the tests package's two targets.
 runs="$(grep -cE 'Test run with [0-9]+ tests? ' "$LOG" || true)"
-[ "$runs" -ge 3 ] \
-    || sce_gate_fail "$runs Swift test runs reported, expected one per package (3 or more): a package built and ran nothing"
+[ "$runs" -ge 5 ] \
+    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (5 or more): a package built and ran nothing"
 if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi
