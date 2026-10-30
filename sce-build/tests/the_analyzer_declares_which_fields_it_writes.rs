@@ -52,73 +52,156 @@ fn fixture_files() -> Vec<PathBuf> {
     common::repository::files_with_extension("scxml")
 }
 
-/// Every property name any type in the wire schema declares.
+/// The wire schema the model serialises to, walked alongside a model's
+/// JSON so that each key is read as what the schema says it is.
 ///
 /// ⚠ This is what separates a STRUCT FIELD from a MAP KEY, and without
 /// it the measurement is nonsense: the model holds maps keyed by state
-/// id (`ancestor_chains`, `leaf_map`, …), so a walk that treats every
-/// JSON key as a field name reports `idle`, `green` and `s0` as things
-/// the analyzer writes. Measured first without this filter — 148 names,
-/// most of them state ids from the fixtures.
+/// id (`states`, `history_states`, …), so a walk that treats every JSON
+/// key as a field name reports `idle`, `green` and `s0` as things the
+/// analyzer writes. Measured first without the schema — 148 names, most
+/// of them state ids from the fixtures.
+///
+/// The split is by POSITION, not by name. A filter that kept the keys
+/// whose name some schema type declares let a state id through whenever
+/// it spelled a field: a document with a state `link` read as the
+/// analyzer writing `<sce:on-sample link>`.
 ///
 /// Derived from the schema rather than listed here, so a field added to
 /// the IR is covered the moment the schema regenerates.
-fn schema_property_names() -> BTreeSet<String> {
-    let path = repo_root().join("apis/forge-ast.v1.schema.json");
-    let text =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let doc: serde_json::Value =
-        serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse schema: {e}"));
-    let mut out = BTreeSet::new();
-    fn walk(v: &serde_json::Value, out: &mut BTreeSet<String>) {
-        if let serde_json::Value::Object(map) = v {
-            if let Some(serde_json::Value::Object(props)) = map.get("properties") {
-                for k in props.keys() {
-                    out.insert(k.clone());
-                }
-            }
-            for x in map.values() {
-                walk(x, out);
-            }
-        } else if let serde_json::Value::Array(items) = v {
-            for x in items {
-                walk(x, out);
-            }
-        }
-    }
-    walk(&doc, &mut out);
-    out
+struct Schema {
+    doc: serde_json::Value,
 }
 
-/// Every key name whose value differs between the two trees.
-///
-/// Keyed by NAME rather than by path: the question is which fields the
-/// analyzer writes, and a field that moves at one state moves for the
-/// same reason at every other.
-fn moved_keys(before: &serde_json::Value, after: &serde_json::Value, out: &mut BTreeSet<String>) {
-    match (before, after) {
-        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
-            for (k, av) in a {
-                match b.get(k) {
-                    Some(bv) if av == bv => {}
-                    Some(bv) => {
-                        out.insert(k.clone());
-                        moved_keys(av, bv, out);
-                    }
-                    None => {
-                        out.insert(k.clone());
-                    }
+impl Schema {
+    fn load() -> Self {
+        let path = repo_root().join("apis/forge-ast.v1.schema.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let doc = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse schema: {e}"));
+        Self { doc }
+    }
+
+    /// The schema of a statechart model: one of `ForgeDocument`'s kinds.
+    /// The walk takes every kind, so a key is a field when any kind
+    /// declares it at that position.
+    fn model(&self) -> Vec<&serde_json::Value> {
+        let document = self
+            .doc
+            .pointer("/definitions/ForgeDocument")
+            .expect("the schema defines ForgeDocument");
+        self.alternatives(&[document])
+    }
+
+    /// The schemas a value under `schemas` may have: each `$ref` followed
+    /// and each branch of `allOf` / `anyOf` / `oneOf` taken, alongside the
+    /// schema that holds them.
+    fn alternatives<'a>(&'a self, schemas: &[&'a serde_json::Value]) -> Vec<&'a serde_json::Value> {
+        let mut out: Vec<&serde_json::Value> = Vec::new();
+        let mut pending: Vec<&serde_json::Value> = schemas.to_vec();
+        while let Some(s) = pending.pop() {
+            if out.iter().any(|seen| std::ptr::eq(*seen, s)) {
+                continue;
+            }
+            out.push(s);
+            if let Some(target) = s.get("$ref").and_then(|r| r.as_str()) {
+                let pointer = target.strip_prefix('#').expect("a local $ref");
+                pending.push(
+                    self.doc
+                        .pointer(pointer)
+                        .unwrap_or_else(|| panic!("the schema defines {target}")),
+                );
+            }
+            for combinator in ["allOf", "anyOf", "oneOf"] {
+                if let Some(serde_json::Value::Array(branches)) = s.get(combinator) {
+                    pending.extend(branches);
                 }
             }
-            for k in b.keys() {
-                if !a.contains_key(k) {
-                    out.insert(k.clone());
+        }
+        out
+    }
+
+    /// The schemas of `key` where one of `schemas` declares it a field.
+    fn field<'a>(schemas: &[&'a serde_json::Value], key: &str) -> Vec<&'a serde_json::Value> {
+        schemas
+            .iter()
+            .filter_map(|s| s.get("properties").and_then(|p| p.get(key)))
+            .collect()
+    }
+
+    /// The schemas of a map's values, where one of `schemas` is a map.
+    fn map_value<'a>(schemas: &[&'a serde_json::Value]) -> Vec<&'a serde_json::Value> {
+        schemas
+            .iter()
+            .filter_map(|s| s.get("additionalProperties").filter(|v| v.is_object()))
+            .collect()
+    }
+
+    /// The schemas of an array's items.
+    fn items<'a>(schemas: &[&'a serde_json::Value]) -> Vec<&'a serde_json::Value> {
+        schemas
+            .iter()
+            .filter_map(|s| s.get("items"))
+            .flat_map(|items| match items {
+                serde_json::Value::Array(tuple) => tuple.iter().collect::<Vec<_>>(),
+                single => vec![single],
+            })
+            .collect()
+    }
+}
+
+/// What a walk of two models found.
+#[derive(Default)]
+struct Moved {
+    /// Every field, by name, whose value differs between the two trees.
+    ///
+    /// Keyed by NAME rather than by path: the question is which fields
+    /// the analyzer writes, and a field that moves at one state moves for
+    /// the same reason at every other.
+    fields: BTreeSet<String>,
+    /// Keys that moved where the schema describes neither a field nor a
+    /// map, so the walk could not say what they are.
+    undescribed: BTreeSet<String>,
+}
+
+/// Walk `before` and `after` under `schemas`, recording into `moved`.
+fn moved_fields(
+    schema: &Schema,
+    schemas: &[&serde_json::Value],
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+    moved: &mut Moved,
+) {
+    let schemas = schema.alternatives(schemas);
+    match (before, after) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+            for k in keys {
+                let (av, bv) = (a.get(k), b.get(k));
+                if av == bv {
+                    continue;
+                }
+                let field = Schema::field(&schemas, k);
+                let below = if !field.is_empty() {
+                    moved.fields.insert(k.clone());
+                    field
+                } else {
+                    let values = Schema::map_value(&schemas);
+                    if values.is_empty() {
+                        moved.undescribed.insert(k.clone());
+                        continue;
+                    }
+                    values
+                };
+                if let (Some(av), Some(bv)) = (av, bv) {
+                    moved_fields(schema, &below, av, bv, moved);
                 }
             }
         }
         (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            let items = Schema::items(&schemas);
             for (av, bv) in a.iter().zip(b) {
-                moved_keys(av, bv, out);
+                moved_fields(schema, &items, av, bv, moved);
             }
         }
         _ => {}
@@ -128,7 +211,9 @@ fn moved_keys(before: &serde_json::Value, after: &serde_json::Value, out: &mut B
 #[test]
 fn the_fields_the_analyzer_writes_are_the_ones_it_declares() {
     let files = fixture_files();
-    let mut moved: BTreeSet<String> = BTreeSet::new();
+    let schema = Schema::load();
+    let model_schema = schema.model();
+    let mut walk = Moved::default();
     let mut measured = 0usize;
 
     for path in &files {
@@ -158,18 +243,16 @@ fn the_fields_the_analyzer_writes_are_the_ones_it_declares() {
             continue;
         };
         measured += 1;
-        moved_keys(&before, &after, &mut moved);
+        moved_fields(&schema, &model_schema, &before, &after, &mut walk);
     }
-
-    let fields = schema_property_names();
-    let moved: BTreeSet<String> = moved.into_iter().filter(|k| fields.contains(k)).collect();
+    let moved = walk.fields;
 
     println!("documents measured       : {measured}");
-    println!("schema property names    : {}", fields.len());
     println!("fields the analyzer wrote: {}", moved.len());
     for k in &moved {
         println!("   {k}");
     }
+    println!("undescribed keys         : {:?}", walk.undescribed);
 
     // A floor: a sweep that parsed nothing would report an empty set and
     // read as "the analyzer writes nothing", which is the opposite of
@@ -196,7 +279,27 @@ fn the_fields_the_analyzer_writes_are_the_ones_it_declares() {
          exercises them — the list must not keep claiming evidence it \
          does not have:\n  {gone:?}"
     );
+
+    // The keys the walk could not place are the model's fields the schema
+    // leaves out. Held to their own list, so a key the walk stops reading
+    // (a schema type it no longer resolves) is a red, not a smaller set.
+    let outside: BTreeSet<String> = OUTSIDE_THE_SCHEMA.iter().map(|s| s.to_string()).collect();
+    assert_eq!(
+        walk.undescribed, outside,
+        "the keys the analyzer moved where the schema describes no field \
+         and no map are not the ones listed in OUTSIDE_THE_SCHEMA"
+    );
 }
+
+/// Fields the analyzer writes that the wire schema leaves out on purpose
+/// (`schemars(skip)`), so a rendering built from the schema cannot show
+/// them.
+const OUTSIDE_THE_SCHEMA: &[&str] = &[
+    // Whether a `<send idlocation>` under `sce-static` makes the machine
+    // count generated ids; transient and outside the AST contract, as its
+    // doc comment on the model says.
+    "needs_auto_send_id",
+];
 
 /// Every field the analyzer writes, measured rather than enumerated.
 ///
@@ -286,14 +389,16 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "needs_string_matching",
     "needs_tick_driving",
     "needs_transition_helper",
-    // A derived index over the authored `on_sample_blocks`, and a
-    // derived parent link over the authored nesting. The renderer
-    // takes the authored side of both — `render_scxml_state` says so
-    // at the `on sample` loop, where printing the index too "would
-    // say each link twice" — so the decision these two need is the
-    // one already made: analyzer arithmetic, not shown.
+    // A derived index over the authored `on_sample_blocks`. The renderer
+    // takes the authored side — `render_scxml_state` says so at the
+    // `on sample` loop, where printing the index too "would say each
+    // link twice" — so the decision it needs is the one already made:
+    // analyzer arithmetic, not shown.
+    // ⚠ `parent` was listed beside it as "a derived parent link". The
+    // parser writes a state's `parent`, not the analyzer; the entry was
+    // a state whose id is `parent`, read as a field by a filter that
+    // went by name.
     "on_sample_links",
-    "parent",
     "prefix_matching_events",
     "readable_variables",
     "states",
