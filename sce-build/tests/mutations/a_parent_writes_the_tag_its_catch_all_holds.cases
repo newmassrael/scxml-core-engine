@@ -7,17 +7,19 @@
 # derives the flag's bits from the arm the embedded body holds; a catch-all
 # body holds the tag no arm names, and that tag, masked to the flag's width,
 # is what the parent writes (ADR 0058). The flag is the body's, so the encode
-# clears it in the stored carrier before it adds the derived bits. The C
-# parent once added nothing for a catch-all body and the C++ parent the bits
-# of its last arm, and each backend added the derived bits to the stored
-# flag. Each case below breaks one part of the rule: the derivation forgets
-# the catch-all, a backend leaves the catch-all out of its term or writes the
-# tag unmasked or unshifted, or a carrier write keeps the stored flag.
+# clears it in the stored carrier before it adds the derived bits. C and Go
+# once added nothing for a catch-all body, C++ and Python the bits of the
+# last arm, Kotlin named no catch-all in its `when`, and each added the
+# derived bits to the stored flag. Each case below breaks one part of the
+# rule: the derivation forgets the catch-all, a backend leaves the catch-all
+# out of its term or writes the tag unmasked or unshifted, Kotlin parts its
+# entries so that one reads as a type test, or a carrier write keeps the
+# stored flag.
 # `sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs` refuses
-# them by the term and the carrier write each backend renders and, where gcc
-# and g++ are present, by a decode and encode of two frames whose stored flag
-# is made stale. The runs do not reach the gated C++ chain or the unmasked
-# tag: their variant has no gated arm, and their tags fill the flag.
+# them by the term and the carrier write each backend renders and, where a
+# backend's toolchain is present, by a decode and encode of two frames whose
+# stored flag is made stale. The runs do not reach the gated C++ chain or the
+# unmasked tag: their variant has no gated arm, and their tags fill the flag.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -74,6 +76,40 @@ edit("sce-build/src/forge/generator.rs",
      r'''u) << {}); break;\n",
             0u32
         ));''')
+PY
+
+# ── The Python, Go and Kotlin parents ──
+
+mutation_case "a Python parent leaves the catch-all out of its term" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if d.catch_all {
+        inner = format!(''',
+     r'''    if d.catch_all && d.bit == u32::MAX {
+        inner = format!(''')
+PY
+
+mutation_case "a Go parent has no case for a catch-all body" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if d.catch_all {
+        switch_block.push_str(&format!(
+            "\tcase {embed}.Body.Default != nil:''',
+     r'''    if d.catch_all && d.bit == u32::MAX {
+        switch_block.push_str(&format!(
+            "\tcase {embed}.Body.Default != nil:''')
+PY
+
+mutation_case "a Kotlin parent's when names no catch-all" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if d.catch_all {
+        arms.push(format!(''',
+     r'''    if d.catch_all && d.bit == u32::MAX {
+        arms.push(format!(''')
+PY
+
+mutation_case "a Kotlin parent parts its when entries by a space" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let arms_str = arms.join("; ");''',
+     r'''    let arms_str = arms.join(" ");''')
 PY
 
 # ── The carrier write ──

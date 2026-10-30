@@ -19124,12 +19124,23 @@ fn parent_tag_gated_chain_cpp(
 
 /// Single-embed match-expression term for Kotlin. Uses `when` over the
 /// sealed variant body and produces an `Int` (the bit pattern). For a
-/// nullable embed, safe-call + Elvis collapses the absent case to 0.
+/// nullable embed, safe-call + Elvis collapses the absent case to 0. The
+/// entries are parted by `;`: an entry's value followed by the next `is`
+/// would read as one type test. A catch-all body fills the carrier with the
+/// tag it holds (ADR 0058), read through the `when`'s own binding of the
+/// body, since the body is a `var` a type test does not narrow.
 fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let embed_pascal = parent_tag_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
-    let mut arms = Vec::with_capacity(d.arms.len());
+    // The name the catch-all's entry reads the body by: the lambda's `it`
+    // for a nullable embed, the `when`'s own binding otherwise.
+    let held = if d.present_if.is_some() {
+        "it"
+    } else {
+        "_held"
+    };
+    let mut arms = Vec::with_capacity(d.arms.len() + 1);
     for arm in &d.arms {
         let variant = filters::to_pascal_case(arm.body_alias.clone());
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
@@ -19137,9 +19148,17 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
             "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}"
         ));
     }
-    let arms_str = arms.join(" ");
+    if d.catch_all {
+        arms.push(format!(
+            "is {embed_pascal}Variant.Default -> (({held}.tag.toInt() and 0x{mask:X}) shl {})",
+            d.bit
+        ));
+    }
+    let arms_str = arms.join("; ");
     if d.present_if.is_some() {
         format!("(this.{snake}?.body?.let {{ when (it) {{ {arms_str} }} }} ?: 0)")
+    } else if d.catch_all {
+        format!("(when (val {held} = this.{snake}.body) {{ {arms_str} }})")
     } else {
         format!("(when (this.{snake}.body) {{ {arms_str} }})")
     }
@@ -19181,7 +19200,16 @@ fn parent_tag_match_term_python(d: &ParentTagDerivation, imports: &[ImportContex
     for _ in 0..d.arms.len().saturating_sub(1) {
         chain.push(')');
     }
-    let inner = format!("({chain})");
+    let mut inner = format!("({chain})");
+    // A catch-all body fills the carrier with the tag it holds (ADR 0058),
+    // which the dispatcher keeps in `default_tag`; it is tested ahead of the
+    // arms, whose last one is the fallthrough.
+    if d.catch_all {
+        inner = format!(
+            "(((self.{snake}.body.default_tag & 0x{mask:X}) << {}) if self.{snake}.body.kind == \"Default\" else {inner})",
+            d.bit
+        );
+    }
     if d.present_if.is_some() {
         format!("({inner} if self.{snake} is not None else 0)")
     } else {
@@ -19227,6 +19255,13 @@ fn parent_tag_switch_block_go(
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         switch_block.push_str(&format!(
             "\tcase {embed}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
+        ));
+    }
+    // A catch-all body fills the carrier with the tag it holds (ADR 0058).
+    if d.catch_all {
+        switch_block.push_str(&format!(
+            "\tcase {embed}.Body.Default != nil:\n\t\t{local} |= byte(({embed}.Body.Default.Tag & 0x{mask:X}) << {})\n",
+            d.bit
         ));
     }
     switch_block.push_str("\t}\n");
