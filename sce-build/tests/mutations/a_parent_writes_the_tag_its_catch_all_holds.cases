@@ -1,0 +1,70 @@
+# Mutation cases for "a parent writes the tag its catch-all holds".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_parent_writes_the_tag_its_catch_all_holds.cases`.
+#
+# A parent whose carrier holds, in a flag, the tag of a variant it embeds
+# derives the flag's bits from the arm the embedded body holds; a catch-all
+# body holds the tag no arm names, and that tag, masked to the flag's width,
+# is what the parent writes (ADR 0058). The C parent once added nothing for
+# a catch-all body and the C++ parent the bits of its last arm, so the frame
+# decoded into another arm. Each case below breaks one part of the rule: the
+# derivation forgets the catch-all, a C++ chain leaves its term out, the term
+# writes the tag unmasked, or the C case is left out or not shifted.
+# `sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs` refuses
+# them by the term each backend renders.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_parent_writes_the_tag_its_catch_all_holds
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs
+
+mutation_case "the derivation forgets the embedded variant's catch-all" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                catch_all: imp.codec_variant_has_catch_all,''',
+     r'''                catch_all: false,''')
+PY
+
+# ── The C++ parent ──
+
+mutation_case "a C++ parent leaves the catch-all's term out of its chain" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if let Some(term) = catch_all {
+        chain.push_str(&format!("{term} : "));
+    }''',
+     r'''    let _ = catch_all;''')
+PY
+
+mutation_case "a C++ parent of a gated variant leaves the catch-all's term out" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        chain.push_str(&format!("            {term} :\n"));''',
+     r'''        let _ = term;''')
+PY
+
+mutation_case "a C++ parent writes the catch-all's tag unmasked" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''->tag & 0x{mask:X}u) << {})",''',
+     r'''->tag) << {})",''')
+PY
+
+# ── The C parent ──
+
+mutation_case "a C parent has no case for a catch-all body" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if d.catch_all {
+        switch_block.push_str(&format!(''',
+     r'''    if d.catch_all && d.bit == u32::MAX {
+        switch_block.push_str(&format!(''')
+PY
+
+mutation_case "a C parent adds the catch-all's tag without shifting it to the flag" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''u) << {}); break;\n",
+            d.bit
+        ));''',
+     r'''u) << {}); break;\n",
+            0u32
+        ));''')
+PY

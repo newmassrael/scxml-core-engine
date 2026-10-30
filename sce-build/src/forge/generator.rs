@@ -18813,6 +18813,7 @@ pub(crate) fn collect_parent_tag_derivations(
                 width: flag_def.width.max(1),
                 present_if: f.present_if.clone(),
                 arms,
+                catch_all: imp.codec_variant_has_catch_all,
             });
         }
         // No `embed_dispatch` → this embed isn't parent-tag dispatched at
@@ -18853,6 +18854,10 @@ pub(crate) struct ParentTagDerivation {
     present_if: Option<PresentIfPredicate>,
     /// Each embedded variant arm, in declaration order.
     arms: Vec<InvertedArm>,
+    /// Whether the embedded variant has a catch-all `<sce:default>` arm. A
+    /// body it holds presents the tag no arm names, and that tag, masked to
+    /// the flag's width, is what the carrier holds (ADR 0058).
+    catch_all: bool,
 }
 
 /// RFC §synth-5-B parent-tag dispatch — emit per-language locals at the parent codec's
@@ -18975,11 +18980,18 @@ fn parent_tag_derivation_local_for_carrier(
 /// `collect_parent_tag_derivations` precondition together guarantee every
 /// derivation's alias resolves in `imports`.
 fn parent_tag_embed_pascal<'a>(d: &ParentTagDerivation, imports: &'a [ImportContext]) -> &'a str {
-    imports
-        .iter()
-        .find(|i| i.alias == d.embed_alias)
-        .map(|i| i.type_name.as_str())
-        .expect("parent-tag embed alias must resolve in parent imports (cross-doc validator guarantees)")
+    parent_tag_embed_import(d, imports).type_name.as_str()
+}
+
+/// The parent's import of the dispatcher codec a parent-tag embed holds;
+/// the same guarantee as [`parent_tag_embed_pascal`] makes it resolve.
+fn parent_tag_embed_import<'a>(
+    d: &ParentTagDerivation,
+    imports: &'a [ImportContext],
+) -> &'a ImportContext {
+    imports.iter().find(|i| i.alias == d.embed_alias).expect(
+        "parent-tag embed alias must resolve in parent imports (cross-doc validator guarantees)",
+    )
 }
 
 /// Single-embed match-expression term for Cpp. Uses std::variant
@@ -18987,23 +18999,36 @@ fn parent_tag_embed_pascal<'a>(d: &ParentTagDerivation, imports: &'a [ImportCont
 /// type is `std::uint8_t` without needing `std::visit` or overloaded
 /// helpers. Optional embeds add a `has_value()` gate; absent → 0. An
 /// embedded variant with an arm under a build feature is written by
-/// `parent_tag_gated_chain_cpp`, whose indices hold in every build.
+/// `parent_tag_gated_chain_cpp`, whose indices hold in every build. A
+/// catch-all body is found by its wrapper's type, ahead of every arm, and
+/// fills the carrier with the tag it holds (ADR 0058).
 fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
-    // imp lookup ensures the embed alias resolves (parity with the
-    // other backends); Cpp's variant dispatch is by `.index()` so the
-    // type name itself isn't spelled in the emit body.
-    let _ = parent_tag_embed_pascal(d, imports);
+    // The import lookup ensures the embed alias resolves (parity with the
+    // other backends); an arm is dispatched by `.index()`, so only the
+    // catch-all's wrapper spells the dispatcher's type.
+    let import = parent_tag_embed_import(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
-    let body_access = if d.present_if.is_some() {
-        format!("(*{snake}).body.index()")
+    let body = if d.present_if.is_some() {
+        format!("(*{snake}).body")
     } else {
-        format!("{snake}.body.index()")
+        format!("{snake}.body")
     };
+    let body_access = format!("{body}.index()");
+    let catch_all = d.catch_all.then(|| {
+        // The catch-all's wrapper is `<Struct>Default` in the dispatcher's
+        // namespace (`forge/cpp/codec.h.jinja2`), next to its `<Struct>`.
+        let wrapper = format!("{}Default", import.member_type);
+        format!(
+            "std::get_if<{wrapper}>(&{body}) != nullptr ? \
+             static_cast<std::uint8_t>((std::get_if<{wrapper}>(&{body})->tag & 0x{mask:X}u) << {})",
+            d.bit
+        )
+    });
     let chain = if d.arms.iter().any(|arm| arm.feature.is_some()) {
-        parent_tag_gated_chain_cpp(d, &body_access, mask)
+        parent_tag_gated_chain_cpp(d, &body_access, catch_all.as_deref(), mask)
     } else {
-        parent_tag_chain_cpp(d, &body_access, mask)
+        parent_tag_chain_cpp(d, &body_access, catch_all.as_deref(), mask)
     };
     if d.present_if.is_some() {
         format!("({snake}.has_value() ? ({chain}) : static_cast<std::uint8_t>(0))")
@@ -19016,10 +19041,19 @@ fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext])
 }
 
 /// The chained ternary of `parent_tag_match_term_cpp` over an embedded
-/// variant every build holds each arm of: arm `i` is the alternative at index
-/// `i`, and the last arm is the fallthrough.
-fn parent_tag_chain_cpp(d: &ParentTagDerivation, body_access: &str, mask: u64) -> String {
+/// variant every build holds each arm of: the catch-all's term first where
+/// the variant has one, then arm `i` is the alternative at index `i`, and the
+/// last arm is the fallthrough.
+fn parent_tag_chain_cpp(
+    d: &ParentTagDerivation,
+    body_access: &str,
+    catch_all: Option<&str>,
+    mask: u64,
+) -> String {
     let mut chain = String::new();
+    if let Some(term) = catch_all {
+        chain.push_str(&format!("{term} : "));
+    }
     for (idx, arm) in d.arms.iter().enumerate() {
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         let literal = format!("static_cast<std::uint8_t>(0x{shifted:02X})");
@@ -19039,17 +19073,26 @@ fn parent_tag_chain_cpp(d: &ParentTagDerivation, body_access: &str, mask: u64) -
 /// so the term the arm adds is compiled under the same macro, and the index of
 /// every alternative after it is counted per build: the arms before it every
 /// build holds, plus `(SCE_FEATURE_<NAME> ? 1 : 0)` for each one before it
-/// under a feature. The fallthrough, which the catch-all's wrapper reaches, is
-/// the last arm every build holds, so it is the same arm in every build, and
-/// the last arm, as in a variant without a gated arm, when that one is held by
-/// every build; it is 0 when every arm is under a feature.
-fn parent_tag_gated_chain_cpp(d: &ParentTagDerivation, body_access: &str, mask: u64) -> String {
+/// under a feature. The catch-all's term, which names its wrapper by type, is
+/// first where the variant has one. The fallthrough is the last arm every
+/// build holds, so it is the same arm in every build, and the last arm, as in
+/// a variant without a gated arm, when that one is held by every build; it is
+/// 0 when every arm is under a feature.
+fn parent_tag_gated_chain_cpp(
+    d: &ParentTagDerivation,
+    body_access: &str,
+    catch_all: Option<&str>,
+    mask: u64,
+) -> String {
     let literal_of = |arm: &InvertedArm| {
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         format!("static_cast<std::uint8_t>(0x{shifted:02X})")
     };
     let fallthrough = d.arms.iter().rposition(|arm| arm.feature.is_none());
     let mut chain = String::from("\n");
+    if let Some(term) = catch_all {
+        chain.push_str(&format!("            {term} :\n"));
+    }
     let mut held_before = 0usize;
     let mut gated_before: Vec<String> = Vec::new();
     for (idx, arm) in d.arms.iter().enumerate() {
@@ -19232,6 +19275,14 @@ fn parent_tag_switch_block_c11(
         if feature_macro.is_some() {
             switch_block.push_str("#endif\n");
         }
+    }
+    // A catch-all body fills the carrier with the tag it holds (ADR 0058),
+    // which the dispatcher keeps in `default_tag` (`forge/c/codec.h.jinja2`).
+    if d.catch_all {
+        switch_block.push_str(&format!(
+            "    case {embed_upper}_BODY_KIND_DEFAULT: {local} |= (uint8_t)((self->{snake}.body.default_tag & 0x{mask:X}u) << {}); break;\n",
+            d.bit
+        ));
     }
     switch_block.push_str("    default: break;\n    }\n");
     if let Some(p) = &d.present_if {
