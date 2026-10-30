@@ -1161,7 +1161,7 @@ fn line_above(code: &str, item: &str) -> String {
 fn a_no_std_machine_is_built_only_under_a_session_id_its_host_gives() {
     // docs/adr/0045, "Questions the owner answered" 2: a `no_std` target has no
     // source of randomness, so its host gives the session id as a required
-    // argument of the one constructor there is, held to the Nmtoken rule there
+    // argument of every constructor there is, held to the Nmtoken rule there
     // with nothing allocated, and held by the policy as the text it was given.
     let model = parse(PLAIN_FSM, "plain_nostd_session_id");
     let code = generate(&model, &template_dir(), true).expect("template render must succeed");
@@ -1186,6 +1186,38 @@ fn a_no_std_machine_is_built_only_under_a_session_id_its_host_gives() {
             !code.contains(absent),
             "a no_std machine has no way to be built without an id, so `{absent}` \
              is not emitted:\n{code}"
+        );
+    }
+}
+
+#[test]
+fn a_session_id_proven_to_be_an_nmtoken_builds_the_machine_without_a_check() {
+    // docs/adr/0073: the constructor that takes a `SessionId` has nothing to
+    // refuse, so it neither returns a `Result` nor calls the run-time check;
+    // a program whose machines are all built this way does not link it.
+    for no_std in [true, false] {
+        let model = parse(PLAIN_FSM, "plain_checked_session_id");
+        let code = generate(&model, &template_dir(), no_std).expect("template render must succeed");
+        let start = code
+            .find("pub fn new_with_checked_session_id(")
+            .unwrap_or_else(|| panic!("no_std={no_std}: the constructor is emitted:\n{code}"));
+        let body = &code[start..start + code[start..].find("\n    }").expect("its body ends")];
+        assert!(
+            body.contains("session_id: ::sce_rust_runtime::helpers::session_id::SessionId")
+                && body.contains(") -> Self {"),
+            "no_std={no_std}: it takes a SessionId and cannot fail:\n{body}"
+        );
+        assert!(
+            !body.contains("session_id::checked") && !body.contains("session_id::given"),
+            "no_std={no_std}: it does not check the id again:\n{body}"
+        );
+        assert!(
+            body.contains(if no_std {
+                "Self::build(session_id.as_str()"
+            } else {
+                "Self::build(session_id.as_str().to_string()"
+            }),
+            "no_std={no_std}: the policy holds the proven text:\n{body}"
         );
     }
 }

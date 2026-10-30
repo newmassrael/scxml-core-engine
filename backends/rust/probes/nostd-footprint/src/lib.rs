@@ -52,9 +52,11 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
 
 /// The session id the host gives the machine where it builds it, as a `no_std`
 /// host must: there is no source of randomness to draw one from
-/// (docs/adr/0045). Its check is part of what building a machine costs, so it
-/// is weighed with the rest.
-const PROBE_SESSION_ID: &str = "footprint-probe";
+/// (docs/adr/0045). Proven an Nmtoken while the probe is compiled, as a
+/// consumer that states its id as a literal proves it (docs/adr/0073), so the
+/// image carries no run-time check of it.
+const PROBE_SESSION_ID: sce_rust_runtime::helpers::session_id::SessionId =
+    sce_rust_runtime::session_id!("footprint-probe");
 
 /// `Engine::step` — the synchronous driving call, and the one whose inlined
 /// body carries `run_main_event_loop`.
@@ -63,9 +65,7 @@ const PROBE_SESSION_ID: &str = "footprint-probe";
 /// having no observable result.
 #[no_mangle]
 pub extern "C" fn sce_footprint_step() -> bool {
-    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return false;
-    };
+    let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();
@@ -77,9 +77,7 @@ pub extern "C" fn sce_footprint_step() -> bool {
 /// from an interrupt handler uses.
 #[no_mangle]
 pub extern "C" fn sce_footprint_process_event() -> bool {
-    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return false;
-    };
+    let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.process_event(FirstEvent::E1);
@@ -93,9 +91,7 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 /// footprint was the one a consumer's firmware alone could see.
 #[no_mangle]
 pub extern "C" fn sce_footprint_tick() -> bool {
-    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return false;
-    };
+    let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.tick();
@@ -112,9 +108,7 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
     use sce_nostd_queue_size_machine::{
         EventQueueCapacityProbeEvent, EventQueueCapacityProbePolicy,
     };
-    let Ok(policy) = EventQueueCapacityProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return false;
-    };
+    let policy = EventQueueCapacityProbePolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();
@@ -140,9 +134,7 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
 #[cfg(feature = "macrostep-diagnostics")]
 #[no_mangle]
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {
-    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
-        return 0;
-    };
+    let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();

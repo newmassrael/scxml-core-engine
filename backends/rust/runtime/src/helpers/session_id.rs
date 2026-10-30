@@ -144,6 +144,60 @@ pub const fn checked(id: &str) -> Result<&str, SessionIdRefusal> {
     Ok(id)
 }
 
+/// A session id shown to be an XML Nmtoken, so a constructor that takes one
+/// has nothing to refuse.
+///
+/// The proof is made by [`new`](Self::new), a constant function: written
+/// where a constant is (the [`session_id!`](crate::session_id) macro, or a
+/// `const` item), an id that is not an Nmtoken is a compile error, and the
+/// program that holds it carries no run-time check of it. A host that gets
+/// its id at run time gives it to the fallible constructor instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SessionId(&'static str);
+
+impl SessionId {
+    /// `id`, held to the Nmtoken rule.
+    ///
+    /// # Panics
+    ///
+    /// When `id` is not an XML Nmtoken (the empty text, a space, a `#`). In a
+    /// constant that is a compile error, which is what this is for; the
+    /// reason is the one [`checked`] gives for the same id.
+    pub const fn new(id: &'static str) -> Self {
+        match checked(id) {
+            Ok(id) => Self(id),
+            Err(_) => panic!("the session id is not an XML Nmtoken"),
+        }
+    }
+
+    /// The id's text.
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+/// A [`SessionId`] proven while the program is compiled: the literal is
+/// checked in a constant, so a bad one does not build and nothing checks it
+/// at run time.
+///
+/// ```
+/// const UNICAST: sce_rust_runtime::helpers::session_id::SessionId =
+///     sce_rust_runtime::session_id!("wz-session-unicast");
+/// assert_eq!(UNICAST.as_str(), "wz-session-unicast");
+/// ```
+///
+/// ```compile_fail
+/// let _ = sce_rust_runtime::session_id!("not an nmtoken");
+/// ```
+#[macro_export]
+macro_rules! session_id {
+    ($id:expr) => {{
+        const ID: $crate::helpers::session_id::SessionId =
+            $crate::helpers::session_id::SessionId::new($id);
+        ID
+    }};
+}
+
 /// [`checked`], owned: the id a machine with an allocator holds.
 #[cfg(feature = "std")]
 pub fn given(id: &str) -> Result<String, SessionIdRefusal> {

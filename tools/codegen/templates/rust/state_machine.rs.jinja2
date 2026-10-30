@@ -969,6 +969,8 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% set session_id_param_type = "&'static str" if no_std else "String" %}
 {% set given_param_type = "&'static str" if no_std else "&str" %}
 {% set given_session_id = "::sce_rust_runtime::helpers::session_id::checked(session_id)?" if no_std else "::sce_rust_runtime::helpers::session_id::given(session_id)?" %}
+{# docs/adr/0073: the id `build` takes from a `SessionId`, already an Nmtoken. #}
+{% set proven_session_id = "session_id.as_str()" if no_std else "session_id.as_str().to_string()" %}
 {# The targets with a source of randomness the runtime reads, where `new`
    draws a session id: the predicate `helpers::session_id::drawn` is compiled
    under. #}
@@ -1172,12 +1174,15 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// `REALIZATION` is `Simulates` does not compile here.{% endif %}
     ///
 {% if no_std %}
-    /// The one way this machine is built: a `no_std` target has no source of
-    /// randomness the runtime reads, and takes the id from its host as it
-    /// takes the time. The id is held, not copied.
+    /// A `no_std` target has no source of randomness the runtime reads, and
+    /// takes the id from its host as it takes the time: here, or already
+    /// proven through
+    /// [`new_with_checked_session_id`](Self::new_with_checked_session_id). The
+    /// id is held, not copied.
 {% else %}
-    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
-    /// no source of randomness the runtime reads.
+    /// With [`new_with_checked_session_id`](Self::new_with_checked_session_id),
+    /// the way this machine is built on `wasm32-unknown-unknown`, which has no
+    /// source of randomness the runtime reads.
 {% endif %}
     ///
     /// # Errors
@@ -1203,6 +1208,27 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         Ok(Self::build({{ given_session_id }}{{ ctor_rest_args }}))
     }
 {% endif %}
+
+    /// [`new_with_session_id`](Self::new_with_session_id) under an id already
+    /// proven to be an XML Nmtoken (docs/adr/0073), so nothing is refused. With
+    /// the id written as `sce_rust_runtime::session_id!("...")`, a bad one is a
+    /// compile error and the program carries no run-time check of it.{% if has_native_duties %} A host
+    /// whose `REALIZATION` is `Simulates` does not compile here.{% endif %}
+    pub fn new_with_checked_session_id(session_id: ::sce_rust_runtime::helpers::session_id::SessionId{{ ctor_rest_params }}) -> Self {
+{% if has_native_duties %}
+        let () = Self::HOST_PERFORMS_DUTIES;
+{% endif %}
+        Self::build({{ proven_session_id }}{{ ctor_rest_args }})
+    }
+{% if has_native_duties %}
+
+    /// [`new_with_checked_session_id`](Self::new_with_checked_session_id) with a
+    /// host that only simulates its duties — a recorder, a test double — as the
+    /// caller's statement that it means to.
+    pub fn new_simulated_with_checked_session_id(session_id: ::sce_rust_runtime::helpers::session_id::SessionId{{ ctor_rest_params }}) -> Self {
+        Self::build({{ proven_session_id }}{{ ctor_rest_args }})
+    }
+{% endif %}
 {% if const_buildable %}
 
     /// [`new_with_session_id`](Self::new_with_session_id), in a constant
@@ -1220,24 +1246,16 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if has_native_duties %}
         let () = Self::HOST_PERFORMS_DUTIES;
 {% endif %}
-        Self::build(Self::held_session_id(session_id){{ ctor_rest_args }})
+        Self::build(::sce_rust_runtime::helpers::session_id::SessionId::new(session_id).as_str(){{ ctor_rest_args }})
     }
 {% if has_native_duties %}
 
     /// [`new_const`](Self::new_const) with a host that only simulates its duties
     /// — a recorder, a test double — as the caller's statement that it means to.
     pub const fn new_simulated_const(session_id: &'static str{{ ctor_rest_params }}) -> Self {
-        Self::build(Self::held_session_id(session_id){{ ctor_rest_args }})
+        Self::build(::sce_rust_runtime::helpers::session_id::SessionId::new(session_id).as_str(){{ ctor_rest_args }})
     }
 {% endif %}
-
-    /// `session_id`, held to the Nmtoken rule in a constant expression.
-    const fn held_session_id(session_id: &'static str) -> &'static str {
-        match ::sce_rust_runtime::helpers::session_id::checked(session_id) {
-            Ok(id) => id,
-            Err(_) => panic!("the session id is not an XML Nmtoken"),
-        }
-    }
 {% endif %}
 {% if not no_std %}
 
