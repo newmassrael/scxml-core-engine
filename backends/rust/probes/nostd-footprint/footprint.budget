@@ -130,7 +130,11 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # bytes with no temporary. The figure for one more machine rose because the
 # first machine, built at four of the probe's entry points, now carries its
 # constructor once, and the second carries its own out of line.
-MACHINE_BYTES=1714
+#
+# 1714 -> 1692 (2026-10-30): a workspace's buffers are not initialised before a
+# buffer writes them (docs/adr/0071), images of 194005 and 195697. `run_turn`
+# no longer fills the walk's slots in a loop on a temporary and copies them in.
+MACHINE_BYTES=1692
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -164,7 +168,10 @@ MACHINE_BYTES=1714
 #
 # 1632 -> 1660 (2026-10-30): the empty queue a constant and the constructor out
 # of line (docs/adr/0070), images of 193913 and 195573, as above.
-MACHINE_BYTES_NO_DIAGNOSTICS=1660
+#
+# 1660 -> 1638 (2026-10-30): the workspace's buffers uninitialised
+# (docs/adr/0071), images of 193801 and 195439.
+MACHINE_BYTES_NO_DIAGNOSTICS=1638
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -190,7 +197,10 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1660
 # (`helpers::event_queue` joined CORE_SYMBOLS, 152 of the bytes). The machine's
 # figure above fell by 718 while the core gained 672: the core is paid once, a
 # machine's figure for each.
-CORE_BYTES=7374
+#
+# 7374 -> 7312 over 23 symbols (2026-10-30): a buffer reads only the prefix it
+# wrote, over slots nothing initialised (docs/adr/0071).
+CORE_BYTES=7312
 
 # The same without the report.
 #
@@ -205,7 +215,10 @@ CORE_BYTES=7374
 #
 # 6684 -> 7266 over 23 symbols (2026-10-30), events as numbers and the queue
 # counted with the core (docs/adr/0068), as above.
-CORE_BYTES_NO_DIAGNOSTICS=7266
+#
+# 7266 -> 7204 over 23 symbols (2026-10-30), the workspace's buffers
+# uninitialised (docs/adr/0071), as above.
+CORE_BYTES_NO_DIAGNOSTICS=7204
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -245,8 +258,11 @@ CORE_BYTES_NO_DIAGNOSTICS=7266
 # 1456 -> 1496 (2026-10-30): the empty queue a constant and the constructor out
 # of line (docs/adr/0070), images of 190966 and 192462, each smaller than before
 # (191070, 192526), as above.
-MACHINE_BYTES_PLAIN=1496
-CORE_BYTES_PLAIN=5384
+#
+# 1496 -> 1460 and 5384 -> 5326 over 16 symbols (2026-10-30): the workspace's
+# buffers uninitialised (docs/adr/0071), images of 190874 and 192334.
+MACHINE_BYTES_PLAIN=1460
+CORE_BYTES_PLAIN=5326
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -365,7 +381,10 @@ STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
 STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<|\sas\ssce_rust_runtime::engine::MainLoop>::=${ALL_FEATURES}"
 STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[>:])'
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1120
+#
+# 1120 -> 1032 (2026-10-30): the workspace's buffers are not filled before a
+# turn lends them, so `run_turn` holds them once (328 -> 240) (docs/adr/0071).
+STACK_BYTES=1032
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -392,5 +411,8 @@ STACK_ROOT_FRAME_BYTES=64
 # 1128 -> 928 (2026-10-30): one workspace per turn in `run_turn` (240), and the
 # entry no longer dereferences the targets twice (docs/adr/0068).
 STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::step Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::initialize Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::process_event'
-STACK_BYTES_PLAIN=928
+#
+# 928 -> 880 (2026-10-30): `run_turn` 240 -> 192, the workspace held once
+# (docs/adr/0071).
+STACK_BYTES_PLAIN=880
 STACK_TOLERANCE_BYTES=256
