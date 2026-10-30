@@ -27811,10 +27811,15 @@ fn render_procedure_rust(
                 h.name,
                 setter_name,
             );
+            // The field is declared by a name for its boxed type: clippy
+            // refuses the bare `Box<dyn Fn(..) -> ..>` as a field's type
+            // (`type_complexity`).
+            let closure_alias = format!("{}Helper", filters::to_pascal_case(h.name.clone()));
             serde_json::json!({
                 "id": snake,
                 "setter_name": setter_name,
                 "closure_type": closure_type,
+                "closure_alias": closure_alias,
                 "setter_param_type": setter_param_type,
                 "default_impl": default_impl,
             })
@@ -27946,6 +27951,9 @@ fn render_procedure_rust(
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
         final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        // Whether any state can leave: a procedure with no transition reads
+        // neither the state nor the event it is asked about.
+        has_transitions => m.states.iter().any(|s| !s.is_final && !s.transitions.is_empty()),
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => common.has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),

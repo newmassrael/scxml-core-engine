@@ -62,6 +62,16 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+{# The boxed closures the policy holds are declared by name: clippy refuses a
+   bare `Box<dyn Fn(..) -> ..>` as a field's type (`type_complexity`). The
+   setters still take any closure of the signature. #}
+/// The service handler a procedure sends its requests through.
+type BoxedServiceHandler = Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>;
+{% for h in helper_fields %}
+/// The `{{ h.id }}` helper a procedure's expressions call.
+type {{ h.closure_alias }} = {{ h.closure_type }};
+{% endfor %}
+
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -81,9 +91,9 @@ pub struct {{ struct_name }} {
     pub {{ imp.member_name }}: {{ imp.member_type }},
 {% endfor %}
 {% endif %}
-    service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    service_handler: Option<BoxedServiceHandler>,
 {% for h in helper_fields %}
-    {{ h.id }}: {{ h.closure_type }},
+    {{ h.id }}: {{ h.closure_alias }},
 {% endfor %}
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
@@ -142,10 +152,26 @@ impl {{ struct_name }} {
     }
 }
 
+{# A procedure is built with `new`, and `Default` is the same value: a public
+   type with a `new()` and no `Default` is refused by clippy
+   (`new_without_default`). #}
+impl Default for {{ struct_name }} {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 {# The guards, assignments and send expressions are the document's, lowered as
    the other five backends lower them: a text compared to `''` stays a
-   comparison. #}
-#[allow(clippy::comparison_to_empty)]
+   comparison, a `bool` compared to `true` stays a comparison, a value checked
+   against two bounds stays the two comparisons, and `x = x + 1` stays the
+   assignment the document wrote. #}
+#[allow(
+    clippy::assign_op_pattern,
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 impl ProcedurePolicy for {{ struct_name }} {
     type State = State;
     type Event = Event;
@@ -172,76 +198,68 @@ impl ProcedurePolicy for {{ struct_name }} {
         &self.done_data
     }
 
+{# The three dispatches below are flat `if`s, one per state, per transition and
+   per transition with assignments, and not a `match` over the state with an
+   `if` per transition inside each arm: a procedure whose states hold one entry
+   action or one transition made that shape a `match` of one arm, or of none,
+   and an arm whose whole body is one `if`, each of which clippy refuses
+   (`single_match`, `match_single_binding`, `collapsible_match`,
+   `collapsible_if`). The states are distinct, so at most one entry `if` holds,
+   and the transitions are tried in document order, the first enabled one
+   taken, as the `if`s inside each arm were. #}
     fn execute_entry_actions(&mut self, state: State) -> (Event, String) {
-        match state {
 {% for s in states_with_entry %}
-            State::{{ s.name }} => {
+        if state == State::{{ s.name }} {
 {% for send in s.sends %}
-                if let Some(ref handler) = self.service_handler {
+            if let Some(ref handler) = self.service_handler {
 {% if send.payload and send.payload_fallible %}
-                    // The codec refuses a value it cannot carry: the request is
-                    // not sent, and the send fails as the service failing would.
-                    let payload = match {{ send.payload_expr }} {
-                        Ok(bytes) => bytes,
-                        Err(e) => return (Event::Fail, format!("{e:?}")),
-                    };
+                // The codec refuses a value it cannot carry: the request is
+                // not sent, and the send fails as the service failing would.
+                let payload = match {{ send.payload_expr }} {
+                    Ok(bytes) => bytes,
+                    Err(e) => return (Event::Fail, format!("{e:?}")),
+                };
 {% endif %}
-                    let req = ProcedureServiceRequest {
-                        service: "{{ send.service }}".to_string(),
-                        subfunc: {% if send.subfunc %}Some("{{ send.subfunc }}".to_string()){% else %}None{% endif %},
-                        addr: {% if send.has_addr %}Some(({{ send.addr_expr }}).to_string()){% else %}None{% endif %},
-                        payload: {% if send.payload and send.payload_fallible %}Some(payload){% elif send.payload %}Some({{ send.payload_expr }}){% else %}None{% endif %},
-                    };
-                    let resp = handler(&req);
-                    let event = if resp.success { Event::Ok } else { Event::Fail };
-                    return (event, resp.data);
-                }
-{% endfor %}
+                let req = ProcedureServiceRequest {
+                    service: "{{ send.service }}".to_string(),
+                    subfunc: {% if send.subfunc %}Some("{{ send.subfunc }}".to_string()){% else %}None{% endif %},
+                    addr: {% if send.has_addr %}Some(({{ send.addr_expr }}).to_string()){% else %}None{% endif %},
+                    payload: {% if send.payload and send.payload_fallible %}Some(payload){% elif send.payload %}Some({{ send.payload_expr }}){% else %}None{% endif %},
+                };
+                let resp = handler(&req);
+                let event = if resp.success { Event::Ok } else { Event::Fail };
+                return (event, resp.data);
             }
+{% endfor %}
+        }
 {% endfor %}
 {% for s in final_states_with_donedata %}
-            State::{{ s.name }} => {
+        if state == State::{{ s.name }} {
 {% for p in s.done_params %}
-                self.done_data.insert("{{ p.name }}".to_string(), {{ p.expr }}.to_string());
+            self.done_data.insert("{{ p.name }}".to_string(), {{ p.expr }}.to_string());
 {% endfor %}
-            }
-{% endfor %}
-            _ => {}
         }
+{% endfor %}
+{% if not states_with_entry and not final_states_with_donedata %}
+        let _ = state; // no state has an entry action
+{% endif %}
         (Event::None, String::new())
     }
 
+{# A guard is parenthesised whole: it is the document's expression, and one
+   whose operator binds more loosely than `&&` would otherwise take the state
+   and the event into its own left operand. #}
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
-        match state {
 {% for s in non_final_states %}
-            State::{{ s.name }} => {
 {% for tr in s.transitions %}
-{% if tr.has_event %}
-                if event == Event::{{ tr.event_enum }} {
-{% if tr.has_cond %}
-                    if {{ tr.cond }} {
-                        return Some((State::{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}));
-                    }
-{% else %}
-                    return Some((State::{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}));
-{% endif %}
-                }
-{% else %}
-                if event == Event::None {
-{% if tr.has_cond %}
-                    if {{ tr.cond }} {
-                        return Some((State::{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}));
-                    }
-{% else %}
-                    return Some((State::{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}));
-{% endif %}
-                }
-{% endif %}
-{% endfor %}
-            }
-{% endfor %}
-            _ => {}
+        if state == State::{{ s.name }} && event == Event::{% if tr.has_event %}{{ tr.event_enum }}{% else %}None{% endif %}{% if tr.has_cond %} && ({{ tr.cond }}){% endif %} {
+            return Some((State::{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}));
         }
+{% endfor %}
+{% endfor %}
+{% if not has_transitions %}
+        let _ = (state, event); // no state has a transition
+{% endif %}
         None
     }
 
@@ -251,25 +269,23 @@ impl ProcedurePolicy for {{ struct_name }} {
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
 {% for s in states_with_assigns %}
-        if source == State::{{ s.name }} {
 {% for tr in s.assign_transitions %}
-            if tr_index == {{ tr.index }} {
+        if source == State::{{ s.name }} && tr_index == {{ tr.index }} {
 {% for a in tr.assigns %}
 {% if a.is_bytes_with_cap %}
-                {
-                    let _scope_tmp = {{ a.expr }};
-                    if _scope_tmp.len() > {{ a.cap }} {
-                        return Some(Event::ErrorExecution);
-                    }
-                    {{ a.location }} = _scope_tmp;
+            {
+                let _scope_tmp = {{ a.expr }};
+                if _scope_tmp.len() > {{ a.cap }} {
+                    return Some(Event::ErrorExecution);
                 }
+                {{ a.location }} = _scope_tmp;
+            }
 {% else %}
-                {{ a.location }} = {{ a.expr }};
+            {{ a.location }} = {{ a.expr }};
 {% endif %}
 {% endfor %}
-            }
-{% endfor %}
         }
+{% endfor %}
 {% endfor %}
         None
     }
