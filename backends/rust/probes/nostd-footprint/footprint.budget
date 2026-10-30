@@ -2,7 +2,8 @@
 # how far each may drift.
 #
 # Read by `scripts/gates/nostd-mcu.sh`. Every figure here is MEASURED, on
-# `thumbv7em-none-eabihf` with the toolchain named in MEASURED_WITH, from the
+# `thumbv7em-none-eabihf` with the toolchain named in MEASURED_WITH, at the
+# consumer's `opt-level = "s"` (the probe's Cargo.toml says why), from the
 # staticlib `backends/rust/probes/nostd-footprint` produces: linked with one
 # machine (`ParallelHistoryProbePolicy`, a `<parallel>` with two `<history>`)
 # and with a second, different one (the queue-size probe's flat machine, the
@@ -84,7 +85,10 @@ MACHINE_TYPES='sce_nostd_build_probe::|sce_nostd_queue_size_machine::'
 # Appendix D ran over tables the same measurement would have been the second
 # machine's whole copy of the algorithm; at 49e40c9a72, without the report, it
 # was 2865 (see below).
-MACHINE_BYTES=1774
+#
+# 1774 -> 1734 (2026-10-30): the probe is built at the consumer's
+# `opt-level = "s"` (see the probe's Cargo.toml), images of 193380 and 195114.
+MACHINE_BYTES=1734
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -96,17 +100,30 @@ MACHINE_BYTES=1774
 # one machine grew by 2044, which is the algorithm written for any document
 # rather than specialised to one, and the tables. The image is smaller from the
 # third machine on.
-MACHINE_BYTES_NO_DIAGNOSTICS=1672
+#
+# 1672 -> 1630 (2026-10-30): built at the consumer's `opt-level = "s"`, images
+# of 193062 and 194692. At "s" the comparison is less kind than at "z": at
+# 49e40c9a72 the two images measure 190673 and 192798, 2125 for the second
+# machine, so two machines are 1894 bytes larger than before and the second
+# machine saves 495. The consumer's kit measured +2444 at two machines, its
+# machines being larger: this figure is what the work after ADR 0064 is held to.
+MACHINE_BYTES_NO_DIAGNOSTICS=1630
 
 # What the program pays once, with the report: the core's `.text`.
 #
 # 5356 over 38 symbols (2026-10-30), on rustc 1.99.1.
-CORE_BYTES=5356
+#
+# 5356 -> 6066 over 13 symbols (2026-10-30): at `opt-level = "s"` the core's
+# small functions are inlined into the large ones, which is what the consumer's
+# image carries (6.5 KB there).
+CORE_BYTES=6066
 
 # The same without the report.
 #
 # 5346 over 37 symbols (2026-10-30), on rustc 1.99.1.
-CORE_BYTES_NO_DIAGNOSTICS=5346
+#
+# 5346 -> 6048 over 13 symbols (2026-10-30), at `opt-level = "s"`.
+CORE_BYTES_NO_DIAGNOSTICS=6048
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -117,9 +134,10 @@ TOLERANCE_BYTES=133
 
 # The instrument's own floor: below this many core symbols the probe is not
 # measuring the core at all — a moved module, a bitcode staticlib, a driver
-# that stopped driving. 37 and 38 at the 2026-10-30 pin; the floor leaves room
-# for a refactor to fold a dozen of them together.
-MIN_CORE_SYMBOLS=24
+# that stopped driving. 37 and 38 at `opt-level = "z"`; 13 at "s", where the
+# small functions are inlined into the large ones. The floor sits under that,
+# above the none a blind instrument sees.
+MIN_CORE_SYMBOLS=8
 
 # ── The worst-case stack ────────────────────────────────────────────────────
 #
@@ -165,6 +183,9 @@ MIN_CORE_SYMBOLS=24
 # `Turn::run_main_event_loop` (40), `take_event`, `take_microstep` (272), `enter_states` (296),
 # `walk_entry` (104) and a set's search. What the bytes bought: the core's frames are functions
 # of their own, called once per program, instead of a copy inlined into every machine.
+#
+# 1232 -> 1368 (2026-10-30): the probe is built at the consumer's `opt-level = "s"`, which
+# inlines the core's small functions into its large ones and their frames with them.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
@@ -173,5 +194,5 @@ STACK_INDIRECT_BYTES=64
 # list is split on whitespace.
 STACK_DYN='sce_rust_runtime::helpers::microstep::=\sas\ssce_rust_runtime::helpers::microstep::Behaviour>:: sce_rust_runtime::engine::Turn=\sas\ssce_rust_runtime::(engine::MainLoop|helpers::microstep::Behaviour)>::'
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1232
+STACK_BYTES=1368
 STACK_TOLERANCE_BYTES=256
