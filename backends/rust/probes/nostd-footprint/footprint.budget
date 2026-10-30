@@ -144,7 +144,13 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # (docs/adr/0073), so it links no run-time check of the id; images of 193839
 # and 195355. A machine's `step` fell from 104 bytes to 44 and its `initialize`
 # from 104 to 50.
-MACHINE_BYTES=1516
+#
+# 1516 -> 962 (2026-10-31): a machine keeps a delayed-send queue and a donedata
+# slot only when its document fills them (docs/adr/0075). The first machine
+# has no delayed send, so its `tick` drains nothing and links no queue code;
+# the second keeps its queue, whose pop and query are out of line and counted
+# with the core (see CORE_BYTES). Images of 193863 and 194825.
+MACHINE_BYTES=962
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -185,7 +191,10 @@ MACHINE_BYTES=1516
 # 1638 -> 1468 (2026-10-30): the per-turn bookkeeping the core's and the
 # session id proven when compiled (docs/adr/0074, docs/adr/0073), images of
 # 193659 and 195127, as above.
-MACHINE_BYTES_NO_DIAGNOSTICS=1468
+#
+# 1468 -> 954 (2026-10-31): the delayed-send queue and donedata slot by
+# document (docs/adr/0075), images of 193685 and 194639, as above.
+MACHINE_BYTES_NO_DIAGNOSTICS=954
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -222,7 +231,12 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1468
 # 7366 -> 7524 over 27 symbols (2026-10-30): opening a turn, reading the
 # scheduler's time and noting an unattended macrostep are the core's
 # (docs/adr/0074), 158 bytes paid once where each machine paid about 170.
-CORE_BYTES=7524
+#
+# 7524 -> 7870 over 29 symbols (2026-10-31): the delayed-send queue's pop and
+# ready query are out of line (docs/adr/0075), so the machines that keep a
+# queue of one send-id type share them; reached through the policy's
+# `SchedulerStorage` they were otherwise inlined into each machine's `tick`.
+CORE_BYTES=7870
 
 # The same without the report.
 #
@@ -246,7 +260,10 @@ CORE_BYTES=7524
 #
 # 7258 -> 7416 over 27 symbols (2026-10-30), the turn's bookkeeping in the core
 # (docs/adr/0074), as above.
-CORE_BYTES_NO_DIAGNOSTICS=7416
+#
+# 7416 -> 7762 over 28 symbols (2026-10-31), the queue's pop and query out of
+# line (docs/adr/0075), as above.
+CORE_BYTES_NO_DIAGNOSTICS=7762
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -297,7 +314,10 @@ CORE_BYTES_NO_DIAGNOSTICS=7416
 # bookkeeping in the core and the session id proven when compiled
 # (docs/adr/0074, docs/adr/0073); images of 190716 and 192006, the two-machine
 # image 340 bytes smaller.
-MACHINE_BYTES_PLAIN=1290
+#
+# 1290 -> 1008 (2026-10-31): the delayed-send queue and donedata slot by
+# document (docs/adr/0075); images of 190772 and 191780, the core unchanged.
+MACHINE_BYTES_PLAIN=1008
 CORE_BYTES_PLAIN=5496
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.

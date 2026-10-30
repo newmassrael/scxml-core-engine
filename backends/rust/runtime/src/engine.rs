@@ -732,6 +732,12 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// The same-instant bound reads it before popping: an entry due AT `now` is
     /// the only kind a handler can arm during the tick that pops it, and a cut
     /// reports the event it was still popping.
+    ///
+    /// Out of line, as [`pop_ready_event_at`](Self::pop_ready_event_at) is: the
+    /// policy reaches it through its `SchedulerStorage` (docs/adr/0075), whose
+    /// forwarding is inlined into each machine's `tick`, and inlined further the
+    /// walk would be one copy per machine where it is one per send-id type.
+    #[inline(never)]
     pub(crate) fn next_ready_at_with_event(
         &self,
         now: SchedTimePoint,
@@ -828,7 +834,11 @@ impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// [`raise_external`](Engine::raise_external), which discards it anyway —
     /// returning `Option<EventId>` avoids both the act discriminant and moving a
     /// 264 B empty `heapless::String` out on every timer fire.
+    ///
+    /// Out of line, so the machines that keep a queue of one send-id type share
+    /// one copy of the pop (docs/adr/0075).
     #[cfg(not(feature = "std"))]
+    #[inline(never)]
     pub(crate) fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<EventId> {
         self.pop_ready_entry(now).map(|entry| entry.event)
     }
