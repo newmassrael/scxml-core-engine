@@ -40,6 +40,23 @@ private func integerValue<T: FixedWidthInteger>(_ value: JSONValue, as: T.Type) 
     return T(text)
 }
 
+/// `value` with the members of every object in the order of their keys' bytes: an object a
+/// scenario writes has no order, and a host's record of what it holds has no reason to
+/// write one in the author's.
+private func byKey(_ value: JSONValue) -> JSONValue {
+    switch value {
+    case .object(let members):
+        return .object(
+            members.map { (key: $0.key, value: byKey($0.value)) }
+                .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+        )
+    case .array(let items):
+        return .array(items.map(byKey))
+    default:
+        return value
+    }
+}
+
 /// The host and its clock, which a step's `host` directives set.
 private struct HostRig {
     let host: ReferenceHost
@@ -88,18 +105,60 @@ private struct HostRig {
                     }
                 }
                 host.setFaults(faults)
+            case "permission":
+                if case .text(let state) = value {
+                    host.setPermission(state)
+                }
+            case "user_decision":
+                if case .text(let decision) = value {
+                    host.setUserDecision(decision)
+                }
+            case "quota":
+                if let keys = integerValue(value, as: Int.self) {
+                    host.setQuota(keys)
+                }
             default:
                 fail("`\(name)` is a host directive this host does not serve yet", at)
             }
         }
     }
 
+    /// What the host holds, for the members a scenario names, as it writes them.
+    func hostState(_ wanted: [(key: String, value: JSONValue)], at: SourceLocation) -> JSONValue {
+        var state: [(key: String, value: JSONValue)] = []
+        for (name, _) in wanted {
+            switch name {
+            case "store":
+                state.append(
+                    (
+                        key: name,
+                        value: .object(host.storeEntries().map { (key: $0.key, value: JSONValue.text($0.value)) })
+                    )
+                )
+            case "waiting":
+                state.append((key: name, value: .array(host.waiting().map { JSONValue.text($0) })))
+            case "shown":
+                state.append((key: name, value: .array(host.shown().map { JSONValue.text($0) })))
+            case "cancelled":
+                state.append((key: name, value: .array(host.cancelled.map { JSONValue.text($0) })))
+            default:
+                fail("`\(name)` is host state this host does not hold yet", at)
+            }
+        }
+        return .object(state)
+    }
+
     /// What the host was started with since the last step, as a scenario writes it.
     func starts() -> JSONValue {
         .array(
             host.takeStarts().map { start in
-                let request = start.params.sorted { $0.key < $1.key }.map {
-                    (key: $0.key, value: JSONValue.text($0.value))
+                // The request as the record: `at_ms`, the one integer field a request
+                // has, is a number, and every other field is the text it was handed.
+                let request = start.params.sorted { $0.key < $1.key }.map { member -> (key: String, value: JSONValue) in
+                    if member.key == "at_ms" {
+                        return (key: member.key, value: .number(member.value))
+                    }
+                    return (key: member.key, value: .text(member.value))
                 }
                 return .object([
                     (key: "type", value: .text(start.operation)),
@@ -182,8 +241,18 @@ private func replayHost<Policy: StatePolicy>(
             switch member {
             case "host_invokes":
                 judged += 1
-                if !sameValue(started, want) {
+                if !sameValue(byKey(started), byKey(want)) {
                     fail("\(label): what the host was asked: \(started), want \(want)", sourceLocation)
+                }
+            case "host_state":
+                guard case .object(let wanted) = want else {
+                    fail("\(label): `host_state` is an object", sourceLocation)
+                    continue
+                }
+                judged += 1
+                let held = rig.hostState(wanted, at: sourceLocation)
+                if !sameValue(byKey(held), byKey(want)) {
+                    fail("\(label): what the host holds: \(held), want \(want)", sourceLocation)
                 }
             case "state":
                 judged += 1
@@ -224,6 +293,37 @@ private func replayHost<Policy: StatePolicy>(
             "monotonic_ms": { integer(policy.monotonicMs) },
             "zone_id": { .text(policy.zoneId) },
             "utc_offset_s": { integer(policy.utcOffsetS) },
+        ]
+    )
+}
+
+@Test func aMachineAsksTheKeyValueStoreOfItsHost() {
+    let policy = StaticHostKvPolicy()
+    replayHost(
+        "static_host_kv",
+        policy: policy,
+        variables: [
+            "outcome": { .text(policy.outcome) },
+            "found": { .bool(policy.found) },
+            "got": { .text(policy.got) },
+            "replaced": { .bool(policy.replaced) },
+            "existed": { .bool(policy.existed) },
+            "next_found": { .bool(policy.nextFound) },
+            "next": { .text(policy.next) },
+        ]
+    )
+}
+
+@Test func aMachinePostsNotificationsThroughItsHost() {
+    let policy = StaticHostNotifyPolicy()
+    replayHost(
+        "static_host_notify",
+        policy: policy,
+        variables: [
+            "outcome": { .text(policy.outcome) },
+            "permission": { .text(policy.permission) },
+            "status": { .text(policy.status) },
+            "existed": { .bool(policy.existed) },
         ]
     )
 }

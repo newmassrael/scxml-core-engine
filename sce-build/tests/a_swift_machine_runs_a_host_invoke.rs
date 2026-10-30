@@ -8,8 +8,11 @@
 //! completes it with is a typed record the generator writes beside the machine, with an
 //! invoker protocol and the functions that register and complete one.
 //!
-//! What the request carries (a `src`, a `<param>`, a `namelist`, a `<content>`, a typed
-//! request) is refused by name and not written wrong, until the slice that lowers it.
+//! The `<param>`s are the fields of the request record when the invoke types one: each is
+//! evaluated once, kept as the text the host reads and as the typed pair the request's JSON
+//! is written from, and the adapter rebuilds the record from that text. What else the
+//! request carries (a `src`, a `namelist`, a `<content>`, a deadline) is refused by name
+//! and not written wrong, until the slice that lowers it.
 //!
 //! `StaticDatamodelTests` replays the machines against a reference host; this file holds
 //! the text the generator writes and the line it refuses by name.
@@ -139,6 +142,33 @@ fn a_host_invoke_has_a_typed_result_an_invoker_and_a_completion() {
             "engine.registerInvoker(\"sce-host-clock-now\")",
             "public func completeStaticHostClockNow(on engine: Engine<StaticHostClockPolicy>, token: UInt64, result: StaticHostClockNowResult) -> Bool",
             "engine.completeHostInvoke(processorType: \"sce-host-clock-now\", invokeID: \"now\", token: token, doneData: result.wire)",
+        ],
+    );
+}
+
+/// The `<param>`s of a typed request are collected where the invocation starts, and the
+/// adapter hands the host the record they make, read back from their text.
+#[test]
+fn a_typed_request_is_collected_at_the_start_and_rebuilt_for_the_host() {
+    let (status, files, said) = generate("static_host_kv.scxml", &[]);
+    assert_eq!(status, Some(0), "static_host_kv is written: {said}");
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "static_host_kv_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(
+        code,
+        &[
+            "var hostParams: [String: [String]] = [:]",
+            "var hostParts: [PayloadPair] = []",
+            "appendFormParam(&hostParams, \"key\", sceValue)",
+            "params: hostParams,",
+            "eventData: hostParts.isEmpty ? \"\" : payloadJSON(hostParts),",
+            "public struct StaticHostKvPutRequest: Equatable, Sendable {",
+            "func startPut(_ request: StaticHostKvPutRequest, token: UInt64) -> StaticHostKvPutResult?",
+            "let typed = StaticHostKvPutRequest(key: start.requestString(\"key\"), value: start.requestString(\"value\"))",
+            "if let result = invoker.startPut(typed, token: start.token) {",
         ],
     );
 }

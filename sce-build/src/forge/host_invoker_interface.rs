@@ -589,83 +589,117 @@ func Register{interface}(e {engine}, invoker {interface}{fallback_param}) {{\n\
 /// type's handler and, because `Engine` is generic over the machine's policy, a free
 /// `complete…` function per typed result.
 ///
-/// A typed request is refused before this runs (`swift_host_invoke_unlowered`), so
-/// only the result record of an invoke is written here.
+/// A request field is read back out of the text the start site wrote it as, with the
+/// runtime's `HostInvokeRequest.request…` reader of its type.
 pub fn render_swift(model: &SCXMLModel, machine_name: &str) -> String {
     let typed = typed_host_invokes(model);
-    if typed.iter().all(|invoke| invoke.request.is_some()) {
+    if typed.is_empty() {
         return String::new();
     }
     let engine = format!("Engine<{machine_name}Policy>");
     let pascal = |text: &str| filters::to_pascal_case(text.to_string());
     let mut out = String::new();
-    for invoke in typed.iter().filter(|invoke| invoke.request.is_none()) {
-        let Some(schema) = invoke.result else {
-            continue;
-        };
+    for invoke in &typed {
         let suffix = pascal(invoke.field_suffix);
-        let name = format!("{machine_name}{suffix}Result");
-        let mut fields = String::new();
-        let mut params = Vec::new();
-        let mut assigns = String::new();
-        let mut pairs = Vec::new();
-        for f in &schema.fields {
-            let present = crate::forge::generator::swift_type(f.sce_type.present_type());
-            let ty = match &f.sce_type {
-                FieldType::Scalar(_) => present.to_string(),
-                FieldType::Optional { .. } => format!("{present}?"),
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let name = format!("{machine_name}{suffix}{what}");
+            let mut fields = String::new();
+            let mut params = Vec::new();
+            let mut assigns = String::new();
+            let mut pairs = Vec::new();
+            for f in &schema.fields {
+                let present = crate::forge::generator::swift_type(f.sce_type.present_type());
+                let ty = match &f.sce_type {
+                    FieldType::Scalar(_) => present.to_string(),
+                    FieldType::Optional { .. } => format!("{present}?"),
+                };
+                fields.push_str(&format!("    public var {}: {ty}\n", f.id));
+                params.push(format!("{}: {ty}", f.id));
+                assigns.push_str(&format!("        self.{0} = {0}\n", f.id));
+                pairs.push(crate::forge::generator::swift_payload_pair(f));
+            }
+            let wire = if what == "Result" {
+                format!(
+                    "\n    /// The JSON `done.invoke.{id}` carries this record as, in the schema's order.\n\
+                     \x20   public var wire: String {{\n        payloadJSON({pairs})\n    }}\n",
+                    id = invoke.invoke_id,
+                    pairs = pairs.join(", "),
+                )
+            } else {
+                String::new()
             };
-            fields.push_str(&format!("    public var {}: {ty}\n", f.id));
-            params.push(format!("{}: {ty}", f.id));
-            assigns.push_str(&format!("        self.{0} = {0}\n", f.id));
-            pairs.push(crate::forge::generator::swift_payload_pair(f));
+            out.push_str(&format!(
+                "/// {role} `<invoke id=\"{id}\">`\n\
+                 /// with (SCE Accepted Subset \u{a7}2.12).\n\
+                 public struct {name}: Equatable, Sendable {{\n{fields}\n\
+                 \x20   public init({params}) {{\n{assigns}    }}\n{wire}}}\n\n",
+                id = invoke.invoke_id,
+                params = params.join(", "),
+            ));
         }
-        out.push_str(&format!(
-            "/// `sce:result`: the record the host completes `<invoke id=\"{id}\">` with\n\
-             /// (SCE Accepted Subset \u{a7}2.12).\n\
-             public struct {name}: Equatable, Sendable {{\n{fields}\n\
-             \x20   public init({params}) {{\n{assigns}    }}\n\n\
-             \x20   /// The JSON `done.invoke.{id}` carries this record as, in the schema's order.\n\
-             \x20   public var wire: String {{\n        payloadJSON({pairs})\n    }}\n}}\n\n",
-            id = invoke.invoke_id,
-            params = params.join(", "),
-            pairs = pairs.join(", "),
-        ));
     }
     for (invoke_type, invokes) in &by_type(&typed) {
-        let invokes: Vec<_> = invokes
-            .iter()
-            .filter(|invoke| invoke.request.is_none() && invoke.result.is_some())
-            .collect();
-        if invokes.is_empty() {
-            continue;
-        }
         let interface = format!("{machine_name}{}Invoker", pascal(invoke_type));
         let fallback = has_untyped_invoke_of(model, invoke_type);
         let mut methods = String::new();
         let mut start_cases = String::new();
         let mut cancel_cases = String::new();
         let mut completions = String::new();
-        for invoke in &invokes {
+        for invoke in invokes {
             let id = filters::escape_swift(invoke.invoke_id.to_string());
             let suffix = pascal(invoke.field_suffix);
             let result = format!("{machine_name}{suffix}Result");
+            let request_param = invoke
+                .request
+                .map(|_| format!("_ request: {machine_name}{suffix}Request, "))
+                .unwrap_or_default();
+            let returns = if invoke.result.is_some() {
+                format!("{result}?")
+            } else {
+                "HostInvokeResponse?".to_string()
+            };
             methods.push_str(&format!(
                 "    /// \u{a7}scxml-6.4: begin `<invoke id=\"{id}\">`. `token` names this start; a\n\
                  \x20   /// host that finishes later hands it back to `complete{machine_name}{suffix}`\n\
-                 \x20   /// (or `completeHostInvoke`). A record completes the invocation now.\n\
-                 \x20   func start{suffix}(token: UInt64) -> {result}?\n\n\
+                 \x20   /// (or `completeHostInvoke`). A non-nil answer completes the invocation now.\n\
+                 \x20   func start{suffix}({request_param}token: UInt64) -> {returns}\n\n\
                  \x20   /// \u{a7}scxml-6.4: `<invoke id=\"{id}\">`'s state exited while the start `token`\n\
                  \x20   /// names was still running. Stop it.\n\
                  \x20   func cancel{suffix}(token: UInt64)\n\n"
             ));
+            // The request is rebuilt from the text the start site wrote each field as.
+            let (read_request, typed_arg) = match invoke.request {
+                Some(schema) => {
+                    let fields: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| format!("{}: {}", f.id, swift_request_reader(f)))
+                        .collect();
+                    (
+                        format!(
+                            "                let typed = {machine_name}{suffix}Request({})\n",
+                            fields.join(", ")
+                        ),
+                        "typed, ",
+                    )
+                }
+                None => (String::new(), ""),
+            };
+            let start = if invoke.result.is_some() {
+                format!(
+                    "                if let result = invoker.start{suffix}({typed_arg}token: start.token) {{\n\
+                     \x20                   return .done(result.wire)\n\
+                     \x20               }}\n\
+                     \x20               return nil\n"
+                )
+            } else {
+                format!(
+                    "                return invoker.start{suffix}({typed_arg}token: start.token)\n"
+                )
+            };
             start_cases.push_str(&format!(
-                "            if start.invokeID.utf8.elementsEqual(\"{id}\".utf8) {{\n\
-                 \x20               if let result = invoker.start{suffix}(token: start.token) {{\n\
-                 \x20                   return .done(result.wire)\n\
-                 \x20               }}\n\
-                 \x20               return nil\n\
-                 \x20           }}\n"
+                "            if start.invokeID.utf8.elementsEqual(\"{id}\".utf8) {{\n{read_request}{start}            }}\n"
             ));
             cancel_cases.push_str(&format!(
                 "            if cancel.invokeID.utf8.elementsEqual(\"{id}\".utf8) {{\n\
@@ -673,15 +707,17 @@ pub fn render_swift(model: &SCXMLModel, machine_name: &str) -> String {
                  \x20               return nil\n\
                  \x20           }}\n"
             ));
-            completions.push_str(&format!(
-                "/// Completes `<invoke id=\"{id}\">`'s start `token` with its record:\n\
-                 /// `completeHostInvoke` with the record's JSON, so a stale or unknown token is\n\
-                 /// refused the same way (false).\n\
-                 @discardableResult\n\
-                 public func complete{machine_name}{suffix}(on engine: {engine}, token: UInt64, result: {result}) -> Bool {{\n\
-                 \x20   engine.completeHostInvoke(processorType: \"{invoke_type}\", invokeID: \"{id}\", token: token, doneData: result.wire)\n\
-                 }}\n\n"
-            ));
+            if invoke.result.is_some() {
+                completions.push_str(&format!(
+                    "/// Completes `<invoke id=\"{id}\">`'s start `token` with its record:\n\
+                     /// `completeHostInvoke` with the record's JSON, so a stale or unknown token is\n\
+                     /// refused the same way (false).\n\
+                     @discardableResult\n\
+                     public func complete{machine_name}{suffix}(on engine: {engine}, token: UInt64, result: {result}) -> Bool {{\n\
+                     \x20   engine.completeHostInvoke(processorType: \"{invoke_type}\", invokeID: \"{id}\", token: token, doneData: result.wire)\n\
+                     }}\n\n"
+                ));
+            }
         }
         // An invoke of this type the document does not type still needs a handler;
         // without one the adapter could only drop it, and a start nobody performed must
@@ -1648,6 +1684,30 @@ fn python_spelling(spelling: RequestFieldSpelling) -> String {
             format!("_RequestFieldType(\"{}\")", variant.to_ascii_lowercase())
         }
         RequestFieldSpelling::Bytes(cap) => format!("_RequestFieldType(\"bytes\", {cap})"),
+    }
+}
+
+/// The Swift expression reading `f` out of the checked request `start`.
+fn swift_request_reader(f: &SchemaField) -> String {
+    let id = &f.id;
+    let integer = |ty: &str| format!("start.requestInteger(\"{id}\", as: {ty}.self)");
+    match f.sce_type.present_type() {
+        SceType::Uint8 => integer("UInt8"),
+        SceType::Uint16 => integer("UInt16"),
+        SceType::Uint32 => integer("UInt32"),
+        SceType::Uint64 => integer("UInt64"),
+        SceType::Int8 => integer("Int8"),
+        SceType::Int16 => integer("Int16"),
+        SceType::Int32 => integer("Int32"),
+        SceType::Int64 => integer("Int64"),
+        SceType::Float32 => format!("start.requestReal(\"{id}\", as: Float.self)"),
+        SceType::Float64 => format!("start.requestReal(\"{id}\", as: Double.self)"),
+        SceType::Bool => format!("start.requestBool(\"{id}\")"),
+        SceType::String => format!("start.requestString(\"{id}\")"),
+        SceType::Bytes => format!("start.requestBytes(\"{id}\")"),
+        SceType::Enum(_) => {
+            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+        }
     }
 }
 

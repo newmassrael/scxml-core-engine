@@ -112,3 +112,119 @@ private func hostOn(
     host.cancel("now")
     #expect(host.cancelled == ["zone", "now"])
 }
+
+// MARK: - Key-value store
+
+private func put(_ host: ReferenceHost, _ key: String, _ value: String) throws -> JSONValue {
+    try record(host.start(operation: "sce-host-kv-put", id: "put", params: ["key": key, "value": value]))
+}
+
+@Test func aKeyIsPutReadReplacedAndDeleted() throws {
+    let (host, _) = hostOn()
+    #expect(try put(host, "a", "1").member("replaced") == .bool(false))
+    let found = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    #expect(found.member("found") == .bool(true))
+    #expect(found.member("value") == .text("1"))
+    #expect(try put(host, "a", "2").member("replaced") == .bool(true))
+    let deleted = try record(host.start(operation: "sce-host-kv-delete", id: "del", params: ["key": "a"]))
+    #expect(deleted.member("existed") == .bool(true))
+    let gone = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    #expect(gone.member("found") == .bool(false))
+    #expect(gone.member("value") == .text(""))
+}
+
+@Test func aKeyThatIsEmptyOrHoldsNulIsRefusedAndStartsNothing() {
+    let (host, _) = hostOn()
+    for key in ["", "a\u{0}b"] {
+        let outcome = host.start(operation: "sce-host-kv-put", id: "put", params: ["key": key, "value": "v"])
+        #expect(outcome == .refuse(#"{"reason":"invalid_argument"}"#))
+    }
+    #expect(host.storeEntries().isEmpty)
+}
+
+@Test func theStoreOrdersKeysByTheirUtf8BytesAndWalksThemFromAfterByPrefix() throws {
+    let (host, _) = hostOn()
+    for key in ["b", "ab", "a", "\u{e9}", "z"] {
+        _ = try put(host, key, key)
+    }
+    // The order of the bytes: a, ab, b, z, then the two-byte e-acute.
+    #expect(host.storeEntries().map(\.key) == ["a", "ab", "b", "z", "\u{e9}"])
+    func next(after: String, prefix: String) throws -> JSONValue {
+        try record(host.start(operation: "sce-host-kv-next-key", id: "walk", params: ["after": after, "prefix": prefix]))
+    }
+    #expect(try next(after: "", prefix: "").member("key") == .text("a"))
+    // `after` is excluded.
+    #expect(try next(after: "a", prefix: "").member("key") == .text("ab"))
+    #expect(try next(after: "a", prefix: "b").member("key") == .text("b"))
+    let end = try next(after: "\u{e9}", prefix: "")
+    #expect(end.member("found") == .bool(false))
+    #expect(end.member("key") == .text(""))
+}
+
+@Test func aNewKeyPastTheQuotaFailsAndAReplacementDoesNot() throws {
+    let (host, _) = hostOn()
+    host.setQuota(1)
+    _ = try put(host, "a", "1")
+    let over = try put(host, "b", "2")
+    #expect(over.member("error") == .text("quota_exceeded"))
+    #expect(over.member("replaced") == .bool(false))
+    #expect(try put(host, "a", "3").member("replaced") == .bool(true))
+    #expect(host.storeEntries().map(\.value) == ["3"])
+}
+
+// MARK: - Notifications
+
+private func post(_ host: ReferenceHost, _ id: String, atMs: String = "0") throws -> JSONValue {
+    try record(
+        host.start(
+            operation: "sce-host-notify-post",
+            id: "post",
+            params: ["id": id, "title": "t", "body": "b", "at_ms": atMs]
+        )
+    )
+}
+
+@Test func aPostIsDeniedUnlessThePermissionIsGranted() throws {
+    let (host, _) = hostOn()
+    #expect(try post(host, "n").member("status") == .text("denied"))
+    #expect(host.shown().isEmpty && host.waiting().isEmpty)
+}
+
+@Test func permissionIsAskedOfAUserOnlyWhileUndetermined() throws {
+    let (host, _) = hostOn()
+    host.setUserDecision("granted")
+    let asked = try record(host.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    #expect(asked.member("state") == .text("granted"))
+    // Decided: a later answer of the user changes nothing.
+    host.setUserDecision("denied")
+    let again = try record(host.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    #expect(again.member("state") == .text("granted"))
+    let (nobody, _) = hostOn()
+    let none = try record(nobody.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    #expect(none.member("state") == .text("denied"))
+}
+
+@Test func aNotificationIsShownAtOnceOrWaitsForItsInstantAndIsReplacedByItsId() throws {
+    let (host, _) = hostOn()
+    host.setPermission("granted")
+    #expect(try post(host, "now", atMs: "1760000000000").member("status") == .text("posted"))
+    #expect(try post(host, "later", atMs: "1760000000001").member("status") == .text("scheduled"))
+    #expect(host.shown() == ["now"])
+    #expect(host.waiting() == ["later"])
+    // The same id again replaces what it named, wherever it was.
+    #expect(try post(host, "later", atMs: "0").member("status") == .text("posted"))
+    #expect(host.waiting().isEmpty)
+    #expect(host.shown() == ["now", "later"])
+}
+
+@Test func aCancelWithdrawsFromBothListsAndSaysWhetherItNamedAnything() throws {
+    let (host, _) = hostOn()
+    host.setPermission("granted")
+    _ = try post(host, "n")
+    let cancel = { (id: String) throws -> JSONValue in
+        try record(host.start(operation: "sce-host-notify-cancel", id: "cancel", params: ["id": id]))
+    }
+    #expect(try cancel("n").member("existed") == .bool(true))
+    #expect(try cancel("n").member("existed") == .bool(false))
+    #expect(host.start(operation: "sce-host-notify-cancel", id: "cancel", params: ["id": ""]) == .refuse(#"{"reason":"invalid_argument"}"#))
+}

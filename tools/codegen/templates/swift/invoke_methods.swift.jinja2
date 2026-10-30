@@ -271,9 +271,67 @@
     /// fact as an unsupported one, so the same event, and not a silence that reads as
     /// started.
     private func sceStartHostInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: Engine<{{ machine_name }}Policy>) {
+{% if invoke_info.params %}
+{% set refusing = invoke_info.params | selectattr('native_fails') | list %}
+        // W3C SCXML 6.4.1: what the request says is evaluated now, when the invocation
+        // starts. The text the host reads is the one each value spells; the JSON is the
+        // typed pairs, written once, so a host that forwards the request forwards the
+        // engine's serialisation. A value that cannot be evaluated starts nothing.
+        var hostParams: [String: [String]] = [:]
+        var hostParts: [PayloadPair] = []
+{% if refusing %}
+        var requestRefused = false
+{% endif %}
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+        appendFormParam(&hostParams, "{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}"))
+{% if not param.envelope_metadata %}
+        hostParts.append(PayloadPair("{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}")))
+{% endif %}
+{% elif param.native_value %}
+{# `datamodel="sce-static"`: the value is native code over the machine's own fields, shown
+   to fit its field where the document was judged, so the only way it fails to be a value is
+   a checked operation that overflows: the evaluation that failed, which refuses the request
+   as any value its field cannot hold. #}
+        do {
+{% if param.native_fails %}
+            let sceFailure = Failure()
+{% endif %}
+            let sceValue: WireValue = {{ param.native_value }}
+{% if param.native_fails %}
+            if sceFailure.failed {
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> cannot be its request field: it failed to evaluate"))
+{% endif %}
+                requestRefused = true
+            } else {
+                appendFormParam(&hostParams, "{{ param.name | escape_swift }}", sceValue)
+{% if not param.envelope_metadata %}
+                hostParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
+            }
+{% else %}
+            appendFormParam(&hostParams, "{{ param.name | escape_swift }}", sceValue)
+{% if not param.envelope_metadata %}
+            hostParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
+{% endif %}
+        }
+{% endif %}
+{% endfor %}
+{% if refusing %}
+        if requestRefused {
+            return
+        }
+{% endif %}
+{% endif %}
         let request = HostInvokeRequest(
             processorType: "{{ invoke_info.invoke_type | escape_swift }}",
             invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
+{% if invoke_info.params %}
+            params: hostParams,
+            eventData: hostParts.isEmpty ? "" : payloadJSON(hostParts),
+{% endif %}
             sessionID: sessionID
         )
         if !engine.performHostInvoke(request) {

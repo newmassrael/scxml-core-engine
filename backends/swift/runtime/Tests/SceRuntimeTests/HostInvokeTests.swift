@@ -138,3 +138,29 @@ private func makeHostEngine() -> (Engine<ScriptedPolicy>, RecordingInvoker) {
     // What a cancelled run sends afterwards is ignored.
     #expect(!engine.completeHostInvoke(processorType: "sce-host-test", invokeID: "probe", token: token, doneData: ""))
 }
+
+// MARK: - The fields of a typed request
+
+@Test func aTypedRequestIsReadBackAsTheTypesItsRecordDeclares() {
+    let request = HostInvokeRequest(
+        processorType: "sce-host-test",
+        invokeID: "probe",
+        params: [
+            "small": ["-128"],
+            "large": ["18446744073709551615"],
+            "wide": ["-9223372036854775808"],
+            "ratio": ["0.5"],
+            "flag": ["true"],
+            "name": ["key"],
+            "raw": ["A\u{FF}"],
+        ]
+    )
+    #expect(request.requestInteger("small", as: Int8.self) == -128)
+    #expect(request.requestInteger("large", as: UInt64.self) == UInt64.max)
+    #expect(request.requestInteger("wide", as: Int64.self) == Int64.min)
+    #expect(request.requestReal("ratio", as: Double.self) == 0.5)
+    #expect(request.requestReal("ratio", as: Float.self) == 0.5)
+    #expect(request.requestBool("flag"))
+    #expect(request.requestString("name") == "key")
+    #expect(request.requestBytes("raw") == [0x41, 0xFF])
+}
