@@ -248,6 +248,45 @@ fn a_value_that_cannot_be_computed_is_left_out_and_reported() {
     holds_each(&code, &["if sceFailure.failed {", "could not be read"]);
 }
 
+/// An `<invoke srcexpr>` starts the candidate its value names: the value is reduced to a
+/// document stem, compared by its bytes with each declared candidate, and the session is
+/// held by what a parent drives it through, since each candidate is a policy of its own
+/// type. A value naming none of them starts nothing and raises `error.execution`.
+#[test]
+fn a_value_names_the_candidate_an_invoke_starts() {
+    let code = machine_of(
+        "static_invoke_hybrid.scxml",
+        "static_invoke_hybrid_sm.swift",
+    );
+    holds_each(
+        &code,
+        &[
+            "private var sceInvokeChildFirstRun: (any ChildEngine)?",
+            "let sceSelected = documentStem(self.vPick)",
+            "if sceSelected.utf8.elementsEqual(\"static_hybrid_first\".utf8) {",
+            "} else if sceSelected.utf8.elementsEqual(\"static_hybrid_second\".utf8) {",
+            "evaluated to a document it did not declare",
+        ],
+    );
+}
+
+/// An argument the chosen candidate declares no variable for is evaluated and left out
+/// (§scxml-6.4.3), and one that cannot be evaluated is still reported (§scxml-5.7.1).
+#[test]
+fn an_argument_the_candidate_keeps_nowhere_is_evaluated_and_left_out() {
+    let code = machine_of(
+        "static_invoke_hybrid.scxml",
+        "static_invoke_hybrid_sm.swift",
+    );
+    holds_each(
+        &code,
+        &[
+            "let _: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vBase, 2000000000)))",
+            "could not be read",
+        ],
+    );
+}
+
 /// What a child hands back through `<finalize>`, an `idlocation`, and every other way
 /// of running one are named in a refusal and not written wrong: exit status 7, the
 /// construct and its state in the message.
@@ -255,7 +294,10 @@ fn a_value_that_cannot_be_computed_is_left_out_and_reported() {
 fn what_is_not_lowered_is_refused_by_name() {
     for (machine, construct) in [
         ("static_invoke_tree.scxml", "an <invoke idlocation>"),
-        ("static_invoke_hybrid.scxml", "a srcexpr or contentexpr"),
+        (
+            "static_child_host_hybrid.scxml",
+            "a candidate that runs a script engine or declares host acts",
+        ),
     ] {
         let (status, files, said) = generate(machine);
         assert_eq!(status, Some(7), "{machine} is refused, not written: {said}");

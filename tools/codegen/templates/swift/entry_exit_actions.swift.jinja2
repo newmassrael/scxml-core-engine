@@ -38,7 +38,7 @@
 {% endif %}
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml or state.invokes | hybrid %}
         case .{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
             // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}; an error ends it.
@@ -62,7 +62,7 @@
                 }
             }
 {% endif %}
-{% for invoke_info in state.invokes | scxml %}
+{% for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) %}
             // W3C SCXML 6.4: an <invoke> starts at the end of the macrostep, so its
             // entry is deferred, and a state that exits before then never starts it.
             do {
@@ -223,17 +223,17 @@
         default:
             break  // No exit actions
         }
-{% if model.invokes | scxml %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
         // W3C SCXML 6.4: the invocations of an exited state end with it: one not yet
         // started never starts, and a running session is exited, its states' <onexit>
         // run, before it is dropped. What that exit sends to #_parent is dropped with
         // it (test252).
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | scxml %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
         case .{{ state_id | to_state_variant }}:
             cancelInvokesForState(&pendingInvokes, .{{ state_id | to_state_variant }})
-{% for invoke_info in state.invokes | scxml %}
+{% for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) %}
             sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}?.stop()
             sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = nil
             activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = nil

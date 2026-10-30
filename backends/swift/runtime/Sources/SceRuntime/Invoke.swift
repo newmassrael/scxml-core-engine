@@ -196,7 +196,7 @@ extension ChildEngine {
 ///
 /// What the child sends to its parent while it runs here still waits on its own queue
 /// for `tickChildren` to drain, so the parent sees it where it did.
-public func deliverToChild(_ child: some ChildEngine, eventName: String, eventData: String) {
+public func deliverToChild(_ child: any ChildEngine, eventName: String, eventData: String) {
     child.raiseExternalByName(eventName, eventData: eventData)
     child.step()
 }
@@ -204,7 +204,7 @@ public func deliverToChild(_ child: some ChildEngine, eventName: String, eventDa
 /// Drains events from a child's parent event queue and raises them in the parent
 /// engine with proper metadata (§scxml-6.4). Port of Rust `drain_and_raise_child_events`.
 public func drainAndRaiseChildEvents<Policy: StatePolicy>(
-    childEngine: (some ChildEngine)?,
+    childEngine: (any ChildEngine)?,
     activeInvokes: [String: ChildSession],
     invokeKey: String,
     engine: Engine<Policy>

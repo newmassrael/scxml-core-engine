@@ -4254,8 +4254,8 @@ pub(crate) fn swift_invoke_unlowered(
 ) -> Option<String> {
     let info = match invoke {
         crate::model::Invoke::Scxml(info) => info,
-        crate::model::Invoke::Hybrid(_) => {
-            return Some("an <invoke> whose child a srcexpr or contentexpr chooses".to_string())
+        crate::model::Invoke::Hybrid(info) => {
+            return swift_hybrid_invoke_unlowered(info, statically_lowered)
         }
         crate::model::Invoke::MeshRpc(_) => {
             return Some("a Mesh remote-procedure <invoke>".to_string())
@@ -4286,6 +4286,43 @@ pub(crate) fn swift_invoke_unlowered(
     }
     if info.common.child_declares_host_acts || !info.common.child_host_call.is_empty() {
         return Some("an <invoke> of a child that declares host acts".to_string());
+    }
+    None
+}
+
+/// What of an `<invoke srcexpr>` the Swift templates do not lower yet, in the words the
+/// refusal names it by; `None` for one they do (§scxml-6.4, docs/SCE_ACCEPTED_SUBSET.md
+/// §2.13).
+///
+/// The value `srcexpr` computes names, by its document stem, one of the candidates the
+/// invoke declares, and the build writes a child for each: so an invoke with no declared
+/// candidate has nothing to start, a `contentexpr` computes a document the build never
+/// saw, and a document under another data model has no lowered value to read.
+fn swift_hybrid_invoke_unlowered(
+    info: &crate::model::HybridInvokeInfo,
+    statically_lowered: bool,
+) -> Option<String> {
+    if !info.contentexpr.is_empty() {
+        return Some("an <invoke> whose child a contentexpr computes".to_string());
+    }
+    if info.candidates.is_empty() {
+        return Some("an <invoke srcexpr> that declares no sce:candidates".to_string());
+    }
+    if !statically_lowered {
+        return Some(
+            "an <invoke srcexpr> in a document that is not datamodel=\"sce-static\"".to_string(),
+        );
+    }
+    if !info.common.base.idlocation.is_empty() {
+        return Some("an <invoke srcexpr idlocation>".to_string());
+    }
+    if info.candidates.iter().any(|c| {
+        c.child_needs_script_engine || c.child_declares_host_acts || !c.child_host_call.is_empty()
+    }) {
+        return Some(
+            "an <invoke srcexpr> with a candidate that runs a script engine or declares host acts"
+                .to_string(),
+        );
     }
     None
 }

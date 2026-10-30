@@ -12068,6 +12068,12 @@ impl StaticTarget for SwiftTarget {
     fn in_function(&self) -> &'static str {
         "self.isStateActive"
     }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`documentStem`) and starts the candidate it names, handing it the values it
+    // keeps (`seed_child` of `invoke_methods.swift.jinja2`).
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::swift_type(ty).to_string()
     }

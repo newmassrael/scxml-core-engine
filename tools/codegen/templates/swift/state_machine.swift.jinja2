@@ -492,10 +492,10 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var hasParallelStates: Bool { {{ 'true' if model.has_parallel_states else 'false' }} }
     public var needsScriptEngine: Bool { false }
     public var needsDataModelInit: Bool { false }
-    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml else 'false' }} }
-    public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml else 'false' }} }
+    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
+    public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
     public var hasFinalize: Bool { false }
-    public var hasAutoforward: Bool { {{ 'true' if model.invokes | scxml | selectattr('autoforward') | list else 'false' }} }
+    public var hasAutoforward: Bool { {{ 'true' if (model.invokes | scxml | selectattr('autoforward') | list) or (model.invokes | hybrid | selectattr('autoforward') | list) else 'false' }} }
 
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
