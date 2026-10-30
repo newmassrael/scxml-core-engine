@@ -122,7 +122,15 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # scheduler is weighed; images of 194215 and 195905. The scheduler holds event
 # numbers (docs/adr/0069), but these two machines keep different kinds of send
 # id (`SendIdString<9>` and `ElidedSendId`), so each still carries its own copy.
-MACHINE_BYTES=1690
+#
+# 1690 -> 1714 (2026-10-30): an empty queue is its storage type's constant and
+# `Engine::new_in_place` is out of line (docs/adr/0070); images of 194117 and
+# 195831, each smaller than before (194215, 195905). The constructor was 240
+# bytes with a 512-byte frame that built both queues on the stack; it is 124-144
+# bytes with no temporary. The figure for one more machine rose because the
+# first machine, built at four of the probe's entry points, now carries its
+# constructor once, and the second carries its own out of line.
+MACHINE_BYTES=1714
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -153,7 +161,10 @@ MACHINE_BYTES=1690
 #
 # 998 -> 1632 (2026-10-30): the second machine driven with `tick` too, images
 # of 194009 and 195641, as above.
-MACHINE_BYTES_NO_DIAGNOSTICS=1632
+#
+# 1632 -> 1660 (2026-10-30): the empty queue a constant and the constructor out
+# of line (docs/adr/0070), images of 193913 and 195573, as above.
+MACHINE_BYTES_NO_DIAGNOSTICS=1660
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -230,7 +241,11 @@ CORE_BYTES_NO_DIAGNOSTICS=7266
 # (docs/adr/0069), so they share one scheduler: `PullScheduler<ElidedSendId>`'s
 # 326 bytes are the core's. With the scheduler generic over the machine's event,
 # as before, the same two images measured 192730: 204 bytes more.
-MACHINE_BYTES_PLAIN=1456
+#
+# 1456 -> 1496 (2026-10-30): the empty queue a constant and the constructor out
+# of line (docs/adr/0070), images of 190966 and 192462, each smaller than before
+# (191070, 192526), as above.
+MACHINE_BYTES_PLAIN=1496
 CORE_BYTES_PLAIN=5384
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
