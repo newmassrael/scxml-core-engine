@@ -292,17 +292,17 @@ fn an_argument_the_candidate_keeps_nowhere_is_evaluated_and_left_out() {
 /// construct and its state in the message.
 #[test]
 fn what_is_not_lowered_is_refused_by_name() {
-    for (machine, construct) in [("static_invoke_tree.scxml", "an <invoke idlocation>")] {
-        let (status, files, said) = generate(machine);
-        assert_eq!(status, Some(7), "{machine} is refused, not written: {said}");
-        assert!(
-            said.contains(construct),
-            "the refusal of {machine} names {construct}: {said}"
-        );
-        assert!(
-            files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
-            "a refused document writes no machine: {:?}",
-            files.iter().map(|f| &f.0).collect::<Vec<_>>()
-        );
-    }
+    // One construct is left unlowered; the others it once named are lowered now.
+    let (machine, construct) = ("static_invoke_tree.scxml", "an <invoke idlocation>");
+    let (status, files, said) = generate(machine);
+    assert_eq!(status, Some(7), "{machine} is refused, not written: {said}");
+    assert!(
+        said.contains(construct),
+        "the refusal of {machine} names {construct}: {said}"
+    );
+    assert!(
+        files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
+        "a refused document writes no machine: {:?}",
+        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
 }
