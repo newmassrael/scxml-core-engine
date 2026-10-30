@@ -174,6 +174,43 @@ public final class StaticWireWidePolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var refusals: UInt32 { vRefusals }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vLow: UInt64? = nil
+        public var vSmallLow: Int64? = nil
+        public var vLarge: Bool? = nil
+        public var vNegative: Bool? = nil
+        public var vRelays: UInt32? = nil
+        public var vRefusals: UInt32? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vLow {
+            vLow = value
+        }
+        if let value = params.vSmallLow {
+            vSmallLow = value
+        }
+        if let value = params.vLarge {
+            vLarge = value
+        }
+        if let value = params.vNegative {
+            vNegative = value
+        }
+        if let value = params.vRelays {
+            vRelays = value
+        }
+        if let value = params.vRefusals {
+            vRefusals = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

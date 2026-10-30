@@ -110,6 +110,27 @@ public final class StaticHybridSecondPolicy: InvocablePolicy {
     /// W3C SCXML 5.2: the `extra` datamodel variable.
     var vExtra: UInt32 = 0
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vStart: UInt32? = nil
+        public var vExtra: UInt32? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vStart {
+            vStart = value
+        }
+        if let value = params.vExtra {
+            vExtra = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

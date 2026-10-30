@@ -306,6 +306,95 @@ public final class StaticOptionalUnwidenedPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var errors: UInt32 { vErrors }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vDue: Int64? = nil
+        public var vOther: Int64? = nil
+        public var vTitle: String? = nil
+        public var vDays: Int64? = nil
+        public var vFollowing: Int64? = nil
+        public var vLate: Bool? = nil
+        public var vEarly: Bool? = nil
+        public var vLabel: String? = nil
+        public var vKept: Int64? = nil
+        public var vListed: Int64? = nil
+        public var vMissing: UInt32? = nil
+        public var vSame: Bool? = nil
+        public var vAbsent: Bool? = nil
+        public var vStatusDone: Bool? = nil
+        public var vEchoed: Int64? = nil
+        public var vEchoTitle: String? = nil
+        public var vFallbacks: UInt32? = nil
+        public var vErrors: UInt32? = nil
+        public var vHuge: Int64? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vDue {
+            vDue = value
+        }
+        if let value = params.vOther {
+            vOther = value
+        }
+        if let value = params.vTitle {
+            vTitle = value
+        }
+        if let value = params.vDays {
+            vDays = value
+        }
+        if let value = params.vFollowing {
+            vFollowing = value
+        }
+        if let value = params.vLate {
+            vLate = value
+        }
+        if let value = params.vEarly {
+            vEarly = value
+        }
+        if let value = params.vLabel {
+            vLabel = value
+        }
+        if let value = params.vKept {
+            vKept = value
+        }
+        if let value = params.vListed {
+            vListed = value
+        }
+        if let value = params.vMissing {
+            vMissing = value
+        }
+        if let value = params.vSame {
+            vSame = value
+        }
+        if let value = params.vAbsent {
+            vAbsent = value
+        }
+        if let value = params.vStatusDone {
+            vStatusDone = value
+        }
+        if let value = params.vEchoed {
+            vEchoed = value
+        }
+        if let value = params.vEchoTitle {
+            vEchoTitle = value
+        }
+        if let value = params.vFallbacks {
+            vFallbacks = value
+        }
+        if let value = params.vErrors {
+            vErrors = value
+        }
+        if let value = params.vHuge {
+            vHuge = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

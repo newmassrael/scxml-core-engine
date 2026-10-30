@@ -210,6 +210,23 @@ public final class StaticHistoryPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var resumed: UInt8 { vResumed }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vResumed: UInt8? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vResumed {
+            vResumed = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

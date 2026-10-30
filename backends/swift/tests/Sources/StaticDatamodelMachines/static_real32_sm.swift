@@ -142,6 +142,39 @@ public final class StaticReal32Policy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var total: Float { vTotal }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vLevel: Float? = nil
+        public var vTenth: Float? = nil
+        public var vDrift: Float? = nil
+        public var vWide: Double? = nil
+        public var vTotal: Float? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vLevel {
+            vLevel = value
+        }
+        if let value = params.vTenth {
+            vTenth = value
+        }
+        if let value = params.vDrift {
+            vDrift = value
+        }
+        if let value = params.vWide {
+            vWide = value
+        }
+        if let value = params.vTotal {
+            vTotal = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

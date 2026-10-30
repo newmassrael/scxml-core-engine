@@ -222,6 +222,55 @@ public final class SyncClientPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var refusals: UInt32 { vRefusals }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vByToken: Bool? = nil
+        public var vFullListing: Bool? = nil
+        public var vOutcome: UInt8? = nil
+        public var vRetryAt: Int64? = nil
+        public var vDeleted: UInt32? = nil
+        public var vUploaded: UInt32? = nil
+        public var vDiscarded: UInt32? = nil
+        public var vPages: UInt32? = nil
+        public var vRefusals: UInt32? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vByToken {
+            vByToken = value
+        }
+        if let value = params.vFullListing {
+            vFullListing = value
+        }
+        if let value = params.vOutcome {
+            vOutcome = value
+        }
+        if let value = params.vRetryAt {
+            vRetryAt = value
+        }
+        if let value = params.vDeleted {
+            vDeleted = value
+        }
+        if let value = params.vUploaded {
+            vUploaded = value
+        }
+        if let value = params.vDiscarded {
+            vDiscarded = value
+        }
+        if let value = params.vPages {
+            vPages = value
+        }
+        if let value = params.vRefusals {
+            vRefusals = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }

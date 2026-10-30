@@ -167,6 +167,59 @@ public final class StaticBlockEndsPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var errors: UInt8 { vErrors }
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+        public var vA: UInt8? = nil
+        public var vB: UInt8? = nil
+        public var vAfterAssign: UInt8? = nil
+        public var vThenRan: UInt8? = nil
+        public var vElseRan: UInt8? = nil
+        public var vAfterIf: UInt8? = nil
+        public var vInBranch: UInt8? = nil
+        public var vAfterBranch: UInt8? = nil
+        public var vAfterOk: UInt8? = nil
+        public var vErrors: UInt8? = nil
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+        if let value = params.vA {
+            vA = value
+        }
+        if let value = params.vB {
+            vB = value
+        }
+        if let value = params.vAfterAssign {
+            vAfterAssign = value
+        }
+        if let value = params.vThenRan {
+            vThenRan = value
+        }
+        if let value = params.vElseRan {
+            vElseRan = value
+        }
+        if let value = params.vAfterIf {
+            vAfterIf = value
+        }
+        if let value = params.vInBranch {
+            vInBranch = value
+        }
+        if let value = params.vAfterBranch {
+            vAfterBranch = value
+        }
+        if let value = params.vAfterOk {
+            vAfterOk = value
+        }
+        if let value = params.vErrors {
+            vErrors = value
+        }
+    }
+
     public init() {
         sessionID = drawSessionID()
     }
