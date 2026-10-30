@@ -17212,16 +17212,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "child_states",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_child_states",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "references"
@@ -17990,16 +17980,6 @@
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "first_enabled_transition",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "EnabledSet",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "MAX_ENABLED",
           "kind": "references"
         },
         {
@@ -22368,6 +22348,30 @@
       "target_kind": "section",
       "target_id": "scxml-D-getProperAncestors",
       "reason": "The ancestors list is read off the document as the walk goes; first_proper_ancestor decides it is not empty and cites the section; proper_ancestors no longer exists."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getChildStates",
+      "reason": "ADR 0064: child states are implied by the pre-order numbering; DocumentTables::children replaced the helper and microstep.rs no longer has child_states"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getChildStates",
+      "reason": "ADR 0064: StatePolicy no longer has get_child_states; the document is read from its tables"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "ADR 0064: StatePolicy no longer has EnabledSet; the enabled set is a slice of the policy's Workspace"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "ADR 0064: StatePolicy no longer has MAX_ENABLED; the bound is a size of the generated Workspace type"
     }
   ],
   "frames": {},
