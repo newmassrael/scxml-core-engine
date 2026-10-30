@@ -449,8 +449,10 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables {
         initial: rt::TransitionId(tables.initial),
         // The feature procedures exactly when the document uses the feature,
         // as the generator writes them (docs/adr/0066).
-        history: tables.uses_history().then_some(&rt::HISTORY),
-        parallel: tables.uses_parallel().then_some(&rt::PARALLEL),
+        history: tables.uses_history().then_some(&sce_rust_runtime::HISTORY),
+        parallel: tables
+            .uses_parallel()
+            .then_some(&sce_rust_runtime::PARALLEL),
     }
 }
 
