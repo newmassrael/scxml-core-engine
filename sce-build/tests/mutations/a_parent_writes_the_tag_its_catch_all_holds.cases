@@ -12,7 +12,10 @@
 # derivation forgets the catch-all, a C++ chain leaves its term out, the term
 # writes the tag unmasked, or the C case is left out or not shifted.
 # `sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs` refuses
-# them by the term each backend renders.
+# them by the term each backend renders and, where gcc and g++ are present,
+# by a decode and encode of a frame the catch-all reads, which the gated
+# chain and the unmasked tag do not reach: the frame's variant has no gated
+# arm, and its tag fills the flag.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
