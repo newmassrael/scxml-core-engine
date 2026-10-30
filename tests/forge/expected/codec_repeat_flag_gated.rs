@@ -148,11 +148,13 @@ impl CodecRepeatFlagGated {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 18;
 
-    /// Encode `self` into the caller-owned sink. Returns
-    /// `CodecError::BufferOverflow` from a bounded sink when the
-    /// destination has insufficient remaining capacity; growable
-    /// sinks (e.g. `VecSink`) are effectively infallible.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+    /// Encode `self` into the caller-owned sink. Returns the value's refusal
+    /// when the encoding cannot carry it (a length past its type, a list past
+    /// its bound, a gate that disagrees with a presence; the document declares
+    /// `sce:encode-may-fail`), or the sink's own error:
+    /// `CodecError::BufferOverflow` from a bounded sink when the destination
+    /// has insufficient remaining capacity.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
         Self::encode_source(self, w)
     }
 
@@ -162,10 +164,8 @@ impl CodecRepeatFlagGated {
     /// `VecSink`. Returns the freshly-encoded byte vector, or the error
     /// `encode` refuses a value with: one the encoding cannot carry (a
     /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. It is a `Result` for every codec, so that a codec
-    /// gaining a derived element, or a build that gates one in, does not
-    /// change what a caller writes. Callers targeting zero-alloc hot
-    /// paths should call `encode` directly against a caller-owned sink.
+    /// disagrees with. Callers targeting zero-alloc hot paths should call
+    /// `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
@@ -255,28 +255,28 @@ impl CodecRepeatFlagGated {
     /// [`CodecRepeatFlagGatedSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
-        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+    pub fn encode_source<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+    pub fn write_source<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
         Self::write_source_in(src, w, &CodecRepeatFlagGatedOverrides::default())
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
     /// ones `src` presents.
     #[doc(hidden)]
-    pub fn write_source_in<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecRepeatFlagGatedOverrides) -> Result<(), CodecError> {
+    pub fn write_source_in<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecRepeatFlagGatedOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let _k_entries: usize = src.entries().map_or(0, |_l| _l.count());
         if _k_entries > 4 {
             return Err(CodecError::TooManyElements);
         }
         let _p_head_l_0: bool = src.entries().is_some();
         let _f_d_count: Option<usize> = if src.entries().is_some() { Some(_k_entries) } else { None };
-        let _d_count: u8 = u8::try_from(_f_d_count.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _d_count: u8 = _f_d_count.unwrap_or(0) as u8;
         let mut _c_head: u8 = (src.head() & !0x2) | (u8::from(_p_head_l_0) << 1);
         if let Some(_o) = over.head_w {
             _c_head = (_c_head & !0x1) | u8::from(_o);
@@ -292,10 +292,21 @@ impl CodecRepeatFlagGated {
         }
         Ok(())
     }
+
+    /// The bytes [`Self::write_source`] writes for `src`, counted with
+    /// nothing written.
+    #[doc(hidden)]
+    pub fn count_source<S: CodecRepeatFlagGatedSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+        let mut _c = ::sce_forge_runtime::codec::CountSink::new();
+        Self::write_source(src, &mut _c)?;
+        Ok(_c.len())
+    }
 }
 
 impl<S: CodecRepeatFlagGatedSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatFlagGated {
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+    type Error<E> = CodecError;
+
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }

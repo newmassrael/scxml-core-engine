@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58f5a17e479c571b0f1a95c9ced6b8f03b5d957325be03d16f15d59d99727b1b
+// source-hash: f3593d0da7c47c6e95770dd740ec6b7f10d9172b65629c75948b0c0e547691b7
 #![doc = "SCE-MAP: envelope.scxml:22 :: _forge_body"]
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -288,7 +288,10 @@ impl<'a> Envelope<'a> {
 
     /// Encode this map into `w`. An entry whose value breaks its declared
     /// bound — an exact length, a maximum size — is refused, not written.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError>
+    where
+        CodecError: From<S::Error>,
+    {
         Self::encode_source(self, w)
     }
 
@@ -465,8 +468,11 @@ impl<'a> Envelope<'a> {
     pub fn encode_source<S: EnvelopeSource + ?Sized, K: SceSink>(
         src: &S,
         w: &mut K,
-    ) -> Result<(), CodecError> {
-        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+    ) -> Result<(), CodecError>
+    where
+        CodecError: From<K::Error>,
+    {
+        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -475,7 +481,10 @@ impl<'a> Envelope<'a> {
     pub fn write_source<S: EnvelopeSource + ?Sized, K: SceSink>(
         src: &S,
         w: &mut K,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), CodecError>
+    where
+        CodecError: From<K::Error>,
+    {
         let mut count: u64 = 6;
         if src.subject().is_some() {
             count += 1;
@@ -621,10 +630,24 @@ impl<'a> Envelope<'a> {
         }
         Ok(())
     }
+
+    /// The bytes [`Self::write_source`] writes for `src`, counted with
+    /// nothing written.
+    #[doc(hidden)]
+    pub fn count_source<S: EnvelopeSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+        let mut _c = ::sce_forge_runtime::codec::CountSink::new();
+        Self::write_source(src, &mut _c)?;
+        Ok(_c.len())
+    }
 }
 
 impl<'a, S: EnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for Envelope<'a> {
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+    type Error<E> = CodecError;
+
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>
+    where
+        CodecError: From<K::Error>,
+    {
         Self::write_source(src, w)
     }
 }

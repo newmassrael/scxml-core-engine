@@ -135,11 +135,13 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 163;
 
-    /// Encode `self` into the caller-owned sink. Returns
-    /// `CodecError::BufferOverflow` from a bounded sink when the
-    /// destination has insufficient remaining capacity; growable
-    /// sinks (e.g. `VecSink`) are effectively infallible.
-    pub fn encode<S: SceSink>(&self, w: &mut S, after_shm: u8) -> Result<(), CodecError> {
+    /// Encode `self` into the caller-owned sink. Returns the value's refusal
+    /// when the encoding cannot carry it (a length past its type, a list past
+    /// its bound, a gate that disagrees with a presence; the document declares
+    /// `sce:encode-may-fail`), or the sink's own error:
+    /// `CodecError::BufferOverflow` from a bounded sink when the destination
+    /// has insufficient remaining capacity.
+    pub fn encode<S: SceSink>(&self, w: &mut S, after_shm: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
         Self::encode_source(self, w, after_shm)
     }
 
@@ -149,10 +151,8 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// `VecSink`. Returns the freshly-encoded byte vector, or the error
     /// `encode` refuses a value with: one the encoding cannot carry (a
     /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. It is a `Result` for every codec, so that a codec
-    /// gaining a derived element, or a build that gates one in, does not
-    /// change what a caller writes. Callers targeting zero-alloc hot
-    /// paths should call `encode` directly against a caller-owned sink.
+    /// disagrees with. Callers targeting zero-alloc hot paths should call
+    /// `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
@@ -264,14 +264,13 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// [`CodecZenohValueZbufSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohValueZbufSource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
-        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new(), after_shm)?;
+    pub fn encode_source<S: CodecZenohValueZbufSource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
         Self::write_source(src, w, after_shm)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohValueZbufSource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
+    pub fn write_source<S: CodecZenohValueZbufSource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let _k_slices: usize = src.slices().map_or(0, |_l| _l.count());
         if _k_slices > 4 {
             return Err(CodecError::TooManyElements);
@@ -283,7 +282,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
         let _f_d_value_len: Option<usize> = if src.value().is_some() { Some(_n_d_value_len_0) } else { None };
         let _d_value_len: u64 = match _f_d_value_len {
             Some(_n) => {
-                let _d = u64::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;
+                let _d = ::sce_forge_runtime::codec::widen_usize(_n);
                 if src.value_len().is_some_and(|_s| _s != _d) {
                     return Err(CodecError::InconsistentSource);
                 }
@@ -292,7 +291,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
             None => src.value_len().unwrap_or_default(),
         };
         let _f_d_slice_count: Option<usize> = if src.slices().is_some() { Some(_k_slices) } else { None };
-        let _d_slice_count: u64 = u64::try_from(_f_d_slice_count.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _d_slice_count: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_slice_count.unwrap_or(0));
         if ((after_shm & 0x1) == 0) != src.value().is_some() {
             return Err(CodecError::PresentIfMismatch);
         }
@@ -319,6 +318,15 @@ impl<'a> CodecZenohValueZbuf<'a> {
             }
         }
         Ok(())
+    }
+
+    /// The bytes [`Self::write_source`] writes for `src`, counted with
+    /// nothing written.
+    #[doc(hidden)]
+    pub fn count_source<S: CodecZenohValueZbufSource + ?Sized>(src: &S, after_shm: u8) -> Result<usize, CodecError> {
+        let mut _c = ::sce_forge_runtime::codec::CountSink::new();
+        Self::write_source(src, &mut _c, after_shm)?;
+        Ok(_c.len())
     }
 }
 
@@ -458,12 +466,12 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
     ///
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here. The same
-    /// refusals as the projection's: a list longer than the borrowed view
-    /// declares raises `CodecError::TooManyElements`, so an owned value the
+    /// sender that holds an owned value encodes it from here.
+    /// The same refusals as the projection's: a list longer than the borrowed
+    /// view declares raises `CodecError::TooManyElements`, so an owned value the
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
+    pub fn encode<K: SceSink>(&self, w: &mut K, after_shm: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
         CodecZenohValueZbuf::encode_source(self, w, after_shm)
     }
 

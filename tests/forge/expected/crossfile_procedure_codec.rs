@@ -132,17 +132,11 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
         match state {
             State::SendRequest => {
                 if let Some(ref handler) = self.service_handler {
-                    // The codec refuses a value it cannot carry: the request is
-                    // not sent, and the send fails as the service failing would.
-                    let payload = match self.frame.encode_to_vec() {
-                        Ok(bytes) => bytes,
-                        Err(e) => return (Event::Fail, format!("{e:?}")),
-                    };
                     let req = ProcedureServiceRequest {
                         service: "Diag".to_string(),
                         subfunc: None,
                         addr: Some((self.ecu_addr).to_string()),
-                        payload: Some(payload),
+                        payload: Some(self.frame.encode_to_vec()),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };
