@@ -213,6 +213,12 @@ pub type SchedTimePoint = u64;
 ///
 /// Kept as a concrete (non-trait) type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
 ///
+/// An entry names its event by number, the [`EventId`] the machine's tables
+/// give it (docs/adr/0069), so the scheduler carries no machine's type: one
+/// program compiles it once for each kind of send id its machines keep, not
+/// once for each machine. The engine turns the number back into the machine's
+/// event where it delivers one.
+///
 /// The `S` parameter is the per-entry cancel-key storage
 /// ([`ScheduledSendIdLike`]); it defaults to [`SceString`] so direct
 /// constructions (runtime unit tests, the C++-parity API) keep the
@@ -220,13 +226,13 @@ pub type SchedTimePoint = u64;
 /// [`StatePolicy::ScheduledSendId`], which is
 /// [`ElidedSendId`](crate::ElidedSendId) for cancel-free machines.
 #[derive(Debug)]
-pub struct PullScheduler<E, S = SceString> {
+pub struct PullScheduler<S = SceString> {
     /// Pending entries: `(event, [event_data_json], send_id, ready_at)`.
     /// The `event_data_json` field is elided under no_std (see [`ScheduledEntry`]).
     #[cfg(feature = "std")]
-    entries: Vec<ScheduledEntry<E, S>>,
+    entries: Vec<ScheduledEntry<S>>,
     #[cfg(not(feature = "std"))]
-    entries: ::heapless::Vec<ScheduledEntry<E, S>, MAX_SCHEDULED_EVENTS>,
+    entries: ::heapless::Vec<ScheduledEntry<S>, MAX_SCHEDULED_EVENTS>,
     next_auto_send_id: u64,
 }
 
@@ -248,12 +254,12 @@ pub struct PullScheduler<E, S = SceString> {
 /// documentation to a private item is what `rustdoc-links` refuses.
 #[cfg(feature = "std")]
 #[derive(Debug)]
-pub enum ScheduledAct<E> {
+pub enum ScheduledAct {
     /// Raise `event` on the external queue, carrying `event_data` as
     /// `_event.data` (§scxml-5.10.1).
     Raise {
-        /// The event to raise.
-        event: E,
+        /// The event to raise, by its number in the machine's tables.
+        event: EventId,
         /// Delayed-send `_event.data` JSON payload, preserved across the wait.
         event_data: SceString,
         /// §scxml-5.10.1: the `<send>`'s id, which `_event.sendid` carries
@@ -274,9 +280,10 @@ pub enum ScheduledAct<E> {
     /// §scxml-6.2: deliver a delayed send whose target is not this session's
     /// own external queue to the target it resolved when it was made.
     Routed {
-        /// This machine's own event, for the internal queue. None for a child
-        /// or a parent, which resolve the route's event name instead.
-        event: Option<E>,
+        /// This machine's own event, by its number, for the internal queue.
+        /// None for a child or a parent, which resolve the route's event name
+        /// instead.
+        event: Option<EventId>,
         /// Delayed-send `_event.data` JSON payload, preserved across the wait.
         event_data: SceString,
         /// §scxml-5.10.1: the `<send>`'s id.
@@ -376,7 +383,7 @@ pub enum TargetSendOutcome {
 }
 
 #[derive(Debug)]
-struct ScheduledEntry<E, S> {
+struct ScheduledEntry<S> {
     /// What to do when this entry comes due.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` there
@@ -388,9 +395,9 @@ struct ScheduledEntry<E, S> {
     /// `MAX_SCHEDULED_EVENTS`). Mirrors the `EventMetadata.data` profile-level
     /// elision (B-γ2d-1).
     #[cfg(feature = "std")]
-    act: ScheduledAct<E>,
+    act: ScheduledAct,
     #[cfg(not(feature = "std"))]
-    event: E,
+    event: EventId,
     /// Cancel key for §scxml-6.3 `<cancel sendid>`. Read only by
     /// [`PullScheduler::cancel_event`]; the storage type `S` is
     /// [`ElidedSendId`](crate::ElidedSendId) (zero-size) for documents with no
@@ -399,7 +406,7 @@ struct ScheduledEntry<E, S> {
     ready_at: SchedTimePoint,
 }
 
-impl<E, S> ScheduledEntry<E, S> {
+impl<S> ScheduledEntry<S> {
     /// Whether this entry is a host-run invocation's deadline — the engine's,
     /// which no `<cancel>` may reach.
     #[cfg(feature = "std")]
@@ -419,10 +426,10 @@ impl<E, S> ScheduledEntry<E, S> {
     /// child or a parent, a host-served send and a host invocation's deadline
     /// carry no event of this machine's, and answer `None`.
     #[cfg(feature = "std")]
-    fn own_event(&self) -> Option<&E> {
+    fn own_event(&self) -> Option<EventId> {
         match &self.act {
-            ScheduledAct::Raise { event, .. } => Some(event),
-            ScheduledAct::Routed { event, .. } => event.as_ref(),
+            ScheduledAct::Raise { event, .. } => Some(*event),
+            ScheduledAct::Routed { event, .. } => *event,
             ScheduledAct::HostSend(_) | ScheduledAct::HostInvokeDeadline { .. } => None,
         }
     }
@@ -430,12 +437,12 @@ impl<E, S> ScheduledEntry<E, S> {
     /// The event this entry delivers; under `--no-default-features` every entry is
     /// one.
     #[cfg(not(feature = "std"))]
-    fn own_event(&self) -> Option<&E> {
-        Some(&self.event)
+    fn own_event(&self) -> Option<EventId> {
+        Some(self.event)
     }
 }
 
-impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
+impl<S: ScheduledSendIdLike> PullScheduler<S> {
     /// Construct an empty scheduler. A constant expression on both profiles.
     pub const fn new() -> Self {
         Self {
@@ -460,7 +467,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// the event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
         &mut self,
-        event: E,
+        event: EventId,
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
@@ -474,7 +481,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// with the entry and is `_event.name` when it comes due.
     pub fn schedule_event_named_at(
         &mut self,
-        event: E,
+        event: EventId,
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
@@ -512,7 +519,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// for it uses `schedule_event_named_at`.
     pub fn schedule_event_as(
         &mut self,
-        event: E,
+        event: EventId,
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
@@ -552,7 +559,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     #[cfg(feature = "std")]
     pub fn schedule_routed_at(
         &mut self,
-        event: Option<E>,
+        event: Option<EventId>,
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
@@ -569,7 +576,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     #[allow(clippy::too_many_arguments)]
     pub fn schedule_routed_named_at(
         &mut self,
-        event: Option<E>,
+        event: Option<EventId>,
         ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
@@ -642,7 +649,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// silent transition drop, so an over-capacity schedule attempt is treated
     /// as a fatal configuration error rather than swallowed.
     #[inline]
-    fn push_scheduled(&mut self, entry: ScheduledEntry<E, S>) {
+    fn push_scheduled(&mut self, entry: ScheduledEntry<S>) {
         #[cfg(feature = "std")]
         {
             self.entries.push(entry);
@@ -721,7 +728,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     pub(crate) fn next_ready_at_with_event(
         &self,
         now: SchedTimePoint,
-    ) -> Option<(SchedTimePoint, Option<&E>)> {
+    ) -> Option<(SchedTimePoint, Option<EventId>)> {
         self.entries
             .iter()
             .filter(|e| e.ready_at <= now)
@@ -750,7 +757,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// restore arm the entries in the order it was given and get the order the
     /// saved machine would have delivered them in (§scxml-6.2).
     #[cfg(feature = "std")]
-    pub fn pending(&self) -> Vec<(SchedTimePoint, &ScheduledAct<E>)> {
+    pub fn pending(&self) -> Vec<(SchedTimePoint, &ScheduledAct)> {
         let mut pending: Vec<_> = self.entries.iter().map(|e| (e.ready_at, &e.act)).collect();
         pending.sort_by_key(|(ready_at, _)| *ready_at);
         pending
@@ -774,7 +781,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// usize) -> T` — same shape as `Vec::remove`, so this works on both
     /// profiles.
     #[inline]
-    fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<E, S>> {
+    fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<S>> {
         let idx = self
             .entries
             .iter()
@@ -798,7 +805,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// Matches C++ `PullScheduler::popReadyAct(...) -> bool` (but returns an
     /// `Option` instead of bool+out-params, which is the idiomatic Rust shape).
     #[cfg(feature = "std")]
-    pub fn pop_ready_act_at(&mut self, now: SchedTimePoint) -> Option<ScheduledAct<E>> {
+    pub fn pop_ready_act_at(&mut self, now: SchedTimePoint) -> Option<ScheduledAct> {
         self.pop_ready_entry(now).map(|entry| entry.act)
     }
 
@@ -812,10 +819,10 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// docs), so the popped event carries no data. The no_std drain in
     /// [`Engine::tick`] passes `""` to
     /// [`raise_external`](Engine::raise_external), which discards it anyway —
-    /// returning `Option<E>` avoids both the act discriminant and moving a
+    /// returning `Option<EventId>` avoids both the act discriminant and moving a
     /// 264 B empty `heapless::String` out on every timer fire.
     #[cfg(not(feature = "std"))]
-    pub(crate) fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<E> {
+    pub(crate) fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<EventId> {
         self.pop_ready_entry(now).map(|entry| entry.event)
     }
 }
@@ -867,7 +874,7 @@ fn take_host_invoke_deadline(
     }
 }
 
-impl<E: Clone, S: ScheduledSendIdLike> Default for PullScheduler<E, S> {
+impl<S: ScheduledSendIdLike> Default for PullScheduler<S> {
     fn default() -> Self {
         Self::new()
     }
@@ -1063,7 +1070,7 @@ pub struct Engine<P: StatePolicy> {
     /// [`StatePolicy::ScheduledSendId`] — [`ElidedSendId`](crate::ElidedSendId)
     /// for cancel-free machines (no_std ring shrinks by the per-entry
     /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
-    pub(crate) scheduler: PullScheduler<P::Event, P::ScheduledSendId>,
+    pub(crate) scheduler: PullScheduler<P::ScheduledSendId>,
     /// Where this engine reads "now" from — see [`SceClock`].
     pub(crate) clock: SceClock,
     /// The reading [`clock`](Self::clock) gave when the current turn began, or
@@ -1799,6 +1806,11 @@ impl<P: StatePolicy> Engine<P> {
         // only the first kind can be popped by this tick. A clock the host moved
         // is bounded by how far it moved and is not cut; a heartbeat across a long
         // jump arms its next beat after the reading and is not popped here at all.
+        //
+        // The loop stays in each machine's `tick`. The scheduler it drives is
+        // machine-free and shared (docs/adr/0069); moving the loop itself into
+        // shared code behind the machine's hooks measured larger per machine
+        // than the loop it replaced.
         let mut reading: Option<SchedTimePoint> = None;
         let mut popped_due_at_reading: u32 = 0;
         loop {
@@ -1810,7 +1822,6 @@ impl<P: StatePolicy> Engine<P> {
             if let Some((due, head)) = self.scheduler.next_ready_at_with_event(now) {
                 if due == now {
                     if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call {
-                        let head = head.copied().map(P::event_id);
                         self.core.record_truncated_event_chain(head);
                         break;
                     }
@@ -1833,7 +1844,7 @@ impl<P: StatePolicy> Engine<P> {
                         // §scxml-5.10.1 + §scxml-C-1: the metadata the
                         // immediate send stamps, restored when the wait ends,
                         // and §scxml-5.10: the name it was sent under.
-                        let mut meta = EventWithMetadata::new(event);
+                        let mut meta = EventWithMetadata::new(Self::event_of(event));
                         meta.metadata = EventMetadata::external(&send_id, &origin);
                         meta.metadata.name = name;
                         meta.set_event_data(&event_data);
@@ -1848,7 +1859,14 @@ impl<P: StatePolicy> Engine<P> {
                         name,
                         route,
                     } => {
-                        self.deliver_routed(event, &event_data, send_id, origin, name, route);
+                        self.deliver_routed(
+                            event.map(Self::event_of),
+                            &event_data,
+                            send_id,
+                            origin,
+                            name,
+                            route,
+                        );
                     }
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     // Everything the immediate send site does happens here
@@ -1874,7 +1892,7 @@ impl<P: StatePolicy> Engine<P> {
                 let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
                     break;
                 };
-                self.raise_external(popped, "", "");
+                self.raise_external(Self::event_of(popped), "", "");
             }
 
             // The macrostep this event drives may `<cancel>` a later one, so
@@ -2791,7 +2809,7 @@ impl<P: StatePolicy> Engine<P> {
     ) -> SceString {
         let ready_at = self.sched_now_plus(delay);
         self.scheduler
-            .schedule_event_at(event, ready_at, send_id, event_data, origin)
+            .schedule_event_at(P::event_id(event), ready_at, send_id, event_data, origin)
     }
 
     /// [`schedule_event`](Self::schedule_event) under the id the caller names,
@@ -2807,8 +2825,14 @@ impl<P: StatePolicy> Engine<P> {
         origin: &str,
     ) {
         let ready_at = self.sched_now_plus(delay);
-        self.scheduler
-            .schedule_event_as(event, ready_at, send_id, event_data, origin, "");
+        self.scheduler.schedule_event_as(
+            P::event_id(event),
+            ready_at,
+            send_id,
+            event_data,
+            origin,
+            "",
+        );
     }
 
     /// §scxml-6.2: schedule a delayed send whose target is not this session's
@@ -2832,8 +2856,14 @@ impl<P: StatePolicy> Engine<P> {
         route: ScheduledRoute,
     ) -> SceString {
         let ready_at = self.sched_now_plus(delay);
-        self.scheduler
-            .schedule_routed_at(event, ready_at, send_id, event_data, origin, route)
+        self.scheduler.schedule_routed_at(
+            event.map(P::event_id),
+            ready_at,
+            send_id,
+            event_data,
+            origin,
+            route,
+        )
     }
 
     /// §scxml-6.2 + §scxml-3.12.1 + §scxml-5.10: a `<send eventexpr>` this
@@ -2862,8 +2892,14 @@ impl<P: StatePolicy> Engine<P> {
         match delay {
             Some(delay) => {
                 let ready_at = self.sched_now_plus(delay);
-                self.scheduler
-                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, arrival);
+                self.scheduler.schedule_event_named_at(
+                    P::event_id(event),
+                    ready_at,
+                    send_id,
+                    event_data,
+                    origin,
+                    arrival,
+                );
             }
             None => {
                 let mut meta = EventWithMetadata::new(event);
@@ -2895,7 +2931,7 @@ impl<P: StatePolicy> Engine<P> {
             Some(delay) => {
                 let ready_at = self.sched_now_plus(delay);
                 self.scheduler.schedule_routed_named_at(
-                    Some(event),
+                    Some(P::event_id(event)),
                     ready_at,
                     send_id,
                     event_data,
@@ -2957,7 +2993,12 @@ impl<P: StatePolicy> Engine<P> {
                         Some(delay) => {
                             let ready_at = engine.sched_now_plus(delay);
                             engine.scheduler.schedule_event_named_at(
-                                event, ready_at, send_id, event_data, origin, arrival,
+                                P::event_id(event),
+                                ready_at,
+                                send_id,
+                                event_data,
+                                origin,
+                                arrival,
                             );
                         }
                         None => {
@@ -3004,7 +3045,13 @@ impl<P: StatePolicy> Engine<P> {
         if let Some(delay) = delay {
             let ready_at = engine.sched_now_plus(delay);
             engine.scheduler.schedule_routed_named_at(
-                event, ready_at, send_id, event_data, origin, route, arrival,
+                event.map(P::event_id),
+                ready_at,
+                send_id,
+                event_data,
+                origin,
+                route,
+                arrival,
             );
             return TargetSendOutcome::Sent;
         }

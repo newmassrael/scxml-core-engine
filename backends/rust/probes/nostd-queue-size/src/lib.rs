@@ -38,15 +38,12 @@ use sce_nostd_queue_size_machine::EventQueueCapacityProbePolicy;
 use sce_rust_runtime::engine::PullScheduler;
 use sce_rust_runtime::{Engine, EventMetadata, StatePolicy};
 
-/// The probe machine's event enum — the `E` in `PullScheduler<E, S>` /
-/// `ScheduledEntry<E, S>` for the scheduler lever bound below.
-type ProbeEvent = <EventQueueCapacityProbePolicy as StatePolicy>::Event;
-
 /// The probe machine's scheduled-send-id storage — the `S` in
-/// `PullScheduler<E, S>`. Codegen selects `ElidedSendId` (zero-size) here
+/// `PullScheduler<S>`, whose entries name their event by number
+/// (docs/adr/0069). Codegen selects `ElidedSendId` (zero-size) here
 /// because the fixture has no `<cancel>`; this is exactly the type the
 /// generated `Engine` embeds, so the scheduler bound below measures the real
-/// resident size, not the `SceString`-default `PullScheduler<E>`.
+/// resident size, not the `SceString`-default `PullScheduler`.
 type ProbeSendId = <EventQueueCapacityProbePolicy as StatePolicy>::ScheduledSendId;
 
 // The levers are gated *directly* at their own types (robust — independent of
@@ -88,7 +85,7 @@ const _: () = assert!(
 /// `event_data` payload (no script engine to read it), and — for a cancel-free
 /// machine like this fixture — the `send_id` cancel key (`StatePolicy::ScheduledSendId`
 /// = `ElidedSendId`, since the timer drain never reads it and no `<cancel>`
-/// matches on it). `PullScheduler<ProbeEvent, ProbeSendId>` measures **528 B** at
+/// matches on it). `PullScheduler<ProbeSendId>` measures **528 B** at
 /// `MAX_SCHEDULED_EVENTS = 32`; reintroducing either string adds 256 B × 32 =
 /// 8 KiB, pushing it to ≥ 8.7 KiB. The bound sits between the two so neither
 /// elision can silently revert (reverting `send_id` = flipping the fixture's
@@ -97,8 +94,8 @@ const _: () = assert!(
 const SCHEDULER_TYPE_BOUND: usize = 2 * 1024;
 
 const _: () = assert!(
-    core::mem::size_of::<PullScheduler<ProbeEvent, ProbeSendId>>() <= SCHEDULER_TYPE_BOUND,
-    "PullScheduler<E, S> exceeds its bound: a per-entry delayed-send string was likely \
+    core::mem::size_of::<PullScheduler<ProbeSendId>>() <= SCHEDULER_TYPE_BOUND,
+    "PullScheduler<S> exceeds its bound: a per-entry delayed-send string was likely \
      reintroduced into ScheduledEntry under no_std — either the `event_data` payload (it must \
      be #[cfg(feature = \"std\")]) or the `send_id` cancel key (the cancel-free machine's \
      `type ScheduledSendId` must be `ElidedSendId`, not `SceString`). See the ScheduledEntry \

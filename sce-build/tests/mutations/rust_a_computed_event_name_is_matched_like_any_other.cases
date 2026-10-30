@@ -31,8 +31,8 @@ mutation_oracles backends/rust/tests/tests/a_computed_event_name_is_matched_like
 
 mutation_case "an external computed name is looked up in the exact table again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        let Some(event) = P::resolve_event_by_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler\n                    .schedule_event_named_at(",
-     "        let Some(event) = P::get_event_from_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler\n                    .schedule_event_named_at(")
+     "        let Some(event) = P::resolve_event_by_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler.schedule_event_named_at(",
+     "        let Some(event) = P::get_event_from_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler.schedule_event_named_at(")
 PY
 
 mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
@@ -55,8 +55,8 @@ PY
 
 mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, arrival);\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(",
-     "                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, \"\");\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(")
+     "                    origin,\n                    arrival,\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(",
+     "                    origin,\n                    \"\",\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(")
 PY
 
 mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'

@@ -150,7 +150,7 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// Maximum number of simultaneously-pending delayed events in the no_std
 /// [`PullScheduler`](crate::engine::PullScheduler) ring.
 ///
-/// Bounds the `heapless::Vec<ScheduledEntry<E>, _>` capacity of the no_std
+/// Bounds the `heapless::Vec<ScheduledEntry<S>, _>` capacity of the no_std
 /// variant of the scheduler. `<send delay>` author surface; this is the
 /// in-flight delay-pending dimension, distinct from the event queue capacity
 /// (`<sce:capacity>` populates `EVENT_QUEUE_CAPACITY` per-document for the
@@ -183,11 +183,12 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 ///   `EventQueue` associated type) for documents with no `<cancel>`, and the
 ///   load-bearing `SceString` otherwise.
 ///
-/// A cancel-free entry thus carries only the event value and its `ready_at`
-/// time-point; the ring remains the largest single `Engine` contributor under
-/// no_std, but at hundreds of bytes rather than kilobytes.
+/// A cancel-free entry thus carries only the event's number (an [`EventId`],
+/// docs/adr/0069) and its `ready_at` time-point; the ring remains the largest
+/// single `Engine` contributor under no_std, but at hundreds of bytes rather
+/// than kilobytes.
 ///
-/// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<E>>` (unbounded)
+/// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<S>>` (unbounded)
 /// so this constant only affects the `--no-default-features` variant.
 pub const MAX_SCHEDULED_EVENTS: usize = 32;
 

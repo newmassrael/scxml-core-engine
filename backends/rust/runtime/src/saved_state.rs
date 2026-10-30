@@ -59,7 +59,9 @@ use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
-use crate::{Engine, EventQueueStorage, EventType, EventWithMetadata, SceClock, StatePolicy};
+use crate::{
+    Engine, EventId, EventQueueStorage, EventType, EventWithMetadata, SceClock, StatePolicy,
+};
 
 /// The format of a saved state that names each running child by its id alone
 /// (`schemas/sce-saved-state.v1.schema.json`): a restore starts each again from
@@ -1839,7 +1841,7 @@ fn save_pending<P: StatePolicy>(
     use crate::ScheduledRoute;
 
     let now = engine.now_ms();
-    let name = |event: &P::Event| P::get_event_name(*event).to_string();
+    let name = |event: &EventId| P::get_event_name(P::EVENTS[usize::from(event.0)]).to_string();
     let sends = engine
         .scheduler
         .pending()
@@ -2800,9 +2802,13 @@ fn arm_pending<P: StatePolicy>(
                 send_id,
                 origin,
             } => {
-                engine
-                    .scheduler
-                    .schedule_event_at(event, ready_at(due), send_id, data, origin);
+                engine.scheduler.schedule_event_at(
+                    P::event_id(event),
+                    ready_at(due),
+                    send_id,
+                    data,
+                    origin,
+                );
             }
             ReadSend::Internal {
                 due,
@@ -2812,7 +2818,7 @@ fn arm_pending<P: StatePolicy>(
                 origin,
             } => {
                 engine.scheduler.schedule_routed_at(
-                    Some(event),
+                    Some(P::event_id(event)),
                     ready_at(due),
                     send_id,
                     data,

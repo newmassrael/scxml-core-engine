@@ -34,7 +34,7 @@ reversion.
      `<sce:capacity>` reversion to the depth-64 default.
   2. **Metadata lever** — `size_of::<EventMetadata>()`: catches a `_event.*`
      `SceString` re-added to the queued metadata (1 B under no_std).
-  3. **Scheduler lever** — `size_of::<PullScheduler<E>>()`: catches the
+  3. **Scheduler lever** — `size_of::<PullScheduler<S>>()`: catches the
      per-entry delayed-send `event_data` string re-added to `ScheduledEntry`
      under no_std.
 - Plus a loose whole-`Engine` sanity bound (32 KiB) for gross regressions that
