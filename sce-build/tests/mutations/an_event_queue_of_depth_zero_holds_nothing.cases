@@ -1,0 +1,62 @@
+# Mutation cases for "an event queue of depth zero holds nothing"
+# (docs/adr/0076, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_event_queue_of_depth_zero_holds_nothing.cases`.
+#
+# A document that raises nothing for itself keeps an internal queue of no
+# slots, and the bare-metal queue's events and payloads are each a ring of
+# that depth. A push onto it must stop the program with the queue's own
+# message, as a push past any depth does, and never reach an index taken
+# modulo a capacity of zero. The tests are the runtime library's
+# (`helpers::event_queue::tests`), which hold both rings on the host.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --lib
+mutation_oracles backends/rust/runtime/src/helpers/event_queue.rs
+mutation_targets backends/rust/runtime/src/helpers/event_queue.rs
+
+# The events' ring asks for a full ring only past its capacity: a push onto a
+# ring of no slots divides by zero instead of stopping with the queue's word.
+mutation_case "the events' ring does not refuse a push at its depth" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_queue.rs",
+     r'''    if count == capacity {
+        queue_full();
+    }
+    slots[''',
+     r'''    if count > capacity {
+        queue_full();
+    }
+    slots[''')
+PY
+
+# The same for the payload ring.
+mutation_case "the payload ring does not refuse a push at its depth" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_queue.rs",
+     r'''        if count == capacity {
+            queue_full();
+        }''',
+     r'''        if count > capacity {
+            queue_full();
+        }''')
+PY
+
+# A payload ring dropped with items in it forgets them: their destructors
+# never run.
+mutation_case "a dropped payload ring forgets what it holds" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_queue.rs",
+     r'''    fn drop(&mut self) {
+        self.clear();''',
+     r'''    fn drop(&mut self) {
+        let _ = self.len();''')
+PY
+
+# What a saved state reads of the events' ring ignores where it starts, so
+# after a wrap the queue is reported out of order.
+mutation_case "the queued events ignore the ring's head" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_queue.rs",
+     r'''    (0..usize::from(len)).map(move |offset| &slots[(head + offset) % capacity])''',
+     r'''    (0..usize::from(len)).map(move |offset| &slots[(offset + head * 0) % capacity])''')
+PY

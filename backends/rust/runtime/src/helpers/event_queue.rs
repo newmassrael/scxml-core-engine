@@ -14,17 +14,22 @@
 //! first, then processes one external event, then re-drains the internal queue.
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--no-default-features` the
-//! backing store is a stack-allocated `heapless::Deque<T, N>`. The depth `N`
-//! is per-machine — the const generic parameter carries the
+//! backing store is a fixed ring of `N` slots in the engine itself. The depth
+//! `N` is per-machine and per-queue. The external queue's carries the
 //! `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity` value
 //! that codegen resolves into `EVENT_QUEUE_CAPACITY`, defaulting to
 //! [`crate::MAX_EVENT_QUEUE_DEPTH`] for machines that declare no capacity (see
-//! [`crate::StatePolicy::EventQueue`] for the policy-carried wiring, and lib.rs
-//! for the default's reasoning). Overflow under no_std panics with an explicit
+//! [`crate::StatePolicy::ExternalQueue`] for the policy-carried wiring, and
+//! lib.rs for the default's reasoning). The internal queue's is the depth the
+//! generator proved from the document where it could, `0` among them, and the
+//! external rule where it could not ([`crate::StatePolicy::InternalQueue`],
+//! docs/adr/0076). Overflow under no_std panics with an explicit
 //! message rather than silently dropping the event — W3C SCXML Appendix D's
 //! `mainEventLoop` processes every queued event, so the no_std backing fails
 //! loud rather than drop.
 
+#[cfg(any(test, not(feature = "std")))]
+use core::mem::MaybeUninit;
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
@@ -75,6 +80,11 @@ impl QueuedEvent {
 /// [`EventQueueMut`], which has no `N` and no machine type, so the code that
 /// does is one copy for every machine. Only the payloads are the machine's
 /// own, and a schemaless machine's payload is `()`, which nothing stores.
+///
+/// `N` may be `0` (docs/adr/0076): a queue of no slots, which holds nothing,
+/// takes nothing off and stops the program on a push. The generator gives an
+/// internal queue that depth only where it proved the document never raises
+/// an event for itself.
 #[derive(Debug)]
 pub struct EventQueue<Payload, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }> {
     #[cfg(feature = "std")]
@@ -143,8 +153,7 @@ impl<Payload, const N: usize> EventQueue<Payload, N> {
         }
         #[cfg(not(feature = "std"))]
         {
-            let head = usize::from(self.head);
-            (0..usize::from(self.len)).map(move |offset| &self.slots[(head + offset) % N])
+            ring_queued(&self.slots, self.head, self.len)
         }
     }
 
@@ -238,7 +247,9 @@ impl EventQueueMut<'_> {
 
 // The bounded queue's ring: `len` events from `head`, wrapping at the end of
 // `slots`. Free functions over the parts rather than methods of the view, so the
-// host's tests, which build the `std` queue, compile and hold them too.
+// host's tests, which build the `std` queue, compile and hold them too. Each
+// holds for a ring of no slots (docs/adr/0076): its length is never more than
+// zero, so no index is taken modulo its capacity.
 
 /// Put `item` behind the `len` items from `head`.
 #[cfg(any(test, not(feature = "std")))]
@@ -275,6 +286,14 @@ fn ring_front<T>(slots: &[T], head: u16, len: u16) -> Option<&T> {
     }
 }
 
+/// The `len` items from `head`, front first, left in place.
+#[cfg(any(test, not(feature = "std")))]
+fn ring_queued<T>(slots: &[T], head: u16, len: u16) -> impl Iterator<Item = &T> {
+    let head = usize::from(head);
+    let capacity = slots.len();
+    (0..usize::from(len)).map(move |offset| &slots[(head + offset) % capacity])
+}
+
 /// A push past a bounded queue's depth. No formatted message, so an image does
 /// not carry the formatting machinery for it.
 #[cfg(any(test, not(feature = "std")))]
@@ -287,6 +306,113 @@ fn queue_full() -> ! {
     )
 }
 
+/// A first-in first-out ring of at most `N` items, `N` zero included: the
+/// bounded store of an [`EventQueueManager`], and so of the payloads of an
+/// [`EventQueue`], under `no_std`.
+///
+/// The crate's own rather than `heapless::Deque`, whose constructor refuses a
+/// depth of zero while the program is compiled: an internal queue the
+/// generator proved empty has no slots (docs/adr/0076), and the payload store
+/// beside its events has to have none either. The slots are uninitialised
+/// until the ring writes them, so a ring of a zero-size item, a schemaless
+/// machine's `()`, is its head and its length and nothing more.
+///
+/// Every `unsafe` of this type rests on the one invariant its fields keep:
+/// `len <= N`, and the `len` slots from `head`, wrapping at the end, hold an
+/// item each; no other slot does.
+#[cfg(any(test, not(feature = "std")))]
+struct FixedRing<T, const N: usize> {
+    slots: [MaybeUninit<T>; N],
+    head: u16,
+    len: u16,
+}
+
+#[cfg(any(test, not(feature = "std")))]
+impl<T, const N: usize> FixedRing<T, N> {
+    /// An empty ring; a constant expression.
+    const fn new() -> Self {
+        // SAFETY: an array of `MaybeUninit` asks nothing of its bytes, so an
+        // uninitialised one is a valid value of it; the ring reads no slot
+        // before it writes one.
+        let slots = unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() };
+        Self {
+            slots,
+            head: 0,
+            len: 0,
+        }
+    }
+
+    /// How many items the ring holds.
+    fn len(&self) -> usize {
+        usize::from(self.len)
+    }
+
+    /// Whether the ring holds no item.
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Put `item` behind the items held; past the `N`th, stop the program
+    /// rather than drop it.
+    fn push_back(&mut self, item: T) {
+        let count = self.len();
+        let capacity = self.slots.len();
+        if count == capacity {
+            queue_full();
+        }
+        // `count < capacity`, so the slot is one no item is held in: writing
+        // it forgets nothing.
+        self.slots[(usize::from(self.head) + count) % capacity] = MaybeUninit::new(item);
+        self.len += 1;
+    }
+
+    /// Take the item at the front, `None` when there is none.
+    fn pop_front(&mut self) -> Option<T> {
+        if self.is_empty() {
+            return None;
+        }
+        let first = usize::from(self.head);
+        // SAFETY: the ring holds an item, so the slot at `head` holds the
+        // first; it is read out once, and the slot is counted vacant below, so
+        // it is never read again.
+        let item = unsafe { self.slots[first].assume_init_read() };
+        self.head = ((first + 1) % self.slots.len()) as u16;
+        self.len -= 1;
+        Some(item)
+    }
+
+    /// The items held, front first, left in place.
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        let head = usize::from(self.head);
+        let capacity = self.slots.len();
+        (0..self.len()).map(move |offset| {
+            // SAFETY: `offset < len`, so the slot is one of the `len` from
+            // `head` that hold an item, borrowed for as long as the ring is.
+            unsafe { self.slots[(head + offset) % capacity].assume_init_ref() }
+        })
+    }
+
+    /// Drop every item held.
+    fn clear(&mut self) {
+        while self.pop_front().is_some() {}
+    }
+}
+
+#[cfg(any(test, not(feature = "std")))]
+impl<T, const N: usize> Drop for FixedRing<T, N> {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+#[cfg(any(test, not(feature = "std")))]
+impl<T: core::fmt::Debug, const N: usize> core::fmt::Debug for FixedRing<T, N> {
+    /// The items held: the vacant slots hold nothing to show.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
 /// FIFO queue for SCXML events with metadata.
 ///
 /// Generic over the event type (typically `EventWithMetadata<E, P>` where `E`
@@ -295,9 +421,9 @@ fn queue_full() -> ! {
 ///
 /// Implementation: under std, a thin wrapper around `VecDeque<T>`
 /// (unbounded) — `N` is inert (the std build keeps the spec's unbounded
-/// `Queue`). Under `--no-default-features`, a wrapper around
-/// `heapless::Deque<T, N>` (stack-allocated, sized exactly to the machine's
-/// resolved event-queue capacity). `N` defaults to
+/// `Queue`). Under `--no-default-features`, a fixed ring of `N` slots held in
+/// place, sized exactly to the queue's resolved depth, `0` included
+/// (docs/adr/0076). `N` defaults to
 /// [`crate::MAX_EVENT_QUEUE_DEPTH`] so a bare `EventQueueManager<T>` keeps the
 /// crate baseline for schemaless/unspecified machines. Named to match C++ so
 /// generated code reads naturally when cross-referenced with C++ source.
@@ -306,7 +432,7 @@ pub struct EventQueueManager<T, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH 
     #[cfg(feature = "std")]
     queue: VecDeque<T>,
     #[cfg(not(feature = "std"))]
-    queue: ::heapless::Deque<T, N>,
+    queue: FixedRing<T, N>,
 }
 
 impl<T, const N: usize> EventQueueManager<T, N> {
@@ -320,7 +446,7 @@ impl<T, const N: usize> EventQueueManager<T, N> {
             #[cfg(feature = "std")]
             queue: VecDeque::new(),
             #[cfg(not(feature = "std"))]
-            queue: ::heapless::Deque::new(),
+            queue: FixedRing::new(),
         }
     }
 
@@ -331,16 +457,7 @@ impl<T, const N: usize> EventQueueManager<T, N> {
     /// dropping the event — W3C SCXML Appendix D processes every queued event,
     /// so the bounded backing fails loud rather than drop.
     pub fn raise(&mut self, event: T) {
-        #[cfg(feature = "std")]
-        {
-            self.queue.push_back(event);
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            self.queue.push_back(event).map_err(|_| ()).expect(
-                "EventQueueManager: heapless capacity exhausted (peak chained <raise> exceeded this machine's resolved EVENT_QUEUE_CAPACITY / MAX_EVENT_QUEUE_DEPTH; raise <scxml sce:capacity>; W3C Appendix D processes every enqueued event, so SCE fails loud rather than drop)",
-            );
-        }
+        self.queue.push_back(event);
     }
 
     /// Dequeue the next event (FIFO). Returns `None` if the queue is empty.
@@ -387,9 +504,10 @@ impl<T, const N: usize> Default for EventQueueManager<T, N> {
 
 /// The queue a machine's policy supplies (W3C SCXML Appendix D `internalQueue`
 /// / `externalQueue`), as the [`Engine`](crate::Engine) drives it: an
-/// [`EventQueue`] at the machine's resolved capacity (see
-/// [`crate::StatePolicy::EventQueue`]), its events through a view without that
-/// capacity (docs/adr/0068).
+/// [`EventQueue`] at the queue's resolved depth (see
+/// [`crate::StatePolicy::InternalQueue`] and
+/// [`crate::StatePolicy::ExternalQueue`], two types since docs/adr/0076), its
+/// events through a view without that depth (docs/adr/0068).
 pub trait EventQueueStorage<Payload>: Default {
     /// An empty queue, as a constant (docs/adr/0070).
     ///
@@ -481,6 +599,12 @@ mod tests {
         ring_push(&mut slots, &mut head, &mut len, 4);
         ring_push(&mut slots, &mut head, &mut len, 5);
         assert_eq!(ring_front(&slots, head, len), Some(&3));
+        let held: Vec<u16> = ring_queued(&slots, head, len).copied().collect();
+        assert_eq!(
+            held,
+            [3, 4, 5],
+            "what a saved state reads is the FIFO order"
+        );
         let drained: Vec<u16> =
             core::iter::from_fn(|| ring_pop(&mut slots, &mut head, &mut len)).collect();
         assert_eq!(drained, [3, 4, 5]);
@@ -497,6 +621,94 @@ mod tests {
         for item in [1, 2, 3] {
             ring_push(&mut slots, &mut head, &mut len, item);
         }
+    }
+
+    /// A ring of no slots, the internal queue of a document that raises
+    /// nothing for itself (docs/adr/0076), holds nothing and takes nothing
+    /// off: no index of it is taken modulo its capacity of zero.
+    #[test]
+    fn a_ring_of_no_slots_holds_nothing_and_takes_nothing_off() {
+        let mut slots: [u16; 0] = [];
+        let (mut head, mut len) = (0u16, 0u16);
+        assert_eq!(ring_pop(&mut slots, &mut head, &mut len), None);
+        assert_eq!(ring_front(&slots, head, len), None);
+        assert_eq!(ring_queued(&slots, head, len).count(), 0);
+    }
+
+    /// A push onto a ring of no slots stops the program, as a push past any
+    /// ring's depth does: the generator proved it never happens.
+    #[test]
+    #[should_panic(expected = "an event queue is full")]
+    fn a_push_onto_a_ring_of_no_slots_is_refused_loud() {
+        let mut slots: [u16; 0] = [];
+        let (mut head, mut len) = (0u16, 0u16);
+        ring_push(&mut slots, &mut head, &mut len, 1);
+    }
+
+    /// The payload store of a queue of depth zero is a ring of no slots too,
+    /// which `heapless::Deque` refused to be while the program was compiled.
+    #[test]
+    fn a_payload_ring_of_no_slots_holds_nothing() {
+        let mut ring: FixedRing<u32, 0> = FixedRing::new();
+        assert!(ring.is_empty());
+        assert_eq!(ring.len(), 0);
+        assert_eq!(ring.pop_front(), None);
+        assert_eq!(ring.iter().count(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "an event queue is full")]
+    fn a_push_onto_a_payload_ring_of_no_slots_is_refused_loud() {
+        let mut ring: FixedRing<(), 0> = FixedRing::new();
+        ring.push_back(());
+    }
+
+    /// The payload ring keeps FIFO order across its wrap-around, refuses a
+    /// push past its depth, and drops every item it still holds.
+    #[test]
+    fn the_payload_ring_keeps_fifo_order_and_drops_what_it_holds() {
+        let mut ring: FixedRing<u32, 3> = FixedRing::new();
+        for item in [1, 2, 3] {
+            ring.push_back(item);
+        }
+        assert_eq!(ring.pop_front(), Some(1));
+        assert_eq!(ring.pop_front(), Some(2));
+        ring.push_back(4);
+        ring.push_back(5);
+        assert_eq!(ring.len(), 3);
+        let held: Vec<u32> = ring.iter().copied().collect();
+        assert_eq!(held, [3, 4, 5]);
+        assert_eq!(format!("{ring:?}"), "[3, 4, 5]");
+        ring.clear();
+        assert!(ring.is_empty());
+        assert_eq!(ring.pop_front(), None);
+
+        let owner = std::rc::Rc::new(());
+        {
+            let mut held: FixedRing<std::rc::Rc<()>, 2> = FixedRing::new();
+            held.push_back(std::rc::Rc::clone(&owner));
+            held.push_back(std::rc::Rc::clone(&owner));
+            assert_eq!(std::rc::Rc::strong_count(&owner), 3);
+        }
+        assert_eq!(
+            std::rc::Rc::strong_count(&owner),
+            1,
+            "a ring dropped with items in it drops them"
+        );
+    }
+
+    /// The queue type of depth zero is a constant, as every queue's empty
+    /// value is (docs/adr/0070), and an empty one. On the host profile its
+    /// events are a `VecDeque`, so only the bare-metal ring above refuses a
+    /// push.
+    #[test]
+    fn a_queue_of_depth_zero_is_an_empty_constant() {
+        let mut queue = <EventQueue<(), 0> as EventQueueStorage<()>>::EMPTY;
+        assert!(!queue.has_events());
+        assert_eq!(queue.queued().count(), 0);
+        assert!(queue.events().pop().is_none());
+        assert!(!queue.events().has_events());
+        assert!(queue.pop_payload().is_none());
     }
 
     #[test]

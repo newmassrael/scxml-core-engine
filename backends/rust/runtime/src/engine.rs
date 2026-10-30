@@ -1002,11 +1002,15 @@ pub struct Engine<P: StatePolicy> {
     /// W3C SCXML Appendix D: Internal event queue (high priority, `<raise>` + targetless sends).
     ///
     /// The concrete (per-machine, no_std-sized) queue type is supplied by the
-    /// policy via [`StatePolicy::EventQueue`]; it holds the events as numbers, and
-    /// the engine drives them through [`EventQueueStorage`] (docs/adr/0068).
-    pub(crate) internal_queue: P::EventQueue,
-    /// W3C SCXML Appendix D: External event queue (low priority, external sends).
-    pub(crate) external_queue: P::EventQueue,
+    /// policy via [`StatePolicy::InternalQueue`], at the depth the generator
+    /// proved from the document where it could (docs/adr/0076); it holds the
+    /// events as numbers, and the engine drives them through
+    /// [`EventQueueStorage`] (docs/adr/0068). [`raise`](Self::raise) is the
+    /// only code that puts an event on it.
+    pub(crate) internal_queue: P::InternalQueue,
+    /// W3C SCXML Appendix D: External event queue (low priority, external sends),
+    /// of the policy's [`StatePolicy::ExternalQueue`] type.
+    pub(crate) external_queue: P::ExternalQueue,
     /// What the main event loop reads and writes, as numbers without this
     /// machine's types, so the code that drives the queues and keeps the counts
     /// is one copy for every machine (docs/adr/0064, docs/adr/0068).
@@ -1132,8 +1136,8 @@ macro_rules! engine_initial_fields {
         $consumer! {
             run_store: <P::RunStore as RunStorage>::EMPTY,
             policy: $policy,
-            internal_queue: <P::EventQueue as EventQueueStorage<P::Payload>>::EMPTY,
-            external_queue: <P::EventQueue as EventQueueStorage<P::Payload>>::EMPTY,
+            internal_queue: <P::InternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
+            external_queue: <P::ExternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
             core: EngineCore::new(P::TABLES.default_state),
             #[cfg(feature = "std")]
             late_bound_states: std::collections::HashSet::new(),
@@ -4672,8 +4676,12 @@ impl<P: StatePolicy> Engine<P> {
     /// Put `event` on `queue`: its number and metadata, as the engine's code
     /// that is the same for every machine drives the queue, and its typed
     /// payload beside it when this machine's events carry one (docs/adr/0068).
-    /// A schemaless machine's payload is `()`, which nothing stores.
-    fn enqueue(queue: &mut P::EventQueue, event: EventWithMetadata<P::Event, P::Payload>) {
+    /// A schemaless machine's payload is `()`, which nothing stores. Either of
+    /// the machine's two queue types (docs/adr/0076).
+    fn enqueue<Q: EventQueueStorage<P::Payload>>(
+        queue: &mut Q,
+        event: EventWithMetadata<P::Event, P::Payload>,
+    ) {
         let EventWithMetadata {
             event,
             payload,
@@ -4772,13 +4780,15 @@ impl<P: StatePolicy> Engine<P> {
     /// For an external event, the preliminary `<finalize>` and autoforward step
     /// of §scxml-D-mainEventLoop runs first.
     fn bind_queued(&mut self, queued: QueuedEvent, external: bool) {
-        let queue = if external {
-            &mut self.external_queue
-        } else {
-            &mut self.internal_queue
-        };
+        // The two queues are of two types (docs/adr/0076), so each is asked
+        // for its own payload rather than one chosen by reference.
         let payload = if core::mem::size_of::<P::Payload>() != 0 {
-            queue.pop_payload().unwrap_or_default()
+            if external {
+                self.external_queue.pop_payload()
+            } else {
+                self.internal_queue.pop_payload()
+            }
+            .unwrap_or_default()
         } else {
             P::Payload::default()
         };

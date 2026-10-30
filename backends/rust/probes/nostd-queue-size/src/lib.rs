@@ -7,9 +7,13 @@
 //! `machine` crate is a generated `--no-std` state machine from
 //! `sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml`, which
 //! declares `<scxml sce:capacity="2">` and contains no `<cancel>`. Codegen
-//! therefore sizes that machine's W3C Appendix D internal/external queues to
-//! depth 2 via `StatePolicy::EventQueue`, and selects the zero-size
-//! `ElidedSendId` for `StatePolicy::ScheduledSendId` (cancel-free).
+//! therefore sizes that machine's W3C Appendix D external queue to depth 2 via
+//! `StatePolicy::ExternalQueue`, and its internal queue too via
+//! `StatePolicy::InternalQueue`: the document raises `go` and takes a
+//! transition on it, which is a class of document the generator proves no
+//! internal depth for, so the internal queue follows the external rule
+//! (docs/adr/0076). It selects the zero-size `ElidedSendId` for
+//! `StatePolicy::ScheduledSendId` (cancel-free).
 //!
 //! The const assertions below fail the build if any of the per-machine no_std
 //! footprint levers silently reverts — each is gated at its own type so the
@@ -59,20 +63,42 @@ type ProbeSendId = <EventQueueCapacityProbePolicy as StatePolicy>::ScheduledSend
 // the machine's other state), plus a loose whole-`Engine` sanity bound.
 // Measured on thumbv7em-none-eabihf.
 
-/// Queue lever. `<EventQueueCapacityProbePolicy>::EventQueue` (one of the two
-/// W3C Appendix D queues) measures 16 B at the declared `<sce:capacity="2">`;
-/// a depth-64 reversion measures 140 B. Isolating the queue type keeps this
-/// insensitive to the scheduler / policy size, so the bound stays meaningful
-/// even though each queued event is now tiny (metadata elided, below).
+/// Queue lever. `<EventQueueCapacityProbePolicy>::ExternalQueue` and its
+/// `InternalQueue` (the two W3C Appendix D queues, two types since
+/// docs/adr/0076) are each a ring of two four-byte slots, its head and length,
+/// and a payload ring that holds nothing for this schemaless machine, at the
+/// declared `<sce:capacity="2">`; a depth-64 reversion is past 256 B. Isolating
+/// the queue types keeps this insensitive to the scheduler / policy size, so
+/// the bound stays meaningful even though each queued event is now tiny
+/// (metadata elided, below).
 const QUEUE_TYPE_BOUND: usize = 64;
 
 const _: () = assert!(
-    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::EventQueue>()
-        <= QUEUE_TYPE_BOUND,
-    "StatePolicy::EventQueue for the <sce:capacity=\"2\"> machine exceeds its bound: the event \
-     queue likely regressed to the depth-64 default (the per-machine type reverted to the bare \
-     form, or EventQueueManager<T, N> stopped honoring N). See the EventQueue associated type \
-     in backends/rust/runtime/src/policy.rs and backends/rust/runtime/src/helpers/event_queue.rs.",
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::ExternalQueue>()
+        <= QUEUE_TYPE_BOUND
+        && core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::InternalQueue>()
+            <= QUEUE_TYPE_BOUND,
+    "StatePolicy::ExternalQueue or StatePolicy::InternalQueue for the <sce:capacity=\"2\"> \
+     machine exceeds its bound: an event queue likely regressed to the depth-64 default (the \
+     per-machine type reverted to the bare form, or EventQueueManager<T, N> stopped honoring N). \
+     See the queue associated types in backends/rust/runtime/src/policy.rs and \
+     backends/rust/runtime/src/helpers/event_queue.rs.",
+);
+
+/// Zero-depth lever. A document that raises nothing for itself keeps an
+/// internal queue of no slots (docs/adr/0076, decision 3), and a bare-metal
+/// program holds its engine in a `static`, so the queue of depth zero must be
+/// a constant on this profile. Its payload store was a `heapless::Deque`,
+/// whose constructor refuses a depth of zero while the program is compiled:
+/// this item stops compiling if the store goes back to one. It is the size of
+/// a head and a length for the events and the same for the payloads, with no
+/// slot of either.
+const _: sce_rust_runtime::EventQueue<(), 0> = sce_rust_runtime::EventQueue::new();
+
+const _: () = assert!(
+    core::mem::size_of::<sce_rust_runtime::EventQueue<(), 0>>() <= 8,
+    "an event queue of depth zero holds slots: its events' ring or its payload store is sized \
+     by something other than its depth. See backends/rust/runtime/src/helpers/event_queue.rs.",
 );
 
 /// Metadata lever. After eliding the five `_event.*` `SceString`s

@@ -124,7 +124,9 @@
 /// a crate-wide cap. A machine's queue depth is per-machine: codegen resolves
 /// `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity` into the
 /// generated `EVENT_QUEUE_CAPACITY` and emits it as the policy's
-/// [`StatePolicy::EventQueue`] type argument, so
+/// [`StatePolicy::ExternalQueue`] type argument, and as its
+/// [`StatePolicy::InternalQueue`] argument when the generator proves no
+/// smaller depth from the document (docs/adr/0076), so
 /// the bound's single source of truth is the machine. Only when a document
 /// declares no capacity does the bare `EventQueueManager<T>` fall back to this
 /// value. (The earlier deferral that cited a `generic_const_exprs` requirement
@@ -180,7 +182,7 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 ///   `PullScheduler::cancel_event` (§scxml-6.3 `<cancel sendid>` matches
 ///   by send id), so codegen selects the zero-size [`ElidedSendId`] via the
 ///   `StatePolicy::ScheduledSendId` associated type (mirroring the
-///   `EventQueue` associated type) for documents with no `<cancel>`, and the
+///   `ExternalQueue` associated type) for documents with no `<cancel>`, and the
 ///   load-bearing `SceString` otherwise.
 ///
 /// A cancel-free entry thus carries only the event's number (an [`EventId`],

@@ -48,7 +48,8 @@ impl StatePolicy for HttpPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // A delayed BasicHTTP send waits in the delayed-send queue, so this policy
     // keeps one, keyed by the send ids its sends are made under.

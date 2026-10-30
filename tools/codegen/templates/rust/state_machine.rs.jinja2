@@ -103,8 +103,9 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // event-queue capacity declared via
 // `<scxml sce:capacity="N">` or sourced from deploy.yaml
 // `machines.<m>.scheduler.default_event_queue_capacity`. Consumed
-// below by `type EventQueue` as the no_std `heapless::Deque` depth
-// for this machine's W3C Appendix D internal/external queues
+// below by `type ExternalQueue` as the no_std ring depth of this
+// machine's W3C Appendix D external queue, and by `type InternalQueue`
+// when no internal depth is proven from the document (docs/adr/0076)
 // (the policy-carried SSOT for the per-machine queue size).
 pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 {% endif %}
@@ -1366,17 +1367,27 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type Hal = sce_rust_runtime::StdHal;
 {% endif %}
 
-    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
-    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
-    // as the const consumed below); absent a declared capacity the bare form
-    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
-    // the default). Inert under std (`VecDeque`), so this one emission compiles
-    // on both runtime profiles. The queue holds events as numbers and only the
+    // W3C SCXML Appendix D externalQueue: what the host and other sessions
+    // deliver, at a rate no document states. Under no_std the depth is the
+    // per-document `<scxml sce:capacity>` / deploy value (emitted as the const
+    // consumed below); absent a declared capacity the bare form inherits the
+    // runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of the
+    // default). Inert under std (`VecDeque`), so this one emission compiles on
+    // both runtime profiles. The queue holds events as numbers and only the
     // payloads as this machine's type (docs/adr/0068).
 {% if model.event_queue_capacity %}
-    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
 {% else %}
-    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+{% endif %}
+
+    // W3C SCXML Appendix D internalQueue: only what this machine raises for
+    // itself during a macrostep. Its no_std depth follows the external rule.
+    // Inert under std, as above.
+{% if model.event_queue_capacity %}
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
+{% else %}
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 {% endif %}
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
@@ -1387,7 +1398,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // dead weight with no cancel reader. A cancelling document keeps the
     // load-bearing `SceString`. Behaviour-preserving under std either way, so
     // this one emission compiles on both runtime profiles. Mirrors the
-    // EventQueue per-machine sizing lever above.
+    // ExternalQueue per-machine sizing lever above.
 {% if model.uses_cancel %}
     // The key is the document's own size: the longest id a `<send>` of it is sent
     // under, {{ max_send_id }} byte(s), and not a buffer of the string bound for each slot of the

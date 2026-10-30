@@ -22,7 +22,7 @@
 //! [`SendIdString`](crate::SendIdString) of the document's own size when the
 //! document uses `<cancel>` (load-bearing on both profiles), [`ElidedSendId`]
 //! (zero-size) when it does not. Mirrors the per-machine
-//! [`StatePolicy::EventQueue`](crate::StatePolicy::EventQueue) sizing lever.
+//! [`StatePolicy::ExternalQueue`](crate::StatePolicy::ExternalQueue) sizing lever.
 
 #[cfg(feature = "std")]
 use crate::SceString;

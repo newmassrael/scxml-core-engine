@@ -115,27 +115,41 @@ pub trait StatePolicy: Sized + 'static {
     /// HAL target self-declaring rather than implicit.
     type Hal: Hal;
 
-    /// Event-queue type backing this machine's W3C SCXML Appendix D
-    /// `internalQueue` / `externalQueue` (the [`Engine`] holds
-    /// one of each).
+    /// The queue backing this machine's W3C SCXML Appendix D `internalQueue`:
+    /// what the machine raises for itself during a macrostep (docs/adr/0076).
     ///
-    /// Carries the machine's FIFO **depth** under `--no-default-features`: generated
-    /// code emits `EventQueue<Self::Payload, N>` where `N` is the per-document
-    /// capacity resolved from `<scxml sce:capacity="N">` / deploy
+    /// Carries the queue's FIFO **depth** under `--no-default-features`:
+    /// generated code emits `EventQueue<Self::Payload, N>`. Every event this
+    /// queue can hold is raised by the document or by the engine for it, so
+    /// the generator proves `N` from the document when it can (the most one
+    /// microstep can enqueue, times the microsteps that can run before the
+    /// first internal event is taken), and states in the generated policy
+    /// which case gave it. `0` is a depth: a document that raises nothing for
+    /// itself keeps no internal slots. When the generator proves no bound, the
+    /// depth follows the [`ExternalQueue`](StatePolicy::ExternalQueue) rule.
+    ///
+    /// Under the std build the depth is inert (`VecDeque`, unbounded — the
+    /// spec's unbounded `Queue`), so the same emission compiles on both
+    /// runtime profiles. Like the other per-machine associated types it has no
+    /// default (stable Rust forbids default associated types) and is emitted
+    /// by every generated policy.
+    type InternalQueue: EventQueueStorage<Self::Payload>;
+
+    /// The queue backing this machine's W3C SCXML Appendix D `externalQueue`:
+    /// what the host and other sessions deliver.
+    ///
+    /// Carries the queue's FIFO **depth** under `--no-default-features`:
+    /// generated code emits `EventQueue<Self::Payload, N>` where `N` is the
+    /// per-document capacity resolved from `<scxml sce:capacity="N">` / deploy
     /// `default_event_queue_capacity` (emitted as `EVENT_QUEUE_CAPACITY`),
-    /// defaulting to [`MAX_EVENT_QUEUE_DEPTH`](crate::MAX_EVENT_QUEUE_DEPTH) when
-    /// the document declares no capacity. Under the std build the depth is inert
-    /// (`VecDeque`, unbounded — the spec's unbounded `Queue`), so the same
-    /// emission compiles on both runtime profiles. The queue holds its events as
-    /// numbers, so the engine drives every machine's queue with one copy of its
-    /// code (docs/adr/0068).
-    ///
-    /// This is the SSOT for the no_std queue size: the bound lives in the
-    /// machine (its authored capacity), not in a runtime-crate global. Mirrors
-    /// the per-machine [`Payload`](StatePolicy::Payload) / [`Hal`](StatePolicy::Hal)
-    /// associated types; like them it has no default (stable Rust forbids
-    /// default associated types) and is emitted by every generated policy.
-    type EventQueue: EventQueueStorage<Self::Payload>;
+    /// defaulting to [`MAX_EVENT_QUEUE_DEPTH`](crate::MAX_EVENT_QUEUE_DEPTH)
+    /// when the document declares no capacity. No document can state the rate
+    /// at which its host delivers events, so this depth is the host's
+    /// statement and not something the generator proves (docs/adr/0076).
+    /// Inert under std, like [`InternalQueue`](StatePolicy::InternalQueue).
+    /// The queues hold their events as numbers, so the engine drives every
+    /// machine's queues with one copy of its code (docs/adr/0068).
+    type ExternalQueue: EventQueueStorage<Self::Payload>;
 
     /// Storage for the delayed-send scheduler's per-entry cancel key
     /// (`send_id`), backing §scxml-6.3 `<cancel sendid>`.
@@ -158,8 +172,8 @@ pub trait StatePolicy: Sized + 'static {
     /// delayed-send queue keeps no key either, and its policy still names one
     /// (the zero-size `ElidedSendId`, since such a document has no `<cancel>`).
     ///
-    /// Mirrors the per-machine [`EventQueue`](StatePolicy::EventQueue) sizing
-    /// lever; like it (and [`Hal`](StatePolicy::Hal) / [`Payload`](StatePolicy::Payload))
+    /// Mirrors the per-machine [`ExternalQueue`](StatePolicy::ExternalQueue)
+    /// sizing lever; like it (and [`Hal`](StatePolicy::Hal) / [`Payload`](StatePolicy::Payload))
     /// it has no default — stable Rust forbids default associated types, so
     /// every generated policy emits it.
     type ScheduledSendId: crate::ScheduledSendIdLike;

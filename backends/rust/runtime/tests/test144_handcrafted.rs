@@ -74,7 +74,8 @@ impl StatePolicy for Test144Policy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // test144 has no delayed send, no `<cancel>` and no `<donedata>`, so the
     // generator gives its machine neither a delayed-send queue nor a slot.

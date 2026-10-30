@@ -15,7 +15,7 @@ RFC: `claudedocs/rfc-nostd-per-machine-event-queue-sizing.md`.
 ## Why a size gate (not just a compile gate)
 
 `backends/rust/probes/nostd-build` proves generated machines are *allocator-free*. It cannot
-catch a regression where the per-machine `StatePolicy::EventQueue` silently
+catch a regression where the per-machine `StatePolicy::ExternalQueue` silently
 reverts to the depth-64 default — because the depth-64 bare form **still
 compiles**. That reversion is exactly the downstream MCU blocker: each `Engine`'s
 two W3C Appendix D queues balloon by `2 × 64 × size_of::<EventWithMetadata<_>>()`
@@ -32,8 +32,12 @@ reversion.
 - `src/lib.rs` const-asserts (evaluated at compile time, so **building the crate
   is the gate**) the four per-machine no_std footprint levers, each at its own
   type so the bound is robust against unrelated machine state:
-  1. **Queue lever** — `size_of::<StatePolicy::EventQueue>()`: catches a
-     `<sce:capacity>` reversion to the depth-64 default.
+  1. **Queue lever** — `size_of::<StatePolicy::ExternalQueue>()` and
+     `size_of::<StatePolicy::InternalQueue>()`: catches a `<sce:capacity>`
+     reversion to the depth-64 default. Beside it, a constant queue of depth
+     zero, the internal queue of a document that raises nothing for itself
+     (docs/adr/0076), which stops compiling if its payload store goes back to
+     a `heapless::Deque`.
   2. **Metadata lever** — `size_of::<EventMetadata>()`: catches a `_event.*`
      `SceString` re-added to the queued metadata (1 B under no_std).
   3. **Scheduler lever** — `size_of::<PullScheduler<S>>()`: catches the
