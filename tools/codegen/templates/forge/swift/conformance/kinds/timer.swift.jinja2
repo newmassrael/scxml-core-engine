@@ -1,0 +1,92 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Timer kind: the oracle is a sequence of calls (see the C++ fragment), because the
+   generated class holds no state a test can read, so what it asks its collaborators to
+   do is the whole observable.
+
+   A local type cannot capture a local variable, so the two collaborators share a log
+   through a reference of their own. The interval is recorded as a VALUE, so a unit
+   mix-up fails on the number and not by running a thousand times too fast in silence.
+   The handler is held by the test: the unit holds it weakly. #}
+    final class Log {
+        var ops: [String] = []
+    }
+
+    final class RecordingClock: ForgeTimer {
+        let log: Log
+        var callback: (() -> Void)?
+
+        init(log: Log) {
+            self.log = log
+        }
+
+        func startPeriodic(intervalMs: Int64, callback: @escaping () -> Void) {
+            log.ops.append("start_periodic:\(intervalMs)")
+            self.callback = callback
+        }
+
+        func startOneShot(delayMs: Int64, callback: @escaping () -> Void) {
+            // Recorded rather than ignored: no template writes it today, and if one
+            // starts this shows up as a difference and not as silence.
+            log.ops.append("start_one_shot:\(delayMs)")
+            self.callback = callback
+        }
+
+        func cancel() {
+            log.ops.append("cancel")
+        }
+    }
+
+    final class RecordingHandler: {{ f.name | to_pascal_case }}Handler {
+        let log: Log
+
+        init(log: Log) {
+            self.log = log
+        }
+
+        func fire{{ f.fire_event | to_pascal_case }}() {
+            log.ops.append("fired:{{ f.fire_event }}")
+        }
+    }
+
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    #expect(try oracleInteger(spec.member("period_ms"), as: Int64.self) == {{ f.name | to_pascal_case }}.periodMs, "{{ f.name }}: periodMs")
+    #expect(try oracleInteger(spec.member("period_us"), as: Int64.self) == {{ f.name | to_pascal_case }}.periodUs, "{{ f.name }}: periodUs")
+
+    let log = Log()
+    let clock = RecordingClock(log: log)
+    let handler = RecordingHandler(log: log)
+    let scheduler = {{ f.name | to_pascal_case }}(handler: handler, timer: clock)
+
+    for (step, entry) in try oracleArray(spec.member("sequence")).enumerated() {
+        log.ops.removeAll()
+        let call = try oracleText(entry.member("call"))
+        switch call {
+        case "start":
+            scheduler.start()
+        case "cancel":
+            scheduler.cancel()
+        case "fire":
+            // Invoking the callback the clock recorded proves the wiring reaches the
+            // handler; calling the handler directly would prove only that the test can
+            // call it.
+            guard let registered = clock.callback else {
+                throw OracleError(description: "{{ f.name }} step \(step): no callback registered")
+            }
+            registered()
+{% if f.reset_on_event %}
+        case "on_reset":
+            scheduler.onReset{{ f.reset_on_event | to_pascal_case }}()
+{% endif %}
+{% if f.cancel_on_state_exit %}
+        case "on_cancel_exit":
+            scheduler.onCancel{{ f.cancel_on_state_exit | to_pascal_case }}Exit()
+{% endif %}
+        default:
+            throw OracleError(description: "{{ f.name }} step \(step): unknown call \(call)")
+        }
+
+        let expected = try oracleArray(entry.member("expect")).map { try oracleText($0) }
+        #expect(log.ops == expected, "{{ f.name }} step \(step) (\(call))")
+    }

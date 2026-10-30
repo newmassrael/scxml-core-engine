@@ -443,7 +443,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `timer`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
     (Language::Swift, "W3C gate", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "Forge conformance gate", Why::NotYet(SWIFT_NO_FORGE)),

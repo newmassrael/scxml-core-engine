@@ -1944,12 +1944,22 @@ pub fn lang_supports_fixture(
 /// no fragment for, so a backend that writes the kind in part is scheduled for it only once
 /// the fragment is written: the harness grows one kind at a time, and a fixture is never
 /// skipped for want of a fragment that exists.
+///
+/// Asked of the template tree on disk, the one `render_harness` loads the fragment from, and
+/// not of the registry embedded in the binary: a binary is not rebuilt for a template edit
+/// (the generator witness leaves the templates out because they are read at run time), so
+/// an embedded copy would say a fragment is missing that the renderer is about to read.
 fn has_conformance_fragment(language: crate::generator::Language, kind: &str) -> bool {
     let layout = harness_layout(language);
-    crate::template_registry::embedded_template_with_prefix_exists(&format!(
-        "{}/kinds/{kind}.",
-        layout.template_subdir
-    ))
+    let kinds = crate::find_template_base()
+        .join(layout.template_subdir)
+        .join("kinds");
+    let stem = format!("{kind}.");
+    std::fs::read_dir(kinds).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().starts_with(&stem))
+    })
 }
 
 /// Whether the generator of `language`, which writes the fixture's kind in part, writes
