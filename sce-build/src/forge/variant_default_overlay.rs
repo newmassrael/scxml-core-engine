@@ -97,6 +97,23 @@ pub fn apply_variant_default_overlay(
         .iter()
         .position(|a| a.value == overlay_arm_value);
     match matched_index {
+        // docs/adr/0072: the default arm is held by every build, and an arm
+        // under a build feature is not, so the overlay cannot make it the
+        // default any more than the document's own `default="true"` can.
+        Some(idx) if variant.arms[idx].feature.is_some() => {
+            let arm = &variant.arms[idx];
+            Err(Located::new(
+                ValidationError::CodecVariantFeatureOnRequiredArm {
+                    codec: codec.name.clone(),
+                    arm_value: Some(arm.value),
+                    feature: arm.feature.clone().unwrap_or_default(),
+                }
+                .into(),
+                label_diag,
+                None,
+                None,
+            ))
+        }
         Some(idx) => {
             // Overlay wins — set is_default on the matched arm,
             // clear on every other arm. Idempotent if the SCXML

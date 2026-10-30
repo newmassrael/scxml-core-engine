@@ -239,6 +239,8 @@
         "codec/variant-arm-inner-mid-undeclared",
         "codec/variant-arm-body-caller-tag-unsupported",
         "codec/variant-no-default-arm",
+        "codec/variant-feature-on-required-arm",
+        "codec/variant-feature-needs-catch-all",
         "codec/variant-default-overlay-arm-not-declared",
         "codec/variant-dispatch-flag-not-resolved",
         "codec/variant-dispatch-bit-width-mismatch",

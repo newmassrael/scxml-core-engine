@@ -1028,6 +1028,9 @@ fn a_codec_renders_every_field_it_can_carry() {
                 value_text: "0x01".to_string(),
                 body_alias: "one".to_string(),
                 is_default: false,
+                // A build feature, which is the whole-output case's to show:
+                // it stands before the arrow (docs/adr/0072).
+                feature: Some("one-wire".to_string()),
                 line: None,
             }],
             default_arm: Some(VariantArm {
@@ -1037,6 +1040,7 @@ fn a_codec_renders_every_field_it_can_carry() {
                 value_text: String::new(),
                 body_alias: "zero".to_string(),
                 is_default: true,
+                feature: None,
                 line: None,
             }),
             peek_byte: Some(PeekByteSpec {
@@ -1100,7 +1104,7 @@ terminate entry-flag more
     flag more bit 7 width 1 value 0x1
   variant tag-field hdr tag-flag mid peek-byte pk
     peek-flag k bit 0 width 2
-    arm 0x01 -> one
+    arm 0x01 feature one-wire -> one
     default-arm 0 -> zero default
   test ab @line 7
     payload = bytes 0x01

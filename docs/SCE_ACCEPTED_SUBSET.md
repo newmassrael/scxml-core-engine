@@ -1160,7 +1160,10 @@ Resolution order at codegen time:
 Overlay entries naming a value that no `<sce:arm value=...>`
 declares fire `codec/variant-default-overlay-arm-not-declared`;
 the `Fix::ReplaceOneOf` candidate set is the codec's declared
-arm values (sorted, hex-formatted).
+arm values (sorted, hex-formatted). An entry naming an arm that
+names a build feature (`<sce:arm feature=...>`, docs/adr/0072)
+fires `codec/variant-feature-on-required-arm`: the default arm is
+held by every build.
 
 Backward-compat: deploy paths that omit `variant_defaults` (or
 omit a specific codec entry) preserve the SCXML's existing
@@ -1239,6 +1242,34 @@ Cross-doc constraints (parent-local validator):
 Multi-bit dispatch: B5-ν inversion preserves B5-β's bit-range width
 semantics. A `flag="X.Y"` form on a 3-bit flag dispatches over 8
 arm values.
+
+#### §2.8.3 An arm compiled under a build feature (docs/adr/0072)
+
+`<sce:arm feature="<name>">` names a build feature the arm is compiled
+under, in Cargo's kebab case (`[a-z][a-z0-9-]*`). The feature is on by
+default.
+
+```xml
+<sce:variant tag="peek.mid">
+  <sce:peek-byte id="peek" sce:type="uint8">
+    <sce:flag name="mid" bit="0" width="5"/>
+  </sce:peek-byte>
+  <sce:arm value="0x01" type="msg_put" feature="request-put-del"/>
+  <sce:arm value="0x02" type="msg_del" feature="request-put-del"/>
+  <sce:arm value="0x03" type="query" default="true"/>
+  <sce:default type="query"/>
+</sce:variant>
+```
+
+The parser refuses the attribute where a build without the feature
+could not be built:
+
+- on `<sce:default>`, which receives the tags such a build leaves out,
+  and on the `default="true"` arm, which the codec's `Default` value is
+  built from → `codec/variant-feature-on-required-arm`;
+- in a variant with no `<sce:default>`: its arms are proven to cover the
+  tag only all together → `codec/variant-feature-needs-catch-all`;
+- a name outside the grammar → `validation/attribute-rule-violated`.
 
 ### §2.9 Composition extensions — `<sce:template>`
 
@@ -8725,7 +8756,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (490 codes)
+## Appendix — `DiagnosticCode` index (492 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8872,6 +8903,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-arm-inner-mid-undeclared` | Validation |
 | `codec/variant-arm-body-caller-tag-unsupported` | Validation |
 | `codec/variant-no-default-arm` | Validation |
+| `codec/variant-feature-on-required-arm` | Validation |
+| `codec/variant-feature-needs-catch-all` | Validation |
 | `codec/variant-default-overlay-arm-not-declared` | Validation |
 | `codec/variant-dispatch-flag-not-resolved` | Validation |
 | `codec/variant-dispatch-bit-width-mismatch` | Validation |

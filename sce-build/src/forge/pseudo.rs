@@ -279,7 +279,7 @@
 //!       flag <name> bit <n> width <n> [value <v>]
 //!     variant [tag-field <f>] [tag-flag <f>] [peek-byte <id>]
 //!       peek-flag <name> bit <n> width <n> [value <v>]
-//!       arm <n> -> <alias> [default]
+//!       arm <n> [feature <name>] -> <alias> [default]
 //!       default-arm <n> -> <alias> [default]
 //!     test <hex> @line <n>
 //!       <name> = (bool|uint|int|bytes|string) <literal>
@@ -3539,8 +3539,14 @@ fn render_codec_variant(v: &CodecVariant, out: &mut Out<'_>) {
             // written in hex throughout this tree, and a reviewer
             // checking the page against their own table looks for
             // `0x1a`. See `crate::source_literal`.
+            // The build feature stands before the arrow, so the alias stays
+            // the last free-text value on the line (docs/adr/0072).
+            let feature = match &a.feature {
+                Some(f) => format!(" feature {}", text(f)),
+                None => String::new(),
+            };
             let mut line = format!(
-                "arm {} -> {}",
+                "arm {}{feature} -> {}",
                 text(&crate::source_literal::as_written(&a.value_text, a.value)),
                 text(&a.body_alias)
             );

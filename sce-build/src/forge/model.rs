@@ -2773,6 +2773,9 @@ pub struct VariantArm {
     /// goldens that predate the attribute byte-identical.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_default: bool,
+    /// The build feature the arm is compiled under (`feature="<name>"`, docs/adr/0072), in Cargo's kebab case `[a-z][a-z0-9-]*`; a build that leaves the feature off has no such arm, and its tags reach the catch-all `<sce:default>`. Never set on the catch-all or on the `default="true"` arm, which every build holds. `None` serializes as nothing, so a document that names no feature keeps its `--emit-ast` bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
     /// 1-based row of the `<sce:arm>` / `<sce:default>` element, so a
     /// refusal of the arm names the row that holds its `type=`. Skipped
     /// from serialization, as every `line` on this model is.

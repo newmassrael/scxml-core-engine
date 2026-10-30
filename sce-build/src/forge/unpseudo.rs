@@ -2784,14 +2784,22 @@ fn parse_codec_variant(
         match kw.first().copied() {
             Some("peek-flag") => peek_flags.push(parse_flag_def(&kw, k.number)?),
             Some("arm") | Some("default-arm") => {
-                let (value, rest) = k
-                    .text
-                    .split_once(" -> ")
-                    .and_then(|(l, r)| l.split_whitespace().nth(1).map(|n| (n, r)))
-                    .ok_or_else(|| ParseError {
-                        line: k.number,
-                        why: "an arm needs `<n> -> <alias>`".to_string(),
-                    })?;
+                let (head, rest) = k.text.split_once(" -> ").ok_or_else(|| ParseError {
+                    line: k.number,
+                    why: "an arm needs `<n> -> <alias>`".to_string(),
+                })?;
+                // `<kw> <n> [feature <name>]` before the arrow.
+                let head: Vec<&str> = head.split_whitespace().collect();
+                let (value, feature) = match head.as_slice() {
+                    [_, value] => (*value, None),
+                    [_, value, "feature", name] => (*value, Some(undo(name, k.number)?)),
+                    _ => {
+                        return Err(ParseError {
+                            line: k.number,
+                            why: "an arm needs `<n> [feature <name>] -> <alias>`".to_string(),
+                        })
+                    }
+                };
                 let is_default = rest.ends_with(" default");
                 let alias = rest.strip_suffix(" default").unwrap_or(rest);
                 // ⚠ `crate::source_literal::read_unsigned`, not
@@ -2812,6 +2820,7 @@ fn parse_codec_variant(
                     value_text: spelling,
                     body_alias: undo(alias, k.number)?,
                     is_default,
+                    feature,
                     // A pseudocode line is not a row of the SCXML document.
                     line: None,
                 };

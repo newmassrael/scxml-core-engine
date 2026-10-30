@@ -772,6 +772,8 @@ references against a real document and drift silently.
 | `codec/variant-dispatch-flag-has-static-value` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-dispatch-flag-not-resolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-duplicate-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-feature-needs-catch-all` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-feature-on-required-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-no-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codegen/feature-lifting-mismatch` | `generate` | no |  |
 | `codegen/feature-selection-required` | `generate` | no |  |

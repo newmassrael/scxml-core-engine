@@ -7327,6 +7327,13 @@
           "description": "Import alias naming the body codec for this arm.",
           "type": "string"
         },
+        "feature": {
+          "description": "The build feature the arm is compiled under (`feature=\"<name>\"`, docs/adr/0072), in Cargo's kebab case `[a-z][a-z0-9-]*`; a build that leaves the feature off has no such arm, and its tags reach the catch-all `<sce:default>`. Never set on the catch-all or on the `default=\"true\"` arm, which every build holds. `None` serializes as nothing, so a document that names no feature keeps its `--emit-ast` bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "is_default": {
           "description": "`default=\"true\"` marker — declares this arm as the default chosen by the outer codec's `Default::default()` (variant default-arm uniformity). Distinct from the catch-all `<sce:default>` arm (`CodecVariant::default_arm`) — that one fires on decode for unknown tag values; this flag only picks which `<sce:arm>`'s body type becomes the Default-trait starting value. At most one arm per variant may set this (parser-enforced via `codec/variant-duplicate-default-arm`). `false` ⇒ not the default arm; serialized only when `true` to keep goldens that predate the attribute byte-identical.",
           "type": "boolean"

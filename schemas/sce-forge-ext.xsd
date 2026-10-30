@@ -968,6 +968,20 @@
            codec/variant-duplicate-default-arm. Distinct from the
            <sce:default> sibling element (unknown-tag catch-all). -->
       <xs:attribute name="default" type="xs:boolean" use="optional"/>
+      <!-- docs/adr/0072: the build feature the arm is compiled under, in
+           Cargo's kebab case. A backend that can leave one arm out of a
+           build does so where the feature is off (a Cargo feature, or the
+           C macro SCE_FEATURE_<NAME> set to 0), and the arm's tags reach
+           the <sce:default> catch-all. The parser refuses it on the
+           default="true" arm, on <sce:default>, and in a variant with no
+           <sce:default>. -->
+      <xs:attribute name="feature" use="optional">
+        <xs:simpleType>
+          <xs:restriction base="xs:NCName">
+            <xs:pattern value="[a-z][a-z0-9\-]*"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
     </xs:complexType>
   </xs:element>
 

@@ -1620,6 +1620,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-no-default-arm")]
     CodecVariantNoDefaultArm,
 
+    // ── docs/adr/0072: an arm every build holds — the catch-all
+    //    `<sce:default>` or the `default="true"` arm — names a build
+    //    feature (`feature="<name>"`), so a build without the feature
+    //    would lack it. Stage = Validation. ──
+    #[serde(rename = "codec/variant-feature-on-required-arm")]
+    CodecVariantFeatureOnRequiredArm,
+
+    // ── docs/adr/0072: an `<sce:arm feature="<name>">` in a variant
+    //    with no catch-all `<sce:default>`: a build without the feature
+    //    would have no arm for that arm's tags. Stage = Validation. ──
+    #[serde(rename = "codec/variant-feature-needs-catch-all")]
+    CodecVariantFeatureNeedsCatchAll,
+
     // ── Parent-tag dispatch: a parent codec's
     //    `<sce:variant-dispatch flag="X.Y">` does not resolve — either
     //    the carrier X or the flag Y is not declared on the parent.
@@ -3957,6 +3970,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantArmBodyCallerTagUnsupported,
         // RFC variant-default-uniformity — every variant must mark a default arm
         CodecVariantNoDefaultArm,
+        // docs/adr/0072 — an arm a build may leave out
+        CodecVariantFeatureOnRequiredArm,
+        CodecVariantFeatureNeedsCatchAll,
         // RFC variant-default-overlay — deploy.yaml overlay names an undeclared arm
         CodecVariantDefaultOverlayArmNotDeclared,
         // Parent-tag dispatch — parent-side variant-dispatch (5 codes)
@@ -4653,6 +4669,8 @@ impl DiagnosticCode {
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
+            | CodecVariantFeatureOnRequiredArm
+            | CodecVariantFeatureNeedsCatchAll
             | CodecVariantDefaultOverlayArmNotDeclared
             | CodecVariantDispatchFlagNotResolved
             | CodecVariantDispatchBitWidthMismatch
@@ -5537,6 +5555,8 @@ impl DiagnosticCode {
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
+            | CodecVariantFeatureOnRequiredArm
+            | CodecVariantFeatureNeedsCatchAll
             | CodecVariantDefaultOverlayArmNotDeclared
             | CodecVariantDispatchFlagNotResolved
             | CodecVariantDispatchBitWidthMismatch
@@ -6016,6 +6036,8 @@ impl DiagnosticCode {
                 "codec/variant-arm-body-caller-tag-unsupported"
             }
             CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
+            CodecVariantFeatureOnRequiredArm => "codec/variant-feature-on-required-arm",
+            CodecVariantFeatureNeedsCatchAll => "codec/variant-feature-needs-catch-all",
             CodecVariantDefaultOverlayArmNotDeclared => {
                 "codec/variant-default-overlay-arm-not-declared"
             }
@@ -8389,6 +8411,40 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(codec.clone()),
             fix: None,
             key_fragments: vec![codec.clone()],
+        },
+        ValidationError::CodecVariantFeatureOnRequiredArm {
+            codec,
+            arm_value,
+            feature,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantFeatureOnRequiredArm,
+            stage: Stage::Validation,
+            // The repair is to drop the attribute, which no `Fix` variant
+            // spells; the feature as written is what the author removes, and
+            // it places the record on the `feature=` attribute.
+            expected: None,
+            actual: Some(feature.clone()),
+            fix: None,
+            key_fragments: vec![
+                codec.clone(),
+                arm_value.map_or_else(|| "<sce:default>".to_string(), |v| format!("{v:#x}")),
+                feature.clone(),
+            ],
+        },
+        ValidationError::CodecVariantFeatureNeedsCatchAll {
+            codec,
+            arm_value,
+            feature,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantFeatureNeedsCatchAll,
+            stage: Stage::Validation,
+            // The repair is a `<sce:default>` whose body only the author can
+            // choose, so no fix; the feature as written places the record on
+            // the arm's `feature=` attribute.
+            expected: None,
+            actual: Some(feature.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone(), format!("{arm_value:#x}"), feature.clone()],
         },
         ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
             codec,
@@ -15746,6 +15802,27 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
             ),
+            // ── docs/adr/0072 — an arm a build may leave out ─
+            (
+                "forge/codec-variant-feature-on-required-arm",
+                ValidationError::CodecVariantFeatureOnRequiredArm {
+                    codec: "request".into(),
+                    arm_value: Some(0x03),
+                    feature: "request-put-del".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0000000000000000","code":"codec/variant-feature-on-required-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'request': <sce:arm value=0x3 default=\"true\"> names the build feature 'request-put-del', and every build must hold that arm: the codec's Default value is built from it; remove feature=\"request-put-del\" from it","actual":"request-put-del"}"#,
+            ),
+            (
+                "forge/codec-variant-feature-needs-catch-all",
+                ValidationError::CodecVariantFeatureNeedsCatchAll {
+                    codec: "request".into(),
+                    arm_value: 0x01,
+                    feature: "request-put-del".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0000000000000000","code":"codec/variant-feature-needs-catch-all","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'request': <sce:arm value=0x1> names the build feature 'request-put-del', and the variant declares no <sce:default> — a build without the feature would have no arm for that tag; add <sce:default type=\"...\"/> to receive the tags such a build leaves out","actual":"request-put-del"}"#,
+            ),
             // ── RFC variant-default-overlay — deploy.yaml overlay ─
             (
                 "forge/codec-variant-default-overlay-arm-not-declared",
@@ -19445,6 +19522,8 @@ mod tests {
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
             | CodecVariantNoDefaultArm
+            | CodecVariantFeatureOnRequiredArm
+            | CodecVariantFeatureNeedsCatchAll
             | CodecVariantDispatchFlagHasStaticValue
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
@@ -20253,6 +20332,8 @@ mod tests {
                 | CodecVariantArmInnerMidUndeclared
                 | CodecVariantArmBodyCallerTagUnsupported
                 | CodecVariantNoDefaultArm
+                | CodecVariantFeatureOnRequiredArm
+                | CodecVariantFeatureNeedsCatchAll
                 | CodecVariantDefaultOverlayArmNotDeclared
                 | CodecVariantDispatchFlagNotResolved
                 | CodecVariantDispatchBitWidthMismatch
@@ -20554,9 +20635,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            490,
+            492,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 490 distinct variants to match the DiagnosticCode \
+             expected 492 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21291,6 +21372,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
+            | CodecVariantFeatureOnRequiredArm
+            | CodecVariantFeatureNeedsCatchAll
             | CodecVariantDefaultOverlayArmNotDeclared
             | CodecVariantDispatchFlagNotResolved
             | CodecVariantDispatchBitWidthMismatch
