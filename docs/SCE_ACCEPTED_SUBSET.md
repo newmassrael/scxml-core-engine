@@ -1276,7 +1276,8 @@ How each backend leaves the arm out:
 |---|---|
 | Rust | every item naming the arm carries `#[cfg(feature = "<name>")]`: the variant of each variant enum, each match arm, the source interface's type parameter and the imports only the arm uses; the decode's match on the tag holds, under `#[cfg(not(feature = "<name>"))]`, an arm that returns `CodecError::VariantArmNotBuilt` for the arm's tag; the crate that compiles the codec declares the feature, on by default |
 | C | the arm's kind constant, union member and switch cases sit inside `#if SCE_FEATURE_<NAME>` (upper case, `-` as `_`), which the header defines to 1 unless the build defined it; a build defines it to 0, and the decode's case for the arm's tag returns `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT` in the `#else` branch |
-| C++, Go, Kotlin, Python | the arm is kept in every build, which is the feature on |
+| C++ | as in C, with the same macro: the arm's alternative in the `std::variant` and its decode and encode branches sit inside `#if SCE_FEATURE_<NAME>`; the alternatives of such a variant are named by type (`std::in_place_type_t`, `std::get_if`) and a parent's carrier bits count the embedded body's index per build, so no index moves; the decode's case for the arm's tag records `CodecError::VariantArmNotBuilt` on the cursor (`SceCursor::last_refusal`) and returns `std::nullopt` in the `#else` branch |
+| Go, Kotlin, Python | the arm is kept in every build, which is the feature on |
 
 The attribute is refused where every build must hold the arm:
 

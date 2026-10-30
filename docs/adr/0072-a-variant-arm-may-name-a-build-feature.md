@@ -31,10 +31,11 @@ feature is on. The default is on, so a build that names no feature keeps every a
 ### 2. A build without the feature refuses the arm's tag
 
 The tag of an arm that is not built is refused by decode, with `CodecError::VariantArmNotBuilt`
-(Rust) or `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT` (C). It does not go to `<sce:default>`. "This
-build does not take that body" and "a tag the document does not know" are different facts. In the
-consumer's document the catch-all is Query, so routing a Put frame there would decode it as a
-Query without an error. A `<sce:flag value>` seeds `Default` and is not checked on decode, so the
+(Rust), `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT` (C) or `std::nullopt` with
+`CodecError::VariantArmNotBuilt` recorded on the cursor (C++, `SceCursor::last_refusal`). It does
+not go to `<sce:default>`. "This build does not take that body" and "a tag the document does not
+know" are different facts. In the consumer's document the catch-all is Query, so routing a Put
+frame there would decode it as a Query without an error. A `<sce:flag value>` seeds `Default` and is not checked on decode, so the
 catch-all's own decoder would not catch the mismatch either. The refusing arm also keeps the match
 total, so a gated arm needs no catch-all.
 
@@ -45,9 +46,21 @@ total, so a gated arm needs no catch-all.
 - C: `#if SCE_FEATURE_<NAME>` around the arm's kind, union member and cases, with
   `#ifndef SCE_FEATURE_<NAME>` / `#define SCE_FEATURE_<NAME> 1`, so the arm is present unless
   the build defines the macro to 0. An `#else` case refuses the tag.
-- C++, Go, Kotlin and Python keep the arm in every build, which is the default meaning.
+- C++ gates the arm as C does, with the same `SCE_FEATURE_<NAME>` macro, defined to 1 unless the
+  build defined it. The arm's alternative is left out of the `std::variant` where the macro is 0,
+  which moves the index of every alternative after it, so nothing names such a variant's
+  alternatives by a fixed index:
+  - the alternative list carries each separator inside its alternative's guard;
+  - the default value is chosen by type (`std::in_place_type_t`), and decode and encode name the
+    arm's body by type, under the macro; a variant's alternatives are distinct types, which the
+    encode's `std::get_if` already needed;
+  - an `#else` case refuses the tag (`cursor.refuse(CodecError::VariantArmNotBuilt)`);
+  - a parent's carrier bits compare the embedded body's index with one counted per build, adding
+    `(SCE_FEATURE_<NAME> ? 1 : 0)` for each gated alternative before it, and the term of a gated
+    arm is under its macro;
+  - a variant without a gated arm is written as it was before.
+- Go, Kotlin and Python keep the arm in every build, which is the default meaning.
   - Go's build tags are per file, and Kotlin and Python have no compile-time switch.
-  - C++'s variant alternatives are indexed, and leaving one out shifts every index after it.
   - Each template says so where it loops over the arms.
 - A codec's `sce:encode-may-fail` is decided over every arm, gated or not (ADR 0065), because it is
   one statement that holds in every feature world (ADR 0057).
