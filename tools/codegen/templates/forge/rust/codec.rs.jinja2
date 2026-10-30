@@ -457,6 +457,10 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
         {{ field.view_into_builder_stmt }}
 {% endfor %}
 {% if has_variant %}
+{# docs/adr/0072: see the decode body macro for why a variant with a gated arm
+   allows an `if let` that one feature world makes irrefutable. #}
+{% set gated_ib = namespace(gated=false) %}
+{% for arm in variant.arms %}{% if arm.rust_cfg %}{% set gated_ib.gated = true %}{% endif %}{% endfor %}
         match &self.body {
 {% for arm in variant.arms %}
 {% if arm.rust_cfg %}
@@ -464,6 +468,9 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 {% endif %}
             {{ struct_name }}ViewVariant::{{ arm.variant_name }}(_b) => {
                 _out.body = {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::default());
+{% if gated_ib.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = &mut _out.body {
                     _b.into_builder(_o)?;
                 }
@@ -475,6 +482,9 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
                     tag: *tag,
                     body: {{ variant.default_arm.body_type }}::default(),
                 };
+{% if gated_ib.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body: _o, .. } = &mut _out.body {
                     body.into_builder(_o)?;
                 }
@@ -668,6 +678,8 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
     pub fn {{ variant_as_borrowed_into_fn }}<'o>(&'o self, _out: &mut {{ struct_name }}Variant<'o>){{ variant_as_borrowed_into_ret }} {
+{% set gated_ab = namespace(gated=false) %}
+{% for arm in variant.arms %}{% if arm.rust_cfg %}{% set gated_ab.gated = true %}{% endif %}{% endfor %}
         match self {
 {% for arm in variant.arms %}
 {% if arm.rust_cfg %}
@@ -675,6 +687,9 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
 {% endif %}
             {{ struct_name }}OwnedVariant::{{ arm.variant_name }}(_b) => {
                 *_out = {{ struct_name }}Variant::{{ arm.variant_name }}(Default::default());
+{% if gated_ab.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = _out {
                     {{ arm.as_borrowed_into_stmt }}
                 }
@@ -683,6 +698,9 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
 {% if variant.default_arm %}
             {{ struct_name }}OwnedVariant::{{ variant.default_arm.variant_name }} { tag, body } => {
                 *_out = {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { tag: *tag, body: Default::default() };
+{% if gated_ab.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body: _o, .. } = _out {
                     {{ variant.default_arm.as_borrowed_into_stmt }}
                 }

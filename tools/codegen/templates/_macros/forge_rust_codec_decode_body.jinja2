@@ -99,6 +99,12 @@
         // Each arm is installed in `_out.body` holding its body's default and
         // that body is decoded where it sits, so no arm body is returned up
         // through the variant wrapper.
+{# docs/adr/0072: in a build that leaves out every other arm, the variant enum
+   has one variant and the `if let` that decodes into it always matches; that
+   is a fact of the feature world, not a defect, so the lint is allowed there
+   and only for a variant that has a gated arm. #}
+{% set gated_ns = namespace(gated=false) %}
+{% for arm in variant.arms %}{% if arm.rust_cfg %}{% set gated_ns.gated = true %}{% endif %}{% endfor %}
         match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 {% set arm_body = arm.view_body_type if view_decode else arm.body_type %}
@@ -111,6 +117,9 @@
 {% endif %}
             {{ arm.value_literal }} => {
                 _out.body = {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm_body }}::default());
+{% if gated_ns.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ decode_variant_enum }}::{{ arm.variant_name }}(_b) = &mut _out.body {
                     {{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }})?;
                 }
@@ -127,6 +136,9 @@
                     tag: other,
                     body: {{ default_body }}::default(),
                 };
+{% if gated_ns.gated %}
+                #[allow(irrefutable_let_patterns)]
+{% endif %}
                 if let {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} { body: _b, .. } = &mut _out.body {
                     {{ default_body }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }})?;
                 }
