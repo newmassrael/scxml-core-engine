@@ -1,0 +1,26 @@
+# Mutation cases for "a length widens into a 64-bit field whole".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_length_widens_into_a_64_bit_field_whole.cases`.
+#
+# A length or a count goes into a 64-bit field through
+# `sce_forge_runtime::codec::widen_usize`, which cannot fail and is not written
+# as a conversion that can (docs/adr/0065 §5). The case makes it narrow on the
+# way; the runtime's `a_length_widens_into_a_64_bit_field_whole` refuses it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/codec.rs
+mutation_oracles backends/rust/forge-runtime/src/codec.rs
+
+mutation_case "a length narrows on its way into a 64-bit field" <<'PY'
+edit("backends/rust/forge-runtime/src/codec.rs",
+     r'''pub const fn widen_usize(n: usize) -> u64 {
+    n as u64
+}''',
+     r'''pub const fn widen_usize(n: usize) -> u64 {
+    n as u32 as u64
+}''')
+PY

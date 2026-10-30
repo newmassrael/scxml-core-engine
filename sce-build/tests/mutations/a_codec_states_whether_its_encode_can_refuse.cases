@@ -1,0 +1,46 @@
+# Mutation cases for "a codec states whether its encode can refuse".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_codec_states_whether_its_encode_can_refuse.cases`.
+#
+# A codec states on its root whether its encode can refuse a value
+# (`sce:encode-may-fail`, docs/adr/0065), and the build holds the statement to
+# the places the encode refuses, which `forge::codec_totality` names. Each case
+# breaks one half of that: the analysis loses a kind of refusal or the refusal
+# of a codec it holds, or the check accepts a statement that is not true in
+# either direction. `codec_totality::tests` (the two `check` tests) and
+# `sce-build/tests/codec_totality.rs`, which holds every codec document in the
+# tree to its statement, refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test codec_totality
+mutation_targets sce-build/src/forge/codec_totality.rs
+mutation_oracles sce-build/src/forge/codec_totality.rs sce-build/tests/codec_totality.rs
+
+mutation_case "a list past its bound is not a refusal" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        .filter(|f| f.is_repeat() || f.is_tlv_chain())
+    {''',
+     r'''        .filter(|f| f.is_repeat() && f.is_tlv_chain())
+    {''')
+PY
+
+mutation_case "a held codec's refusal is not passed on" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''            if imports.codec_may_fail(alias) {''',
+     r'''            if imports.codec_may_fail(alias) && alias.is_empty() {''')
+PY
+
+mutation_case "a codec that refuses is accepted as total" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        (false, Some(r)) => Err(''',
+     r'''        (false, Some(r)) if r.element.is_empty() => Err(''')
+PY
+
+mutation_case "a codec that refuses nothing is accepted as may-fail" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        (true, None) => Err(''',
+     r'''        (true, None) if m.name.is_empty() => Err(''')
+PY

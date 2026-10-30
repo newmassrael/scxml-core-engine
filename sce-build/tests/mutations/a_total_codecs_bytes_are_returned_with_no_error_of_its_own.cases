@@ -1,0 +1,25 @@
+# Mutation cases for "a total codec's bytes are returned with no error of its own".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_total_codecs_bytes_are_returned_with_no_error_of_its_own.cases`.
+#
+# A codec whose encode refuses no value returns its bytes from
+# `encode_to_vec`, and its `encode` returns only its sink's error
+# (docs/adr/0065 §4). The case gives every codec the facade of one that can
+# refuse, which is the uniform `Result` ADR 0058 §2 had. The Rust goldens of
+# `forge_conformance`, which hold the generated text of every codec, refuse it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a total codec keeps the facade of one that can refuse" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if encode_may_fail %}
+    /// Encode `self` into the caller-owned sink. Returns the value's refusal''',
+     r'''{% if true %}
+    /// Encode `self` into the caller-owned sink. Returns the value's refusal''')
+PY
