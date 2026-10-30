@@ -109,7 +109,7 @@ public enum StructureLightEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StructureLightPolicy: StatePolicy {
+public final class StructureLightPolicy: InvocablePolicy {
     public typealias State = StructureLightState
     public typealias Event = StructureLightEvent
 
@@ -367,6 +367,7 @@ public final class StructureLightPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StructureLightEvent, engine: Engine<StructureLightPolicy>) {}
+
 
 
 

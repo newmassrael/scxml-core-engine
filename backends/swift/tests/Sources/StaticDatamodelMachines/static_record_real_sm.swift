@@ -122,7 +122,7 @@ struct StaticRecordRealReadingTakenPayload {
 // Policy
 // ======================================================================
 
-public final class StaticRecordRealPolicy: StatePolicy {
+public final class StaticRecordRealPolicy: InvocablePolicy {
     public typealias State = StaticRecordRealState
     public typealias Event = StaticRecordRealEvent
 
@@ -372,6 +372,7 @@ public final class StaticRecordRealPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

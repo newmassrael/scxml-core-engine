@@ -94,7 +94,7 @@ public enum StaticStringCapacityEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticStringCapacityPolicy: StatePolicy {
+public final class StaticStringCapacityPolicy: InvocablePolicy {
     public typealias State = StaticStringCapacityState
     public typealias Event = StaticStringCapacityEvent
 
@@ -340,6 +340,7 @@ public final class StaticStringCapacityPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticStringCapacityEvent, engine: Engine<StaticStringCapacityPolicy>) {}
+
 
 
 

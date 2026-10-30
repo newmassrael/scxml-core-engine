@@ -135,7 +135,7 @@ private func call_Has__v(_ p0: [StaticListCallEntryRecord], _ p1: UInt32) -> Boo
 // Policy
 // ======================================================================
 
-public final class StaticListCallPolicy: StatePolicy {
+public final class StaticListCallPolicy: InvocablePolicy {
     public typealias State = StaticListCallState
     public typealias Event = StaticListCallEvent
 
@@ -399,6 +399,7 @@ public final class StaticListCallPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

@@ -92,7 +92,7 @@ public enum StaticCounterEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticCounterPolicy: StatePolicy {
+public final class StaticCounterPolicy: InvocablePolicy {
     public typealias State = StaticCounterState
     public typealias Event = StaticCounterEvent
 
@@ -328,6 +328,7 @@ public final class StaticCounterPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticCounterEvent, engine: Engine<StaticCounterPolicy>) {}
+
 
 
 

@@ -121,7 +121,7 @@ public struct StaticRecordBytesFramedRecord: Equatable, Sendable, SceDefault {
 // Policy
 // ======================================================================
 
-public final class StaticRecordBytesPolicy: StatePolicy {
+public final class StaticRecordBytesPolicy: InvocablePolicy {
     public typealias State = StaticRecordBytesState
     public typealias Event = StaticRecordBytesEvent
 
@@ -425,6 +425,7 @@ public final class StaticRecordBytesPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticRecordBytesEvent, engine: Engine<StaticRecordBytesPolicy>) {}
+
 
 
 

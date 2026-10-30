@@ -93,7 +93,7 @@ public enum StaticOverflowEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticOverflowPolicy: StatePolicy {
+public final class StaticOverflowPolicy: InvocablePolicy {
     public typealias State = StaticOverflowState
     public typealias Event = StaticOverflowEvent
 
@@ -309,6 +309,7 @@ public final class StaticOverflowPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticOverflowEvent, engine: Engine<StaticOverflowPolicy>) {}
+
 
 
 

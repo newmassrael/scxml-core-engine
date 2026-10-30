@@ -156,7 +156,7 @@ public struct StaticRecordEnumViewRecord: Equatable, Sendable, SceDefault {
 // Policy
 // ======================================================================
 
-public final class StaticRecordEnumPolicy: StatePolicy {
+public final class StaticRecordEnumPolicy: InvocablePolicy {
     public typealias State = StaticRecordEnumState
     public typealias Event = StaticRecordEnumEvent
 
@@ -422,6 +422,7 @@ public final class StaticRecordEnumPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticRecordEnumEvent, engine: Engine<StaticRecordEnumPolicy>) {}
+
 
 
 

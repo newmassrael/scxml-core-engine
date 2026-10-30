@@ -150,7 +150,7 @@ public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable, SceDefault 
 // Policy
 // ======================================================================
 
-public final class StaticOptionalUnwidenedPolicy: StatePolicy {
+public final class StaticOptionalUnwidenedPolicy: InvocablePolicy {
     public typealias State = StaticOptionalUnwidenedState
     public typealias Event = StaticOptionalUnwidenedEvent
 
@@ -490,6 +490,7 @@ public final class StaticOptionalUnwidenedPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticOptionalUnwidenedEvent, engine: Engine<StaticOptionalUnwidenedPolicy>) {}
+
 
 
 

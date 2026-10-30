@@ -88,7 +88,7 @@ public enum StaticEventWildcardEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticEventWildcardPolicy: StatePolicy {
+public final class StaticEventWildcardPolicy: InvocablePolicy {
     public typealias State = StaticEventWildcardState
     public typealias Event = StaticEventWildcardEvent
 
@@ -292,6 +292,7 @@ public final class StaticEventWildcardPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticEventWildcardEvent, engine: Engine<StaticEventWildcardPolicy>) {}
+
 
 
 

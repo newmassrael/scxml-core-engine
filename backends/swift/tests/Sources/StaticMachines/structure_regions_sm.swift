@@ -152,7 +152,7 @@ public enum StructureRegionsEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StructureRegionsPolicy: StatePolicy {
+public final class StructureRegionsPolicy: InvocablePolicy {
     public typealias State = StructureRegionsState
     public typealias Event = StructureRegionsEvent
 
@@ -487,6 +487,7 @@ public final class StructureRegionsPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StructureRegionsEvent, engine: Engine<StructureRegionsPolicy>) {}
+
 
 
 

@@ -147,7 +147,7 @@ private func call_Undated__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord]) thr
 // Policy
 // ======================================================================
 
-public final class StaticStateAlgorithmOptionalPolicy: StatePolicy {
+public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
     public typealias State = StaticStateAlgorithmOptionalState
     public typealias Event = StaticStateAlgorithmOptionalEvent
 
@@ -438,6 +438,7 @@ public final class StaticStateAlgorithmOptionalPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

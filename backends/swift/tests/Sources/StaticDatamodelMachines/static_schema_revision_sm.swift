@@ -165,7 +165,7 @@ struct StaticSchemaRevisionReadingRevisedPayload {
 // Policy
 // ======================================================================
 
-public final class StaticSchemaRevisionPolicy: StatePolicy {
+public final class StaticSchemaRevisionPolicy: InvocablePolicy {
     public typealias State = StaticSchemaRevisionState
     public typealias Event = StaticSchemaRevisionEvent
 
@@ -422,6 +422,7 @@ public final class StaticSchemaRevisionPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

@@ -152,7 +152,7 @@ struct StaticSendNamelistViewShownPayload {
 // Policy
 // ======================================================================
 
-public final class StaticSendNamelistPolicy: StatePolicy {
+public final class StaticSendNamelistPolicy: InvocablePolicy {
     public typealias State = StaticSendNamelistState
     public typealias Event = StaticSendNamelistEvent
 
@@ -432,6 +432,7 @@ public final class StaticSendNamelistPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

@@ -118,7 +118,7 @@ struct StaticSendParamsPartialPayload {
 // Policy
 // ======================================================================
 
-public final class StaticSendParamsPolicy: StatePolicy {
+public final class StaticSendParamsPolicy: InvocablePolicy {
     public typealias State = StaticSendParamsState
     public typealias Event = StaticSendParamsEvent
 
@@ -418,6 +418,7 @@ public final class StaticSendParamsPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

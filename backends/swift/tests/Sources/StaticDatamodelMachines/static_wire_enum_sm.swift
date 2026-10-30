@@ -166,7 +166,7 @@ struct StaticWireEnumViewShownPayload {
 // Policy
 // ======================================================================
 
-public final class StaticWireEnumPolicy: StatePolicy {
+public final class StaticWireEnumPolicy: InvocablePolicy {
     public typealias State = StaticWireEnumState
     public typealias Event = StaticWireEnumEvent
 
@@ -444,6 +444,7 @@ public final class StaticWireEnumPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

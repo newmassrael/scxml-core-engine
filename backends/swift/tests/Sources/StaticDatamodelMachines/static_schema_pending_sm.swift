@@ -163,7 +163,7 @@ struct StaticSchemaPendingSignalRaisedPayload {
 // Policy
 // ======================================================================
 
-public final class StaticSchemaPendingPolicy: StatePolicy {
+public final class StaticSchemaPendingPolicy: InvocablePolicy {
     public typealias State = StaticSchemaPendingState
     public typealias Event = StaticSchemaPendingEvent
 
@@ -424,6 +424,7 @@ public final class StaticSchemaPendingPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

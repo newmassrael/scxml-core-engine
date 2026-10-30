@@ -216,7 +216,7 @@ struct StaticPayloadEnumUnimportedRecordListRefusedPayload {
 // Policy
 // ======================================================================
 
-public final class StaticPayloadEnumUnimportedPolicy: StatePolicy {
+public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
     public typealias State = StaticPayloadEnumUnimportedState
     public typealias Event = StaticPayloadEnumUnimportedEvent
 
@@ -476,6 +476,7 @@ public final class StaticPayloadEnumUnimportedPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

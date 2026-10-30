@@ -94,7 +94,7 @@ public enum StaticSendEventEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticSendEventPolicy: StatePolicy {
+public final class StaticSendEventPolicy: InvocablePolicy {
     public typealias State = StaticSendEventState
     public typealias Event = StaticSendEventEvent
 
@@ -332,6 +332,7 @@ public final class StaticSendEventPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticSendEventEvent, engine: Engine<StaticSendEventPolicy>) {}
+
 
 
 

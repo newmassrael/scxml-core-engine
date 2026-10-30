@@ -150,7 +150,7 @@ public struct StaticDonedataRecordViewRecord: Equatable, Sendable, SceDefault {
 // Policy
 // ======================================================================
 
-public final class StaticDonedataRecordPolicy: StatePolicy {
+public final class StaticDonedataRecordPolicy: InvocablePolicy {
     public typealias State = StaticDonedataRecordState
     public typealias Event = StaticDonedataRecordEvent
 
@@ -360,6 +360,7 @@ public final class StaticDonedataRecordPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticDonedataRecordEvent, engine: Engine<StaticDonedataRecordPolicy>) {}
+
 
 
 

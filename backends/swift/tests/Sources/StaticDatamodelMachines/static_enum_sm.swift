@@ -134,7 +134,7 @@ public enum StaticEnumViewModeEnum: UInt8, CaseIterable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticEnumPolicy: StatePolicy {
+public final class StaticEnumPolicy: InvocablePolicy {
     public typealias State = StaticEnumState
     public typealias Event = StaticEnumEvent
 
@@ -348,6 +348,7 @@ public final class StaticEnumPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticEnumEvent, engine: Engine<StaticEnumPolicy>) {}
+
 
 
 

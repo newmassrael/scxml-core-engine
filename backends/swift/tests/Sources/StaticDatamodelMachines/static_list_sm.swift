@@ -112,7 +112,7 @@ struct StaticListDayPickedPayload {
 // Policy
 // ======================================================================
 
-public final class StaticListPolicy: StatePolicy {
+public final class StaticListPolicy: InvocablePolicy {
     public typealias State = StaticListState
     public typealias Event = StaticListEvent
 
@@ -385,6 +385,7 @@ public final class StaticListPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

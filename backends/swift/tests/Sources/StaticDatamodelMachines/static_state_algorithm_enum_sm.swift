@@ -190,7 +190,7 @@ private func call_StatusOf__v(_ p0: [StaticStateAlgorithmEnumItemRecord], _ p1: 
 // Policy
 // ======================================================================
 
-public final class StaticStateAlgorithmEnumPolicy: StatePolicy {
+public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
     public typealias State = StaticStateAlgorithmEnumState
     public typealias Event = StaticStateAlgorithmEnumEvent
 
@@ -495,6 +495,7 @@ public final class StaticStateAlgorithmEnumPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

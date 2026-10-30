@@ -122,7 +122,7 @@ struct StaticPayloadBytesFramedTakenPayload {
 // Policy
 // ======================================================================
 
-public final class StaticPayloadBytesPolicy: StatePolicy {
+public final class StaticPayloadBytesPolicy: InvocablePolicy {
     public typealias State = StaticPayloadBytesState
     public typealias Event = StaticPayloadBytesEvent
 
@@ -402,6 +402,7 @@ public final class StaticPayloadBytesPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

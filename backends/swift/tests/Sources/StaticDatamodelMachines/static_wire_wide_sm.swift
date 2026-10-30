@@ -115,7 +115,7 @@ struct StaticWireWideWideRelayedPayload {
 // Policy
 // ======================================================================
 
-public final class StaticWireWidePolicy: StatePolicy {
+public final class StaticWireWidePolicy: InvocablePolicy {
     public typealias State = StaticWireWideState
     public typealias Event = StaticWireWideEvent
 
@@ -404,6 +404,7 @@ public final class StaticWireWidePolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

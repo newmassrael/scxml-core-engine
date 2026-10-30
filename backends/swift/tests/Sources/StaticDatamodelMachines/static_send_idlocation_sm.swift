@@ -93,7 +93,7 @@ public enum StaticSendIdlocationEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticSendIdlocationPolicy: StatePolicy {
+public final class StaticSendIdlocationPolicy: InvocablePolicy {
     public typealias State = StaticSendIdlocationState
     public typealias Event = StaticSendIdlocationEvent
 
@@ -329,6 +329,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticSendIdlocationEvent, engine: Engine<StaticSendIdlocationPolicy>) {}
+
 
 
 

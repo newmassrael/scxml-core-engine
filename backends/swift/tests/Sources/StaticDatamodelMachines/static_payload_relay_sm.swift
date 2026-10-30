@@ -159,7 +159,7 @@ struct StaticPayloadRelayViewShownPayload {
 // Policy
 // ======================================================================
 
-public final class StaticPayloadRelayPolicy: StatePolicy {
+public final class StaticPayloadRelayPolicy: InvocablePolicy {
     public typealias State = StaticPayloadRelayState
     public typealias Event = StaticPayloadRelayEvent
 
@@ -436,6 +436,7 @@ public final class StaticPayloadRelayPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

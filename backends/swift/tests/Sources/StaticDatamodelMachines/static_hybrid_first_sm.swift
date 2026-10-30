@@ -90,7 +90,7 @@ public enum StaticHybridFirstEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticHybridFirstPolicy: StatePolicy {
+public final class StaticHybridFirstPolicy: InvocablePolicy {
     public typealias State = StaticHybridFirstState
     public typealias Event = StaticHybridFirstEvent
 
@@ -286,6 +286,7 @@ public final class StaticHybridFirstPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticHybridFirstEvent, engine: Engine<StaticHybridFirstPolicy>) {}
+
 
 
 

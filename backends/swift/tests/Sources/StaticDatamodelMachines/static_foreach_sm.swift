@@ -97,7 +97,7 @@ public enum StaticForeachEvent: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticForeachPolicy: StatePolicy {
+public final class StaticForeachPolicy: InvocablePolicy {
     public typealias State = StaticForeachState
     public typealias Event = StaticForeachEvent
 
@@ -373,6 +373,7 @@ public final class StaticForeachPolicy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticForeachEvent, engine: Engine<StaticForeachPolicy>) {}
+
 
 
 

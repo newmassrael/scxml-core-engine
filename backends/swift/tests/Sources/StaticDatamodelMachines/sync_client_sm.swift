@@ -144,7 +144,7 @@ struct SyncClientSyncStartPayload {
 // Policy
 // ======================================================================
 
-public final class SyncClientPolicy: StatePolicy {
+public final class SyncClientPolicy: InvocablePolicy {
     public typealias State = SyncClientState
     public typealias Event = SyncClientEvent
 
@@ -504,6 +504,7 @@ public final class SyncClientPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

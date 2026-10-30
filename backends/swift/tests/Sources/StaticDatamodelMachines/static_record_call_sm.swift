@@ -140,7 +140,7 @@ private func call_Larger__vp(_ p0: StaticRecordCallEntryRecord, _ p1: StaticReco
 // Policy
 // ======================================================================
 
-public final class StaticRecordCallPolicy: StatePolicy {
+public final class StaticRecordCallPolicy: InvocablePolicy {
     public typealias State = StaticRecordCallState
     public typealias Event = StaticRecordCallEvent
 
@@ -398,6 +398,7 @@ public final class StaticRecordCallPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

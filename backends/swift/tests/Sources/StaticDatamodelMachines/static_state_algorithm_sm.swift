@@ -166,7 +166,7 @@ private func call_TotalOf__v(_ p0: [StaticStateAlgorithmEntryRecord]) throws -> 
 // Policy
 // ======================================================================
 
-public final class StaticStateAlgorithmPolicy: StatePolicy {
+public final class StaticStateAlgorithmPolicy: InvocablePolicy {
     public typealias State = StaticStateAlgorithmState
     public typealias Event = StaticStateAlgorithmEvent
 
@@ -454,6 +454,7 @@ public final class StaticStateAlgorithmPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

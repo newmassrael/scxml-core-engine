@@ -140,7 +140,7 @@ private func call_FirstAtLeast__v(_ p0: [StaticOptionalRecordItemRecord], _ p1: 
 // Policy
 // ======================================================================
 
-public final class StaticOptionalRecordPolicy: StatePolicy {
+public final class StaticOptionalRecordPolicy: InvocablePolicy {
     public typealias State = StaticOptionalRecordState
     public typealias Event = StaticOptionalRecordEvent
 
@@ -463,6 +463,7 @@ public final class StaticOptionalRecordPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

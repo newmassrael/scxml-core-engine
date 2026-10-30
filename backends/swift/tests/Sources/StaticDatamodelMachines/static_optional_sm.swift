@@ -185,7 +185,7 @@ struct StaticOptionalDueSetPayload {
 // Policy
 // ======================================================================
 
-public final class StaticOptionalPolicy: StatePolicy {
+public final class StaticOptionalPolicy: InvocablePolicy {
     public typealias State = StaticOptionalState
     public typealias Event = StaticOptionalEvent
 
@@ -609,6 +609,7 @@ public final class StaticOptionalPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

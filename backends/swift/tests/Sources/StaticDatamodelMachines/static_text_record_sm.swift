@@ -145,7 +145,7 @@ private func call_Retitled__v(_ p0: [StaticTextRecordSlotRecord]) throws -> [Sta
 // Policy
 // ======================================================================
 
-public final class StaticTextRecordPolicy: StatePolicy {
+public final class StaticTextRecordPolicy: InvocablePolicy {
     public typealias State = StaticTextRecordState
     public typealias Event = StaticTextRecordEvent
 
@@ -418,6 +418,7 @@ public final class StaticTextRecordPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 

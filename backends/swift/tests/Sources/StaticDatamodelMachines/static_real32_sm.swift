@@ -94,7 +94,7 @@ public enum StaticReal32Event: Int, Hashable, Sendable {
 // Policy
 // ======================================================================
 
-public final class StaticReal32Policy: StatePolicy {
+public final class StaticReal32Policy: InvocablePolicy {
     public typealias State = StaticReal32State
     public typealias Event = StaticReal32Event
 
@@ -342,6 +342,7 @@ public final class StaticReal32Policy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: StaticReal32Event, engine: Engine<StaticReal32Policy>) {}
+
 
 
 

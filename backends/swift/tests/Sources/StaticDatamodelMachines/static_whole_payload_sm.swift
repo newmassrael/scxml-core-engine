@@ -162,7 +162,7 @@ struct StaticWholePayloadViewShownPayload {
 // Policy
 // ======================================================================
 
-public final class StaticWholePayloadPolicy: StatePolicy {
+public final class StaticWholePayloadPolicy: InvocablePolicy {
     public typealias State = StaticWholePayloadState
     public typealias Event = StaticWholePayloadEvent
 
@@ -430,6 +430,7 @@ public final class StaticWholePayloadPolicy: StatePolicy {
     public func clearEventMetadata() {
         pendingPayloadTag = .none
     }
+
 
 
 
