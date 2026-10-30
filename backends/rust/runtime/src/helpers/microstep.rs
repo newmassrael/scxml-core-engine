@@ -35,6 +35,8 @@
 //! here, and a push past a buffer's end stops the program with the generator's
 //! name on it.
 
+use core::mem::MaybeUninit;
+
 use crate::helpers::run_store::{RunStoreMut, RunStoreRef};
 use crate::helpers::state_set::{state_words, StateSet, StateSetRef, Word};
 use crate::helpers::tables::{
@@ -60,15 +62,24 @@ pub const fn state_scratch(states: usize) -> usize {
 
 /// A buffer of a fixed capacity over borrowed slots: what a procedure builds a
 /// set of states, of transitions or of steps in.
-#[derive(Debug)]
+///
+/// The slots are uninitialised until the buffer writes them, and only the
+/// first `len` are ever read: the held items are the front of the slots, the
+/// rest is room. So a buffer lent empty asks nothing of what its slots held,
+/// and a [`Workspace`] is not filled before a turn lends it (docs/adr/0071).
+///
+/// Every `unsafe` of this module is in this type's methods, and each rests on
+/// the one invariant the fields keep: `len <= slots.len()`, and `slots[..len]`
+/// are initialised.
+/// The items are `Copy`, so nothing a buffer forgets is owed a drop.
 pub struct SliceVec<'a, T> {
-    slots: &'a mut [T],
+    slots: &'a mut [MaybeUninit<T>],
     len: usize,
 }
 
 impl<'a, T: Copy + PartialEq> SliceVec<'a, T> {
-    /// An empty buffer over `slots`.
-    pub fn new(slots: &'a mut [T]) -> Self {
+    /// An empty buffer over `slots`, whatever they hold.
+    pub fn new(slots: &'a mut [MaybeUninit<T>]) -> Self {
         Self { slots, len: 0 }
     }
 
@@ -78,7 +89,7 @@ impl<'a, T: Copy + PartialEq> SliceVec<'a, T> {
         let Some(slot) = self.slots.get_mut(self.len) else {
             workspace_too_small()
         };
-        *slot = item;
+        *slot = MaybeUninit::new(item);
         self.len += 1;
     }
 
@@ -97,7 +108,11 @@ impl<'a, T: Copy + PartialEq> SliceVec<'a, T> {
             return None;
         }
         self.len -= 1;
-        Some(self.slots[self.len])
+        // SAFETY: `self.len` was below the old length, which is at most
+        // `slots.len()`, and every slot below the old length is initialised.
+        // The item is `Copy`, so reading it leaves the slot as it was.
+        let item = unsafe { self.slots[self.len].assume_init_read() };
+        Some(item)
     }
 
     /// Keep the first `len` items.
@@ -116,16 +131,31 @@ impl<'a, T: Copy + PartialEq> SliceVec<'a, T> {
 impl<T> core::ops::Deref for SliceVec<'_, T> {
     type Target = [T];
 
+    /// The items held, front first.
     #[inline]
     fn deref(&self) -> &[T] {
-        &self.slots[..self.len]
+        // SAFETY: `MaybeUninit<T>` has the size, alignment and layout of `T`,
+        // `len <= slots.len()`, and the first `len` slots are initialised, so
+        // they are `len` valid items in one allocation, borrowed for as long
+        // as the buffer is.
+        unsafe { core::slice::from_raw_parts(self.slots.as_ptr().cast::<T>(), self.len) }
     }
 }
 
 impl<T> core::ops::DerefMut for SliceVec<'_, T> {
+    /// The items held, front first, to overwrite in place.
     #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
-        &mut self.slots[..self.len]
+        // SAFETY: as for `deref`; the borrow is unique because `self` is, and
+        // what is written through it is a `T`, so the prefix stays initialised.
+        unsafe { core::slice::from_raw_parts_mut(self.slots.as_mut_ptr().cast::<T>(), self.len) }
+    }
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for SliceVec<'_, T> {
+    /// The items held: the slots past them hold nothing to show.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 
@@ -141,14 +171,19 @@ fn workspace_too_small() -> ! {
 
 /// The buffers a microstep borrows, each a slice of the machine's
 /// [`Workspace`].
+///
+/// The walk and the history defaults are slots a [`SliceVec`] writes before it
+/// reads, so they are lent uninitialised. The words of the sets are
+/// initialised, as a [`StateSet`] reads them as words; a procedure clears a
+/// set when it takes one.
 #[derive(Debug)]
 pub struct Scratch<'a> {
     /// The words of the sets of states.
     pub sets: &'a mut [Word],
-    /// The steps of the walks.
-    pub walk: &'a mut [WalkStep],
-    /// The history default content an entry set owes.
-    pub history_defaults: &'a mut [(StateId, HistoryId)],
+    /// The slots of the walks' steps.
+    pub walk: &'a mut [MaybeUninit<WalkStep>],
+    /// The slots of the history default content an entry set owes.
+    pub history_defaults: &'a mut [MaybeUninit<(StateId, HistoryId)>],
 }
 
 impl<'a> Scratch<'a> {
@@ -189,6 +224,14 @@ impl<'a> Scratch<'a> {
 ///
 /// A local of the call that runs a macrostep, never a field of the engine, so
 /// it costs stack only while a macrostep runs (docs/adr/0056 §4).
+///
+/// The enabled set, the walk and the history defaults are slots left
+/// uninitialised until a [`SliceVec`] writes them, which is before it reads
+/// them. Filled with a placeholder, as they once were, every turn paid a loop
+/// that wrote each slot; the placeholder step was not zero bytes, so the
+/// compiler built the fill in a temporary and copied it, and the turn's frame
+/// held the buffers twice (docs/adr/0071). Only the words of the sets are
+/// written, as zeros.
 #[derive(Debug, Clone)]
 pub struct Workspace<
     const SETS: usize,
@@ -197,21 +240,22 @@ pub struct Workspace<
     const DEFAULTS: usize,
 > {
     sets: [Word; SETS],
-    enabled: [TransitionId; ENABLED],
-    walk: [WalkStep; WALK],
-    history_defaults: [(StateId, HistoryId); DEFAULTS],
+    enabled: [MaybeUninit<TransitionId>; ENABLED],
+    walk: [MaybeUninit<WalkStep>; WALK],
+    history_defaults: [MaybeUninit<(StateId, HistoryId)>; DEFAULTS],
 }
 
 impl<const SETS: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS: usize>
     Workspace<SETS, ENABLED, WALK, DEFAULTS>
 {
-    /// Empty buffers.
+    /// Empty buffers: the words of the sets zero, every other slot
+    /// uninitialised.
     pub const fn new() -> Self {
         Self {
             sets: [0; SETS],
-            enabled: [TransitionId(0); ENABLED],
-            walk: [WalkStep::Descendants(Target::state(StateId(0))); WALK],
-            history_defaults: [(StateId(0), HistoryId(0)); DEFAULTS],
+            enabled: [MaybeUninit::uninit(); ENABLED],
+            walk: [MaybeUninit::uninit(); WALK],
+            history_defaults: [MaybeUninit::uninit(); DEFAULTS],
         }
     }
 }
@@ -226,6 +270,11 @@ impl<const SETS: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS:
 
 /// A [`Workspace`] of any size, as the engine lends it.
 pub trait Buffers {
+    /// Empty buffers, as a constant: a turn that starts from it writes the
+    /// zeroed words of the sets and nothing else, and builds no value to copy
+    /// into its frame (docs/adr/0071).
+    const EMPTY: Self;
+
     /// The buffer of the enabled set, and the scratch for everything else.
     fn split(&mut self) -> (SliceVec<'_, TransitionId>, Scratch<'_>);
 }
@@ -233,6 +282,8 @@ pub trait Buffers {
 impl<const SETS: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS: usize> Buffers
     for Workspace<SETS, ENABLED, WALK, DEFAULTS>
 {
+    const EMPTY: Self = Self::new();
+
     #[inline]
     fn split(&mut self) -> (SliceVec<'_, TransitionId>, Scratch<'_>) {
         (
@@ -381,7 +432,7 @@ pub struct HistoryProcedures {
         RunStoreRef<'_>,
         HistoryId,
         &mut StateSet<'_>,
-        &mut [WalkStep],
+        &mut [MaybeUninit<WalkStep>],
     ) -> Option<StateId>,
     /// addDescendantStatesToEnter for a `<history>` target: the list it
     /// enters, with the default content it owes put in the entry set.
@@ -680,7 +731,7 @@ pub fn effective_target_states_on(
     store: RunStoreRef<'_>,
     targets: &[Target],
     effective: &mut StateSet<'_>,
-    walk: &mut [WalkStep],
+    walk: &mut [MaybeUninit<WalkStep>],
 ) -> Option<StateId> {
     effective.clear();
     let mut first = None;
@@ -710,7 +761,7 @@ fn effective_history_targets(
     store: RunStoreRef<'_>,
     history: HistoryId,
     effective: &mut StateSet<'_>,
-    walk: &mut [WalkStep],
+    walk: &mut [MaybeUninit<WalkStep>],
 ) -> Option<StateId> {
     let mut first = None;
     let mut add = |state: StateId| {
@@ -1132,11 +1183,15 @@ fn add_transition_to_entry_set(
 impl<T> SliceVec<'_, T> {
     /// Every slot, for a walk that empties the buffer before it returns and
     /// lends its slots to another walk in between.
-    fn slots_mut(&mut self) -> &mut [T] {
+    ///
+    /// The buffer is emptied as it lends them, so whatever the borrower leaves
+    /// in a slot, initialised or not, is never read as an item.
+    fn slots_mut(&mut self) -> &mut [MaybeUninit<T>] {
         debug_assert!(
             self.len == 0,
             "a walk lends its stack only while it is empty"
         );
+        self.len = 0;
         self.slots
     }
 }

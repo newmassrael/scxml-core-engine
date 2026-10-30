@@ -4722,6 +4722,12 @@ impl<P: StatePolicy> Engine<P> {
     /// with the generator's name on it: the conformance corpus is the evidence
     /// that each bound is an upper bound and not an estimate.
     ///
+    /// The workspace starts as the empty one, a constant ([`Buffers::EMPTY`]):
+    /// its buffers other than the sets' zeroed words are uninitialised until a
+    /// microstep writes them. So the turn writes only those words, with no loop
+    /// that fills a buffer and no filled copy beside the workspace in this
+    /// frame (docs/adr/0071).
+    ///
     /// Out of line, so the workspace is in this frame and no other: inlined,
     /// it would sit in the frame of whatever calls `initialize` or `step` for
     /// as long as that frame lives, rather than for the turn. A consumer
@@ -4729,7 +4735,7 @@ impl<P: StatePolicy> Engine<P> {
     /// workspaces were built in functions that inline (2026-10-30).
     #[inline(never)]
     fn run_turn(&mut self, initial: bool) {
-        let mut workspace = P::Workspace::default();
+        let mut workspace = <P::Workspace as Buffers>::EMPTY;
         let (enabled, scratch) = workspace.split();
         Turn {
             host: &mut EngineHost { engine: self },

@@ -48,12 +48,13 @@
 //   <state id="t"/>
 // </scxml>
 
+use std::mem::MaybeUninit;
 use std::sync::OnceLock;
 
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, compute_states_to_exit, effective_target_states_on,
     is_in_final_state, microstep, select_transitions, transition_domain, Behaviour, Buffers,
-    Entered, ExitScope, Scratch, WalkStep,
+    Entered, ExitScope, Scratch, SliceVec, WalkStep,
 };
 use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
@@ -853,6 +854,57 @@ fn take(chart: &mut Chart, transitions: &[TransitionId]) -> Entered {
     let mut workspace = ChartWorkspace::new();
     let (_, scratch) = workspace.split();
     microstep(chart_tables(), chart, transitions, scratch)
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The buffers
+// ════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn a_buffer_over_uninitialised_slots_holds_only_what_it_was_given() {
+    let mut slots = [MaybeUninit::<TransitionId>::uninit(); 4];
+    let mut buffer = SliceVec::new(&mut slots);
+    assert!(buffer.is_empty());
+    assert_eq!(buffer.pop(), None);
+
+    buffer.push(TransitionId(7));
+    buffer.add_once(TransitionId(3));
+    buffer.add_once(TransitionId(7));
+    assert_eq!(*buffer, [TransitionId(7), TransitionId(3)]);
+
+    // Written through in place, and shown as the items it holds, not as the
+    // slots behind them.
+    buffer[0] = TransitionId(5);
+    assert_eq!(format!("{buffer:?}"), "[TransitionId(5), TransitionId(3)]");
+
+    assert_eq!(buffer.pop(), Some(TransitionId(3)));
+    buffer.push(TransitionId(9));
+    assert_eq!(*buffer, [TransitionId(5), TransitionId(9)]);
+    buffer.truncate(1);
+    assert_eq!(*buffer, [TransitionId(5)]);
+    buffer.clear();
+    assert!(buffer.is_empty());
+    assert_eq!(buffer.pop(), None);
+}
+
+#[test]
+#[should_panic(expected = "a microstep buffer is full")]
+fn a_push_past_the_last_slot_stops_the_program() {
+    let mut slots = [MaybeUninit::<TransitionId>::uninit(); 1];
+    let mut buffer = SliceVec::new(&mut slots);
+    buffer.push(TransitionId(1));
+    buffer.push(TransitionId(2));
+}
+
+#[test]
+fn the_empty_workspace_lends_empty_buffers_over_zeroed_sets() {
+    let mut workspace = <ChartWorkspace as Buffers>::EMPTY;
+    let (enabled, scratch) = workspace.split();
+    assert!(enabled.is_empty());
+    assert_eq!(scratch.sets.len(), state_scratch(TREE.len()));
+    assert!(scratch.sets.iter().all(|&word| word == 0));
+    assert_eq!(scratch.walk.len(), 20);
+    assert_eq!(scratch.history_defaults.len(), 2);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -2223,10 +2275,14 @@ const UNTOUCHED: WalkStep = WalkStep::EffectiveDefaults {
 /// generator's formulas give: `state_scratch` of the document's states, the
 /// walk bound, one history default for each history. A procedure that needs
 /// more than one of them stops the test.
+///
+/// The history defaults are lent uninitialised, as a [`Workspace`] lends them.
+/// The walk's slots are each written with [`UNTOUCHED`] first, so how deep the
+/// walks went can be read back; a walk writes only whole steps over them.
 struct Lent {
     sets: Vec<Word>,
-    walk: Vec<WalkStep>,
-    history_defaults: Vec<(StateId, HistoryId)>,
+    walk: Vec<MaybeUninit<WalkStep>>,
+    history_defaults: Vec<MaybeUninit<(StateId, HistoryId)>>,
     /// What a procedure that returns a set of states writes it into.
     out: Vec<Word>,
 }
@@ -2235,8 +2291,8 @@ impl Lent {
     fn for_document(doc: &RandomDocument) -> Self {
         Lent {
             sets: vec![0; state_scratch(doc.states())],
-            walk: vec![UNTOUCHED; doc.walk_bound()],
-            history_defaults: vec![(StateId(0), HistoryId(0)); doc.histories()],
+            walk: vec![MaybeUninit::new(UNTOUCHED); doc.walk_bound()],
+            history_defaults: vec![MaybeUninit::uninit(); doc.histories()],
             out: vec![0; state_words(doc.states())],
         }
     }
@@ -2265,7 +2321,12 @@ impl Lent {
     fn walk_high_water(&self) -> usize {
         self.walk
             .iter()
-            .position(|&step| step == UNTOUCHED)
+            .position(|slot| {
+                // SAFETY: `for_document` initialised every slot, and a walk
+                // writes only whole steps into a slot, so each holds a step.
+                let step = unsafe { slot.assume_init_read() };
+                step == UNTOUCHED
+            })
             .unwrap_or(self.walk.len())
     }
 }
