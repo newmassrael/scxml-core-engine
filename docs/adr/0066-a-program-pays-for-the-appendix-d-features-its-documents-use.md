@@ -53,14 +53,15 @@ that only a `<parallel>` reaches are another:
 - **`HistoryProcedures`**:
   - dereference a `<history>` target for the effective targets;
   - dereference it for the entry walk, recording owed default content;
-  - read a `<history>`'s recorded or default list;
+  - read what a `<history>` recorded, from a state on;
   - record the histories of the states a microstep exits.
 - **`ParallelProcedures`**:
   - default the untaken regions of a `<parallel>` the entry walk enters;
   - remove conflicting transitions from an enabled set;
   - decide isInFinalState for a `<parallel>`.
 
-The runtime defines one `static` of each, holding the procedures as function pointers.
+The runtime defines one constant of each, `HISTORY` and `PARALLEL`, holding the procedures as
+function pointers. Their fields are private, so these are the only values the types have.
 `DocumentTables` gains:
 
 - `history: Option<&'static HistoryProcedures>`
@@ -70,9 +71,17 @@ The generator writes `Some(&sce_rust_runtime::HISTORY)` only for a document that
 `<history>`, and `Some(&sce_rust_runtime::PARALLEL)` only for one that has a `<parallel>`. The
 core calls a feature's procedures through these fields, and nowhere else.
 
+They are constants rather than statics because a document's tables are a constant, and a constant
+may refer to a static only from Rust 1.83 on, past the runtime's `rust-version` (1.75). A reference
+to a constant in a constant is promoted to one constant allocation.
+
 So a feature's code is referenced only from the tables of documents that use it. In a program none
-of whose documents does, nothing references the static and the linker drops it, along with every
-function only it reaches. This is the reachability by which `NoHistory` used to remove those
+of whose documents does, no table takes the reference, nothing is emitted for the constant, and the
+linker drops every function only it reaches.
+
+Without a `<parallel>`, a configuration has one atomic state, so selection enables at most one
+transition. The core then skips removeConflictingTransitions instead of calling it on that one
+transition. This is the reachability by which `NoHistory` used to remove those
 paths, moved from the type system to the link. The core is still one copy, and there is still no
 build mode (ADR 0064 decision 6, ADR 0053): what decides is the documents the program holds, not a
 flag.
@@ -89,8 +98,13 @@ A hand-written table states the feature it uses, as a generated one does.
 ### 3. The call through a feature is a call through a pointer, and the stack instrument follows it
 
 The core reaches a feature through a function pointer read from the tables. The stack tool
-resolves such a call the way it resolves a trait object's (`--dyn`): to every procedure of that
-feature.
+resolves such a call the way it resolves a trait object's (`--dyn`). The private fields of the
+procedure sets make `HISTORY` and `PARALLEL` their only values, so a call reaches procedures of
+those two and nothing else. Of them, a function's call reaches the ones its own source calls
+lead to. Resolving every pointer call to every procedure would be sound too, but it charges
+paths that cannot run and makes cycles that do not exist: a `Behaviour` hook asks
+isInFinalState, whose procedure would then seem to reach a procedure that reaches the hook
+again.
 
 ### 4. The instrument weighs a program without the features
 
@@ -110,6 +124,34 @@ feature code back into every program is a red.
 - This is not the whole repair. The per-machine shells (the queues, the event binding, the typed
   entry points) are the other part of the consumer's figure, and making the engine's body speak
   event numbers is an ADR of its own.
+
+## Measured (2026-10-30)
+
+`thumbv7em-none-eabihf`, `opt-level = "s"`, rustc 1.99.1, the probe's figures
+(`backends/rust/probes/nostd-footprint/footprint.budget`):
+
+| | before | after |
+|---|---|---|
+| shared core, two machines without either feature | 6,048 B | 4,528 B, no feature procedure linked |
+| shared core, a machine with `<parallel>` and `<history>` | 6,048 B | 6,678 B |
+| worst-case stack, with the features / without | 1,368 B / — | 1,392 B / 1,152 B |
+
+A program without the features no longer carries 1,520 bytes of them. A program with them pays
+630 bytes more, because a procedure reached through a pointer is a function of its own and is
+not inlined into its caller. That is the cost of one copy serving every program.
+
+It is not enough for the consumer. The same two featureless documents at 49e40c9a72 measure
+188,064 and 190,137 bytes. After this change they measure 190,566 and 192,184, still 2,047
+bytes more at two machines. Each machine's own engine (`Engine<P>` and its hooks: queues,
+event binding, typed entry points) is 1.0–1.5 KB, where its copy of the algorithm used to be
+1.8–3.8 KB, and the 4.5 KB core is paid once on top. Removing the per-machine engine is the
+next decision (Consequences, last item).
+
+The stack instrument resolves a call through a feature's pointer the way it resolves a trait
+object's (decision 3). Each core function's call reaches the hooks and procedures that its own
+source calls lead to, since an inlining moves code only along those calls. A core function
+whose indirect call no rule states fails the run, instead of passing as a host callback
+(`--dyn-complete`).
 
 ## Order of the changes
 
