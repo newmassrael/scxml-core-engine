@@ -734,13 +734,13 @@ impl StatePolicy for Test388Policy {
     // of one configuration; a microstep owes 1 history default(s) at most;
     // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
-    // call needs no depth the program has to assume: 14 step(s) at most, three
+    // call needs no depth the program has to assume: 11 step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
     // run store, the configuration and what each of the 2 `<history>`
     // element(s) recorded, one such set each, is the engine's.
     type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(11) }, 1, 14, 1>;
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(11) }, 1, 11, 1>;
     type RunStore = ::sce_rust_runtime::RunStore<
         { ::sce_rust_runtime::state_words(11) },
         { ::sce_rust_runtime::record_words(11, 2) },
