@@ -872,14 +872,25 @@ impl StatePolicy for StaticWholePayloadPolicy {
     type Payload = StaticWholePayloadPayload;
     type Hal = sce_rust_runtime::StdHal;
 
-    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
-    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
-    // as the const consumed below); absent a declared capacity the bare form
-    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
-    // the default). Inert under std (`VecDeque`), so this one emission compiles
-    // on both runtime profiles. The queue holds events as numbers and only the
+    // W3C SCXML Appendix D externalQueue: what the host and other sessions
+    // deliver, at a rate no document states. Under no_std the depth is the
+    // per-document `<scxml sce:capacity>` / deploy value (emitted as the const
+    // consumed below); absent a declared capacity the bare form inherits the
+    // runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of the
+    // default). Inert under std (`VecDeque`), so this one emission compiles on
+    // both runtime profiles. The queue holds events as numbers and only the
     // payloads as this machine's type (docs/adr/0068).
-    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+
+    // W3C SCXML Appendix D internalQueue: only what this machine raises for
+    // itself during a macrostep, so its no_std depth is the bound the
+    // generator proves from the document, and the external rule where it
+    // proves none (docs/adr/0076). Inert under std, as above.
+    // Proven depth 0: nothing this document does can put an event on its
+    // internal queue.
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 0>;
+    // The same bound, held to every run a test build makes (docs/adr/0076).
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
@@ -889,7 +900,7 @@ impl StatePolicy for StaticWholePayloadPolicy {
     // dead weight with no cancel reader. A cancelling document keeps the
     // load-bearing `SceString`. Behaviour-preserving under std either way, so
     // this one emission compiles on both runtime profiles. Mirrors the
-    // EventQueue per-machine sizing lever above.
+    // ExternalQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
     // W3C SCXML 6.2: this document has no `<send delay>`, no `<send delayexpr>`,
     // no `<cancel>` and no host-run deadline, so nothing is ever armed on the
