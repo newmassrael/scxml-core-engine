@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Event-schema kind: a SHAPE claim, deliberately not a width claim (see the C++
+   fragment). The payload is built through its memberwise initializer, so a field that
+   moved in the struct puts each value in the wrong member, and every member is read
+   back and compared with the oracle: by the text of its number, so no width a type
+   gives it can make two different values equal; by truth for a `bool`; by the name its
+   document declares for a `string` or an enum value.
+
+   The unit's event name is held to the one the manifest names, which is what the
+   payload is the payload of. #}
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == {{ f.fields | length }}, "{{ f.name }}: oracle field count")
+    #expect({{ f.name | to_pascal_case }}.eventName == "{{ f.event_name }}", "{{ f.name }}: event name")
+
+    let payload = {{ f.name | to_pascal_case }}Payload(
+{% for field in f.fields %}
+{% if field.sce_type == "bool" %}
+        {{ field.name }}: {{ "true" if field.value else "false" }}{{ "," if not loop.last }}
+{% elif field.sce_type == "string" %}
+        {{ field.name }}: "{{ field.value }}"{{ "," if not loop.last }}
+{% elif field.enum_document is defined %}
+        {{ field.name }}: {{ field.enum_document | to_pascal_case }}.{{ field.ident }}{{ "," if not loop.last }}
+{% else %}
+        {{ field.name }}: {{ field.value }}{{ "," if not loop.last }}
+{% endif %}
+{% endfor %}
+    )
+
+{% for field in f.fields %}
+    #expect(try oracleText(fields[{{ loop.index0 }}].member("name")) == "{{ field.name }}", "{{ f.name }} field {{ loop.index0 }} name")
+{% if field.sce_type == "bool" %}
+    let expected{{ loop.index0 }} = try oracleTruth(fields[{{ loop.index0 }}].member("value"))
+    #expect(payload.{{ field.name }} == expected{{ loop.index0 }}, "{{ f.name }}.{{ field.name }}")
+{% elif field.sce_type == "string" %}
+    let expected{{ loop.index0 }} = try oracleText(fields[{{ loop.index0 }}].member("value"))
+    #expect(payload.{{ field.name }} == expected{{ loop.index0 }}, "{{ f.name }}.{{ field.name }}")
+{% elif field.enum_document is defined %}
+{# A value of an enum reads back as the name its document declares. #}
+    let expected{{ loop.index0 }} = try oracleText(fields[{{ loop.index0 }}].member("value"))
+    #expect(payload.{{ field.name }}.declaredName == expected{{ loop.index0 }}, "{{ f.name }}.{{ field.name }}")
+{% else %}
+    let expected{{ loop.index0 }} = try oracleNumberText(fields[{{ loop.index0 }}].member("value"))
+    #expect(String(payload.{{ field.name }}) == expected{{ loop.index0 }}, "{{ f.name }}.{{ field.name }}")
+{% endif %}
+{% endfor %}
