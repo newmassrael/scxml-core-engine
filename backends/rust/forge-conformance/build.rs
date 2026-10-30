@@ -60,6 +60,13 @@ fn main() {
         "cargo:rerun-if-changed={}",
         template_base.join("forge/rust").display()
     );
+    // The forge/rust templates include and import the shared macros (the codec
+    // decode body among them), so an edit there changes what is generated here
+    // as much as one to the templates themselves.
+    println!(
+        "cargo:rerun-if-changed={}",
+        template_base.join("_macros").display()
+    );
 
     // Step 1: fixture catalog — single source of truth for which SCXML files
     // participate in the conformance harness across all 5 languages.
@@ -278,12 +285,17 @@ fn main() {
     codec_modules.dedup();
     write_source_sweeps(&out_dir, &codec_modules, &sweeps);
 
-    // Step 7b: an arm compiled under a build feature (docs/adr/0072). The variant
-    // imports the default-marker arms Step 4 generates; this crate's `gated-arm`
-    // feature decides whether its second arm is compiled, and
-    // `forge_feature_gated_arm.rs` decodes the same frames in either build.
+    // Step 7b: an arm compiled under a build feature (docs/adr/0072). The first
+    // variant imports the default-marker arms Step 4 generates and has a
+    // catch-all; the second imports the peek-byte arms of the catalog (Step 2)
+    // and has none. This crate's `gated-arm` feature decides whether their
+    // gated arms are compiled, and `forge_feature_gated_arm.rs` decodes the
+    // same frames in either build.
     generate_stripped_fixtures(
-        &["codec_feature_gated_arm"],
+        &[
+            "codec_feature_gated_arm",
+            "codec_feature_gated_arm_no_catch_all",
+        ],
         &source_fixtures,
         &out_dir,
         &options,

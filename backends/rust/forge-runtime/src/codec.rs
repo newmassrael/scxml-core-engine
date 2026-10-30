@@ -27,11 +27,12 @@
 /// additive variants from breaking downstream `match` arms before
 /// SCE 1.0.
 ///
-/// The variant primitive intentionally does NOT need a typed
-/// `UnknownVariantTag` variant — RFC §synth-5-B requires `<sce:default>` when
-/// arms don't exhaust the tag domain (`codec/variant-arm-unreachable`
-/// fires at build time otherwise), so the default arm catches every
-/// unmatched tag at runtime.
+/// The variant primitive has no typed `UnknownVariantTag` variant — RFC
+/// §synth-5-B requires `<sce:default>` when arms don't exhaust the tag domain
+/// (`codec/variant-arm-unreachable` fires at build time otherwise), so the
+/// default arm catches every tag the document does not name. A tag the
+/// document names whose arm this build leaves out is another fact, refused
+/// as [`CodecError::VariantArmNotBuilt`] (docs/adr/0072).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CodecError {
@@ -153,6 +154,12 @@ pub enum CodecError {
     /// fields. The wire has room for one number, so no frame says both.
     /// Refused before the first byte is written.
     InconsistentSource,
+    /// Decode-side (docs/adr/0072): the frame's variant tag names an arm the
+    /// document declares under a build feature that is off in this build
+    /// (`<sce:arm feature="<name>">`). The arm's body codec is not compiled, so
+    /// the frame is refused rather than read as another arm's body: the tag is
+    /// one the document knows, not one for its catch-all `<sce:default>`.
+    VariantArmNotBuilt,
 }
 
 /// Project an owned list into the bounded inline list

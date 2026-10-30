@@ -7,9 +7,11 @@
 //! The Rust codec gates every item that names the arm on
 //! `#[cfg(feature = "<name>")]`, and the C codec puts it inside
 //! `#if SCE_FEATURE_<NAME>`, which the header defines to 1 unless the build
-//! defined it. A build without the feature has no such arm, and the arm's
-//! tags reach the catch-all `<sce:default>`. C++, Go, Kotlin and Python keep
-//! the arm in every build, which is the feature on.
+//! defined it. A build without the feature has no such arm, and its decode
+//! refuses the arm's tag (`CodecError::VariantArmNotBuilt`,
+//! `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT`) rather than read the frame as the
+//! catch-all's. C++, Go, Kotlin and Python keep the arm in every build, which
+//! is the feature on.
 //!
 //! What a document without the attribute renders is held by the committed
 //! goldens of every codec under `tests/forge/expected/`, which this change
@@ -272,6 +274,39 @@ fn the_source_interface_names_the_arms_each_build_holds() {
     assert_eq!(on, off, "every accessor is written for both builds");
 }
 
+/// In a build without the feature, each decode's `match` on the tag refuses
+/// the gated arm's tag in the arm's place, under `cfg(not(..))`, and the query
+/// arm's tag has no such refusal.
+#[test]
+fn a_rust_build_without_the_feature_refuses_the_gated_arms_tag() {
+    let code = generate(
+        Language::Rust,
+        &ForgeCompileOptions {
+            views: true,
+            ..ForgeCompileOptions::default()
+        },
+    );
+    let lines: Vec<&str> = code.lines().collect();
+    let mut refusals: Vec<String> = Vec::new();
+    for pair in lines.windows(2) {
+        let next = pair[1].trim();
+        if next.contains("CodecError::VariantArmNotBuilt") {
+            assert_eq!(
+                pair[0].trim(),
+                CFG_OFF,
+                "a refusal of a gated arm's tag stands in every build:\n{next}"
+            );
+            refusals.push(next.to_string());
+        }
+    }
+    // The builder's decode and the view's, each refusing tags 1 and 2.
+    let expected: Vec<String> = ["1u8", "2u8", "1u8", "2u8"]
+        .iter()
+        .map(|tag| format!("{tag} => return Err(CodecError::VariantArmNotBuilt),"))
+        .collect();
+    assert_eq!(refusals, expected);
+}
+
 /// Every item of the C codec that names the put or the delete arm sits inside
 /// `#if SCE_FEATURE_REQUEST_PUT_DEL`, which the header defines to 1 before its
 /// first use unless the build defined it; the query arm's items do not.
@@ -328,6 +363,21 @@ fn every_c_item_of_a_gated_arm_is_inside_its_macro() {
             "the query arm is inside the gated arm's guard"
         );
     }
+    // The decode's case of each gated arm has its refusal in the other branch
+    // of the same guard: a build without the feature refuses the tag.
+    let refusals: Vec<(&str, &str)> = lines
+        .windows(3)
+        .filter(|w| w[0].trim() == "#else" && w[1].trim().starts_with("case "))
+        .map(|w| (w[1].trim(), w[2].trim()))
+        .collect();
+    assert_eq!(
+        refusals,
+        vec![
+            ("case 1:", "return SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT;"),
+            ("case 2:", "return SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT;"),
+        ],
+        "each gated arm's decode case is refused where its macro is 0"
+    );
     for (at, line) in lines.iter().enumerate() {
         let t = line.trim();
         if t == "CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_QUERY," || t == "case 3:" {

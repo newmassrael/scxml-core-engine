@@ -57,7 +57,8 @@
 /* docs/adr/0072: an arm that names a build feature is compiled while its
  * macro is non-zero, and the macro is 1 unless the build defines it first:
  * the arm is present by default, and a build that defines the macro to 0
- * leaves it out, its tags reaching the catch-all arm. */
+ * leaves it out, its decode refusing the arm's tag with
+ * SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT. */
 {% for feature_macro in c_feature_macros %}
 #ifndef {{ feature_macro }}
 #define {{ feature_macro }} 1
@@ -293,6 +294,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
 {% if arm.c_feature_macro %}
+#else
+        case {{ arm.value_literal }}:
+            return SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT;
 #endif
 {% endif %}
 {% endfor %}

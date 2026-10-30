@@ -75,6 +75,13 @@ pub(crate) fn rust_feature_cfg(feature: &str) -> String {
     format!("#[cfg(feature = \"{feature}\")]")
 }
 
+/// The attribute of the decode arm that refuses the tag of an arm compiled
+/// under `feature` in a build without it (docs/adr/0072):
+/// `#[cfg(not(feature = "<feature>"))]`.
+pub(crate) fn rust_feature_cfg_off(feature: &str) -> String {
+    format!("#[cfg(not(feature = \"{feature}\"))]")
+}
+
 /// The `#[cfg]` of a Rust import a codec uses only in arms compiled under
 /// build features, keyed by the import's alias: the import is compiled
 /// where one of those arms is (docs/adr/0072). An import any build uses — a
@@ -6633,8 +6640,9 @@ fn codec_variant_body_borrowed(m: &CodecModel, imports: &[ImportContext]) -> boo
 /// The variant enum, its view and its owned form take a lifetime or a storage
 /// parameter when an arm body borrows, and a build without the feature drops
 /// those arms, so it would declare a parameter nothing uses, which Rust refuses
-/// (E0392). The other arms, and the catch-all every such variant has, decide
-/// the parameter in every build; when none of them borrows, no single
+/// (E0392). The other arms (the `default="true"` one among them) and the
+/// catch-all, when there is one, decide the parameter in every build; when
+/// none of them borrows, no single
 /// declaration is right for both builds. `views` adds the view's own question,
 /// whose borrowing is the view's (an arm body whose builder borrows may have a
 /// view that does not, and the reverse).
@@ -9301,13 +9309,15 @@ fn render_codec(
                 obj.insert("is_default".into(), arm.is_default.into());
                 // docs/adr/0072: the build feature the arm is compiled under,
                 // as the backends that drop the arm from a build without it
-                // guard each of its items. The other backends keep the arm in
+                // guard each of its items, and the guard of the decode arm
+                // that refuses its tag there. The other backends keep the arm in
                 // every build, which is the feature on, the default meaning,
                 // and read neither key.
                 if let Some(feature) = &arm.feature {
                     match lang {
                         crate::generator::Language::Rust => {
                             obj.insert("rust_cfg".into(), rust_feature_cfg(feature).into());
+                            obj.insert("rust_cfg_off".into(), rust_feature_cfg_off(feature).into());
                         }
                         crate::generator::Language::C11 => {
                             obj.insert("c_feature_macro".into(), c_feature_macro(feature).into());

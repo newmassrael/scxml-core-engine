@@ -5,11 +5,14 @@
 #
 # An `<sce:arm feature="<name>">` is compiled only where its feature is on: the
 # Rust codec puts `#[cfg(feature = "<name>")]` on every item that names the
-# arm, and the C codec puts the arm inside `#if SCE_FEATURE_<NAME>`. The parser
-# refuses the attribute where a build without the feature could not be built.
-# Each case below breaks one of those: an item of the gated arm loses its cfg,
-# the cfg lands on the arm every build holds, the source interface names the
-# gated arm in a build without it, or a refusal lets the document through.
+# arm, and the C codec puts the arm inside `#if SCE_FEATURE_<NAME>`; where the
+# feature is off, the decode refuses the arm's tag instead. The parser refuses
+# the attribute on the arm every build must hold. Each case below breaks one
+# of those: an item of the gated arm loses its cfg, the cfg lands on the arm
+# every build holds, the source interface names the gated arm in a build
+# without it, the refusal of the tag is not written, or a refusal of the
+# attribute lets the document through. The run of the off-build itself is
+# `a_build_without_an_arms_feature_refuses_its_tag.cases`.
 # `sce-build/tests/a_variant_arm_may_name_a_build_feature.rs` refuses the
 # parser and overlay cases, and
 # `sce-build/tests/a_gated_arm_is_compiled_only_where_its_feature_is_on.rs`
@@ -126,42 +129,42 @@ edit("tools/codegen/templates/forge/c/codec.h.jinja2",
      r'''/* {{ feature_macro }} */''')
 PY
 
-# ── The parser and the overlay ──
+# ── The refusal of a left-out arm's tag ──
 
-mutation_case "the catch-all may name a feature" <<'PY'
-edit("sce-build/src/forge/parser.rs",
-     r'''                if let Some(feature) = child.attribute("feature") {
-                    return Err(located(''',
-     r'''                if let Some(feature) = child.attribute("feature").filter(|_| false) {
-                    return Err(located(''')
+mutation_case "the Rust decode does not refuse a left-out arm's tag" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
+     r'''{% if arm.rust_cfg_off %}
+            {{ arm.rust_cfg_off }}
+            {{ arm.value_literal }} => return Err(CodecError::VariantArmNotBuilt),
+{% endif %}''',
+     r'''''')
 PY
+
+mutation_case "the generator hands the refusal's cfg to no arm" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                            obj.insert("rust_cfg_off".into(), rust_feature_cfg_off(feature).into());''',
+     r'''                            let _ = rust_feature_cfg_off;''')
+PY
+
+mutation_case "the C decode does not refuse a left-out arm's tag" <<'PY'
+edit("tools/codegen/templates/forge/c/codec.h.jinja2",
+     r'''#else
+        case {{ arm.value_literal }}:
+            return SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT;
+#endif''',
+     r'''#endif''')
+PY
+
+# ── The parser and the overlay ──
+#
+# The catch-all and the name grammar are refused by the XSD first in this
+# build; the parser's own refusal of them is held in a build without it, by
+# `a_parser_without_the_grammar_refuses_a_feature_it_cannot_take.cases`.
 
 mutation_case "the default arm may name a feature" <<'PY'
 edit("sce-build/src/forge/parser.rs",
-     r'''                    // by every build, so it cannot be one a build leaves out.
-                    if is_default {''',
-     r'''                    // by every build, so it cannot be one a build leaves out.
-                    if is_default && feature.is_empty() {''')
-PY
-
-mutation_case "a gated arm is accepted without a catch-all" <<'PY'
-edit("sce-build/src/forge/parser.rs",
-     r'''    if default_arm.is_none() {
-        if let Some((node, arm_value, feature)) = first_feature_arm {''',
-     r'''    if default_arm.is_some() && default_arm.is_none() {
-        if let Some((node, arm_value, feature)) = first_feature_arm {''')
-PY
-
-mutation_case "a feature name may start with a digit" <<'PY'
-edit("sce-build/src/forge/parser.rs",
-     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase())''',
-     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())''')
-PY
-
-mutation_case "a feature name may hold an underscore" <<'PY'
-edit("sce-build/src/forge/parser.rs",
-     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')''',
-     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')''')
+     r'''                if let (true, Some(feature)) = (is_default, &feature) {''',
+     r'''                if let (true, Some(feature)) = (is_default && value == u64::MAX, &feature) {''')
 PY
 
 mutation_case "the overlay may make a gated arm the default" <<'PY'

@@ -35,11 +35,12 @@
 extern "C" {
 #endif
 
-/* Typed decode error. The variant primitive intentionally does
- * NOT need a typed UnknownVariantTag — RFC §synth-5-B requires <sce:default>
- * when arms don't exhaust the tag domain (build-time
- * codec/variant-arm-unreachable otherwise), so the default arm catches
- * every unmatched tag at runtime. */
+/* Typed decode error. The variant primitive has no typed UnknownVariantTag —
+ * RFC §synth-5-B requires <sce:default> when arms don't exhaust the tag
+ * domain (build-time codec/variant-arm-unreachable otherwise), so the default
+ * arm catches every tag the document does not name. A tag the document names
+ * whose arm this build leaves out is another fact, refused as
+ * SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT (docs/adr/0072). */
 typedef enum {
     SCE_FORGE_CODEC_OK = 0,
     SCE_FORGE_CODEC_NEED_MORE_BYTES = 1,
@@ -122,6 +123,12 @@ typedef enum {
      * given. Nothing is written. Mirrors the typed `CodecError::LengthOutOfRange`
      * of Rust, `codec.ErrLengthOutOfRange` of Go and `LengthOutOfRange` of Python. */
     SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19,
+    /* On decode, the frame's variant tag names an arm the document declares
+     * under a build feature this build leaves out (`<sce:arm feature=...>`,
+     * whose SCE_FEATURE_<NAME> macro is 0). Its body is not compiled, so the
+     * frame is refused rather than read as another arm's body (docs/adr/0072).
+     * Mirrors the typed `CodecError::VariantArmNotBuilt` of Rust. */
+    SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

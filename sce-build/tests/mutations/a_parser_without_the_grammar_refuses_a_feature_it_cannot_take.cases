@@ -1,0 +1,48 @@
+# Mutation cases for "a parser without the grammar refuses a feature it cannot
+# take" (docs/adr/0072).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_parser_without_the_grammar_refuses_a_feature_it_cannot_take.cases`.
+#
+# `<sce:default feature=...>` and a `feature=` name outside Cargo's kebab case
+# are refused by the XSD first wherever it runs, so in the default build the
+# parser's own refusal of them is never reached and a case that broke it would
+# survive there for want of a test that could see it. A build without the
+# `xsd` feature (the browser build, `sce-build-wasm`) parses without the
+# grammar, and there the parser's refusals are the only ones; this file runs
+# the parser tests in that build, where
+# `sce-build/tests/a_variant_arm_may_name_a_build_feature.rs` asserts the
+# parser's typed codes.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --no-default-features --test a_variant_arm_may_name_a_build_feature
+mutation_targets sce-build/src/forge/parser.rs
+mutation_oracles sce-build/tests/a_variant_arm_may_name_a_build_feature.rs
+
+mutation_case "the catch-all may name a feature" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                if let Some(feature) = child.attribute("feature") {
+                    return Err(located(''',
+     r'''                if let Some(feature) = child.attribute("feature").filter(|_| false) {
+                    return Err(located(''')
+PY
+
+mutation_case "a feature name may start with a digit" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase())''',
+     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())''')
+PY
+
+mutation_case "a feature name may hold an underscore" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')''',
+     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')''')
+PY
+
+mutation_case "the default arm may name a feature" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                if let (true, Some(feature)) = (is_default, &feature) {''',
+     r'''                if let (true, Some(feature)) = (is_default && value == u64::MAX, &feature) {''')
+PY

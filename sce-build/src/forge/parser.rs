@@ -3780,9 +3780,6 @@ fn parse_codec_variant(
     // `codec/variant-duplicate-default-arm` with the offending
     // arm's value preserved for the repair hint.
     let mut default_arm_marker_seen: Option<u64> = None;
-    // The first arm that names a build feature (docs/adr/0072), kept with its
-    // element so a variant with no catch-all is refused at that arm.
-    let mut first_feature_arm: Option<(roxmltree::Node, u64, String)> = None;
 
     // Every SCE child is judged below: an arm, the default, the peek-byte
     // read above, or a refusal.
@@ -3870,23 +3867,20 @@ fn parse_codec_variant(
                     }
                 };
                 let feature = read_arm_feature(&child, label.diagnostic_label, value_str)?;
-                if let Some(feature) = &feature {
-                    // The arm `Default` builds the codec's value from is held
-                    // by every build, so it cannot be one a build leaves out.
-                    if is_default {
-                        return Err(located(
-                            &child,
-                            label.diagnostic_label,
-                            ValidationError::CodecVariantFeatureOnRequiredArm {
-                                codec: label.identifier.to_string(),
-                                arm_value: Some(value),
-                                feature: feature.clone(),
-                            },
-                        ));
-                    }
-                    if first_feature_arm.is_none() {
-                        first_feature_arm = Some((child, value, feature.clone()));
-                    }
+                // The arm `Default` builds the codec's value from is held by
+                // every build, so it cannot be one a build leaves out. The
+                // grammar cannot say so: `default` and `feature` are each
+                // optional on `<sce:arm>`.
+                if let (true, Some(feature)) = (is_default, &feature) {
+                    return Err(located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::CodecVariantFeatureOnRequiredArm {
+                            codec: label.identifier.to_string(),
+                            arm_value: Some(value),
+                            feature: feature.clone(),
+                        },
+                    ));
                 }
                 arms.push(VariantArm {
                     value,
@@ -3927,8 +3921,12 @@ fn parse_codec_variant(
                         )
                     })?
                     .to_string();
-                // The catch-all receives the tags of every arm a build leaves
-                // out (docs/adr/0072), so no build may leave it out.
+                // The catch-all stands for every tag the document does not
+                // name; it has no tag of its own a build without it could
+                // refuse in its place (docs/adr/0072), so no build leaves it
+                // out. The grammar declares no `feature` on `<sce:default>`
+                // and refuses it first where it runs; a build without the
+                // `xsd` feature reaches this.
                 if let Some(feature) = child.attribute("feature") {
                     return Err(located(
                         &child,
@@ -4042,25 +4040,6 @@ fn parse_codec_variant(
         }
     }
 
-    // docs/adr/0072: the exhaustiveness above, and the parent's for a
-    // caller-tag variant, is proven over every arm, and a build that leaves
-    // a feature off has fewer. Its tags then need a catch-all to land in;
-    // without one the decode would reach a branch the proof called
-    // unreachable.
-    if default_arm.is_none() {
-        if let Some((node, arm_value, feature)) = first_feature_arm {
-            return Err(located(
-                &node,
-                label.diagnostic_label,
-                ValidationError::CodecVariantFeatureNeedsCatchAll {
-                    codec: label.identifier.to_string(),
-                    arm_value,
-                    feature,
-                },
-            ));
-        }
-    }
-
     Ok(Some(CodecVariant {
         tag_field,
         tag_flag,
@@ -4077,7 +4056,9 @@ fn parse_codec_variant(
 /// because the Rust codec gates the arm on `#[cfg(feature = "<name>")]` and the
 /// C codec on the macro spelled from it (`SCE_FEATURE_<NAME>`, `-` read as
 /// `_`): a name outside that grammar is either no Cargo feature or two names
-/// that spell one macro.
+/// that spell one macro. The XSD states the same pattern and refuses such a
+/// name first where it runs; this is the rule a build without the `xsd`
+/// feature (the browser build) holds a document to.
 fn read_arm_feature(
     arm: &roxmltree::Node,
     doc_name: &str,

@@ -82,7 +82,7 @@ const _: () = assert!(
 pub enum {{ struct_name }}Variant{{ variant_lifetime }} {
 {# docs/adr/0072: an arm that names a build feature is compiled under it, in
    every item that names the arm, so a build without the feature has no such
-   variant and its tag falls to the catch-all. #}
+   variant and its decode refuses the arm's tag. #}
 {% for arm in variant.arms %}
 {% if arm.rust_cfg %}
     {{ arm.rust_cfg }}

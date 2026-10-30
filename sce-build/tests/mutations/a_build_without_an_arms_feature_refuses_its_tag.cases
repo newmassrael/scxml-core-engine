@@ -1,0 +1,39 @@
+# Mutation cases for "a build without an arm's feature refuses its tag"
+# (docs/adr/0072).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_build_without_an_arms_feature_refuses_its_tag.cases`.
+#
+# A Rust codec whose `<sce:arm feature="<name>">` is compiled in a crate with
+# the feature off has no such arm, and its decode refuses the arm's tag with
+# `CodecError::VariantArmNotBuilt`: the tag is one the document names, so the
+# catch-all must not read the frame as its own body, and a variant with no
+# catch-all must not reach the branch its build-time proof called
+# unreachable. `sce-forge-conformance` generates two such variants at build
+# time (`fixtures/codec_feature_gated_arm*.scxml`) and its
+# `forge_feature_gated_arm` tests decode their frames in the build without
+# the feature, which is the selector below. Each case drops the refusal, in
+# the template that writes it or in the generator that hands it the cfg.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --no-default-features --features alloc --test forge_feature_gated_arm
+mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_feature_gated_arm.rs
+
+mutation_case "the Rust decode does not refuse a left-out arm's tag" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
+     r'''{% if arm.rust_cfg_off %}
+            {{ arm.rust_cfg_off }}
+            {{ arm.value_literal }} => return Err(CodecError::VariantArmNotBuilt),
+{% endif %}''',
+     r'''''')
+PY
+
+mutation_case "the refusal is compiled in the build with the feature instead" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''obj.insert("rust_cfg_off".into(), rust_feature_cfg_off(feature).into());''',
+     r'''obj.insert("rust_cfg_off".into(), rust_feature_cfg(feature).into());''')
+PY

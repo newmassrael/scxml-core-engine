@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0072): a peek-byte variant over a one-bit
+     tag with no catch-all, whose second arm is compiled under the build feature
+     `gated-arm`. The two arms cover the tag; with the feature off, the decode
+     refuses tag 0x01 in the gated arm's place, so the match stays total
+     without a `<sce:default>`. The arm codecs are the peek-byte pair of the
+     conformance catalog, which build.rs Step 2 generates. Read by
+     tests/forge_feature_gated_arm.rs. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_feature_gated_arm_no_catch_all">
+  <sce:import src="../../../../tests/forge/resources/codec_peek_arm_a.scxml"
+              kind="codec" as="codec_peek_arm_a"/>
+  <sce:import src="../../../../tests/forge/resources/codec_peek_arm_b.scxml"
+              kind="codec" as="codec_peek_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="1"/>
+      </sce:peek-byte>
+      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_peek_arm_b" feature="gated-arm"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

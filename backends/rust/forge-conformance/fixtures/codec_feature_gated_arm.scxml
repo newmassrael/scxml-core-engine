@@ -2,10 +2,12 @@
 <!-- SCE Forge conformance (docs/adr/0072): a peek-byte variant whose second arm
      is compiled under the build feature `gated-arm`, which this crate declares
      and turns on by default. With the feature on, tag 0x02 decodes into arm B;
-     with it off, the arm does not exist and tag 0x02 reaches the catch-all, whose
-     body (arm A's codec) reads the frame as its own. Arm A is the default arm and
-     is held by every build. The arm codecs are the default-marker pair that
-     build.rs Step 4 generates. Read by tests/forge_feature_gated_arm.rs. -->
+     with it off, the arm does not exist and the decode refuses tag 0x02
+     (`CodecError::VariantArmNotBuilt`) rather than hand the frame to the
+     catch-all, which keeps every tag the document does not name. Arm A is the
+     default arm and is held by every build. The arm codecs are the
+     default-marker pair that build.rs Step 4 generates. Read by
+     tests/forge_feature_gated_arm.rs. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_feature_gated_arm">

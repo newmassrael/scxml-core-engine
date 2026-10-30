@@ -1621,11 +1621,13 @@ pub enum ValidationError {
     /// docs/adr/0072: an arm that every build of the codec holds names a
     /// build feature, which would leave it out of the builds without that
     /// feature. Two arms are held by every build: the catch-all
-    /// `<sce:default>` (`arm_value` `None`), which receives the tags of the
-    /// arms such a build leaves out, and the `<sce:arm default="true">` arm
-    /// (`arm_value` `Some`), which the codec's `Default` value is built from
-    /// (the deploy overlay's `variant_defaults` choice included). The repair
-    /// is to drop the attribute from that arm.
+    /// `<sce:default>` (`arm_value` `None`), which stands for every tag the
+    /// document does not name and has no tag of its own a build could refuse
+    /// in its place, and the `<sce:arm default="true">` arm (`arm_value`
+    /// `Some`), which the codec's `Default` value is built from (the deploy
+    /// overlay's `variant_defaults` choice included). The repair is to drop
+    /// the attribute from that arm. The grammar refuses the catch-all case
+    /// first where it runs; the parser holds a build without it to the same.
     #[error(
         "codec '{codec}': {} names the build feature '{feature}', and every build \
          must hold that arm: {}; remove feature=\"{feature}\" from it",
@@ -1635,29 +1637,12 @@ pub enum ValidationError {
         if arm_value.is_some() {
             "the codec's Default value is built from it"
         } else {
-            "it receives the tags of the arms a build without the feature leaves out"
+            "it stands for every tag the document does not name"
         }
     )]
     CodecVariantFeatureOnRequiredArm {
         codec: String,
         arm_value: Option<u64>,
-        feature: String,
-    },
-
-    /// docs/adr/0072: an `<sce:arm>` names a build feature, and its variant
-    /// declares no catch-all `<sce:default>`. The arms are proven to cover
-    /// the tag's values when all of them are present; a build without the
-    /// feature has fewer, and its decode would have no arm for the tags the
-    /// gated arm held. The repair is a `<sce:default>` to receive them.
-    #[error(
-        "codec '{codec}': <sce:arm value={arm_value:#x}> names the build feature \
-         '{feature}', and the variant declares no <sce:default> — a build without \
-         the feature would have no arm for that tag; add <sce:default type=\"...\"/> \
-         to receive the tags such a build leaves out"
-    )]
-    CodecVariantFeatureNeedsCatchAll {
-        codec: String,
-        arm_value: u64,
         feature: String,
     },
 

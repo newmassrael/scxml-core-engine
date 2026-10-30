@@ -103,7 +103,9 @@
 {% for arm in variant.arms %}
 {% set arm_body = arm.view_body_type if view_decode else arm.body_type %}
 {# docs/adr/0072: a build without the arm's feature has no such arm, and its
-   tag reaches the catch-all below. #}
+   decode refuses the arm's tag: the tag is one the document names, so it is
+   not the catch-all's, and reading the frame as another arm's body would
+   misread it. The refusing arm keeps the match total without a catch-all. #}
 {% if arm.rust_cfg %}
             {{ arm.rust_cfg }}
 {% endif %}
@@ -113,6 +115,10 @@
                     {{ arm_body }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }})?;
                 }
             }
+{% if arm.rust_cfg_off %}
+            {{ arm.rust_cfg_off }}
+            {{ arm.value_literal }} => return Err(CodecError::VariantArmNotBuilt),
+{% endif %}
 {% endfor %}
 {% if variant.default_arm %}
 {% set default_body = variant.default_arm.view_body_type if view_decode else variant.default_arm.body_type %}

@@ -1247,9 +1247,16 @@ arm values.
 
 `<sce:arm feature="<name>">` names a build feature the arm is compiled
 under, in Cargo's kebab case (`[a-z][a-z0-9-]*`). A build with the
-feature on holds the arm; a build with it off has no such arm, and the
-arm's tags reach the catch-all `<sce:default>`, whose body codec decodes
-the frame. The feature is on by default.
+feature on holds the arm; a build with it off has no such arm, and its
+decode refuses the arm's tag. The feature is on by default.
+
+"This build does not take that body" and "a tag this document does not
+know" are different facts: the catch-all `<sce:default>` keeps the
+second, and a frame of a left-out arm is refused rather than read as the
+catch-all's body, which would misread it without an error (a
+`<sce:flag value=...>` constant is the value a body's `Default` holds and
+is not checked on decode). Because the refusal keeps the decode total, a
+gated arm needs no catch-all.
 
 ```xml
 <sce:variant tag="peek.mid">
@@ -1267,28 +1274,25 @@ How each backend leaves the arm out:
 
 | Backend | A build without the feature |
 |---|---|
-| Rust | every item naming the arm carries `#[cfg(feature = "<name>")]`: the variant of each variant enum, each match arm, the source interface's type parameter and the imports only the arm uses; the crate that compiles the codec declares the feature, on by default |
-| C | the arm's kind constant, union member and switch cases sit inside `#if SCE_FEATURE_<NAME>` (upper case, `-` as `_`), which the header defines to 1 unless the build defined it; a build defines it to 0 |
+| Rust | every item naming the arm carries `#[cfg(feature = "<name>")]`: the variant of each variant enum, each match arm, the source interface's type parameter and the imports only the arm uses; the decode's match on the tag holds, under `#[cfg(not(feature = "<name>"))]`, an arm that returns `CodecError::VariantArmNotBuilt` for the arm's tag; the crate that compiles the codec declares the feature, on by default |
+| C | the arm's kind constant, union member and switch cases sit inside `#if SCE_FEATURE_<NAME>` (upper case, `-` as `_`), which the header defines to 1 unless the build defined it; a build defines it to 0, and the decode's case for the arm's tag returns `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT` in the `#else` branch |
 | C++, Go, Kotlin, Python | the arm is kept in every build, which is the feature on |
 
-The parser refuses the attribute where a build without the feature
-could not be built:
+The attribute is refused where every build must hold the arm:
 
-- on `<sce:default>`, which receives the tags such a build leaves out,
-  and on the `default="true"` arm, which the codec's `Default` value is
-  built from → `codec/variant-feature-on-required-arm`;
-- in a variant with no `<sce:default>`: its arms are proven to cover the
-  tag only all together → `codec/variant-feature-needs-catch-all`;
-- a name outside the grammar → `validation/attribute-rule-violated`.
+- on the `default="true"` arm, which the codec's `Default` value is built
+  from, and on the arm a deploy `variant_defaults` entry chooses →
+  `codec/variant-feature-on-required-arm`;
+- on `<sce:default>`, which stands for every tag the document does not
+  name, and with a name outside the grammar: the XSD declares neither and
+  refuses them first (`xml/schema-validation`); a build without the
+  grammar (the `xsd` feature off, as the browser build) is refused by the
+  parser with `codec/variant-feature-on-required-arm` and
+  `validation/attribute-rule-violated`.
 
 The Rust generator also refuses a variant in which every arm whose body
 borrows from the frame names a feature: a build without the feature
 would declare a lifetime its variant enum does not use.
-
-The catch-all's body codec reads the frame of a left-out arm as its own:
-a `<sce:flag value=...>` constant is the value a body's `Default` holds,
-and is not checked when a frame is decoded, so the catch-all does not
-refuse a frame because its dispatch bits name another arm.
 
 ### §2.9 Composition extensions — `<sce:template>`
 
@@ -8775,7 +8779,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (492 codes)
+## Appendix — `DiagnosticCode` index (491 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8923,7 +8927,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-arm-body-caller-tag-unsupported` | Validation |
 | `codec/variant-no-default-arm` | Validation |
 | `codec/variant-feature-on-required-arm` | Validation |
-| `codec/variant-feature-needs-catch-all` | Validation |
 | `codec/variant-default-overlay-arm-not-declared` | Validation |
 | `codec/variant-dispatch-flag-not-resolved` | Validation |
 | `codec/variant-dispatch-bit-width-mismatch` | Validation |

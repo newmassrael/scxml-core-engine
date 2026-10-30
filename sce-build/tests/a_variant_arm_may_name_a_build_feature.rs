@@ -4,14 +4,21 @@
 //! A variant arm may name a build feature (docs/adr/0072).
 //!
 //! `<sce:arm feature="<name>">` names a build feature the arm is compiled
-//! under: a build without the feature has no such arm, and the arm's tags
-//! reach the catch-all `<sce:default>`.
+//! under: a build without the feature has no such arm, and its decode refuses
+//! the arm's tag. A gated arm therefore needs no catch-all.
 //!
-//! The parser refuses the attribute where a build without the feature could
-//! not be built: on the catch-all, on the `default="true"` arm, in a variant
-//! with no catch-all, and with a name outside Cargo's kebab case. The deploy
-//! overlay may not make a gated arm the default either. An arm without the
-//! attribute serializes as it did before the attribute existed.
+//! The attribute is refused where every build must hold the arm: on the
+//! `default="true"` arm, which the parser alone can see, and through the
+//! deploy overlay; on the catch-all `<sce:default>`, and with a name outside
+//! Cargo's kebab case, both of which the grammar refuses first where it runs.
+//!
+//! The grammar runs inside every parse of a build with the `xsd` feature (the
+//! default), and the browser build (`sce-build-wasm`, `default-features =
+//! false`) parses without it, where the parser's own refusals are the only
+//! ones. So those two cases are asserted per build: the grammar's
+//! `xml/schema-validation` in the default one, and the parser's typed code in
+//! `cargo test -p sce-build --no-default-features --test
+//! a_variant_arm_may_name_a_build_feature`.
 
 use sce_build::forge::diagnostic::SingleDiagnostic;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
@@ -82,15 +89,28 @@ fn a_feature_reaches_its_arm_and_an_arm_without_one_serializes_as_before() {
     assert_eq!(gated["feature"], "peek-arm-b2");
 }
 
-/// The catch-all receives the tags of every arm a build leaves out, so it is
+/// The catch-all stands for every tag the document does not name, so it is
 /// held by every build.
-#[test]
-fn the_catch_all_may_not_name_a_feature() {
-    let err = refusal(&peek_variant(
-        r#"      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
+const CATCH_ALL_WITH_A_FEATURE: &str = r#"      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
       <sce:arm value="0x01" type="codec_peek_arm_b"/>
-      <sce:default type="codec_peek_arm_a" feature="peek-default"/>"#,
-    ));
+      <sce:default type="codec_peek_arm_a" feature="peek-default"/>"#;
+
+/// Where the grammar runs, it declares no `feature` on `<sce:default>`.
+#[cfg(feature = "xsd")]
+#[test]
+fn the_grammar_refuses_a_feature_on_the_catch_all() {
+    let err = refusal(&peek_variant(CATCH_ALL_WITH_A_FEATURE));
+    assert_eq!(
+        err.diagnostic_payload().code.as_str(),
+        "xml/schema-validation"
+    );
+}
+
+/// Where it does not, the parser refuses it in its own words.
+#[cfg(not(feature = "xsd"))]
+#[test]
+fn the_parser_refuses_a_feature_on_the_catch_all() {
+    let err = refusal(&peek_variant(CATCH_ALL_WITH_A_FEATURE));
     assert_eq!(
         err.diagnostic_payload().code.as_str(),
         "codec/variant-feature-on-required-arm"
@@ -138,44 +158,58 @@ fn the_default_arm_may_not_name_a_feature() {
     );
 }
 
-/// Without a catch-all the arms are proven to cover the tag only all
-/// together: here the two values of a one-bit tag, which a build without the
-/// feature would no longer cover.
+/// A build without the feature refuses the gated arm's tag in its decode, so
+/// the arms stay total over the tag without a catch-all: here the two values
+/// of a one-bit tag, one of them gated.
 #[test]
-fn a_feature_needs_a_catch_all_for_the_tags_it_leaves_out() {
-    let err = refusal(&peek_variant(
+fn a_gated_arm_needs_no_catch_all() {
+    let document = parse(&peek_variant(
         r#"      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
       <sce:arm value="0x01" type="codec_peek_arm_b" feature="peek-b"/>"#,
-    ));
-    assert_eq!(
-        err.diagnostic_payload().code.as_str(),
-        "codec/variant-feature-needs-catch-all"
-    );
-    assert!(
-        matches!(
-            err.error,
-            ForgeError::Validation(ref boxed) if matches!(
-                **boxed,
-                ValidationError::CodecVariantFeatureNeedsCatchAll {
-                    arm_value: 0x01, ref feature, ..
-                } if feature == "peek-b"
-            )
-        ),
-        "the refusal names the gated arm and its feature; got {:?}",
-        err.error
-    );
+    ))
+    .expect("a gated arm without a catch-all parses");
+    let arms = arms_of(&document);
+    assert_eq!(arms[1].feature.as_deref(), Some("peek-b"));
+    match &document {
+        ForgeDocument::Codec(m) => {
+            assert!(m.variant.as_ref().expect("a variant").default_arm.is_none())
+        }
+        _ => panic!("expected a codec"),
+    }
 }
 
-/// A name outside `[a-z][a-z0-9-]*` is no Cargo feature in kebab case, or
-/// spells the same C macro as another name.
-#[test]
-fn a_feature_name_outside_the_kebab_grammar_is_refused() {
-    for name in ["", "Peek", "peek_b", "9peek", "-peek", "peek.b"] {
-        let err = refusal(&peek_variant(&format!(
-            r#"      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
+/// Names outside `[a-z][a-z0-9-]*`: no Cargo feature in kebab case, or the
+/// same C macro as another name.
+const MALFORMED_NAMES: [&str; 6] = ["", "Peek", "peek_b", "9peek", "-peek", "peek.b"];
+
+fn arm_named(name: &str) -> String {
+    peek_variant(&format!(
+        r#"      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
       <sce:arm value="0x01" type="codec_peek_arm_b" feature="{name}"/>
       <sce:default type="codec_peek_arm_a"/>"#
-        )));
+    ))
+}
+
+/// Where the grammar runs, its pattern on the attribute refuses each.
+#[cfg(feature = "xsd")]
+#[test]
+fn the_grammar_refuses_a_feature_name_outside_the_kebab_grammar() {
+    for name in MALFORMED_NAMES {
+        let err = refusal(&arm_named(name));
+        assert_eq!(
+            err.diagnostic_payload().code.as_str(),
+            "xml/schema-validation",
+            "feature=\"{name}\" must be refused by the grammar"
+        );
+    }
+}
+
+/// Where it does not, the parser refuses each in its own words.
+#[cfg(not(feature = "xsd"))]
+#[test]
+fn the_parser_refuses_a_feature_name_outside_the_kebab_grammar() {
+    for name in MALFORMED_NAMES {
+        let err = refusal(&arm_named(name));
         assert_eq!(
             err.diagnostic_payload().code.as_str(),
             "validation/attribute-rule-violated",
