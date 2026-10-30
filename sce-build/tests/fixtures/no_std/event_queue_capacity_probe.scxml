@@ -3,8 +3,10 @@
   Flat event-queue-capacity probe for the per-machine no_std queue-sizing gate.
 
   Declares `<scxml sce:capacity="2">`, so codegen resolves
-  EVENT_QUEUE_CAPACITY = 2 and emits `type EventQueue =
-  EventQueueManager<EventWithMetadata<..>, { EVENT_QUEUE_CAPACITY }>`. The
+  EVENT_QUEUE_CAPACITY = 2 and emits `type ExternalQueue =
+  EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>`. The document raises
+  `go` and takes a transition on it, so the generator proves no internal depth
+  for it (docs/adr/0076) and `type InternalQueue` follows the same rule. The
   machine is flat (no parallel regions) with peak chained-`<raise>` occupancy
   <= 2, so depth 2 is a sound bound.
 

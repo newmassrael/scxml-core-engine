@@ -1,0 +1,263 @@
+# Mutation cases for "an internal queue is sized by what its document can
+# raise" (docs/adr/0076).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_internal_queue_is_sized_by_what_its_document_can_raise.cases`.
+#
+# The generator proves the depth of a Rust machine's internal queue from its
+# document, and a bare-metal queue stops the program on a push past its depth,
+# so the number is only worth writing if every source of an internal event is
+# counted. Most cases below drop one counted source, or one of the conditions
+# under which the bound is refused, and the analysis's own tests (`--lib`,
+# `internal_queue_bound::tests`) must turn red: an undercount the tests do not
+# see is a machine that stops in the field. The last cases take the depth away
+# from the generated policy, which the template test in `c3_no_std_template`
+# reads.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test c3_no_std_template
+mutation_oracles sce-build/src/internal_queue_bound.rs sce-build/tests/c3_no_std_template.rs
+mutation_targets sce-build/src/internal_queue_bound.rs tools/codegen/templates/rust/state_machine.rs.jinja2
+
+# ── The sources counted ─────────────────────────────────────────────
+
+# A `<raise>` puts nothing on the queue: a document that raises once in a
+# block is given a queue of no slots.
+mutation_case "a raise is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                self.held.insert(action.event.clone());
+                Ok(Cost::completing(1))''',
+     r'''                self.held.insert(action.event.clone());
+                Ok(Cost::completing(0))''')
+PY
+
+# A statement the static lowering marks as one that can fail raises nothing.
+mutation_case "a failing statement is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                if !action.native_code.is_empty() && action.native_fails {''',
+     r'''                if !action.native_code.is_empty() && action.native_fails && false {''')
+PY
+
+# Every failing statement of a block is counted, as if the first error did not
+# end it: the count is then not the one the template's `break` makes true.
+mutation_case "the first error does not end the block" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            cost.ends = cost.ends.max(cost.completes.saturating_add(one.ends));''',
+     r'''            cost.ends = cost.ends.saturating_add(one.ends);''')
+PY
+
+# A `<cancel>` whose id cannot be computed raises nothing.
+mutation_case "a failing cancel is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                if action.native_sendid_fails {''',
+     r'''                if action.native_sendid_fails && false {''')
+PY
+
+# A native action's error, which does not end its block, is not counted.
+mutation_case "a native action's error is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            "native_action" => Ok(Cost::completing(self.execution_error())),''',
+     r'''            "native_action" => Ok(Cost::NONE),''')
+PY
+
+# A native action with no argument, a bare host call, is counted as one that
+# can fail: a document of such calls is given a depth it never fills.
+mutation_case "a bare native action is counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            "native_action" if action.params.is_empty() => Ok(Cost::NONE),''',
+     r'''            "native_action" if action.params.is_empty() && false => Ok(Cost::NONE),''')
+PY
+
+# A condition of an `<if>` that fails raises nothing before the branch taken.
+mutation_case "a failing condition is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            if condition_fails {''',
+     r'''            if condition_fails && false {''')
+PY
+
+# A `<param>` of a `<send>` that cannot be read raises nothing.
+mutation_case "a failing send param is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            failing_params + usize::from(action.native_content_value_fails)''',
+     r'''            usize::from(action.native_content_value_fails)''')
+PY
+
+# A `<send>` to `#_internal` puts nothing on the internal queue.
+mutation_case "an internal send is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            self.held.insert(action.event.clone());
+            1
+        } else if to_own_external {''',
+     r'''            self.held.insert(action.event.clone());
+            0
+        } else if to_own_external {''')
+PY
+
+# A `<donedata>` `<param>` that cannot be computed raises nothing.
+mutation_case "a failing donedata param is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        if failing > 0 && self.raises_execution {''',
+     r'''        if failing > 0 && self.raises_execution && false {''')
+PY
+
+# A compound state with a `<final>` child raises no `done.state` event.
+mutation_case "a compound's done event is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                usize::from(finals > 0)''',
+     r'''                usize::from(finals > usize::MAX)''')
+PY
+
+# A `<parallel>` completing raises no `done.state` event of its own.
+mutation_case "a parallel's completion is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                1 + finals''',
+     r'''                finals''')
+PY
+
+# A guard that can fail on a transition with an event raises nothing in the
+# selection that starts a macrostep.
+mutation_case "a failing guard is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        fallible.saturating_mul(MicrostepBounds::of(self.model).enabled)''',
+     r'''        fallible.saturating_mul(0)''')
+PY
+
+# The same guard is counted once, not once for each atomic state that asks it.
+mutation_case "a failing guard is counted once whatever asks it" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        fallible.saturating_mul(MicrostepBounds::of(self.model).enabled)''',
+     r'''        fallible.saturating_mul(1)''')
+PY
+
+# The error of a typed payload that cannot be lifted is not counted.
+mutation_case "a payload that cannot be lifted is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        if self.raises_execution && !self.model.imported_event_schemas.is_empty() {''',
+     r'''        if self.raises_execution && self.model.imported_event_schemas.is_empty() && false {''')
+PY
+
+# ── The classes of document not proven ──────────────────────────────
+
+# A transition that takes a raised event is not looked for: the internal event
+# starts a microstep that raises again, and the depth is an undercount.
+mutation_case "a transition on an internal event is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        self.no_transition_takes_an_internal_event()?;''',
+     r'''        let _ = self.no_transition_takes_an_internal_event();''')
+PY
+
+# The error events a counted site raises are not held, so a transition on
+# `error.execution` is not refused.
+mutation_case "a raised error is not held" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            .filter(|name| self.may_raise_error && model.events.contains(**name))''',
+     r'''            .filter(|name| false && model.events.contains(**name))''')
+PY
+
+# A `<foreach>` whose body raises is given its body's count, once.
+mutation_case "a raising foreach body is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        if body.completes > 0 {''',
+     r'''        if body.completes > usize::MAX - 1 {''')
+PY
+
+# A delayed send to `#_internal` is counted as delivered nowhere.
+mutation_case "a delayed internal send is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            if !to_own_external {
+                let target = if computed_target {''',
+     r'''            if !to_own_external && false {
+                let target = if computed_target {''')
+PY
+
+# A document a script engine evaluates is counted as if none did.
+mutation_case "a script engine document is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        if model.needs_script_engine {''',
+     r'''        if model.needs_script_engine && false {''')
+PY
+
+# An eventless guard that can fail, raised again after every internal event,
+# is not refused.
+mutation_case "a failing eventless guard is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                    .any(|t| t.event.is_empty() && t.native_guard_fails)''',
+     r'''                    .any(|t| t.event.is_empty() && t.native_guard_fails && false)''')
+PY
+
+# An eventless condition that reads `_event` is not refused.
+mutation_case "an eventless condition on the event is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                if transition.cond.contains("_event") {''',
+     r'''                if transition.cond.contains("_event") && false {''')
+PY
+
+# A targetless eventless transition, which can be taken on every microstep,
+# is not refused.
+mutation_case "a targetless eventless transition is not refused" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                if transition.targets.is_empty() {''',
+     r'''                if transition.targets.is_empty() && false {''')
+PY
+
+# ── The eventless chain ────────────────────────────────────────────
+
+# No eventless transition follows another: every chain is one long, and a
+# chain of two is given one microstep too few.
+mutation_case "eventless transitions never follow one another" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                    .filter(|&j| entered.iter().any(|t| tree.coexist(t, eventless[j].0)))''',
+     r'''                    .filter(|&j| false && entered.iter().any(|t| tree.coexist(t, eventless[j].0)))''')
+PY
+
+# A transition of an ancestor of the state entered is not taken to follow:
+# the compound is still active, and its eventless transition is the next
+# microstep.
+mutation_case "an ancestor's eventless transition does not follow" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''        if above_a.contains(&b) {''',
+     r'''        if above_a.contains(&b) && false {''')
+PY
+
+# States in two regions of a `<parallel>` are taken never to be active
+# together, so an eventless transition one region's microstep enables in the
+# other is missed, and the chain is not seen to loop.
+mutation_case "two regions of a parallel are not active together" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            .is_some_and(|common| common.is_parallel)''',
+     r'''            .is_some_and(|common| common.is_parallel && false)''')
+PY
+
+# A chain counts its last transition only.
+mutation_case "a chain's length is one" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''    longest[start] = Some(below + 1);
+    Ok(below + 1)''',
+     r'''    longest[start] = Some(below.min(0) + 1);
+    Ok(below.min(0) + 1)''')
+PY
+
+# ── The generated policy ───────────────────────────────────────────
+
+# The proven depth is not written: the policy falls back to the external rule.
+mutation_case "the policy ignores the proven depth" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     r'''{% if internal_queue_depth is not none %}''',
+     r'''{% if false %}''')
+PY
+
+# With no depth proven, the internal queue drops the declared capacity.
+mutation_case "the unproven internal queue drops the declared capacity" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     r'''    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;''',
+     r'''    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;''')
+PY
+
+# The case that gave the depth is not stated beside it.
+mutation_case "the policy does not say why" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     r'''{% for line in internal_queue_basis %}''',
+     r'''{% for line in [] %}''')
+PY

@@ -3395,6 +3395,14 @@ fn render_rust(
     // machine writes and of the numbers its states, histories and transitions
     // are known by in the runtime.
     let tables = rust_tables(model, &microstep_bounds)?;
+    // How deep the internal queue must be (docs/adr/0076), and the case or the
+    // reason the policy states beside it. Read from the lowered model and per
+    // rendered model, unlike the buffers above: which statement and which
+    // guard can fail is known only once the static lowering has lowered them,
+    // and it lowers each model it renders.
+    let internal_queue = crate::internal_queue_bound::InternalQueueBound::of(&model_lowered);
+    let internal_queue_depth = internal_queue.depth();
+    let internal_queue_basis = internal_queue.basis_lines();
 
     model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
@@ -3405,6 +3413,8 @@ fn render_rust(
         max_configuration => microstep_bounds.configuration,
         tables => minijinja::Value::from_serialize(&tables),
         max_send_id => bounds.send_id,
+        internal_queue_depth => internal_queue_depth,
+        internal_queue_basis => &internal_queue_basis,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

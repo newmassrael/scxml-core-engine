@@ -1252,6 +1252,102 @@ fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_documen
     );
 }
 
+/// The internal queue's depth is what the document can raise for itself, and
+/// the policy says why (docs/adr/0076); the external queue keeps the declared
+/// capacity or the runtime default.
+#[test]
+fn rust_template_sizes_the_internal_queue_by_what_the_document_can_raise() {
+    // Two `<raise>`s in two blocks, neither taken by a transition, and no
+    // eventless transition: two events a microstep, one microstep.
+    const RAISING_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <transition event="go" target="s1">
+      <raise event="note"/>
+    </transition>
+  </state>
+  <state id="s1">
+    <onentry>
+      <raise event="arrived"/>
+    </onentry>
+  </state>
+</scxml>
+"#;
+    // A raised event a transition takes: no depth is proven, and the internal
+    // queue follows the declared capacity as the external one does.
+    const RAISED_AND_TAKEN_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s0" sce:capacity="2">
+  <state id="s0">
+    <onentry>
+      <raise event="go"/>
+    </onentry>
+    <transition event="go" target="s1"/>
+  </state>
+  <state id="s1"/>
+</scxml>
+"#;
+    const DEFAULT_EXTERNAL: &str =
+        "type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;";
+    const DECLARED_EXTERNAL: &str =
+        "type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;";
+
+    let render = |content: &str, label: &str, no_std: bool| {
+        let mut model = parse(content, label);
+        sce_build::analyzer::analyze(&mut model, label);
+        generate(&model, &template_dir(), no_std).expect("template render must succeed")
+    };
+
+    for no_std in [false, true] {
+        let plain = render(PLAIN_FSM, "plain_internal_queue", no_std);
+        assert!(
+            plain.contains("type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 0>;"),
+            "no_std={no_std}: a document that raises nothing keeps an internal queue of no slots"
+        );
+        assert!(
+            plain.contains("// Proven depth 0:"),
+            "no_std={no_std}: the policy states the case that gave the depth"
+        );
+        assert!(
+            plain.contains(DEFAULT_EXTERNAL),
+            "no_std={no_std}: the external queue keeps the runtime default"
+        );
+        assert!(
+            !plain.contains("type EventQueue"),
+            "no_std={no_std}: the policy names two queue types, not one"
+        );
+
+        let raising = render(RAISING_FSM, "raising_internal_queue", no_std);
+        assert!(
+            raising
+                .contains("type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 2>;"),
+            "no_std={no_std}: two raises in two blocks and no eventless transition are a depth \
+             of two"
+        );
+        assert!(
+            raising.contains("// Proven depth 2:"),
+            "no_std={no_std}: the policy states the depth with its case"
+        );
+
+        let taken = render(RAISED_AND_TAKEN_FSM, "taken_internal_queue", no_std);
+        assert!(
+            taken.contains(
+                "type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;"
+            ),
+            "no_std={no_std}: with no depth proven the internal queue takes the declared capacity"
+        );
+        assert!(
+            taken.contains(DECLARED_EXTERNAL),
+            "no_std={no_std}: the external queue keeps the declared capacity"
+        );
+        assert!(
+            taken.contains("// No depth is proven"),
+            "no_std={no_std}: the policy says why no depth is proven"
+        );
+    }
+}
+
 #[test]
 fn rust_template_elides_parent_external_queue_field_under_no_std() {
     let model = parse(PLAIN_FSM, "plain_nostd_pq");

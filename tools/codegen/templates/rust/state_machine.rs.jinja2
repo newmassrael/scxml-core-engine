@@ -1382,9 +1382,15 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endif %}
 
     // W3C SCXML Appendix D internalQueue: only what this machine raises for
-    // itself during a macrostep. Its no_std depth follows the external rule.
-    // Inert under std, as above.
-{% if model.event_queue_capacity %}
+    // itself during a macrostep, so its no_std depth is the bound the
+    // generator proves from the document, and the external rule where it
+    // proves none (docs/adr/0076). Inert under std, as above.
+{% for line in internal_queue_basis %}
+    // {{ line }}
+{% endfor %}
+{% if internal_queue_depth is not none %}
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, {{ internal_queue_depth }}>;
+{% elif model.event_queue_capacity %}
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
 {% else %}
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;

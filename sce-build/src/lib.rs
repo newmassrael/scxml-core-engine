@@ -186,6 +186,9 @@ pub mod host_processor_analyzer;
 /// the package directory each unit is generated into
 /// (`sce-codegen generate --with-imports`).
 pub mod import_closure;
+/// How deep a Rust machine's internal event queue must be, proven from what its
+/// document can raise for itself, or why no depth is proven (docs/adr/0076).
+pub mod internal_queue_bound;
 pub mod kotlin;
 /// Translation validation of a lifted Rust machine against each variant's own
 /// (ADR 0057 §9).
