@@ -178,6 +178,51 @@ private func forgeCalls() -> Machine {
     )
 }
 
+/// A value that may be absent as a scenario writes a host argument: the value, or `null`.
+private func optionalBool(_ value: Bool?) -> JSONValue {
+    value.map { .bool($0) } ?? .null
+}
+
+private func hostCalling() -> Machine {
+    let host = RecordingStaticHostCallActions()
+    let policy = StaticHostCallPolicy(actions: host)
+    return drive(
+        policy,
+        variables: [:],
+        hostCalls: {
+            defer { host.clear() }
+            return host.calls.map { call in
+                switch call {
+                case .showAttempts(let count, let exhausted):
+                    return hostCall("showAttempts", [integer(count), .bool(exhausted)])
+                case .showDue(let day, let urgent):
+                    return hostCall("showDue", [optionalInteger(day), optionalBool(urgent)])
+                }
+            }
+        }
+    )
+}
+
+private func hostDuty() -> Machine {
+    let host = RecordingStaticHostDutyActions()
+    // The recorder simulates the duties, so the machine is built for one on purpose.
+    let policy = StaticHostDutyPolicy(actions: host, acceptSimulatedHost: true)
+    return drive(
+        policy,
+        variables: [:],
+        hostCalls: {
+            defer { host.clear() }
+            return host.calls.map { call in
+                switch call {
+                case .startKeepalive: return hostCall("start_keepalive")
+                case .noteEngaged: return hostCall("note_engaged")
+                case .stopKeepalive: return hostCall("stop_keepalive")
+                }
+            }
+        }
+    )
+}
+
 private func invokeParams() -> Machine {
     let policy = StaticInvokeParamsPolicy()
     return drive(policy, variables: ["completed": { integer(policy.completed) }])
@@ -1326,6 +1371,14 @@ private func recordBytes() -> Machine {
 
 @Test func aMachineCallsTheKindsThatAreFunctionsOfTheirInputs() {
     replay("static_forge_calls", forgeCalls())
+}
+
+@Test func aMachineAsksItsHostForWhatItCannotDoItself() {
+    replay("static_host_call", hostCalling())
+}
+
+@Test func aDutyIsTakenOnEntryAndGivenBackOnExitThroughTheHost() {
+    replay("static_host_duty", hostDuty())
 }
 
 @Test func aChildIsHandedTheValuesItsInvokeNames() {

@@ -11617,6 +11617,10 @@ impl SwiftTarget {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
+                // A call of the machine's host, lowered ahead of this walk by
+                // `native_action::render`; an argument that reads the event's data is
+                // refused before it (`first_swift_unlowered_host_argument`).
+                "native_action" => {}
                 "send" => {
                     if let Some(what) = Self::unlowered_send(action) {
                         return Some(what);
@@ -12378,13 +12382,21 @@ impl StaticTarget for SwiftTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[FieldType],
+        arg_types: &[FieldType],
         failed: &str,
     ) -> String {
+        // Each local takes the type the host method declares for it, so a literal is
+        // the integer the parameter is and not an `Int`.
         let locals: String = args
             .iter()
+            .zip(arg_types)
             .enumerate()
-            .map(|(i, arg)| format!("let sceArg{i} = {arg}; "))
+            .map(|(i, (arg, ty))| {
+                format!(
+                    "let sceArg{i}: {} = {arg}; ",
+                    crate::forge::generator::host_param_type(Language::Swift, ty)
+                )
+            })
             .collect();
         let names: Vec<String> = (0..args.len()).map(|i| format!("sceArg{i}")).collect();
         format!(

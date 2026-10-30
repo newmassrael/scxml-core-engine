@@ -1532,11 +1532,11 @@ pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &FieldType) 
                 )
             }),
             crate::generator::Language::Rust => format!("Option<{}>", rust_param_type(elem)),
-            crate::generator::Language::Swift => no_swift_emitter("host_param_type"),
             crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
-            | crate::generator::Language::Python => {
+            | crate::generator::Language::Python
+            | crate::generator::Language::Swift => {
                 let present = ctx.type_name(elem);
                 optional_of(lang, &present)
                     .expect("these backends spell it as a wrap of the present type")
@@ -1559,12 +1559,12 @@ pub(crate) fn host_optional_argument_spelled(
 ) -> bool {
     match lang {
         crate::generator::Language::C11 => AlgorithmValueType::list_elem_admitted(elem),
-        crate::generator::Language::Swift => false,
         crate::generator::Language::Rust
         | crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
-        | crate::generator::Language::Python => true,
+        | crate::generator::Language::Python
+        | crate::generator::Language::Swift => true,
     }
 }
 

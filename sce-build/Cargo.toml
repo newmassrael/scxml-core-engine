@@ -1097,6 +1097,14 @@ name = "a_swift_machine_calls_the_functions_it_imports"
 path = "tests/a_swift_machine_calls_the_functions_it_imports.rs"
 required-features = ["cli"]
 
+# The Swift backend's host actions (§scxml-G-7): the host interface, its recorder, the
+# machine's call and the duty it refuses a simulating host for. It runs `sce-codegen
+# generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_swift_machine_calls_its_host"
+path = "tests/a_swift_machine_calls_its_host.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of every optional element in an algorithm
 # (docs/adr/0055, step 9): a slot, a local and a record's optional text and enum
 # fields, and a statechart's call that crosses them. It runs `sce-codegen generate`

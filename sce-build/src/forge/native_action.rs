@@ -1097,7 +1097,7 @@ fn realization_member(lang: Language) -> &'static str {
         Language::Python => "    realization: \"ActionRealization\"\n\n",
         Language::Cpp => "    virtual SCE::ActionRealization realization() const = 0;\n",
         Language::C11 => "    sce_action_realization_t realization;\n",
-        Language::Swift => no_swift_emitter("realization_member"),
+        Language::Swift => "    var realization: ActionRealization { get }\n",
     }
 }
 
@@ -1140,9 +1140,8 @@ fn method_name(lang: Language, name: &str) -> String {
             filters::to_snake_case(name.to_string())
         }
         Language::Go => filters::to_pascal_case(name.to_string()),
-        Language::Cpp | Language::Kotlin | Language::Swift => {
-            filters::to_camel_case(name.to_string())
-        }
+        Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
+        Language::Swift => swift_identifier(filters::to_camel_case(name.to_string())),
     }
 }
 
@@ -1152,9 +1151,20 @@ fn param_ident(lang: Language, name: &str) -> String {
         Language::Rust | Language::Python | Language::C11 => {
             filters::to_snake_case(name.to_string())
         }
-        Language::Go | Language::Kotlin | Language::Cpp | Language::Swift => {
-            filters::to_camel_case(name.to_string())
-        }
+        Language::Go | Language::Kotlin | Language::Cpp => filters::to_camel_case(name.to_string()),
+        Language::Swift => swift_identifier(filters::to_camel_case(name.to_string())),
+    }
+}
+
+/// `ident` as a Swift declaration and a use of it spell it: itself, or in backticks
+/// where Swift reserves the word. An act is named by its author, so one called
+/// `default` or `in` is a method of the host interface, a case of its recording and a
+/// call the machine makes, and each of the three writes the same spelling.
+fn swift_identifier(ident: String) -> String {
+    if crate::reader_names::is_reserved_word(Language::Swift, &ident) {
+        format!("`{ident}`")
+    } else {
+        ident
     }
 }
 
@@ -1173,7 +1183,7 @@ fn receiver(lang: Language) -> &'static str {
         Language::Kotlin => "actions.",
         Language::Python => "self._actions.",
         Language::C11 => "sm->actions.",
-        Language::Swift => no_swift_emitter("receiver"),
+        Language::Swift => "self.actions.",
     }
 }
 
@@ -1187,8 +1197,7 @@ fn call(lang: Language, name: &str, args: &[String]) -> String {
     let expression = call_expression(lang, name, args);
     match lang {
         Language::Rust | Language::Cpp | Language::C11 => format!("{expression};"),
-        Language::Go | Language::Kotlin | Language::Python => expression,
-        Language::Swift => no_swift_emitter("call"),
+        Language::Go | Language::Kotlin | Language::Python | Language::Swift => expression,
     }
 }
 
@@ -1226,7 +1235,9 @@ fn params_for(lang: Language, pname: &str, ty: &FieldType) -> Vec<String> {
         (Language::Cpp | Language::C11, _) => {
             vec![format!("{} {ident}", host_param_type(lang, ty))]
         }
-        (Language::Swift, _) => no_swift_emitter("params_for"),
+        // Unlabeled, as the call sites of the other backends are positional: the host
+        // names each argument as it likes, and the order is the document's.
+        (Language::Swift, _) => vec![format!("_ {ident}: {}", host_param_type(lang, ty))],
     }
 }
 
@@ -1262,10 +1273,12 @@ fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<St
 pub fn interface_name(lang: Language, machine_name: &str) -> String {
     match lang {
         Language::C11 => format!("{machine_name}_actions_t"),
-        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-            format!("{machine_name}Actions")
-        }
-        Language::Swift => no_swift_emitter("interface_name"),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::Swift => format!("{machine_name}Actions"),
     }
 }
 
@@ -2119,8 +2132,87 @@ fn build_interface(
                 doc("   ")
             )
         }
-        Language::Swift => no_swift_emitter("build_interface"),
+        Language::Swift => {
+            // A host is an object the machine holds and does not own the identity of, so
+            // the interface is a class-bound protocol and a recorder is a class. A child
+            // that declares acts is refused before a renderer runs
+            // (`swift_invoke_unlowered`), so no operation answers a child's host here.
+            debug_assert!(
+                children.is_empty(),
+                "a Swift machine builds no child with a host"
+            );
+            for (name, sig) in sigs {
+                methods.push_str(&format!(
+                    "    func {}({})\n",
+                    method_name(lang, name),
+                    plist(sig).join(", ")
+                ));
+            }
+            format!(
+                "{}public protocol {interface_name}: AnyObject {{\n{methods}}}\n\n{}",
+                doc("/// "),
+                swift_recording_host(interface_name, sigs, has_duty)
+            )
+        }
     }
+}
+
+/// `Recording<Interface>`: the Swift host interface's implementation that performs
+/// nothing and records every call, in order, as a value, so a test drives the machine
+/// with no host at all: send an event, read what the machine asked the host to do.
+///
+/// Generated from the same signatures as the interface, so a new `<sce:action>` is a
+/// new recorded call and a changed argument a changed payload. A call is a case of
+/// [`Call`] and compares by value; a call with no argument is a case with none.
+fn swift_recording_host(
+    interface_name: &str,
+    sigs: &BTreeMap<String, Signature>,
+    has_duty: bool,
+) -> String {
+    let lang = Language::Swift;
+    let mut cases = String::new();
+    let mut methods = String::new();
+    for (name, sig) in sigs {
+        let method = method_name(lang, name);
+        let types: Vec<String> = sig.iter().map(|(_, t)| host_param_type(lang, t)).collect();
+        let idents: Vec<String> = sig.iter().map(|(n, _)| param_ident(lang, n)).collect();
+        let params: Vec<String> = sig
+            .iter()
+            .flat_map(|(n, t)| params_for(lang, n, t))
+            .collect();
+        let (case, recorded) = if sig.is_empty() {
+            (format!("        case {method}\n"), format!(".{method}"))
+        } else {
+            (
+                format!("        case {method}({})\n", types.join(", ")),
+                format!(".{method}({})", idents.join(", ")),
+            )
+        };
+        cases.push_str(&case);
+        methods.push_str(&format!(
+            "\n    public func {method}({}) {{\n        calls.append({recorded})\n    }}\n",
+            params.join(", ")
+        ));
+    }
+    // A recorder performs nothing, so it says it simulates (docs/adr/0038,
+    // decision 4): a machine with a duty refuses it unless the caller accepts a
+    // simulated host by name.
+    let realization = if has_duty {
+        "    public let realization: ActionRealization = .simulates\n\n"
+    } else {
+        ""
+    };
+    format!(
+        "/// [`{interface_name}`] that performs nothing and records every call in order: the\n\
+         /// host a test drives the machine with. Read `calls` after the machine has run; each\n\
+         /// call is compared by value.\n\
+         public final class Recording{interface_name}: {interface_name} {{\n    \
+         /// One recorded host call.\n    public enum Call: Equatable {{\n{cases}    }}\n\n    \
+         /// Every call so far, oldest first.\n    public private(set) var calls: [Call] = []\n\n    \
+         public init() {{}}\n\n{realization}    \
+         /// Forgets the calls recorded so far.\n    public func clear() {{\n        \
+         calls.removeAll()\n    }}\n{methods}}}\n"
+    )
 }
 
 /// `Recording<Interface>`: the Kotlin host interface's implementation that

@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML G.7: <sce:action> native host dispatch. The call site is lowered ahead of
+   the template by `forge::native_action::render` and stored on
+   `action.native_action_rendered`, so this template only emits it: the same division
+   of labour every backend uses, and the reason one lowering serves them all. An
+   argument that cannot be evaluated costs the call and raises error.execution, and
+   the block goes on, as on every backend (§scxml-5.7.1). No script engine is involved. #}
+                // W3C SCXML G.7: <sce:action name="{{ action.native_action_name | escape_swift }}">
+                {{ action.native_action_rendered }}

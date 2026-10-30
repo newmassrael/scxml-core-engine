@@ -145,6 +145,13 @@ public enum {{ machine_name }}Event: Int, Hashable, Sendable {
 {{ static_adapter_defs }}
 
 {% endif %}
+{% if has_native_actions %}
+// ======================================================================
+// W3C SCXML G.7: `<sce:action>` host dispatch
+// ======================================================================
+
+{{ native_actions_defs }}
+{% endif %}
 // ======================================================================
 // Policy
 // ======================================================================
@@ -172,6 +179,14 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     /// W3C SCXML 6.4: the queue the invoking parent installs, whose presence is
     /// the link to it. Unbounded; see `ParentEventQueue`.
     public var parentEventQueue: ParentEventQueue?
+{% if has_native_actions %}
+
+    /// W3C SCXML G.7: the host every `<sce:action>` of this document calls directly
+    /// (`actions.<op>(...)`) in place of a script engine. Given at construction, since
+    /// the initial state's `<onentry>` can already perform an act: a host installed
+    /// afterwards would arrive one act too late.
+    private let actions: any {{ native_actions_interface }}
+{% endif %}
 {% if event_payload_active %}
 
     // The typed `_event.data` of the event being processed, bound by the policy's
@@ -231,9 +246,31 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 {% endif %}
 {% endif %}
 
+{% if has_native_actions %}
+{% if has_native_duties %}
+    /// docs/adr/0038: `acceptSimulatedHost: true` states that this machine is built for a
+    /// host that only simulates its duties (a recorder, a test double) on purpose. A machine
+    /// that states a duty traps for a host that says it only simulates, unless it is.
+    public init(actions: any {{ native_actions_interface }}, acceptSimulatedHost: Bool = false) {
+        precondition(
+            actions.realization == .performs || acceptSimulatedHost,
+            "{{ machine_name }} states a duty and its host declares that it only simulates the duties: "
+                + "pass acceptSimulatedHost: true to run it on a recorder or a test double on purpose"
+        )
+        self.actions = actions
+        sessionID = drawSessionID()
+    }
+{% else %}
+    public init(actions: any {{ native_actions_interface }}) {
+        self.actions = actions
+        sessionID = drawSessionID()
+    }
+{% endif %}
+{% else %}
     public init() {
         sessionID = drawSessionID()
     }
+{% endif %}
 
     /// Gives this session the id its host has for it, in place of the one it
     /// drew: an XML Nmtoken, since another session addresses this one as

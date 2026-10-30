@@ -50,6 +50,17 @@ struct Machine {
 
     /// The variables a scenario may state, each as the JSON a scenario writes it.
     var variables: [String: () -> JSONValue]
+
+    /// What the machine asked of its host since it was last asked, oldest first, each as
+    /// a scenario's `host_calls` writes it: the name the document gives the action and its
+    /// arguments in the order the document gives them, an absent one as `null`. Asking
+    /// forgets what was asked. Nil for a machine whose host is not one that records.
+    var hostCalls: (() -> [JSONValue])? = nil
+}
+
+/// One call of a host as a scenario's `host_calls` writes it.
+func hostCall(_ action: String, _ args: [JSONValue] = []) -> JSONValue {
+    .object([(key: "action", value: .text(action)), (key: "args", value: .array(args))])
 }
 
 /// How many rounds a host gives a machine that runs child sessions after an event
@@ -59,10 +70,12 @@ struct Machine {
 /// backends' suites give a machine.
 private let settleTicks = 5
 
-/// Starts `policy` on a manual clock and returns it as a machine.
+/// Starts `policy` on a manual clock and returns it as a machine. `hostCalls` is how a
+/// machine whose host records reads what it was asked ([`Machine.hostCalls`]).
 func drive<Policy: StatePolicy>(
     _ policy: Policy,
-    variables: [String: () -> JSONValue]
+    variables: [String: () -> JSONValue],
+    hostCalls: (() -> [JSONValue])? = nil
 ) -> Machine {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
@@ -94,7 +107,8 @@ func drive<Policy: StatePolicy>(
         configuration: { engine.getActiveStates().map { policy.getStateName($0) } },
         ended: { engine.isInFinalState },
         donedata: { engine.donedataAtFinal },
-        variables: variables
+        variables: variables,
+        hostCalls: hostCalls
     )
 }
 
@@ -194,7 +208,7 @@ private let scenarioDirectory: String = {
 private let unreplayedStepMembers = ["restore", "invoke"]
 
 /// The members of a step's `expect` this driver does not judge yet.
-private let unreplayedExpectMembers = ["host_calls", "child_hosts", "sent"]
+private let unreplayedExpectMembers = ["child_hosts", "sent"]
 
 /// Fails the test that is replaying, at the line of the test that asked for it.
 private func record(_ message: String, _ at: SourceLocation) {
@@ -256,11 +270,24 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
             }
             machine.send(event, data)
         }
+        // What the machine asked of its host in this step. Read on every step, so that
+        // a step which states nothing does not hand its calls to the next, and a step
+        // that states some needs a driver that records them.
+        let asked = machine.hostCalls?()
         guard let expect = step.member("expect") else {
             continue
         }
         for member in unreplayedExpectMembers where expect.member(member) != nil {
             fail("this driver does not judge `\(member)` yet")
+        }
+        if let want = expect.member("host_calls") {
+            if let asked {
+                if !sameValue(.array(asked), want) {
+                    fail("the machine asked its host \(writeJSON(.array(asked))), not \(writeJSON(want))")
+                }
+            } else {
+                fail("this driver records no host calls, so it cannot hold a step to them")
+            }
         }
         if case .bool(true)? = expect.member("ended") {
             if !machine.ended() {

@@ -4290,6 +4290,57 @@ pub(crate) fn swift_invoke_unlowered(
     None
 }
 
+/// The first `<sce:action>` of `state` whose argument reads the data of the event being
+/// processed, which the Swift host call does not carry yet: the typed payload a call
+/// reads is bound by a guard of the call's own, written per backend
+/// (`native_action::guard_payload`), and Swift has none. Named with the argument and
+/// where the document wrote the action.
+fn first_swift_unlowered_host_argument(
+    state: &crate::model::State,
+) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
+    fn walk(
+        actions: &[crate::model::Action],
+    ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
+        for action in actions {
+            if action.action_type == "native_action" {
+                if let Some(arg) = action
+                    .params
+                    .iter()
+                    .find(|p| crate::forge::expr::references_event_data_lexically(&p.expr))
+                {
+                    return Some((
+                        format!(
+                            "the <sce:arg name=\"{}\"> of the <sce:action name=\"{}\"> reads the \
+                             data of the event",
+                            arg.name, action.native_action_name
+                        ),
+                        action.source_location.clone(),
+                    ));
+                }
+            }
+            for block in action.nested_blocks() {
+                if let Some(hit) = walk(block.actions) {
+                    return Some(hit);
+                }
+            }
+        }
+        None
+    }
+    let blocks = state
+        .on_entry_blocks
+        .iter()
+        .chain(state.on_exit_blocks.iter())
+        .map(Vec::as_slice)
+        .chain(std::iter::once(state.initial_transition_actions.as_slice()))
+        .chain(
+            state
+                .transitions
+                .iter()
+                .map(|transition| transition.actions.as_slice()),
+        );
+    blocks.into_iter().find_map(walk)
+}
+
 /// What of an `<invoke srcexpr>` the Swift templates do not lower yet, in the words the
 /// refusal names it by; `None` for one they do (§scxml-6.4, docs/SCE_ACCEPTED_SUBSET.md
 /// §2.13).
@@ -4393,6 +4444,11 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
             ));
         }
         if is_static {
+            // The host call is rendered before the static lowering judges the rest, so an
+            // argument it cannot spell is named here, where a renderer has not run.
+            if let Some((what, at)) = first_swift_unlowered_host_argument(state) {
+                return Err(swift_unsupported(what, at));
+            }
             continue;
         }
         for transition in &state.transitions {
@@ -4445,6 +4501,10 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
     // Stamp each transition with the symbol identity the sourcemap keys off, before
     // any analysis pass clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // §scxml-G-7: lower `<sce:action>` to a call of the machine's host, as every
+    // backend does, before the static lowering reads the rest of the document.
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Swift);
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression lowered
     // to Swift — its variables as properties of the policy. Nothing for any other
     // data model.
@@ -4472,6 +4532,10 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
+        has_native_actions => native.any,
+        has_native_duties => native.has_duty,
+        native_actions_defs => &native.interface_def,
+        native_actions_interface => &native.interface_name,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
