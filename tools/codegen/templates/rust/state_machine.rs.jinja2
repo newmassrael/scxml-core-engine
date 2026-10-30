@@ -1142,8 +1142,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if not no_std %}
 
     /// Build the machine under a session id drawn from the operating system's
-    /// randomness, a UUID version 4 (docs/adr/0045).{% if has_native_duties %} A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.{% endif %}
+    /// randomness, a UUID version 4 (docs/adr/0045).
+{% if has_native_duties %}
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+{% endif %}
     ///
     /// Absent on a target with no source of randomness the runtime reads
     /// (`wasm32-unknown-unknown`): a host there gives the id, through
@@ -1170,8 +1172,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// name for the machine, say, or a fixed id a test holds a saved text to
     /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
     /// here and kept until the session ends; a restore binds the saved id in
-    /// its place, since the session carries on.{% if has_native_duties %} A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.{% endif %}
+    /// its place, since the session carries on.
+{% if has_native_duties %}
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+{% endif %}
     ///
 {% if no_std %}
     /// A `no_std` target has no source of randomness the runtime reads, and
@@ -1212,8 +1216,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// [`new_with_session_id`](Self::new_with_session_id) under an id already
     /// proven to be an XML Nmtoken (docs/adr/0073), so nothing is refused. With
     /// the id written as `sce_rust_runtime::session_id!("...")`, a bad one is a
-    /// compile error and the program carries no run-time check of it.{% if has_native_duties %} A host
-    /// whose `REALIZATION` is `Simulates` does not compile here.{% endif %}
+    /// compile error and the program carries no run-time check of it.
+{% if has_native_duties %}
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+{% endif %}
     pub fn new_with_checked_session_id(session_id: ::sce_rust_runtime::helpers::session_id::SessionId{{ ctor_rest_params }}) -> Self {
 {% if has_native_duties %}
         let () = Self::HOST_PERFORMS_DUTIES;
@@ -1234,8 +1240,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// [`new_with_session_id`](Self::new_with_session_id), in a constant
     /// expression: the machine a program keeps in a `static`, with
     /// `Engine::new_const`, so that nothing is built at start-up and no copy of
-    /// it is made on a stack.{% if has_native_duties %} A host whose `REALIZATION` is
-    /// `Simulates` does not compile here.{% endif %}
+    /// it is made on a stack.
+{% if has_native_duties %}
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+{% endif %}
     ///
     /// # Panics
     ///
