@@ -30,7 +30,7 @@
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, Engine, EventId, EventWithMetadata, HistoryId,
-    NoHistory, RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
+    NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
     TransitionRow, Workspace,
 };
 
@@ -98,17 +98,14 @@ impl StatePolicy for Test144Policy {
         histories: &[],
         transitions: &[
             // s0: foo -> s1
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // s1: bar -> pass
-            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // <scxml initial="s0">
-            TransitionRow::new(None, Span { start: 2, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(1)),
-            Target::state(StateId(2)),
-            Target::state(StateId(0)),
-        ],
+        // Every transition has one target, which its row holds.
+        targets: &[],
         initial: TransitionId(2),
         history: None,
         parallel: None,

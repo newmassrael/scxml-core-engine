@@ -20,8 +20,7 @@ use std::time::Duration;
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, Engine, EventId, HistoryId, NoHistory, RunStore,
-    Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
-    Workspace,
+    StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow, Workspace,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,11 +63,11 @@ impl StatePolicy for HttpPolicy {
         histories: &[],
         transitions: &[TransitionRow::new(
             None,
-            Span { start: 0, len: 1 },
+            Target::state(StateId(0)),
             false,
             false,
         )],
-        targets: &[Target::state(StateId(0))],
+        targets: &[],
         initial: TransitionId(0),
         history: None,
         parallel: None,

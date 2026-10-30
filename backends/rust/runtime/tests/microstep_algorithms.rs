@@ -59,8 +59,8 @@ use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
 use sce_rust_runtime::helpers::tables::TablesFault;
 use sce_rust_runtime::{
-    state_scratch, state_words, DocumentTables, EventId, HistoryId, HistoryRow, Span, StateId,
-    StateKind, StateRow, Target, TransitionId, TransitionRow, Workspace, HISTORY, PARALLEL,
+    state_scratch, state_words, DocumentTables, EventId, HistoryId, HistoryRow, StateId, StateKind,
+    StateRow, Target, TransitionId, TransitionRow, Workspace, HISTORY, PARALLEL,
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -100,10 +100,19 @@ fn leak<T>(items: Vec<T>) -> &'static [T] {
     Box::leak(items.into_boxed_slice())
 }
 
-fn span(start: usize, len: usize) -> Span {
-    Span {
-        start: start as u16,
-        len: len as u16,
+/// A row's targets as the generator packs them (docs/adr/0067): the only one
+/// itself, none as [`Target::NONE`], and more than one as a list put in `pool`,
+/// its length first.
+fn row_targets(pool: &mut Vec<Target>, targets: &[Target]) -> Target {
+    match targets {
+        [] => Target::NONE,
+        [only] => *only,
+        _ => {
+            let position = pool.len() as u16;
+            pool.push(Target::count(targets.len() as u16));
+            pool.extend_from_slice(targets);
+            Target::list(position)
+        }
     }
 }
 
@@ -129,14 +138,8 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables {
     let mut transitions: Vec<TransitionRow> = Vec::new();
     let mut push_row =
         |source: Option<StateId>, targets: &[Target], internal: bool, has_content: bool| {
-            let start = target_pool.len();
-            target_pool.extend_from_slice(targets);
-            transitions.push(TransitionRow::new(
-                source,
-                span(start, targets.len()),
-                internal,
-                has_content,
-            ));
+            let targets = row_targets(&mut target_pool, targets);
+            transitions.push(TransitionRow::new(source, targets, internal, has_content));
             TransitionId((transitions.len() - 1) as u16)
         };
     for written in &doc.written {
@@ -158,11 +161,7 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables {
     let mut histories = Vec::new();
     for (history, &parent) in doc.history_parent.iter().enumerate() {
         let default = push_row(Some(parent), &doc.history_defaults[history], false, false);
-        histories.push(HistoryRow {
-            parent,
-            default,
-            deep: doc.history_deep[history],
-        });
+        histories.push(HistoryRow::new(parent, default, doc.history_deep[history]));
     }
     let document_initial = push_row(None, &doc.document_initial, false, false);
 
@@ -572,6 +571,44 @@ fn tables_that_use_a_feature_without_its_procedures_are_refused() {
         without_parallel.check(),
         Err(TablesFault::ProceduresMissing)
     );
+}
+
+/// A row whose list of targets runs past the pool is refused, and its rows
+/// read back what they were given (docs/adr/0067): the flags and the kind ride
+/// in the bits above an id, and reading one must not disturb the other.
+#[test]
+fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
+    let state = StateRow::new(
+        Some(StateId(0)),
+        StateKind::Final,
+        StateId(5),
+        Some(TransitionId(7)),
+    );
+    assert_eq!(state.parent(), Some(StateId(0)));
+    assert_eq!(state.kind(), StateKind::Final);
+    assert_eq!(state.last_descendant(), StateId(5));
+    assert_eq!(state.initial(), Some(TransitionId(7)));
+    let transition = TransitionRow::new(None, Target::NONE, true, false);
+    assert_eq!(transition.source(), None);
+    assert!(transition.internal() && !transition.has_content());
+    let history = HistoryRow::new(StateId(3), TransitionId(2), true);
+    assert_eq!(
+        (history.parent(), history.default(), history.deep()),
+        (StateId(3), TransitionId(2), true)
+    );
+
+    // One atomic state; the document's initial transition names a list of
+    // two targets the pool only claims to hold.
+    const TABLES: DocumentTables = DocumentTables {
+        states: &[StateRow::new(None, StateKind::Atomic, StateId(0), None)],
+        histories: &[],
+        transitions: &[TransitionRow::new(None, Target::list(0), false, false)],
+        targets: &[Target::count(2), Target::state(StateId(0))],
+        initial: TransitionId(0),
+        history: None,
+        parallel: None,
+    };
+    assert_eq!(TABLES.check(), Err(TablesFault::ListOutOfRange));
 }
 
 /// The words of one set of the document's states.

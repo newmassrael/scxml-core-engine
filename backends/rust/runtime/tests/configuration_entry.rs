@@ -28,8 +28,8 @@
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EventId,
-    EventWithMetadata, HistoryId, NoHistory, RunStore, Span, StateId, StateKind, StatePolicy,
-    StateRow, Target, TransitionId, TransitionRow, Workspace, PARALLEL,
+    EventWithMetadata, HistoryId, NoHistory, RunStore, StateId, StateKind, StatePolicy, StateRow,
+    Target, TransitionId, TransitionRow, Workspace, PARALLEL,
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -122,20 +122,16 @@ impl StatePolicy for ParallelPolicy {
         histories: &[],
         transitions: &[
             // a1: advance -> a2
-            TransitionRow::new(Some(StateId(2)), Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(2)), Target::state(StateId(3)), false, false),
             // ra's initial: a1
-            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // rb's initial: b1
-            TransitionRow::new(Some(StateId(4)), Span { start: 2, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(5)), false, false),
             // the document's initial: p
-            TransitionRow::new(None, Span { start: 3, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(3)),
-            Target::state(StateId(2)),
-            Target::state(StateId(5)),
-            Target::state(StateId(0)),
-        ],
+        // Every transition has one target, which its row holds.
+        targets: &[],
         initial: TransitionId(3),
         history: None,
         parallel: Some(&PARALLEL),
@@ -314,17 +310,14 @@ impl StatePolicy for LinearPolicy {
         histories: &[],
         transitions: &[
             // x1: go -> x2
-            TransitionRow::new(Some(StateId(1)), Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // root's initial: x1
-            TransitionRow::new(Some(StateId(0)), Span { start: 1, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // the document's initial: root
-            TransitionRow::new(None, Span { start: 2, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(2)),
-            Target::state(StateId(1)),
-            Target::state(StateId(0)),
-        ],
+        // Every transition has one target, which its row holds.
+        targets: &[],
         initial: TransitionId(2),
         history: None,
         parallel: None,

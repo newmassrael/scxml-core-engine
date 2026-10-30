@@ -322,7 +322,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// §scxml-3.10: the state a `<history>` is declared in.
     fn get_history_parent(history: Self::History) -> Self::State {
-        Self::state_of(Self::TABLES.history(Self::history_id(history)).parent)
+        Self::state_of(Self::TABLES.history(Self::history_id(history)).parent())
     }
 
     /// Document order index of `state` (W3C SCXML Appendix D): its number.

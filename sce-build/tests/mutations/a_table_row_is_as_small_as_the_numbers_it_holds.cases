@@ -1,0 +1,52 @@
+# Mutation cases for "a table row is as small as the numbers it holds"
+# (docs/adr/0067).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_table_row_is_as_small_as_the_numbers_it_holds.cases`.
+#
+# A row keeps flags and kinds in the bits above an id, a transition holds its
+# only target itself, and the pool holds only lists, each its length first.
+# The cases put back each way the packing can be read wrong:
+#
+# - a single target read as none, or a list read one short: the differential
+#   test in `tests/microstep_algorithms.rs` refuses both, since its random
+#   documents write one to three targets a transition;
+# - a kind or a flag read from the wrong bits: the same test, and
+#   `a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused`;
+# - a list running past the pool let through by the check: that test.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --test microstep_algorithms
+mutation_targets backends/rust/runtime/src/helpers/tables.rs
+mutation_oracles backends/rust/runtime/tests/microstep_algorithms.rs
+
+mutation_case "a row's only target is read as none" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''            return core::slice::from_ref(targets);''',
+     r'''            return &[];''')
+PY
+
+mutation_case "a list in the pool is read one target short" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''                &self.targets[position + 1..position + 1 + len]''',
+     r'''                &self.targets[position + 1..position + len]''')
+PY
+
+mutation_case "a state's kind is read from the wrong bits" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''        match self.kind_initial >> 14 {''',
+     r'''        match self.kind_initial >> 13 & 3 {''')
+PY
+
+mutation_case "a transition's internal flag is read from its content bit" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''        self.flags_source & INTERNAL_BIT != 0''',
+     r'''        self.flags_source & CONTENT_BIT != 0''')
+PY
+
+mutation_case "a list past the end of the pool passes the check" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''                    if !fits {''',
+     r'''                    if !fits && false {''')
+PY

@@ -24,7 +24,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, Engine, EventId, Hal, HistoryId, NoHistory,
-    RunStore, Span, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
+    RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId, TransitionRow,
     Workspace,
 };
 
@@ -117,11 +117,11 @@ impl StatePolicy for MockPolicy {
         histories: &[],
         transitions: &[TransitionRow::new(
             None,
-            Span { start: 0, len: 1 },
+            Target::state(StateId(0)),
             false,
             false,
         )],
-        targets: &[Target::state(StateId(0))],
+        targets: &[],
         initial: TransitionId(0),
         history: None,
         parallel: None,

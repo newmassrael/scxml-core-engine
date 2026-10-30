@@ -733,7 +733,7 @@ fn effective_history_targets(
                 },
             },
             WalkStep::EffectiveDefaults { history, index } => {
-                let defaults = tables.targets(tables.history(history).default);
+                let defaults = tables.targets(tables.history(history).default());
                 if let Some(&next) = defaults.get(usize::from(index)) {
                     stack.push(WalkStep::EffectiveDefaults {
                         history,
@@ -1289,7 +1289,7 @@ fn listed_target(
             let state = recorded_from(store, history, StateId(cursor))?;
             return Some((Target::state(state), state.0 + 1));
         }
-        Listed::Defaults(history) => tables.targets(tables.history(history).default),
+        Listed::Defaults(history) => tables.targets(tables.history(history).default()),
     };
     let target = *targets.get(usize::from(cursor))?;
     Some((target, cursor + 1))
@@ -1301,7 +1301,7 @@ fn listed_target(
 fn listed_stop(tables: &DocumentTables, source: Listed) -> StateId {
     match source {
         Listed::Initial(state) => state,
-        Listed::Recorded(history) | Listed::Defaults(history) => tables.history(history).parent,
+        Listed::Recorded(history) | Listed::Defaults(history) => tables.history(history).parent(),
     }
 }
 
@@ -1321,7 +1321,7 @@ fn first_proper_ancestor(
 ) -> Option<StateId> {
     let first = match target.named() {
         Named::State(state) => tables.parent(state),
-        Named::History(history) => Some(tables.history(history).parent),
+        Named::History(history) => Some(tables.history(history).parent()),
     }?;
     match stop {
         None => Some(first),
@@ -1407,7 +1407,7 @@ fn descend_into_history(
             // the same parent replacing it.
             set_default_history_content(
                 &mut entry.default_history_content,
-                tables.history(history).parent,
+                tables.history(history).parent(),
                 history,
             );
             Listed::Defaults(history)
@@ -1432,12 +1432,12 @@ fn record_histories(tables: &DocumentTables, mut store: RunStoreMut<'_>, exited:
     // §scxml-D-exitStates: every history of every state exited is recorded
     // from the configuration as it stood before the first exit.
     for (index, history) in tables.histories.iter().enumerate() {
-        if exited.contains(history.parent) {
+        if exited.contains(history.parent()) {
             let (configuration, mut record) = store.record_history(HistoryId(index as u16));
             recorded_history(
                 tables,
-                history.parent,
-                history.deep,
+                history.parent(),
+                history.deep(),
                 configuration,
                 &mut record,
             );
