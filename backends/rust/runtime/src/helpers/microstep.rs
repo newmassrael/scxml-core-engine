@@ -932,6 +932,15 @@ pub fn compute_states_to_exit(
 }
 
 /// Appendix D's exitStates.
+///
+/// Out of line, so its frame is on the stack only while the states exit. A
+/// microstep exits, then runs the content, then enters, and the entry is the
+/// deeper of the two walks; inlined into the microstep, this procedure's
+/// locals sat in the frame the whole entry is entered under. Measured on the
+/// MCU probe: the microstep's frame 216 -> 120 bytes, the worst-case stack
+/// 880 -> 784 without a `<history>` or `<parallel>` and 1032 -> 952 with
+/// them, for 12 and 54 bytes of code.
+#[inline(never)]
 pub fn exit_states(
     tables: &DocumentTables,
     machine: &mut dyn Behaviour,

@@ -200,7 +200,11 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1638
 #
 # 7374 -> 7312 over 23 symbols (2026-10-30): a buffer reads only the prefix it
 # wrote, over slots nothing initialised (docs/adr/0071).
-CORE_BYTES=7312
+#
+# 7312 -> 7366 over 24 symbols (2026-10-30): `exit_states` is out of line, so
+# its frame is not under the entry walk (see STACK_BYTES); images of 194059 and
+# 195751.
+CORE_BYTES=7366
 
 # The same without the report.
 #
@@ -218,7 +222,10 @@ CORE_BYTES=7312
 #
 # 7266 -> 7204 over 23 symbols (2026-10-30), the workspace's buffers
 # uninitialised (docs/adr/0071), as above.
-CORE_BYTES_NO_DIAGNOSTICS=7204
+#
+# 7204 -> 7258 over 24 symbols (2026-10-30), `exit_states` out of line, as
+# above; images of 193855 and 195493.
+CORE_BYTES_NO_DIAGNOSTICS=7258
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -261,8 +268,11 @@ CORE_BYTES_NO_DIAGNOSTICS=7204
 #
 # 1496 -> 1460 and 5384 -> 5326 over 16 symbols (2026-10-30): the workspace's
 # buffers uninitialised (docs/adr/0071), images of 190874 and 192334.
+#
+# 5326 -> 5338 over 17 symbols (2026-10-30): `exit_states` out of line, as
+# above; images of 190886 and 192346.
 MACHINE_BYTES_PLAIN=1460
-CORE_BYTES_PLAIN=5326
+CORE_BYTES_PLAIN=5338
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -384,7 +394,12 @@ STACK_MIN_FUNCTIONS=200
 #
 # 1120 -> 1032 (2026-10-30): the workspace's buffers are not filled before a
 # turn lends them, so `run_turn` holds them once (328 -> 240) (docs/adr/0071).
-STACK_BYTES=1032
+#
+# 1032 -> 952 (2026-10-30): `exit_states` is out of line, so the microstep's
+# frame under the entry walk is 120 bytes instead of 216-232. The deepest chain
+# is now the selection's: `select_transitions` (152) through
+# `remove_conflicting_transitions` (160) and `compute_exit_set`.
+STACK_BYTES=952
 
 # The most a root's OWN frame may take: what an entry point a host calls keeps
 # in the host's frame when it is inlined there. Held apart from the worst case,
@@ -414,5 +429,8 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 #
 # 928 -> 880 (2026-10-30): `run_turn` 240 -> 192, the workspace held once
 # (docs/adr/0071).
-STACK_BYTES_PLAIN=880
+#
+# 880 -> 784 (2026-10-30): `exit_states` out of line, `take_microstep` 216 ->
+# 120 under the entry walk.
+STACK_BYTES_PLAIN=784
 STACK_TOLERANCE_BYTES=256
