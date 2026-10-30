@@ -186,7 +186,8 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// A cancel-free entry thus carries only the event's number (an [`EventId`],
 /// docs/adr/0069) and its `ready_at` time-point; the ring remains the largest
 /// single `Engine` contributor under no_std, but at hundreds of bytes rather
-/// than kilobytes.
+/// than kilobytes. A document with no delayed send and no `<cancel>` keeps no
+/// ring at all: codegen names the zero-size [`NoDelayedSends`] instead.
 ///
 /// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<S>>` (unbounded)
 /// so this constant only affects the `--no-default-features` variant.
@@ -392,6 +393,8 @@ pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F)
 
 pub mod action_realization;
 pub mod clock;
+// Documented by the module's own `//!`; see `payload_reading` below for why no `///` here.
+pub mod donedata_storage;
 pub mod engine;
 pub mod event;
 /// NL→IR Item C1 Path A: reading a typed `_event.data` view out of the wire
@@ -445,6 +448,8 @@ pub mod policy;
 pub mod saved_state;
 // Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
 pub mod sched_send_id;
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
+pub mod scheduler_storage;
 /// ECMAScript engine abstraction.
 ///
 /// Gated out of `no_std` builds because the trait impls land in
@@ -463,7 +468,9 @@ pub mod scripting;
 /// root because every generated host interface that states a duty spells it.
 pub use action_realization::ActionRealization;
 pub use clock::SceClock;
+pub use donedata_storage::{DoneDataStorage, NoDoneData};
 pub use engine::Engine;
+pub use engine::PullScheduler;
 /// §scxml-6.2.4: why [`Engine::initialize_as_root`] refused a start.
 pub use engine::RootStartRefusal;
 /// §scxml-6.2: the target a generated send site names for a delayed send.
@@ -519,5 +526,6 @@ pub use log;
 pub use payload_reading::PayloadReading;
 pub use policy::StatePolicy;
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
+pub use scheduler_storage::{NoDelayedSends, SchedulerStorage};
 #[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

@@ -103,7 +103,10 @@ impl StatePolicy for MockPolicy {
     type Payload = ();
     type Hal = MockHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // The tests below arm delayed events, so this policy keeps the queue they
+    // wait in.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+    type DoneData = sce_rust_runtime::NoDoneData;
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<St, 1>;

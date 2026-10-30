@@ -57,7 +57,12 @@ impl StatePolicy for HwPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // What the generator gives this document: it has no delayed send, no
+    // `<cancel>` and no `<donedata>`, so its machine keeps neither a
+    // delayed-send queue nor a donedata slot. The tests at the end of this file
+    // hold what the engine does with the two.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+    type DoneData = sce_rust_runtime::NoDoneData;
     // A flat document of three states and no history: the sets of states are
     // bit vectors of three states, one transition is enabled, and the walks
     // owe three steps for its one level and three of headroom.
@@ -299,4 +304,115 @@ fn stop_method_halts_engine() {
     // After stop, process_event should be a no-op
     engine.process_event(HwEvent::Play);
     assert_eq!(engine.get_current_state(), HwState::Stopped);
+}
+
+// ──────────────────────────────────────────────
+// A machine that keeps no delayed-send queue and no donedata slot
+//
+// This document has no delayed send, no `<cancel>` and no `<donedata>`, and
+// `HwPolicy` names what the generator names for such a document. The engine
+// answers every question about the queue as one that holds nothing, and stops
+// the program, rather than drop it, when something is armed on it anyway.
+// ──────────────────────────────────────────────
+
+#[test]
+fn the_queue_and_the_slot_a_document_does_not_use_take_no_space() {
+    assert_eq!(std::mem::size_of::<sce_rust_runtime::NoDelayedSends>(), 0);
+    assert_eq!(std::mem::size_of::<sce_rust_runtime::NoDoneData>(), 0);
+}
+
+#[test]
+fn a_machine_with_no_delayed_send_answers_that_nothing_is_pending() {
+    let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
+    engine.initialize();
+    assert!(!engine.has_ready_events());
+    assert_eq!(engine.time_until_next_scheduled_ms(), None);
+    assert!(
+        !engine.cancel_event("anything"),
+        "a cancel on a machine that keeps no queue finds nothing"
+    );
+    assert_eq!(
+        engine.donedata_at_final(),
+        "",
+        "a machine that keeps no slot reads its donedata as the empty string"
+    );
+
+    // A tick drains a queue that holds nothing and runs the macrostep as
+    // `step` does.
+    engine.tick();
+    engine.process_event(HwEvent::Play);
+    engine.tick();
+    assert_eq!(engine.get_current_state(), HwState::Running);
+    assert!(engine.is_running());
+}
+
+#[test]
+#[should_panic(expected = "keeps no delayed-send queue")]
+fn arming_a_delayed_send_on_a_machine_with_no_queue_stops_the_program() {
+    let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
+    engine.initialize();
+    let _ = engine.schedule_event(
+        HwEvent::End,
+        std::time::Duration::from_millis(1),
+        "",
+        "",
+        "",
+    );
+}
+
+#[test]
+#[should_panic(expected = "keeps no slot")]
+fn keeping_donedata_on_a_machine_with_no_slot_stops_the_program() {
+    let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
+    engine.stash_donedata_at_final("{\"r\":1}".to_string());
+}
+
+/// A saved state of this document standing in `running`, with `pending` and
+/// `hostinvokes` holding what is given.
+fn saved_state_with(pending: &str, hostinvokes: &str) -> sce_rust_runtime::saved_state::SavedState {
+    let text = format!(
+        r#"{{"format":1,"shape":"d","configuration":["running"],"current":"running","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"hostinvokes":[{hostinvokes}],"hostinvoketoken":"0","sendseq":"0","external":[]}}"#
+    );
+    sce_rust_runtime::saved_state::SavedState::from_json(&text)
+        .unwrap_or_else(|refusal| panic!("the saved state reads: {refusal}"))
+}
+
+#[test]
+fn a_restore_with_nothing_waiting_is_a_state_of_this_document() {
+    // The control for the two refusals below: the same state with nothing
+    // waiting is accepted, so what they refuse is the waiting entry.
+    assert_eq!(
+        sce_rust_runtime::saved_state::judge::<HwPolicy>(&saved_state_with("", "")),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_restore_that_lists_a_waiting_send_is_refused_by_a_machine_with_no_queue() {
+    let saved = saved_state_with(
+        r#"{"due":"1","act":"raise","event":"end","data":"","sendid":"","origin":""}"#,
+        "",
+    );
+    let refusal = sce_rust_runtime::saved_state::judge::<HwPolicy>(&saved)
+        .expect_err("a machine with no delayed-send queue has no send waiting");
+    assert!(
+        refusal.reason().contains("pending[0]")
+            && refusal.reason().contains("keeps no delayed-send queue"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn a_restore_that_lists_a_deadline_is_refused_by_a_machine_with_no_queue() {
+    let saved = saved_state_with(
+        "",
+        r#"{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":"1"}"#,
+    );
+    let refusal = sce_rust_runtime::saved_state::judge::<HwPolicy>(&saved)
+        .expect_err("a machine with no delayed-send queue has no deadline armed");
+    assert!(
+        refusal.reason().contains("hostinvokes[0]")
+            && refusal.reason().contains("keeps no delayed-send queue"),
+        "{refusal}"
+    );
 }

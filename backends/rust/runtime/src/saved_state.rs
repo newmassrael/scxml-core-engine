@@ -59,6 +59,7 @@ use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
+use crate::scheduler_storage::sealed::SchedulerOps;
 use crate::{
     Engine, EventId, EventQueueStorage, EventType, EventWithMetadata, SceClock, StatePolicy,
 };
@@ -2513,6 +2514,15 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
             Ok(queued)
         })
         .collect::<Result<Vec<_>, StateRefusal>>()?;
+    // A machine whose document has no delayed send keeps no queue for one
+    // (`StatePolicy::Scheduler`), so a waiting send is not a state it could
+    // have been in, and arming it would have nowhere to go.
+    if !saved.pending.is_empty() && !<P::Scheduler as SchedulerOps>::KEEPS_DELAYED_SENDS {
+        return Err(StateRefusal::new(
+            "pending[0] is a delayed send, and this machine keeps no delayed-send queue: its \
+             document has no delayed send",
+        ));
+    }
     // The same for a waiting send: an event this document does not name refuses
     // the restore, not the sends before it.
     let pending = saved
@@ -2563,6 +2573,14 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
     // does not have, one whose state the saved configuration does not stand in,
     // or one named twice is a run the saved machine could not have had.
     for (i, host) in saved.host_invokes.iter().enumerate() {
+        // A deadline waits in the delayed-send queue, which a machine whose
+        // document names no deadline does not keep.
+        if host.due.is_some() && !<P::Scheduler as SchedulerOps>::KEEPS_DELAYED_SENDS {
+            return Err(StateRefusal::new(format!(
+                "hostinvokes[{i}] has a deadline, and this machine keeps no delayed-send \
+                 queue: its document names no deadline"
+            )));
+        }
         let (processor_type, id) = (host.processor_type.as_str(), host.invoke_id.as_str());
         let owner = P::host_invoke_owner(processor_type, id).ok_or_else(|| {
             StateRefusal::new(format!(

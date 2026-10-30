@@ -81,7 +81,9 @@ impl StatePolicy for ParallelPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // No delayed send, no `<cancel>`, no `<donedata>`: no queue, no slot.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+    type DoneData = sce_rust_runtime::NoDoneData;
     // Six states and no history, so the sets of states are bit vectors of six.
     // P, RA, one of A1/A2, RB, B1 are active at once, two of them atomic, so
     // two transitions enabled at most; three steps for each of the three
@@ -283,7 +285,9 @@ impl StatePolicy for LinearPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // No delayed send, no `<cancel>`, no `<donedata>`: no queue, no slot.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+    type DoneData = sce_rust_runtime::NoDoneData;
     // Three states and no history, so the sets of states are bit vectors of
     // three. Root with one of X1/X2 below it: one atomic state active; three
     // steps for each of the two levels and three of headroom for the walks.

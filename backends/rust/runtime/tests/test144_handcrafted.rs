@@ -75,7 +75,10 @@ impl StatePolicy for Test144Policy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // test144 has no delayed send, no `<cancel>` and no `<donedata>`, so the
+    // generator gives its machine neither a delayed-send queue nor a slot.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+    type DoneData = sce_rust_runtime::NoDoneData;
     // Four flat states and no history: the sets of states are bit vectors of
     // four states, one transition is enabled, and the walks owe three steps
     // for the one level and three of headroom.

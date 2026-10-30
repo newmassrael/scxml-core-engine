@@ -49,7 +49,10 @@ impl StatePolicy for HttpPolicy {
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // A delayed BasicHTTP send waits in the delayed-send queue, so this policy
+    // keeps one, keyed by the send ids its sends are made under.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+    type DoneData = sce_rust_runtime::NoDoneData;
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<HttpState, 1>;

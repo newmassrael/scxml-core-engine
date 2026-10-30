@@ -29,7 +29,9 @@
 //! - State queries: `get_current_state`, `get_active_states`, `is_in_final_state`
 //! - Event submission: `raise`, `raise_external`, `process_event`
 //! - Delayed events (§scxml-6.2): `schedule_event`, `cancel_event`,
-//!   `has_ready_events`, backed by [`PullScheduler`]
+//!   `has_ready_events`, backed by the policy's
+//!   [`Scheduler`](StatePolicy::Scheduler): a [`PullScheduler`] for a document
+//!   that delays or cancels a send, none for one that does not
 //!
 //! ## The microstep
 //!
@@ -66,6 +68,7 @@ use core::time::Duration;
 use std::time::Instant;
 
 use crate::clock::SceClock;
+use crate::donedata_storage::DoneDataStorage;
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
@@ -76,6 +79,7 @@ use crate::helpers::state_policy_concepts as concepts;
 use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
 use crate::helpers::unique_id_generator::AUTO_SEND_ID_MAX_LEN;
 use crate::sched_send_id::ScheduledSendIdLike;
+use crate::scheduler_storage::sealed::SchedulerOps;
 // The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
 // `std`: it is alloc-coupled (HashMap<String, Vec<String>>). The codegen-time
 // validator rejects `BasicHTTPEventProcessor` `<send>` under `--no-std` via
@@ -211,7 +215,10 @@ pub type SchedTimePoint = u64;
 /// no_std is treated as a fatal configuration error (panic) per the same
 /// "no silent transition drop" discipline the W3C SCXML algorithm follows.
 ///
-/// Kept as a concrete (non-trait) type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
+/// Kept as a concrete type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
+/// The engine holds it as its policy's [`StatePolicy::Scheduler`], which is
+/// this type for a document that delays or cancels a send and the zero-size
+/// [`NoDelayedSends`](crate::NoDelayedSends) for one that does neither.
 ///
 /// An entry names its event by number, the [`EventId`] the machine's tables
 /// give it (docs/adr/0069), so the scheduler carries no machine's type: one
@@ -1066,11 +1073,15 @@ pub struct Engine<P: StatePolicy> {
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
     /// §scxml-6.2: Delayed event scheduler.
     ///
-    /// The per-entry cancel-key storage is supplied by the policy via
-    /// [`StatePolicy::ScheduledSendId`] — [`ElidedSendId`](crate::ElidedSendId)
-    /// for cancel-free machines (no_std ring shrinks by the per-entry
-    /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
-    pub(crate) scheduler: PullScheduler<P::ScheduledSendId>,
+    /// The queue is supplied by the policy via [`StatePolicy::Scheduler`]: a
+    /// [`PullScheduler`] for a document that delays or cancels a send, whose
+    /// per-entry cancel-key storage is [`StatePolicy::ScheduledSendId`] —
+    /// [`ElidedSendId`](crate::ElidedSendId) for cancel-free machines (no_std
+    /// ring shrinks by the per-entry `send_id` string), the document's own
+    /// send-id string when it uses `<cancel>`; and the zero-size
+    /// [`NoDelayedSends`](crate::NoDelayedSends) for a document that does
+    /// neither, which keeps no ring at all.
+    pub(crate) scheduler: P::Scheduler,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -1078,10 +1089,13 @@ pub struct Engine<P: StatePolicy> {
     /// and the Kotlin `StateMachineEngine.donedataAtFinal` field. Populated by
     /// generated `execute_entry_actions` code on a child's top-level final and
     /// read by the parent's [`helpers::invoke_processing::raise_done_invoke`]
-    /// before emitting `done.invoke.<id>`. Typed as [`SceString`] so the no_std
-    /// build composes with the capped-string convention used across
-    /// `EventMetadata` (B-γ2d-1).
-    pub(crate) donedata_at_final: SceString,
+    /// before emitting `done.invoke.<id>`. The slot is supplied by the policy
+    /// via [`StatePolicy::DoneData`]: [`SceString`], so the no_std build
+    /// composes with the capped-string convention used across `EventMetadata`
+    /// (B-γ2d-1), for a document with such a `<donedata>`, and the zero-size
+    /// [`NoDoneData`](crate::NoDoneData), read as the empty string, for one
+    /// without.
+    pub(crate) donedata_at_final: P::DoneData,
     /// How many ids this machine has generated for a `<send idlocation>`: the
     /// number the last one carried. Counted per machine, not per process, so a
     /// machine's ids do not depend on what else ran beside it, and carried
@@ -1129,8 +1143,8 @@ macro_rules! engine_initial_fields {
             child_mesh_owed: false,
             #[cfg(feature = "http-send")]
             on_http_send: None,
-            scheduler: PullScheduler::new(),
-            donedata_at_final: SceString::new(),
+            scheduler: <P::Scheduler as SchedulerOps>::EMPTY,
+            donedata_at_final: <P::DoneData as DoneDataStorage>::EMPTY,
             auto_send_seq: 0,
         }
     };
@@ -2383,15 +2397,20 @@ impl<P: StatePolicy> Engine<P> {
     /// Called from generated `execute_entry_actions` code on a child engine
     /// (1:1 port of the C++ AOT `stashDonedataAtFinal` / Kotlin
     /// `StateMachineEngine.stashDonedataAtFinal` contract).
+    ///
+    /// The slot is the policy's [`StatePolicy::DoneData`]: a machine whose
+    /// document has no such `<donedata>` keeps none, and the generator writes
+    /// no call to this method for it.
     pub fn stash_donedata_at_final(&mut self, data: SceString) {
-        self.donedata_at_final = data;
+        self.donedata_at_final.stash(data);
     }
 
     /// §scxml-5.5 + 6.3.1: Read the donedata payload stashed by a
     /// top-level `<final>` on this engine. Returns an empty string when the
-    /// final had no `<donedata>`, matching C++ AOT / Kotlin semantics.
+    /// final had no `<donedata>`, matching C++ AOT / Kotlin semantics, and
+    /// for a machine whose document has none, which keeps no slot.
     pub fn donedata_at_final(&self) -> &str {
-        &self.donedata_at_final
+        self.donedata_at_final.read()
     }
 
     /// Access the inner policy (read-only).

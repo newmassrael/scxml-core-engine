@@ -152,11 +152,48 @@ pub trait StatePolicy: Sized + 'static {
     /// on both profiles). The choice is behaviour-preserving under std either
     /// way, so the one emission compiles on both runtime profiles.
     ///
+    /// The key of the [`Scheduler`](StatePolicy::Scheduler) when that is a
+    /// [`PullScheduler`](crate::PullScheduler): generated code writes
+    /// `PullScheduler<Self::ScheduledSendId>`. A machine that keeps no
+    /// delayed-send queue keeps no key either, and its policy still names one
+    /// (the zero-size `ElidedSendId`, since such a document has no `<cancel>`).
+    ///
     /// Mirrors the per-machine [`EventQueue`](StatePolicy::EventQueue) sizing
     /// lever; like it (and [`Hal`](StatePolicy::Hal) / [`Payload`](StatePolicy::Payload))
     /// it has no default — stable Rust forbids default associated types, so
     /// every generated policy emits it.
     type ScheduledSendId: crate::ScheduledSendIdLike;
+
+    /// The delayed-send queue the [`Engine`] keeps for this machine, chosen by
+    /// what the document uses.
+    ///
+    /// - [`NoDelayedSends`](crate::NoDelayedSends), zero-size, for a document
+    ///   with no `<send delay>`, no `<send delayexpr>`, no `<cancel>` and no
+    ///   host-run deadline: nothing can be armed, so no queue is kept. Under
+    ///   `--no-default-features` the bounded ring it replaces is
+    ///   [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) entries of
+    ///   capacity nobody could fill.
+    /// - [`PullScheduler`](crate::PullScheduler) keyed by
+    ///   [`ScheduledSendId`](StatePolicy::ScheduledSendId) for every other
+    ///   document.
+    ///
+    /// The same emission compiles on both runtime profiles, and the choice is
+    /// behaviour-preserving on both: a document the zero-size queue is chosen
+    /// for has nothing to arm on it. Emitted by every generated policy, like
+    /// [`ScheduledSendId`](StatePolicy::ScheduledSendId).
+    type Scheduler: crate::SchedulerStorage;
+
+    /// Where the payload of a top-level `<final>`'s `<donedata>` waits for the
+    /// parent that lifts it onto `done.invoke.<id>`
+    /// ([`Engine::donedata_at_final`]).
+    ///
+    /// [`SceString`](crate::SceString) for a document with such a `<donedata>`,
+    /// and the zero-size [`NoDoneData`](crate::NoDoneData), which reads as the
+    /// empty string, for one without: under `--no-default-features` the string
+    /// is a buffer of the runtime's string bound that such a document could
+    /// never fill. Emitted by every generated policy, like
+    /// [`Scheduler`](StatePolicy::Scheduler).
+    type DoneData: crate::DoneDataStorage;
 
     // ──────────────────────────────────────────────
     // The document, as Appendix D's procedures read it (docs/adr/0064)
