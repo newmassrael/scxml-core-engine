@@ -49,6 +49,10 @@ import com.sce.forge.runtime.SceSink
 // (defensive — wildcard imports could otherwise surface an ambiguity if
 // two imported codecs declare same-named inner classes).
 sealed class {{ struct_name }}Variant {
+{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
+   every build here. Kotlin has no compile-time switch over one class of a
+   sealed hierarchy, so an arm always present is the feature on, which is its
+   default meaning. #}
 {% for arm in variant.arms %}
     data class {{ arm.variant_name }}(val body: {{ arm.body_type }}) : {{ struct_name }}Variant()
 {% endfor %}

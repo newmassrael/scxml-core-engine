@@ -67,6 +67,9 @@ type {{ struct_name }}{{ variant.default_arm.variant_name }} struct {
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type {{ struct_name }}Variant struct {
+{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
+   every build here. A Go build tag selects whole files, not one arm of a type,
+   so an arm always present is the feature on, which is its default meaning. #}
 {% for arm in variant.arms %}
 	{{ arm.variant_name }} *{{ arm.body_type }}
 {% endfor %}

@@ -66,6 +66,11 @@ struct {{ struct_name }}{{ variant.default_arm.variant_name }} {
     {{ variant.default_arm.body_type }} body;
 };
 {% endif %}
+{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
+   every build here, which is the feature on, its default meaning. The arms are
+   alternatives of one `std::variant`, and the default value and a parent's
+   carrier bits name an alternative by its index (`default_arm_index`,
+   `parent_tag_match_term_cpp`), so leaving one out moves every index after it. #}
 using {{ struct_name }}Variant = std::variant<
 {% for arm in variant.arms %}
     {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}

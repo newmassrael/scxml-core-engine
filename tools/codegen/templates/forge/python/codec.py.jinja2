@@ -72,6 +72,10 @@ class {{ struct_name }}Variant:
     kind: str = "{{ variant.default_arm.variant_name }}"
 {% endif %}
 {% endif %}
+{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
+   every build here. Python has no compile-time switch over one member of a
+   class, so an arm always present is the feature on, which is its default
+   meaning. #}
 {% for arm in variant.arms %}
 {% if ns.default_arm and arm.is_default %}
     {{ arm.c_union_field }}: Optional[{{ arm.body_type }}] = field(default_factory={{ arm.body_type }})
