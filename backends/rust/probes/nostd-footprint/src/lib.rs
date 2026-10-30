@@ -118,6 +118,11 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
     let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();
+    // A host with a clock drives each of its machines with `tick`, so the
+    // second machine's path through the scheduler is weighed as the first's is:
+    // what the two share is in both images, and what each brings is the
+    // difference (docs/adr/0069).
+    engine.tick();
     engine.process_event(EventQueueCapacityProbeEvent::Stop);
     engine.is_running()
 }

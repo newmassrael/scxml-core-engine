@@ -71,9 +71,13 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # states and the run store (`helpers::state_set`, `helpers::run_store`), the
 # main event loop (`engine::Turn`), and since docs/adr/0068 the queues as the
 # loop sees them (`helpers::event_queue`: a queue holds numbers, and the view
-# the loop drives has no machine type). A machine's implementation of the
-# core's traits names the trait inside its `<.. as ..>` and is not matched.
-CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::Turn[>:])'
+# the loop drives has no machine type), and since docs/adr/0069 the delayed-send
+# scheduler (`engine::PullScheduler`, compiled once for each kind of send id the
+# program's machines keep; a machine whose kind of send id no other machine
+# shares carries its copy inlined into its own `tick`, which this path does not
+# match). A machine's implementation of the core's traits
+# names the trait inside its `<.. as ..>` and is not matched.
+CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::(Turn[>:]|PullScheduler<))'
 
 # The probe machines' crates (an extended regular expression): a core symbol
 # that names one was instantiated for that machine.
@@ -112,7 +116,13 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # too (`sce_footprint_tick`), the path through the scheduler `step` never
 # reached, which the first machine pays for and the second, with no delayed
 # send, does not.
-MACHINE_BYTES=1008
+#
+# 1008 -> 1690 (2026-10-30): the second machine is driven with `tick` as well,
+# as a host with a clock drives each of its machines, so its path through the
+# scheduler is weighed; images of 194215 and 195905. The scheduler holds event
+# numbers (docs/adr/0069), but these two machines keep different kinds of send
+# id (`SendIdString<9>` and `ElidedSendId`), so each still carries its own copy.
+MACHINE_BYTES=1690
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -140,7 +150,10 @@ MACHINE_BYTES=1008
 #
 # 1624 -> 998 (2026-10-30): events as numbers (docs/adr/0068), images of
 # 193991 and 194989, the probe driving `tick` as above.
-MACHINE_BYTES_NO_DIAGNOSTICS=998
+#
+# 998 -> 1632 (2026-10-30): the second machine driven with `tick` too, images
+# of 194009 and 195641, as above.
+MACHINE_BYTES_NO_DIAGNOSTICS=1632
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -210,8 +223,15 @@ CORE_BYTES_NO_DIAGNOSTICS=7266
 # machines: what a machine brought around the loop is the core's now, and the
 # entry set names where the current state is read from rather than a second
 # pass dereferencing the targets again (`enter_states` 1050 -> 952).
-MACHINE_BYTES_PLAIN=1076
-CORE_BYTES_PLAIN=5058
+#
+# 1076 -> 1456 and 5058 -> 5384 over 16 symbols (2026-10-30): the second machine
+# driven with `tick` too, images of 191070 and 192526. Both machines keep the
+# zero-size `ElidedSendId`, and the scheduler holds event numbers
+# (docs/adr/0069), so they share one scheduler: `PullScheduler<ElidedSendId>`'s
+# 326 bytes are the core's. With the scheduler generic over the machine's event,
+# as before, the same two images measured 192730: 204 bytes more.
+MACHINE_BYTES_PLAIN=1456
+CORE_BYTES_PLAIN=5384
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
