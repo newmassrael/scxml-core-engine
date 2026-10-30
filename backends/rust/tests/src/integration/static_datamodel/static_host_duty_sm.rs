@@ -512,8 +512,9 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPolicy<A> {
     );
 
     /// Build the machine under a session id drawn from the operating system's
-    /// randomness, a UUID version 4 (docs/adr/0045). A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.    ///
+    /// randomness, a UUID version 4 (docs/adr/0045).
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+    ///
     /// Absent on a target with no source of randomness the runtime reads
     /// (`wasm32-unknown-unknown`): a host there gives the id, through
     /// [`new_with_session_id`](Self::new_with_session_id).
@@ -534,10 +535,12 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPolicy<A> {
     /// name for the machine, say, or a fixed id a test holds a saved text to
     /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
     /// here and kept until the session ends; a restore binds the saved id in
-    /// its place, since the session carries on. A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.    ///
-    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
-    /// no source of randomness the runtime reads.
+    /// its place, since the session carries on.
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+    ///
+    /// With [`new_with_checked_session_id`](Self::new_with_checked_session_id),
+    /// the way this machine is built on `wasm32-unknown-unknown`, which has no
+    /// source of randomness the runtime reads.
     ///
     /// # Errors
     ///
@@ -569,6 +572,29 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPolicy<A> {
             ::sce_rust_runtime::helpers::session_id::given(session_id)?,
             actions,
         ))
+    }
+
+    /// [`new_with_session_id`](Self::new_with_session_id) under an id already
+    /// proven to be an XML Nmtoken (docs/adr/0073), so nothing is refused. With
+    /// the id written as `sce_rust_runtime::session_id!("...")`, a bad one is a
+    /// compile error and the program carries no run-time check of it.
+    /// A host whose `REALIZATION` is `Simulates` does not compile here.
+    pub fn new_with_checked_session_id(
+        session_id: ::sce_rust_runtime::helpers::session_id::SessionId,
+        actions: A,
+    ) -> Self {
+        let () = Self::HOST_PERFORMS_DUTIES;
+        Self::build(session_id.as_str().to_string(), actions)
+    }
+
+    /// [`new_with_checked_session_id`](Self::new_with_checked_session_id) with a
+    /// host that only simulates its duties — a recorder, a test double — as the
+    /// caller's statement that it means to.
+    pub fn new_simulated_with_checked_session_id(
+        session_id: ::sce_rust_runtime::helpers::session_id::SessionId,
+        actions: A,
+    ) -> Self {
+        Self::build(session_id.as_str().to_string(), actions)
     }
 
     /// The policy of a child its parent invokes, under the id the tree gives it,

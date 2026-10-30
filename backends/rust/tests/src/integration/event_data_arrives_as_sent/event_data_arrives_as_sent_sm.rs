@@ -349,7 +349,8 @@ impl EventDataArrivesAsSentPolicy {
     }
 
     /// Build the machine under a session id drawn from the operating system's
-    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// randomness, a UUID version 4 (docs/adr/0045).
+    ///
     /// Absent on a target with no source of randomness the runtime reads
     /// (`wasm32-unknown-unknown`): a host there gives the id, through
     /// [`new_with_session_id`](Self::new_with_session_id).
@@ -365,9 +366,11 @@ impl EventDataArrivesAsSentPolicy {
     /// name for the machine, say, or a fixed id a test holds a saved text to
     /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
     /// here and kept until the session ends; a restore binds the saved id in
-    /// its place, since the session carries on.    ///
-    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
-    /// no source of randomness the runtime reads.
+    /// its place, since the session carries on.
+    ///
+    /// With [`new_with_checked_session_id`](Self::new_with_checked_session_id),
+    /// the way this machine is built on `wasm32-unknown-unknown`, which has no
+    /// source of randomness the runtime reads.
     ///
     /// # Errors
     ///
@@ -381,6 +384,17 @@ impl EventDataArrivesAsSentPolicy {
             ::sce_rust_runtime::helpers::session_id::given(session_id)?,
             script_engine,
         ))
+    }
+
+    /// [`new_with_session_id`](Self::new_with_session_id) under an id already
+    /// proven to be an XML Nmtoken (docs/adr/0073), so nothing is refused. With
+    /// the id written as `sce_rust_runtime::session_id!("...")`, a bad one is a
+    /// compile error and the program carries no run-time check of it.
+    pub fn new_with_checked_session_id(
+        session_id: ::sce_rust_runtime::helpers::session_id::SessionId,
+        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    ) -> Self {
+        Self::build(session_id.as_str().to_string(), script_engine)
     }
 
     /// The policy of a child its parent invokes, under the id the tree gives it,
