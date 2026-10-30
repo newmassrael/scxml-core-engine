@@ -19,9 +19,12 @@ enum FlatState: Int, Hashable, CaseIterable {
 /// which the exact table keeps under the name `*`.
 enum FlatEvent: Hashable, CaseIterable {
     case null, go, again, ping, request, requestNew, errorExecution, errorCommunication, wildcard
+    case doneInvokeProbe, errorInvokeProbe
 
     var name: String {
         switch self {
+        case .doneInvokeProbe: return "done.invoke.probe"
+        case .errorInvokeProbe: return "error.invoke.probe"
         case .null: return ""
         case .go: return "go"
         case .again: return "again"

@@ -181,6 +181,12 @@ public final class Engine<Policy: StatePolicy> {
     /// HTTP is used; nil for fire-and-forget.
     private var onHTTPSend: ((HttpSendRequest) -> HttpSendResponse?)?
 
+    /// The host-run `<invoke>` bookkeeping (§scxml-6.4.1): the invokers a host
+    /// registered, the starts still running and the token counter. A stored property
+    /// cannot live in an extension, so the state is held here and the operations on it
+    /// are `HostInvoke.swift`'s.
+    var hostInvokes = HostInvokeBook()
+
     /// How many ids this machine has generated for a `<send idlocation>`: the number
     /// the last one carried. Counted per machine and not per process, so a machine's
     /// ids do not depend on what else ran beside it. See `nextAutoSendID`.
