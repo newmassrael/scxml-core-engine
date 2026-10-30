@@ -7493,21 +7493,12 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             };
             return Ok(format!("{l} {} {r}", kotlin_binop(*op)));
         }
-        // Kotlin's narrow unsigned types (UByte/UShort) do not support
-        // bitwise/shift operations directly — `UByte shr Int` does not
-        // resolve, and `UByte.toUByte` is a method reference, not a call.
-        // Widen to signed Int32 for the operation — or to the joined type
-        // when that is 64-bit, see `kotlin_narrow_unsigned_domain` — then
-        // coerce back to the caller-requested type. The outer kotlin_coerce
-        // handles the Int32 → UByte/UShort reverse conversion via `.toUByte()`.
-        if op.is_bitwise() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = kotlin_narrow_unsigned_domain(
-                join_int(left.ty, right.ty),
-                InferredType::Int {
-                    signed: true,
-                    bits: 32,
-                },
-            );
+        // Kotlin's narrow unsigned types (UByte/UShort) define no operator:
+        // the operation runs in the type `kotlin_narrow_unsigned_operation`
+        // names, and the result is coerced from it to the caller-requested
+        // type. The outer kotlin_coerce handles the reverse conversion via
+        // `.toUByte()` / `.toUShort()`.
+        if let Some(widened) = kotlin_narrow_unsigned_operation(expr) {
             // A shift count is an `Int` whatever is being shifted:
             // `Long.shl` takes `bitCount: Int`, so a 64-bit domain applies
             // to the left operand only.
@@ -7521,36 +7512,6 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
             };
             let l_raw = emit_kotlin(left, widened)?;
             let r_raw = emit_kotlin(right, count_ty)?;
-            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
-                format!("({l_raw})")
-            } else {
-                l_raw
-            };
-            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
-                format!("({r_raw})")
-            } else {
-                r_raw
-            };
-            let inner = format!("{l} {} {r}", kotlin_binop(*op));
-            return Ok(kotlin_coerce(inner, widened, expected, expr));
-        }
-        // Arithmetic on narrow unsigned in Kotlin: `UByte + UByte` is
-        // defined as `this.toUInt() + other.toUInt(): UInt`, so storing
-        // the result back into a `UByte`/`UShort` lvalue triggers an
-        // assignment-type-mismatch in kotlinc. Mirror the bitwise path
-        // above by widening to `UInt`, then coercing the result back to
-        // the caller-requested narrow unsigned via the outer
-        // `kotlin_coerce`'s `.toUByte()` / `.toUShort()` arm.
-        if op.is_arith() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = kotlin_narrow_unsigned_domain(
-                join_arith(left.ty, right.ty),
-                InferredType::Int {
-                    signed: false,
-                    bits: 32,
-                },
-            );
-            let l_raw = emit_kotlin(left, widened)?;
-            let r_raw = emit_kotlin(right, widened)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -7594,6 +7555,47 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     }
     let raw = kotlin_emit_node(expr)?;
     Ok(kotlin_coerce(raw, expr.ty, expected, expr))
+}
+
+/// The Kotlin type `expr` is computed in when it is a bitwise or arithmetic
+/// operation with a UByte/UShort operand, which Kotlin defines no operator on;
+/// `None` for any other expression, whose text has the type it is inferred to.
+///
+/// Bitwise and shift operations run in `Int`: `UByte shr Int` does not resolve.
+/// Arithmetic runs in `UInt`: `UByte + UByte` is defined as
+/// `this.toUInt() + other.toUInt(): UInt`. Either widens to the joined type
+/// when that is 64-bit (`kotlin_narrow_unsigned_domain`).
+///
+/// The emitted text of such an operation has this type and not the inferred
+/// one until it is coerced, so a reader that converts the text itself, as an
+/// index does, asks here rather than reading `expr.ty`: an `Int` converted to
+/// `Int` again is a redundant call kotlinc `-Werror` refuses.
+fn kotlin_narrow_unsigned_operation(expr: &TypedExpr) -> Option<InferredType> {
+    let ExprKind::Binary { op, left, right } = &expr.kind else {
+        return None;
+    };
+    if !(is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
+        return None;
+    }
+    if op.is_bitwise() {
+        Some(kotlin_narrow_unsigned_domain(
+            join_int(left.ty, right.ty),
+            InferredType::Int {
+                signed: true,
+                bits: 32,
+            },
+        ))
+    } else if op.is_arith() {
+        Some(kotlin_narrow_unsigned_domain(
+            join_arith(left.ty, right.ty),
+            InferredType::Int {
+                signed: false,
+                bits: 32,
+            },
+        ))
+    } else {
+        None
+    }
 }
 
 /// The type Kotlin computes an operation in when one operand is UByte/UShort,
@@ -7783,8 +7785,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // need explicit `.toInt()` or kotlinc rejects with
             // "argument type mismatch". Mirrors the Rust emitter's
             // `as usize` insertion for non-`UntypedInt` indices.
+            // An operation on a narrow unsigned index is emitted in the type
+            // Kotlin computes it in, which may be `Int` already.
             let idx_raw = emit_kotlin(index, InferredType::Unknown)?;
-            let idx_emit = match index.ty {
+            let idx_emit = match kotlin_narrow_unsigned_operation(index).unwrap_or(index.ty) {
                 InferredType::Int {
                     signed: true,
                     bits: 32,
@@ -12646,6 +12650,30 @@ mod tests {
         assert_eq!(
             tp("(byte >> 4) & 0x0F", ExprTarget::Kotlin),
             "byte shr 4 and 0x0F"
+        );
+    }
+
+    /// An index is read as the `Int` Kotlin's arrays take, converted once from
+    /// the type its text has. An operation on a narrow unsigned value is
+    /// computed in `Int` (bitwise) or `UInt` (arithmetic), not in the type it
+    /// is inferred to, and an `Int` converted to `Int` again is a redundant
+    /// call kotlinc `-Werror` refuses: `algorithm_lcg_table`'s `LCG_TABLE[n & 15]`.
+    #[test]
+    fn kotlin_index_is_converted_to_int_once() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_array_elem("table", int(false, 32));
+        ctx.insert_var("n", int(false, 8));
+        assert_eq!(
+            tp_with("table[n & 15]", ExprTarget::Kotlin, &ctx),
+            "table[n.toInt() and 15]"
+        );
+        assert_eq!(
+            tp_with("table[n + 1]", ExprTarget::Kotlin, &ctx),
+            "table[(n.toUInt() + 1.toUInt()).toInt()]"
+        );
+        assert_eq!(
+            tp_with("table[n]", ExprTarget::Kotlin, &ctx),
+            "table[(n).toInt()]"
         );
     }
 

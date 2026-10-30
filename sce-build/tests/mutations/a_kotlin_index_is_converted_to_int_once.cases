@@ -1,0 +1,26 @@
+# Mutation cases for "a Kotlin index is converted to Int once".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_kotlin_index_is_converted_to_int_once.cases`.
+#
+# Kotlin's arrays take an `Int` index, and the emitter converts an index from
+# the type its text has. An operation on a UByte or UShort is computed in the
+# type `kotlin_narrow_unsigned_operation` names (`Int` for a bitwise one), not
+# in the type it is inferred to, so reading the inferred type converts an `Int`
+# to `Int` again: a redundant call kotlinc `-Werror` refuses, as it refused
+# `algorithm_lcg_table`'s `LCG_TABLE[n & 15]`. The case makes the index read
+# the inferred type; `forge::expr::tests::kotlin_index_is_converted_to_int_once`
+# and the `AlgorithmLcgTable.kt` golden refuse it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test forge_conformance
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/src/forge/expr.rs sce-build/tests/forge_conformance.rs
+
+mutation_case "an index converts from the type it is inferred to" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            let idx_emit = match kotlin_narrow_unsigned_operation(index).unwrap_or(index.ty) {''',
+     r'''            let idx_emit = match index.ty {''')
+PY

@@ -532,6 +532,54 @@ fn forge_c11_algorithm_tick_until_due() {
     );
 }
 
+// `algorithm_lcg_table` folds a table from wrapping operations at code
+// generation time, so each backend holds the same sixteen literals, and its
+// body reads one entry of that table. Held as text so the read is the one each
+// language spells without a conversion of a value already of its type: kotlinc
+// `-Werror` refuses a redundant one.
+
+#[test]
+fn forge_rust_algorithm_lcg_table() {
+    assert_standalone_forge_rust("algorithm_lcg_table", "algorithm_lcg_table.rs");
+}
+
+#[test]
+fn forge_kotlin_algorithm_lcg_table() {
+    assert_standalone_forge_kotlin("algorithm_lcg_table", "AlgorithmLcgTable.kt");
+}
+
+#[test]
+fn forge_cpp_algorithm_lcg_table() {
+    assert_standalone_forge("algorithm_lcg_table", "algorithm_lcg_table.h");
+}
+
+#[test]
+fn forge_go_algorithm_lcg_table() {
+    assert_standalone_forge_lang(
+        "algorithm_lcg_table",
+        "algorithm_lcg_table.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_python_algorithm_lcg_table() {
+    assert_standalone_forge_lang(
+        "algorithm_lcg_table",
+        "algorithm_lcg_table.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_c11_algorithm_lcg_table() {
+    assert_standalone_forge_lang(
+        "algorithm_lcg_table",
+        "algorithm_lcg_table.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
 // ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
 // `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
 // index) and `len(a)`/`len(b)` (length builtin) on all six
