@@ -201,6 +201,34 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var {{ field.reader }}: {{ field.ty }} { {{ field.name }} }
 {% endif %}
 {% endfor %}
+{% set seeded_fields = static_fields | selectattr('seeded') | list %}
+{% if seeded_fields %}
+
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts, each in the slot named as its
+    /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
+    /// it; a variable that may be absent is handed the optional value whole.
+    public struct InvokeParams {
+        public init() {}
+{% for field in seeded_fields %}
+{% if field.saved_kind == 'optional' %}
+        public var {{ field.name }}: {{ field.ty }} = nil
+{% else %}
+        public var {{ field.name }}: {{ field.ty }}? = nil
+{% endif %}
+{% endfor %}
+    }
+
+    /// Gives this machine the values `params` carries, in place of the ones its
+    /// `<data>` gave. Called before the machine starts.
+    public func acceptParams(_ params: InvokeParams) {
+{% for field in seeded_fields %}
+        if let value = params.{{ field.name }} {
+            {{ field.name }} = value
+        }
+{% endfor %}
+    }
+{% endif %}
 {% endif %}
 
     public init() {

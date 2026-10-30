@@ -18,11 +18,22 @@
     writes a wrapper type per invoke. The entry that defers an invoke is in
     entry_exit_actions.swift.jinja2, and the exit that cancels it.
 
-    What an invocation hands its child (`<param>`, `namelist`, `idlocation`), what
-    the child hands back (`<finalize>`), and every other way of running one are
-    refused before this template runs (`swift_invoke_unlowered`).
+    What an invocation hands its child (`<param>`, `namelist`) is the value the static
+    lowering wrote for each (`native_seed`), given to the child's `acceptParams`
+    before it initializes. An `idlocation`, what the child hands back (`<finalize>`),
+    and every other way of running one are refused before this template runs
+    (`swift_invoke_unlowered`).
 #}
-{% set static_invokes = model.invokes | scxml %}
+{# The invokes are read off the states, not off `model.invokes`: the static lowering
+   writes what an invoke hands its child (`native_seed`) on the state's own copy, and
+   the model's list was made before it ran. #}
+{% set ns_invokes = namespace(all=[]) %}
+{% for state_id, state in model.states | dictsort %}
+{% for invoke_info in state.invokes | scxml %}
+{% set ns_invokes.all = ns_invokes.all + [invoke_info] %}
+{% endfor %}
+{% endfor %}
+{% set static_invokes = ns_invokes.all %}
 {% if static_invokes %}
 
     // ------------------------------------------------------------------
@@ -67,8 +78,36 @@
         // keys the invocation on, so the origin of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
+        let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy()
+{% set seeds = invoke_info.params | selectattr('native_seed') | list %}
+{% if seeds %}
+        // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
+        // initializes. Each is the value of the child's variable of the same name, whose
+        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        var seed = {{ invoke_info.child_name | to_pascal_case }}Policy.InvokeParams()
+{% for param in seeds %}
+        do {
+{% if param.native_fails %}
+            let sceFailure = Failure()
+            let sceValue: {{ param.native_seed_type }} = {{ param.native_seed }}
+            if sceFailure.failed {
+                // W3C SCXML 5.7.1: the failure is reported and the value left out: the
+                // child starts with the one its `<data>` gave it.
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
+{% endif %}
+            } else {
+                seed.v{{ param.name | to_pascal_case }} = sceValue
+            }
+{% else %}
+            seed.v{{ param.name | to_pascal_case }} = {{ param.native_seed }}
+{% endif %}
+        }
+{% endfor %}
+        childPolicy.acceptParams(seed)
+{% endif %}
         let session = InvokedSession(
-            policy: {{ invoke_info.child_name | to_pascal_case }}Policy(),
+            policy: childPolicy,
             sessionID: childSessionID,
             queue: ParentEventQueue()
         )

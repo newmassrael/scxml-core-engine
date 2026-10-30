@@ -12044,7 +12044,7 @@ impl StaticTarget for SwiftTarget {
             // model: a static child session is lowered, and each other kind of
             // `<invoke>` is named.
             for invoke in &state.invokes {
-                if let Some(found) = crate::generator::swift_invoke_unlowered(invoke) {
+                if let Some(found) = crate::generator::swift_invoke_unlowered(invoke, true) {
                     return Some(found);
                 }
             }

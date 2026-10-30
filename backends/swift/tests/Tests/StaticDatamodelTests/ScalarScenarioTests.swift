@@ -155,6 +155,33 @@ private func invoke() -> Machine {
     return drive(policy, variables: ["completed": { integer(policy.completed) }])
 }
 
+private func invokeParams() -> Machine {
+    let policy = StaticInvokeParamsPolicy()
+    return drive(policy, variables: ["completed": { integer(policy.completed) }])
+}
+
+private func invokeOptional() -> Machine {
+    let policy = StaticInvokeOptionalPolicy()
+    return drive(
+        policy,
+        variables: [
+            "completed": { integer(policy.completed) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func invokeString() -> Machine {
+    let policy = StaticInvokeStringPolicy()
+    return drive(
+        policy,
+        variables: [
+            "completed": { integer(policy.completed) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 private func sendIdLocation() -> Machine {
     let policy = StaticSendIdlocationPolicy()
     return drive(
@@ -1272,6 +1299,18 @@ private func recordBytes() -> Machine {
 
 @Test func aChildSessionIsStartedDrivenAndEndedByItsParent() {
     replay("static_invoke", invoke())
+}
+
+@Test func aChildIsHandedTheValuesItsInvokeNames() {
+    replay("static_invoke_params", invokeParams())
+}
+
+@Test func aChildIsHandedAValueThatMayBeAbsentWhole() {
+    replay("static_invoke_optional", invokeOptional())
+}
+
+@Test func aChildIsHandedATextHeldToTheBoundItDeclared() {
+    replay("static_invoke_string", invokeString())
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {

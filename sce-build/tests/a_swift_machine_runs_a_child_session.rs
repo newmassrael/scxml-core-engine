@@ -204,13 +204,57 @@ fn the_child_is_written_beside_its_parent_as_a_machine_of_its_own() {
     );
 }
 
-/// What an invocation hands its child, and every other way of running one, is
-/// named in a refusal and not written wrong: exit status 7, the construct and its
-/// state in the message.
+/// What an invocation hands its child is a value of the child's variable of the same
+/// name: the child takes it in a slot of `InvokeParams` before it starts, and a slot
+/// left `nil` keeps the value its `<data>` gave.
+#[test]
+fn a_child_takes_the_values_its_invoke_names_before_it_starts() {
+    let (status, files, said) = generate("static_invoke_params.scxml");
+    assert_eq!(status, Some(0), "static_invoke_params is written: {said}");
+    let parent = files
+        .iter()
+        .find(|(name, _)| name == "static_invoke_params_sm.swift")
+        .map(|f| f.1.as_str())
+        .expect("the parent is a file of the run");
+    holds_each(
+        parent,
+        &[
+            "var seed = StaticInvokeParamsSceSynthInvokeWorkerPolicy.InvokeParams()",
+            "childPolicy.acceptParams(seed)",
+        ],
+    );
+    let child = files
+        .iter()
+        .find(|(name, _)| name == "static_invoke_params__sce_synth_invoke__worker_sm.swift")
+        .map(|f| f.1.as_str())
+        .expect("the child is a file of the run");
+    holds_each(
+        child,
+        &[
+            "public struct InvokeParams {",
+            "public func acceptParams(_ params: InvokeParams) {",
+        ],
+    );
+}
+
+/// What an invocation hands its child when a value cannot be computed is left out and
+/// reported (§scxml-5.7.1): the child starts with the value its `<data>` gave it.
+#[test]
+fn a_value_that_cannot_be_computed_is_left_out_and_reported() {
+    let code = machine_of(
+        "static_invoke_string.scxml",
+        "static_invoke_string_sm.swift",
+    );
+    holds_each(&code, &["if sceFailure.failed {", "could not be read"]);
+}
+
+/// What a child hands back through `<finalize>`, an `idlocation`, and every other way
+/// of running one are named in a refusal and not written wrong: exit status 7, the
+/// construct and its state in the message.
 #[test]
 fn what_is_not_lowered_is_refused_by_name() {
     for (machine, construct) in [
-        ("static_invoke_params.scxml", "a <param> or a namelist"),
+        ("static_invoke_tree.scxml", "an <invoke idlocation>"),
         ("static_invoke_hybrid.scxml", "a srcexpr or contentexpr"),
     ] {
         let (status, files, said) = generate(machine);

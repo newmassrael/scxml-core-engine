@@ -4220,9 +4220,14 @@ fn swift_unsupported(
 /// A static child session is lowered (§scxml-6.4): one the document carries or names
 /// by a file, started when its state is entered, driven by its parent, forwarded
 /// what the parent receives when it autoforwards, and cancelled when the state exits.
-/// What the invocation hands the child, what the child hands back through
-/// `<finalize>`, and every other way of running one are not, and each is named.
-pub(crate) fn swift_invoke_unlowered(invoke: &crate::model::Invoke) -> Option<String> {
+/// What the invocation hands the child (`<param>`, `namelist`) is lowered for a
+/// `sce-static` document, whose static lowering writes each value. What the child
+/// hands back through `<finalize>`, an `idlocation`, and every other way of running
+/// one are not, and each is named.
+pub(crate) fn swift_invoke_unlowered(
+    invoke: &crate::model::Invoke,
+    statically_lowered: bool,
+) -> Option<String> {
     let info = match invoke {
         crate::model::Invoke::Scxml(info) => info,
         crate::model::Invoke::Hybrid(_) => {
@@ -4241,7 +4246,9 @@ pub(crate) fn swift_invoke_unlowered(invoke: &crate::model::Invoke) -> Option<St
     if info.remote_mesh_target.is_some() {
         return Some("an <invoke> of a Mesh peer".to_string());
     }
-    if !info.common.base.params.is_empty() || !info.namelist.is_empty() {
+    // What the invocation hands the child is a value the static lowering writes
+    // (`Param::native_seed`); a document under another data model has none to give.
+    if !statically_lowered && (!info.common.base.params.is_empty() || !info.namelist.is_empty()) {
         return Some("an <invoke> with a <param> or a namelist".to_string());
     }
     if !info.common.base.idlocation.is_empty() {
@@ -4309,7 +4316,7 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
     states.sort_by_key(|state| state.document_order);
     for state in states {
         for invoke in &state.invokes {
-            if let Some(what) = swift_invoke_unlowered(invoke) {
+            if let Some(what) = swift_invoke_unlowered(invoke, is_static) {
                 return Err(swift_unsupported(
                     format!("{what} in state '{}'", state.id),
                     invoke.base().source_location.clone(),
