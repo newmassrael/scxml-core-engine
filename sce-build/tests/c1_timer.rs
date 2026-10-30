@@ -151,11 +151,11 @@ fn full_lifecycle_emits_rust_struct_with_reset_and_cancel() {
         "PERIOD_US constant missing:\n{code}"
     );
     assert!(
-        code.contains(r#"pub const RESET_ON_EVENT: &'static str = "session.msg.received";"#),
+        code.contains(r#"pub const RESET_ON_EVENT: &str = "session.msg.received";"#),
         "RESET_ON_EVENT constant missing:\n{code}"
     );
     assert!(
-        code.contains(r#"pub const CANCEL_ON_STATE_EXIT: &'static str = "established";"#),
+        code.contains(r#"pub const CANCEL_ON_STATE_EXIT: &str = "established";"#),
         "CANCEL_ON_STATE_EXIT constant missing:\n{code}"
     );
     assert!(

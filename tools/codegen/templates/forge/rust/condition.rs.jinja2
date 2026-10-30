@@ -15,8 +15,15 @@
 {% endif %}
 
 {# The expression is the document's, lowered as the other five backends lower
-   it: a text compared to `''` stays a comparison, not `is_empty()`. #}
-#[allow(clippy::comparison_to_empty)]
+   it: a text compared to `''` stays a comparison, not `is_empty()`; a `bool`
+   compared to `true` stays a comparison, not the operand alone; and a value
+   checked against two bounds stays the two comparisons, not
+   `(lo..=hi).contains(&x)`. #}
+#[allow(
+    clippy::bool_comparison,
+    clippy::comparison_to_empty,
+    clippy::manual_range_contains
+)]
 pub fn {{ func_name }}({{ params }}) -> bool {
     {{ expr }}
 }

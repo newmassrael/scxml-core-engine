@@ -40,7 +40,13 @@ impl {{ struct_name }} {
     }
 
     pub fn update(&mut self, {{ input_id }}: {{ input_type }}) -> {{ output_type }} {
+{# The sample is converted only where the declared types differ: a cast to the
+   type it already has is noise the lints refuse. #}
+{% if input_type == output_type %}
+        self.impl_.update({{ input_id }})
+{% else %}
         self.impl_.update({{ input_id }} as {{ output_type }})
+{% endif %}
     }
 
     pub fn reset(&mut self) {

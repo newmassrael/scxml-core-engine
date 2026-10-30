@@ -63,9 +63,10 @@ impl {{ struct_name }} {
 {# A range is checked as the two comparisons every backend writes, and a
    plausibility rule as the negation of the expression the document wrote: the
    same reading of a NaN, and of the document, on all six. Clippy would rewrite
-   each into a form the other five do not share, and a text compared to `''`
-   into `is_empty()`. #}
+   each into a form the other five do not share, a text compared to `''`
+   into `is_empty()`, and a `bool` compared to `true` into the operand alone. #}
     #[allow(
+        clippy::bool_comparison,
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
         clippy::neg_cmp_op_on_partial_ord,
@@ -97,7 +98,7 @@ impl {{ struct_name }} {
 {% for rule in roc_rules %}
 {% if rule.is_unsigned %}
         {
-            let delta = if {{ rule.id }} > self.{{ rule.prev_name }} { {{ rule.id }} - self.{{ rule.prev_name }} } else { self.{{ rule.prev_name }} - {{ rule.id }} };
+            let delta = {{ rule.id }}.abs_diff(self.{{ rule.prev_name }});
             if delta > {{ rule.max_delta }} {
                 return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_rate_of_change_exceeded".to_string() };
             }

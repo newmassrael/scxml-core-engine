@@ -38,7 +38,7 @@ pub const PERIOD_MS: u32 = {{ period_ms }}u32;
 /// the host SCXML, the consumer calls
 /// `{{ struct_name }}::on_reset_{{ reset_handler_snake }}()` to
 /// restart the timer's deadline.
-pub const RESET_ON_EVENT: &'static str = "{{ reset_on_event }}";
+pub const RESET_ON_EVENT: &str ="{{ reset_on_event }}";
 {% endif %}
 
 {% if cancel_on_state_exit %}
@@ -47,7 +47,7 @@ pub const RESET_ON_EVENT: &'static str = "{{ reset_on_event }}";
 /// consumer calls
 /// `{{ struct_name }}::on_cancel_{{ cancel_state_snake }}_exit()` to
 /// cancel the timer.
-pub const CANCEL_ON_STATE_EXIT: &'static str = "{{ cancel_on_state_exit }}";
+pub const CANCEL_ON_STATE_EXIT: &str ="{{ cancel_on_state_exit }}";
 {% endif %}
 
 /// Generated single-timer scheduler per SCE Protocol-Synthesis RFC §synth-5-D.
