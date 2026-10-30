@@ -2755,6 +2755,191 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }}
 
+// MARK: - event-schema: lww_cell
+
+@Test func lwwCellMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "lww_cell")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 15, "lww_cell: oracle field count")
+    #expect(LwwCell.eventName == "merge.lww_cell", "lww_cell: event name")
+
+    let payload = LwwCellPayload(
+        row: 3,
+        col: 2,
+        value: -12,
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7,
+        op: 2,
+        aRef: true,
+        aRow: 3,
+        aCol: 1,
+        aVal: -4,
+        bRef: false,
+        bRow: 0,
+        bCol: 0,
+        bVal: 9
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "row", "lww_cell field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.row) == expected0, "lww_cell.row")
+    #expect(try oracleText(fields[1].member("name")) == "col", "lww_cell field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.col) == expected1, "lww_cell.col")
+    #expect(try oracleText(fields[2].member("name")) == "value", "lww_cell field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.value) == expected2, "lww_cell.value")
+    #expect(try oracleText(fields[3].member("name")) == "wallTime", "lww_cell field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.wallTime) == expected3, "lww_cell.wallTime")
+    #expect(try oracleText(fields[4].member("name")) == "counter", "lww_cell field 4 name")
+    let expected4 = try oracleNumberText(fields[4].member("value"))
+    #expect(String(payload.counter) == expected4, "lww_cell.counter")
+    #expect(try oracleText(fields[5].member("name")) == "nodeId", "lww_cell field 5 name")
+    let expected5 = try oracleNumberText(fields[5].member("value"))
+    #expect(String(payload.nodeId) == expected5, "lww_cell.nodeId")
+    #expect(try oracleText(fields[6].member("name")) == "op", "lww_cell field 6 name")
+    let expected6 = try oracleNumberText(fields[6].member("value"))
+    #expect(String(payload.op) == expected6, "lww_cell.op")
+    #expect(try oracleText(fields[7].member("name")) == "aRef", "lww_cell field 7 name")
+    let expected7 = try oracleTruth(fields[7].member("value"))
+    #expect(payload.aRef == expected7, "lww_cell.aRef")
+    #expect(try oracleText(fields[8].member("name")) == "aRow", "lww_cell field 8 name")
+    let expected8 = try oracleNumberText(fields[8].member("value"))
+    #expect(String(payload.aRow) == expected8, "lww_cell.aRow")
+    #expect(try oracleText(fields[9].member("name")) == "aCol", "lww_cell field 9 name")
+    let expected9 = try oracleNumberText(fields[9].member("value"))
+    #expect(String(payload.aCol) == expected9, "lww_cell.aCol")
+    #expect(try oracleText(fields[10].member("name")) == "aVal", "lww_cell field 10 name")
+    let expected10 = try oracleNumberText(fields[10].member("value"))
+    #expect(String(payload.aVal) == expected10, "lww_cell.aVal")
+    #expect(try oracleText(fields[11].member("name")) == "bRef", "lww_cell field 11 name")
+    let expected11 = try oracleTruth(fields[11].member("value"))
+    #expect(payload.bRef == expected11, "lww_cell.bRef")
+    #expect(try oracleText(fields[12].member("name")) == "bRow", "lww_cell field 12 name")
+    let expected12 = try oracleNumberText(fields[12].member("value"))
+    #expect(String(payload.bRow) == expected12, "lww_cell.bRow")
+    #expect(try oracleText(fields[13].member("name")) == "bCol", "lww_cell field 13 name")
+    let expected13 = try oracleNumberText(fields[13].member("value"))
+    #expect(String(payload.bCol) == expected13, "lww_cell.bCol")
+    #expect(try oracleText(fields[14].member("name")) == "bVal", "lww_cell field 14 name")
+    let expected14 = try oracleNumberText(fields[14].member("value"))
+    #expect(String(payload.bVal) == expected14, "lww_cell.bVal")
+}
+
+// MARK: - event-schema: sheet_value
+
+@Test func sheetValueMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "sheet_value")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "sheet_value: oracle field count")
+    #expect(SheetValue.eventName == "merge.sheet_value", "sheet_value: event name")
+
+    let payload = SheetValuePayload(
+        value: -12,
+        fault: 2
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "value", "sheet_value field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.value) == expected0, "sheet_value.value")
+    #expect(try oracleText(fields[1].member("name")) == "fault", "sheet_value field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.fault) == expected1, "sheet_value.fault")
+}
+
+// MARK: - event-schema: sheet_shown
+
+@Test func sheetShownMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "sheet_shown")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 4, "sheet_shown: oracle field count")
+    #expect(SheetShown.eventName == "merge.sheet_shown", "sheet_shown: event name")
+
+    let payload = SheetShownPayload(
+        row: 3,
+        col: 2,
+        value: -12,
+        fault: 1
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "row", "sheet_shown field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.row) == expected0, "sheet_shown.row")
+    #expect(try oracleText(fields[1].member("name")) == "col", "sheet_shown field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.col) == expected1, "sheet_shown.col")
+    #expect(try oracleText(fields[2].member("name")) == "value", "sheet_shown field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.value) == expected2, "sheet_shown.value")
+    #expect(try oracleText(fields[3].member("name")) == "fault", "sheet_shown field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.fault) == expected3, "sheet_shown.fault")
+}
+
+// MARK: - event-schema: rga_node
+
+@Test func rgaNodeMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "rga_node")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "rga_node: oracle field count")
+    #expect(RgaNode.eventName == "merge.rga_node", "rga_node: event name")
+
+    let payload = RgaNodePayload(
+        key: 513,
+        after: 257
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "key", "rga_node field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.key) == expected0, "rga_node.key")
+    #expect(try oracleText(fields[1].member("name")) == "after", "rga_node field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.after) == expected1, "rga_node.after")
+}
+
+// MARK: - event-schema: rga_gone
+
+@Test func rgaGoneMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "rga_gone")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "rga_gone: oracle field count")
+    #expect(RgaGone.eventName == "merge.rga_gone", "rga_gone: event name")
+
+    let payload = RgaGonePayload(
+        key: 513,
+        by: 2
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "key", "rga_gone field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.key) == expected0, "rga_gone.key")
+    #expect(try oracleText(fields[1].member("name")) == "by", "rga_gone field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.by) == expected1, "rga_gone.by")
+}
+
 // MARK: - algorithm: outbound_overflows
 
 @Test func outboundOverflowsMatchesReference() throws {
@@ -3200,6 +3385,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "utf8_within")
     }}
 
+// MARK: - event-schema: text_slot
+
+@Test func textSlotMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "text_slot")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "text_slot: oracle field count")
+    #expect(TextSlot.eventName == "text.slot", "text_slot: event name")
+
+    let payload = TextSlotPayload(
+        slot: 3,
+        version: 12,
+        text: "draft"
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "slot", "text_slot field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.slot) == expected0, "text_slot.slot")
+    #expect(try oracleText(fields[1].member("name")) == "version", "text_slot field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.version) == expected1, "text_slot.version")
+    #expect(try oracleText(fields[2].member("name")) == "text", "text_slot field 2 name")
+    let expected2 = try oracleText(fields[2].member("value"))
+    #expect(payload.text == expected2, "text_slot.text")
+}
+
 // MARK: - algorithm: text_slot_latest
 
 @Test func textSlotLatestMatchesReference() throws {
@@ -3328,6 +3542,31 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(EnumTaskPhase.shipped.declaredName == "shipped", "enum_task_phase.shipped declared name")
 }
 
+// MARK: - event-schema: event_schema_task
+
+@Test func eventSchemaTaskMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "event_schema_task")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "event_schema_task: oracle field count")
+    #expect(EventSchemaTask.eventName == "task.state", "event_schema_task: event name")
+
+    let payload = EventSchemaTaskPayload(
+        taskId: 42,
+        phase: EnumTaskPhase.inReview
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "taskId", "event_schema_task field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.taskId) == expected0, "event_schema_task.taskId")
+    #expect(try oracleText(fields[1].member("name")) == "phase", "event_schema_task field 1 name")
+    let expected1 = try oracleText(fields[1].member("value"))
+    #expect(payload.phase.declaredName == expected1, "event_schema_task.phase")
+}
+
 // MARK: - algorithm: algorithm_task_phase_advance
 
 @Test func algorithmTaskPhaseAdvanceMatchesReference() throws {
@@ -3384,6 +3623,51 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expectedPhase = try { () throws -> EnumTaskPhase in switch try oracleText(expected?.member("phase")) { case "todo": return EnumTaskPhase.todo; case "in_review": return EnumTaskPhase.inReview; case "shipped": return EnumTaskPhase.shipped; default: throw OracleError(description: "algorithm_task_phase_reopened.phase: no variant is declared as the name the case writes") } }()
         #expect(returned.phase == expectedPhase, "algorithm_task_phase_reopened.phase")
     }}
+
+// MARK: - event-schema: mv_value
+
+@Test func mvValueMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "mv_value")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 7, "mv_value: oracle field count")
+    #expect(MvValue.eventName == "merge.mv_value", "mv_value: event name")
+
+    let payload = MvValuePayload(
+        id: 5,
+        field: 1,
+        value: 0,
+        text: "buy milk",
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "id", "mv_value field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.id) == expected0, "mv_value.id")
+    #expect(try oracleText(fields[1].member("name")) == "field", "mv_value field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.field) == expected1, "mv_value.field")
+    #expect(try oracleText(fields[2].member("name")) == "value", "mv_value field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.value) == expected2, "mv_value.value")
+    #expect(try oracleText(fields[3].member("name")) == "text", "mv_value field 3 name")
+    let expected3 = try oracleText(fields[3].member("value"))
+    #expect(payload.text == expected3, "mv_value.text")
+    #expect(try oracleText(fields[4].member("name")) == "wallTime", "mv_value field 4 name")
+    let expected4 = try oracleNumberText(fields[4].member("value"))
+    #expect(String(payload.wallTime) == expected4, "mv_value.wallTime")
+    #expect(try oracleText(fields[5].member("name")) == "counter", "mv_value field 5 name")
+    let expected5 = try oracleNumberText(fields[5].member("value"))
+    #expect(String(payload.counter) == expected5, "mv_value.counter")
+    #expect(try oracleText(fields[6].member("name")) == "nodeId", "mv_value field 6 name")
+    let expected6 = try oracleNumberText(fields[6].member("value"))
+    #expect(String(payload.nodeId) == expected6, "mv_value.nodeId")
+}
 
 // MARK: - algorithm: mv_value_holds
 
@@ -3947,5 +4231,596 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(RpcStatus.unavailable.declaredName == "unavailable", "rpc_status.unavailable declared name")
+}
+
+// MARK: - event-schema: event_schema_hlc
+
+@Test func eventSchemaHlcMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "event_schema_hlc")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "event_schema_hlc: oracle field count")
+    #expect(EventSchemaHlc.eventName == "hlc.stamp", "event_schema_hlc: event name")
+
+    let payload = EventSchemaHlcPayload(
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "wallTime", "event_schema_hlc field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.wallTime) == expected0, "event_schema_hlc.wallTime")
+    #expect(try oracleText(fields[1].member("name")) == "counter", "event_schema_hlc field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.counter) == expected1, "event_schema_hlc.counter")
+    #expect(try oracleText(fields[2].member("name")) == "nodeId", "event_schema_hlc field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.nodeId) == expected2, "event_schema_hlc.nodeId")
+}
+
+// MARK: - event-schema: policy_scalar_settings
+
+@Test func policyScalarSettingsMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "policy_scalar_settings")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 4, "policy_scalar_settings: oracle field count")
+    #expect(PolicyScalarSettings.eventName == "policy.scalar_settings", "policy_scalar_settings: event name")
+
+    let payload = PolicyScalarSettingsPayload(
+        strict: true,
+        limitDays: 30,
+        burst: 50,
+        locked: false
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "strict", "policy_scalar_settings field 0 name")
+    let expected0 = try oracleTruth(fields[0].member("value"))
+    #expect(payload.strict == expected0, "policy_scalar_settings.strict")
+    #expect(try oracleText(fields[1].member("name")) == "limitDays", "policy_scalar_settings field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.limitDays) == expected1, "policy_scalar_settings.limitDays")
+    #expect(try oracleText(fields[2].member("name")) == "burst", "policy_scalar_settings field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.burst) == expected2, "policy_scalar_settings.burst")
+    #expect(try oracleText(fields[3].member("name")) == "locked", "policy_scalar_settings field 3 name")
+    let expected3 = try oracleTruth(fields[3].member("value"))
+    #expect(payload.locked == expected3, "policy_scalar_settings.locked")
+}
+
+// MARK: - event-schema: hlc_timestamp
+
+@Test func hlcTimestampMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "hlc_timestamp")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "hlc_timestamp: oracle field count")
+    #expect(HlcTimestamp.eventName == "merge.hlc_timestamp", "hlc_timestamp: event name")
+
+    let payload = HlcTimestampPayload(
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "wallTime", "hlc_timestamp field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.wallTime) == expected0, "hlc_timestamp.wallTime")
+    #expect(try oracleText(fields[1].member("name")) == "counter", "hlc_timestamp field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.counter) == expected1, "hlc_timestamp.counter")
+    #expect(try oracleText(fields[2].member("name")) == "nodeId", "hlc_timestamp field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.nodeId) == expected2, "hlc_timestamp.nodeId")
+}
+
+// MARK: - event-schema: orset_entry
+
+@Test func orsetEntryMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "orset_entry")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 4, "orset_entry: oracle field count")
+    #expect(OrsetEntry.eventName == "merge.orset_entry", "orset_entry: event name")
+
+    let payload = OrsetEntryPayload(
+        element: 42,
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "element", "orset_entry field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.element) == expected0, "orset_entry.element")
+    #expect(try oracleText(fields[1].member("name")) == "wallTime", "orset_entry field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.wallTime) == expected1, "orset_entry.wallTime")
+    #expect(try oracleText(fields[2].member("name")) == "counter", "orset_entry field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.counter) == expected2, "orset_entry.counter")
+    #expect(try oracleText(fields[3].member("name")) == "nodeId", "orset_entry field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.nodeId) == expected3, "orset_entry.nodeId")
+}
+
+// MARK: - event-schema: field_version
+
+@Test func fieldVersionMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "field_version")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 12, "field_version: oracle field count")
+    #expect(FieldVersion.eventName == "merge.field_version", "field_version: event name")
+
+    let payload = FieldVersionPayload(
+        entityId: 42,
+        fieldId: 3,
+        wallTime: 1727000000400,
+        counter: 3,
+        nodeId: 7,
+        arrival: 12,
+        batchId: 5,
+        origin: 1,
+        revertsBatch: 0,
+        valueWallTime: 1727000000100,
+        valueCounter: 1,
+        valueNodeId: 5
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "entityId", "field_version field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.entityId) == expected0, "field_version.entityId")
+    #expect(try oracleText(fields[1].member("name")) == "fieldId", "field_version field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.fieldId) == expected1, "field_version.fieldId")
+    #expect(try oracleText(fields[2].member("name")) == "wallTime", "field_version field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.wallTime) == expected2, "field_version.wallTime")
+    #expect(try oracleText(fields[3].member("name")) == "counter", "field_version field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.counter) == expected3, "field_version.counter")
+    #expect(try oracleText(fields[4].member("name")) == "nodeId", "field_version field 4 name")
+    let expected4 = try oracleNumberText(fields[4].member("value"))
+    #expect(String(payload.nodeId) == expected4, "field_version.nodeId")
+    #expect(try oracleText(fields[5].member("name")) == "arrival", "field_version field 5 name")
+    let expected5 = try oracleNumberText(fields[5].member("value"))
+    #expect(String(payload.arrival) == expected5, "field_version.arrival")
+    #expect(try oracleText(fields[6].member("name")) == "batchId", "field_version field 6 name")
+    let expected6 = try oracleNumberText(fields[6].member("value"))
+    #expect(String(payload.batchId) == expected6, "field_version.batchId")
+    #expect(try oracleText(fields[7].member("name")) == "origin", "field_version field 7 name")
+    let expected7 = try oracleNumberText(fields[7].member("value"))
+    #expect(String(payload.origin) == expected7, "field_version.origin")
+    #expect(try oracleText(fields[8].member("name")) == "revertsBatch", "field_version field 8 name")
+    let expected8 = try oracleNumberText(fields[8].member("value"))
+    #expect(String(payload.revertsBatch) == expected8, "field_version.revertsBatch")
+    #expect(try oracleText(fields[9].member("name")) == "valueWallTime", "field_version field 9 name")
+    let expected9 = try oracleNumberText(fields[9].member("value"))
+    #expect(String(payload.valueWallTime) == expected9, "field_version.valueWallTime")
+    #expect(try oracleText(fields[10].member("name")) == "valueCounter", "field_version field 10 name")
+    let expected10 = try oracleNumberText(fields[10].member("value"))
+    #expect(String(payload.valueCounter) == expected10, "field_version.valueCounter")
+    #expect(try oracleText(fields[11].member("name")) == "valueNodeId", "field_version field 11 name")
+    let expected11 = try oracleNumberText(fields[11].member("value"))
+    #expect(String(payload.valueNodeId) == expected11, "field_version.valueNodeId")
+}
+
+// MARK: - event-schema: undo_step
+
+@Test func undoStepMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "undo_step")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 9, "undo_step: oracle field count")
+    #expect(UndoStep.eventName == "merge.undo_step", "undo_step: event name")
+
+    let payload = UndoStepPayload(
+        entityId: 42,
+        fieldId: 3,
+        verdict: 1,
+        restoreWallTime: 1727000000100,
+        restoreCounter: 1,
+        restoreNodeId: 5,
+        winnerWallTime: 1727000000400,
+        winnerCounter: 3,
+        winnerNodeId: 7
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "entityId", "undo_step field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.entityId) == expected0, "undo_step.entityId")
+    #expect(try oracleText(fields[1].member("name")) == "fieldId", "undo_step field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.fieldId) == expected1, "undo_step.fieldId")
+    #expect(try oracleText(fields[2].member("name")) == "verdict", "undo_step field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.verdict) == expected2, "undo_step.verdict")
+    #expect(try oracleText(fields[3].member("name")) == "restoreWallTime", "undo_step field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.restoreWallTime) == expected3, "undo_step.restoreWallTime")
+    #expect(try oracleText(fields[4].member("name")) == "restoreCounter", "undo_step field 4 name")
+    let expected4 = try oracleNumberText(fields[4].member("value"))
+    #expect(String(payload.restoreCounter) == expected4, "undo_step.restoreCounter")
+    #expect(try oracleText(fields[5].member("name")) == "restoreNodeId", "undo_step field 5 name")
+    let expected5 = try oracleNumberText(fields[5].member("value"))
+    #expect(String(payload.restoreNodeId) == expected5, "undo_step.restoreNodeId")
+    #expect(try oracleText(fields[6].member("name")) == "winnerWallTime", "undo_step field 6 name")
+    let expected6 = try oracleNumberText(fields[6].member("value"))
+    #expect(String(payload.winnerWallTime) == expected6, "undo_step.winnerWallTime")
+    #expect(try oracleText(fields[7].member("name")) == "winnerCounter", "undo_step field 7 name")
+    let expected7 = try oracleNumberText(fields[7].member("value"))
+    #expect(String(payload.winnerCounter) == expected7, "undo_step.winnerCounter")
+    #expect(try oracleText(fields[8].member("name")) == "winnerNodeId", "undo_step field 8 name")
+    let expected8 = try oracleNumberText(fields[8].member("value"))
+    #expect(String(payload.winnerNodeId) == expected8, "undo_step.winnerNodeId")
+}
+
+// MARK: - event-schema: envelope_id
+
+@Test func envelopeIdMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "envelope_id")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "envelope_id: oracle field count")
+    #expect(EnvelopeId.eventName == "mesh.envelope_id", "envelope_id: event name")
+
+    let payload = EnvelopeIdPayload(
+        hi: 283686952306183,
+        lo: 579005069656919567
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "hi", "envelope_id field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.hi) == expected0, "envelope_id.hi")
+    #expect(try oracleText(fields[1].member("name")) == "lo", "envelope_id field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.lo) == expected1, "envelope_id.lo")
+}
+
+// MARK: - event-schema: ordering_slot
+
+@Test func orderingSlotMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "ordering_slot")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "ordering_slot: oracle field count")
+    #expect(OrderingSlot.eventName == "mesh.ordering_slot", "ordering_slot: event name")
+
+    let payload = OrderingSlotPayload(
+        seq: 7,
+        arrivedAtMs: 1727000000400
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "seq", "ordering_slot field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.seq) == expected0, "ordering_slot.seq")
+    #expect(try oracleText(fields[1].member("name")) == "arrivedAtMs", "ordering_slot field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.arrivedAtMs) == expected1, "ordering_slot.arrivedAtMs")
+}
+
+// MARK: - event-schema: civil_date
+
+@Test func civilDateMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "civil_date")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "civil_date: oracle field count")
+    #expect(CivilDate.eventName == "time.civil_date", "civil_date: event name")
+
+    let payload = CivilDatePayload(
+        year: 2026,
+        month: 9,
+        day: 23
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "year", "civil_date field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.year) == expected0, "civil_date.year")
+    #expect(try oracleText(fields[1].member("name")) == "month", "civil_date field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.month) == expected1, "civil_date.month")
+    #expect(try oracleText(fields[2].member("name")) == "day", "civil_date field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.day) == expected2, "civil_date.day")
+}
+
+// MARK: - event-schema: merkle_node
+
+@Test func merkleNodeMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "merkle_node")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "merkle_node: oracle field count")
+    #expect(MerkleNode.eventName == "merge.merkle_node", "merkle_node: event name")
+
+    let payload = MerkleNodePayload(
+        depth: 16,
+        prefix: 29841780,
+        hash: 3902511862
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "depth", "merkle_node field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.depth) == expected0, "merkle_node.depth")
+    #expect(try oracleText(fields[1].member("name")) == "prefix", "merkle_node field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.prefix) == expected1, "merkle_node.prefix")
+    #expect(try oracleText(fields[2].member("name")) == "hash", "merkle_node field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.hash) == expected2, "merkle_node.hash")
+}
+
+// MARK: - event-schema: merkle_divergence
+
+@Test func merkleDivergenceMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "merkle_divergence")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "merkle_divergence: oracle field count")
+    #expect(MerkleDivergence.eventName == "merge.merkle_divergence", "merkle_divergence: event name")
+
+    let payload = MerkleDivergencePayload(
+        differs: true,
+        millis: 1790409420000
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "differs", "merkle_divergence field 0 name")
+    let expected0 = try oracleTruth(fields[0].member("value"))
+    #expect(payload.differs == expected0, "merkle_divergence.differs")
+    #expect(try oracleText(fields[1].member("name")) == "millis", "merkle_divergence field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.millis) == expected1, "merkle_divergence.millis")
+}
+
+// MARK: - event-schema: change_entry
+
+@Test func changeEntryMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "change_entry")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "change_entry: oracle field count")
+    #expect(ChangeEntry.eventName == "sync.change_entry", "change_entry: event name")
+
+    let payload = ChangeEntryPayload(
+        item: 42,
+        op: 2,
+        token: 17
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "item", "change_entry field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.item) == expected0, "change_entry.item")
+    #expect(try oracleText(fields[1].member("name")) == "op", "change_entry field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.op) == expected1, "change_entry.op")
+    #expect(try oracleText(fields[2].member("name")) == "token", "change_entry field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.token) == expected2, "change_entry.token")
+}
+
+// MARK: - event-schema: gcra_decision
+
+@Test func gcraDecisionMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "gcra_decision")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "gcra_decision: oracle field count")
+    #expect(GcraDecision.eventName == "rate.gcra_decision", "gcra_decision: event name")
+
+    let payload = GcraDecisionPayload(
+        admitted: false,
+        tat: 1703936,
+        retryAfter: 131072
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "admitted", "gcra_decision field 0 name")
+    let expected0 = try oracleTruth(fields[0].member("value"))
+    #expect(payload.admitted == expected0, "gcra_decision.admitted")
+    #expect(try oracleText(fields[1].member("name")) == "tat", "gcra_decision field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.tat) == expected1, "gcra_decision.tat")
+    #expect(try oracleText(fields[2].member("name")) == "retryAfter", "gcra_decision field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.retryAfter) == expected2, "gcra_decision.retryAfter")
+}
+
+// MARK: - event-schema: mailbox_slot
+
+@Test func mailboxSlotMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "mailbox_slot")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "mailbox_slot: oracle field count")
+    #expect(MailboxSlot.eventName == "sync.mailbox_slot", "mailbox_slot: event name")
+
+    let payload = MailboxSlotPayload(
+        id: 7,
+        hi: 81985529216486895,
+        lo: 1
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "id", "mailbox_slot field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.id) == expected0, "mailbox_slot.id")
+    #expect(try oracleText(fields[1].member("name")) == "hi", "mailbox_slot field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.hi) == expected1, "mailbox_slot.hi")
+    #expect(try oracleText(fields[2].member("name")) == "lo", "mailbox_slot field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.lo) == expected2, "mailbox_slot.lo")
+}
+
+// MARK: - event-schema: acl_privilege
+
+@Test func aclPrivilegeMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "acl_privilege")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "acl_privilege: oracle field count")
+    #expect(AclPrivilege.eventName == "acl.privilege", "acl_privilege: event name")
+
+    let payload = AclPrivilegePayload(
+        id: 3,
+        parent: 1
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "id", "acl_privilege field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.id) == expected0, "acl_privilege.id")
+    #expect(try oracleText(fields[1].member("name")) == "parent", "acl_privilege field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.parent) == expected1, "acl_privilege.parent")
+}
+
+// MARK: - event-schema: acl_ace
+
+@Test func aclAceMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "acl_ace")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "acl_ace: oracle field count")
+    #expect(AclAce.eventName == "acl.ace", "acl_ace: event name")
+
+    let payload = AclAcePayload(
+        principal: 4294967294,
+        privilege: 2
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "principal", "acl_ace field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.principal) == expected0, "acl_ace.principal")
+    #expect(try oracleText(fields[1].member("name")) == "privilege", "acl_ace field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.privilege) == expected1, "acl_ace.privilege")
+}
+
+// MARK: - event-schema: acl_edge
+
+@Test func aclEdgeMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "acl_edge")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "acl_edge: oracle field count")
+    #expect(AclEdge.eventName == "acl.edge", "acl_edge: event name")
+
+    let payload = AclEdgePayload(
+        member: 7,
+        group: 10
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "member", "acl_edge field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.member) == expected0, "acl_edge.member")
+    #expect(try oracleText(fields[1].member("name")) == "group", "acl_edge field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.group) == expected1, "acl_edge.group")
+}
+
+// MARK: - event-schema: item_version
+
+@Test func itemVersionMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "item_version")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "item_version: oracle field count")
+    #expect(ItemVersion.eventName == "sync.item_version", "item_version: event name")
+
+    let payload = ItemVersionPayload(
+        item: 42,
+        token: 17
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "item", "item_version field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.item) == expected0, "item_version.item")
+    #expect(try oracleText(fields[1].member("name")) == "token", "item_version field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.token) == expected1, "item_version.token")
+}
+
+// MARK: - event-schema: event_schema_sensor_sample
+
+@Test func eventSchemaSensorSampleMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "event_schema_sensor_sample")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "event_schema_sensor_sample: oracle field count")
+    #expect(EventSchemaSensorSample.eventName == "sensor.sample", "event_schema_sensor_sample: event name")
+
+    let payload = EventSchemaSensorSamplePayload(
+        sensorId: 4660,
+        reading: -12345,
+        status: 200
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "sensorId", "event_schema_sensor_sample field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.sensorId) == expected0, "event_schema_sensor_sample.sensorId")
+    #expect(try oracleText(fields[1].member("name")) == "reading", "event_schema_sensor_sample field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.reading) == expected1, "event_schema_sensor_sample.reading")
+    #expect(try oracleText(fields[2].member("name")) == "status", "event_schema_sensor_sample field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.status) == expected2, "event_schema_sensor_sample.status")
 }
 
