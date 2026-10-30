@@ -148,7 +148,7 @@
 pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 
 /// Maximum number of simultaneously-pending delayed events in the no_std
-/// [`PullScheduler`](crate::engine::PullScheduler) ring.
+/// [`PullScheduler`] ring.
 ///
 /// Bounds the `heapless::Vec<ScheduledEntry<S>, _>` capacity of the no_std
 /// variant of the scheduler. `<send delay>` author surface; this is the
