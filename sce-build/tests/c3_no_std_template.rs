@@ -601,7 +601,11 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
              Target::state(StateId(11)), Target::state(StateId(2)), Target::state(StateId(6)), \
              Target::state(StateId(9)), Target::state(StateId(2)), Target::state(StateId(6)), \
              Target::state(StateId(0))],",
-            "initial: TransitionId(19),\n    }\n};",
+            // The document has a `<history>` and a `<parallel>`, so its tables
+            // carry the procedures of both (docs/adr/0066).
+            "initial: TransitionId(19),\n        \
+             history: Some(&::sce_rust_runtime::HISTORY),\n        \
+             parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables = {",
             "const TABLES: &'static ::sce_rust_runtime::DocumentTables = \
              &PARALLEL_HISTORY_PROBE_TABLES;",
@@ -674,6 +678,10 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     for expected in [
         "targets: &[Target::state(StateId(1)), Target::state(StateId(0))],",
         "initial: TransitionId(1),",
+        // Neither a `<history>` nor a `<parallel>`: neither procedure set
+        // (docs/adr/0066).
+        "history: None,",
+        "parallel: None,",
         "pub type PlainBoundsConfiguration = \
          ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PlainBoundsState, 1>;",
         "type Workspace = ::sce_rust_runtime::Workspace<\
