@@ -90,7 +90,8 @@ pub struct EventQueue<Payload, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }
 
 impl<Payload, const N: usize> EventQueue<Payload, N> {
     /// An empty queue; a constant expression on both profiles, which is what
-    /// lets a policy declare its empty queue as an associated constant.
+    /// lets the queue declare its empty value as an associated constant
+    /// ([`EventQueueStorage::EMPTY`]).
     pub const fn new() -> Self {
         Self {
             #[cfg(feature = "std")]
@@ -311,9 +312,9 @@ pub struct EventQueueManager<T, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH 
 impl<T, const N: usize> EventQueueManager<T, N> {
     /// Construct an empty queue.
     ///
-    /// A constant expression on both profiles, which is what lets a policy
-    /// declare its empty queue as an associated constant
-    /// ([`ConstStatePolicy::EMPTY_EVENT_QUEUE`](crate::ConstStatePolicy::EMPTY_EVENT_QUEUE)).
+    /// A constant expression on both profiles, which is what lets a queue
+    /// declare its empty value as an associated constant
+    /// ([`EventQueueStorage::EMPTY`]).
     pub const fn new() -> Self {
         Self {
             #[cfg(feature = "std")]
@@ -390,6 +391,16 @@ impl<T, const N: usize> Default for EventQueueManager<T, N> {
 /// [`crate::StatePolicy::EventQueue`]), its events through a view without that
 /// capacity (docs/adr/0068).
 pub trait EventQueueStorage<Payload>: Default {
+    /// An empty queue, as a constant (docs/adr/0070).
+    ///
+    /// A constant and not only `Default`, for two reasons. An engine built in
+    /// a constant expression (`Engine::new_const`) needs its queues as values
+    /// written as constants. And an engine built at run time writes this into
+    /// its own field: the empty slots are zeroes the compiler clears where they
+    /// live, where a call to `default()` built the queue on the constructor's
+    /// stack and copied it in, a loop and a frame the size of both queues in
+    /// every machine.
+    const EMPTY: Self;
     /// The events, as the engine drives them.
     fn events(&mut self) -> EventQueueMut<'_>;
     /// Whether the queue holds an event.
@@ -404,6 +415,8 @@ pub trait EventQueueStorage<Payload>: Default {
 }
 
 impl<Payload, const N: usize> EventQueueStorage<Payload> for EventQueue<Payload, N> {
+    const EMPTY: Self = Self::new();
+
     #[inline]
     fn events(&mut self) -> EventQueueMut<'_> {
         EventQueue::events(self)

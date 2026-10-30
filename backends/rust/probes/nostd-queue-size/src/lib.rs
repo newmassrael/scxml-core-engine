@@ -140,9 +140,10 @@ const _: <EventQueueCapacityProbePolicy as StatePolicy>::Workspace =
 /// a stack: `Engine::new_const` over the generated policy's `new_const`, which
 /// holds the id to the Nmtoken rule while the program is compiled. A `static`'s
 /// initialiser must be a constant expression, so this item stops compiling if the
-/// generated policy loses its constants (`ConstStatePolicy`), if `build` stops
-/// being a `const fn`, or if the engine gains a field with a starting value that
-/// is not one (a heap-backed collection under the bare-metal profile, say).
+/// generated policy loses its `new_const`, if `build` stops being a `const fn`,
+/// or if the engine gains a field with a starting value that is not one (a
+/// heap-backed collection under the bare-metal profile, say; the queues start at
+/// their storage type's constant, docs/adr/0070).
 pub static ENGINE_BUILT_IN_ITS_SLOT: Engine<EventQueueCapacityProbePolicy> =
     Engine::new_const(EventQueueCapacityProbePolicy::new_const("queue-size-probe"));
 

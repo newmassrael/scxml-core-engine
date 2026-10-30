@@ -1113,21 +1113,20 @@ pub struct Engine<P: StatePolicy> {
 /// The one list the two constructors share, [`Engine::new_in_place`] (which writes
 /// each field to a slot) and `Engine::new_const` (which builds the engine in a
 /// constant expression), so a field added to the struct is given its starting
-/// value once. What differs between them is only the empty queue the policy
-/// supplies, as a function call for the first and as the policy's constant for
-/// the second; the state the engine names before it initialises is a number in
-/// the tables either way.
+/// value once. Every starting value is a constant but the policy's: the empty
+/// queues are their storage type's constant and the state the engine names
+/// before it initialises is a number in the tables (docs/adr/0070), so the two
+/// differ only in how they place the fields.
 macro_rules! engine_initial_fields {
     (
         $consumer:ident;
         policy: $policy:expr,
-        queue: $queue:expr,
     ) => {
         $consumer! {
             run_store: <P::RunStore as RunStorage>::EMPTY,
             policy: $policy,
-            internal_queue: $queue,
-            external_queue: $queue,
+            internal_queue: <P::EventQueue as EventQueueStorage<P::Payload>>::EMPTY,
+            external_queue: <P::EventQueue as EventQueueStorage<P::Payload>>::EMPTY,
             core: EngineCore::new(P::TABLES.default_state),
             #[cfg(feature = "std")]
             late_bound_states: std::collections::HashSet::new(),
@@ -1189,6 +1188,12 @@ impl<P: StatePolicy> Engine<P> {
     /// Returns the engine, now initialised, for the caller to use through the
     /// reference. The slot may be uninitialised, and anything it held is
     /// overwritten without being dropped.
+    ///
+    /// Out of line, so a program that builds a machine in more than one place
+    /// carries its constructor once: every starting value but the policy is a
+    /// constant written where it lives (docs/adr/0070), so the call costs no
+    /// temporary on any stack.
+    #[inline(never)]
     pub fn new_in_place(slot: &mut core::mem::MaybeUninit<Self>, policy: P) -> &mut Self {
         let engine = slot.as_mut_ptr();
         // One list is both the writes and the compile-time check that no field
@@ -1215,7 +1220,6 @@ impl<P: StatePolicy> Engine<P> {
         engine_initial_fields! {
             write_fields;
             policy: policy,
-            queue: P::EventQueue::default(),
         }
         // SAFETY: the list above wrote every field, and the check beside it makes
         // that a property of the source.
@@ -1226,12 +1230,13 @@ impl<P: StatePolicy> Engine<P> {
     /// `const` that a bare-metal program places in a section of its choosing.
     ///
     /// The same engine [`new`](Self::new) returns, with nothing computed at run
-    /// time: the empty queues are the policy's constant
-    /// ([`ConstStatePolicy`](crate::policy::ConstStatePolicy)), the state it
-    /// names before it initialises is the tables' number, and the rest of the engine starts at the zeroes
+    /// time: the empty queues are their storage type's constant
+    /// ([`EventQueueStorage::EMPTY`]), the state it names before it initialises
+    /// is the tables' number, and the rest of the engine starts at the zeroes
     /// and empties every constructor gives it. The program keeps no copy of it on
     /// any stack and runs no code at start-up, which [`new_in_place`](Self::new_in_place)
-    /// still needs a call to do.
+    /// still needs a call to do. The policy is the caller's to build in a
+    /// constant expression; a generated policy that can be offers `new_const`.
     ///
     /// Only where the engine holds nothing the heap makes: the `std` profile
     /// keeps a hash set of late-bound states and a registry of host processors,
@@ -1239,10 +1244,7 @@ impl<P: StatePolicy> Engine<P> {
     /// its engine with [`new`](Self::new) (and holds it in a `LazyLock` or a
     /// `OnceLock` if it must be a `static`).
     #[cfg(not(feature = "std"))]
-    pub const fn new_const(policy: P) -> Self
-    where
-        P: crate::policy::ConstStatePolicy,
-    {
+    pub const fn new_const(policy: P) -> Self {
         macro_rules! struct_literal {
             ($($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
                 Self { $($(#[$attr])* $field: $value,)* }
@@ -1251,7 +1253,6 @@ impl<P: StatePolicy> Engine<P> {
         engine_initial_fields! {
             struct_literal;
             policy: policy,
-            queue: P::EMPTY_EVENT_QUEUE,
         }
     }
 

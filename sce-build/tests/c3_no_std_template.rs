@@ -1013,15 +1013,15 @@ fn rust_asks_the_engine_for_every_in_the_static_lowering_writes() {
 fn rust_template_builds_a_bare_metal_machine_in_a_constant_expression() {
     // A `static` holds the machine and its engine, so nothing runs at start-up
     // and no copy is made on a stack (`Engine::new_const`). The generated policy
-    // supplies what that needs, and only where every field starts at a constant:
-    // the bare-metal profile, with no typed payload and no datamodel variable.
+    // supplies a constant constructor of its own, and only where every field
+    // starts at a constant: the bare-metal profile, with no typed payload and no
+    // datamodel variable. The engine needs nothing else of it: its queues start
+    // at their storage type's constant (docs/adr/0070).
     let bare = generate(&parse(PLAIN_FSM, "plain_const"), &template_dir(), true)
         .expect("template render must succeed");
     for expected in [
         "pub const fn new_const(session_id: &'static str) -> Self {",
         "const fn build(session_id: &'static str) -> Self {",
-        "impl sce_rust_runtime::ConstStatePolicy for PlainConstPolicy {",
-        "const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueue::new();",
         // The state the engine names before it initialises is a number in the
         // tables, so the constant engine needs no constant of the state type.
         "default_state: ::sce_rust_runtime::StateId(PlainConstState::",
@@ -1039,12 +1039,16 @@ fn rust_template_builds_a_bare_metal_machine_in_a_constant_expression() {
         !bare.contains("static PLAIN_CONST_TABLES"),
         "a constant cannot refer to a static before Rust 1.83"
     );
+    assert!(
+        !bare.contains("ConstStatePolicy"),
+        "the engine's queues are their storage type's constant, so a policy declares none"
+    );
 
     // Under std the engine holds a hash set and a registry no constant
     // expression can build, so the machine has no constant constructor either.
     let hosted = generate(&parse(PLAIN_FSM, "plain_const"), &template_dir(), false)
         .expect("template render must succeed");
-    for absent in ["new_const", "ConstStatePolicy", "const fn build"] {
+    for absent in ["new_const", "const fn build"] {
         assert!(
             !hosted.contains(absent),
             "a std machine must not carry `{absent}`"

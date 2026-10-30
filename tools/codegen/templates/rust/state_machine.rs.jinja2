@@ -974,8 +974,9 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
    under. #}
 {% set draws_cfg = '#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]' %}
 {# Whether this machine can be built in a constant expression, for a `static`
-   (`new_const`, and the runtime's `ConstStatePolicy` that
-   `Engine::new_const` reads): the bare-metal profile, where nothing it holds
+   (`new_const`, which `Engine::new_const` builds its engine around; the
+   engine's own starting values are all constants, docs/adr/0070): the
+   bare-metal profile, where nothing it holds
    comes from the heap, and a document whose every field starts at a constant.
    A typed event payload starts at its type's `Default` and a datamodel
    variable at its declared initial value, neither of which this decides is a
@@ -1309,14 +1310,6 @@ impl Default for {{ machine_name }}Policy {
 }
 {% endif %}
 
-{% if const_buildable %}
-// The constant `Engine::new_const` builds its engine from: an empty queue, as
-// `EventQueue::default()` gives it below.
-impl{{ policy_generics_decl }} sce_rust_runtime::ConstStatePolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
-    const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueue::new();
-}
-
-{% endif %}
 // ======================================================================
 // StatePolicy trait implementation
 // ======================================================================
