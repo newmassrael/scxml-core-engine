@@ -31,5 +31,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # `sce-rust-mesh/wss` for the same reason: the WebSocket binding is a
 # non-default feature, and a module behind one is not compiled — let alone
 # linted — by a sweep that does not ask for it.
-cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss -- -D warnings \
-    || sce_gate_fail "cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss"
+#
+# `sce-forge-conformance/alloc` for the same reason again: every test target
+# of that crate is `#![cfg(feature = "alloc")]`, and those targets compile the
+# generator's Rust for each forge kind. Without the feature they compile to
+# nothing, and 89 lints in generated procedure, filter, timer, lookup and
+# validator code went unseen until a sweep with every feature found them.
+cargo clippy --workspace --all-targets \
+    --features cli,sce-rust-mesh/wss,sce-forge-conformance/alloc -- -D warnings \
+    || sce_gate_fail "cargo clippy --workspace --all-targets --features cli,sce-rust-mesh/wss,sce-forge-conformance/alloc"
