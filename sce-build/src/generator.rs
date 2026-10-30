@@ -4270,12 +4270,7 @@ pub(crate) fn swift_invoke_unlowered(
         crate::model::Invoke::MeshRpc(_) => {
             return Some("a Mesh remote-procedure <invoke>".to_string())
         }
-        crate::model::Invoke::Unsupported(info) => {
-            return Some(format!(
-                "an <invoke type=\"{}\"> a host runs",
-                info.invoke_type
-            ))
-        }
+        crate::model::Invoke::Unsupported(info) => return swift_host_invoke_unlowered(info),
     };
     if info.remote_mesh_target.is_some() {
         return Some("an <invoke> of a Mesh peer".to_string());
@@ -4300,6 +4295,43 @@ pub(crate) fn swift_invoke_unlowered(
     // hold yet.
     if info.common.child_declares_host_duties {
         return Some("an <invoke> of a child that states a duty".to_string());
+    }
+    None
+}
+
+/// What of an `<invoke>` a host runs the Swift templates do not lower yet, in the words
+/// the refusal names it by; `None` for one they do.
+///
+/// One a host declared (the standard host features' types are declared by every host)
+/// is started when its state is entered and cancelled when the state exits, and what
+/// the host completes it with is a typed record. What the request carries is not
+/// lowered yet: a `src`, a `<param>`, a `namelist`, a `<content>`, an `idlocation`, a
+/// typed request or a `_sce_deadline_ms` each is named.
+fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Option<String> {
+    let type_name = &info.invoke_type;
+    if !info.host_served {
+        return Some(format!("an <invoke type=\"{type_name}\"> no host declared"));
+    }
+    if !info.request_schema.is_empty() {
+        return Some(format!(
+            "an <invoke type=\"{type_name}\"> with a typed request"
+        ));
+    }
+    if !info.base.params.is_empty() || !info.namelist.is_empty() {
+        return Some(format!(
+            "an <invoke type=\"{type_name}\"> a host runs with a <param> or a namelist"
+        ));
+    }
+    if !info.src.is_empty() || !info.srcexpr.is_empty() || !info.native_src.is_empty() {
+        return Some(format!("an <invoke type=\"{type_name}\"> with a src"));
+    }
+    if !info.content.is_empty() || !info.contentexpr.is_empty() || !info.native_content.is_empty() {
+        return Some(format!(
+            "an <invoke type=\"{type_name}\"> a host runs with a <content>"
+        ));
+    }
+    if !info.base.idlocation.is_empty() {
+        return Some("an <invoke idlocation>".to_string());
     }
     None
 }
@@ -4538,6 +4570,10 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         &static_lowering.payload_events,
         &static_lowering.enums,
     );
+    // The typed records a host-run `<invoke>` completes with, and the interface a host
+    // registers to run them.
+    let host_invokers =
+        crate::forge::host_invoker_interface::render_swift(&model_lowered, &machine_name);
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -4563,6 +4599,7 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         event_payload_lift => &payload.lift,
         event_payload_clear => &payload.clear,
         event_payload_raise_seams => &payload.raise_seams,
+        host_invoker_defs => &host_invokers,
     };
     tmpl.render(ctx).map_err(render_error)
 }

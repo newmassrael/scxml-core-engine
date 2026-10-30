@@ -529,7 +529,7 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var hasParallelStates: Bool { {{ 'true' if model.has_parallel_states else 'false' }} }
     public var needsScriptEngine: Bool { false }
     public var needsDataModelInit: Bool { false }
-    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
+    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker else 'false' }} }
     public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { {{ 'true' if (model.invokes | scxml | selectattr('autoforward') | list) or (model.invokes | hybrid | selectattr('autoforward') | list) else 'false' }} }
@@ -557,4 +557,8 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 {% if event_payload_active %}
 
 {{ event_payload_raise_seams }}
+{% endif %}
+{% if host_invoker_defs %}
+
+{{ host_invoker_defs }}
 {% endif %}

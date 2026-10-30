@@ -5389,7 +5389,7 @@ fn swift_payload_present_reader(
 
 /// The `PayloadPair` that spells one EventSchema field for the inject seam's `data`,
 /// the wire the script engine binds `_event.data` from.
-fn swift_payload_pair(f: &SchemaField) -> String {
+pub(crate) fn swift_payload_pair(f: &SchemaField) -> String {
     let id = &f.id;
     // An optional field is written as `null` where it is absent and as its present
     // value's wire value where it is present, the key always written

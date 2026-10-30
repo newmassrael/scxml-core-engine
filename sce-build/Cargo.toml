@@ -1113,6 +1113,11 @@ name = "a_swift_machine_sends_over_http"
 path = "tests/a_swift_machine_sends_over_http.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "a_swift_machine_runs_a_host_invoke"
+path = "tests/a_swift_machine_runs_a_host_invoke.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of every optional element in an algorithm
 # (docs/adr/0055, step 9): a slot, a local and a record's optional text and enum
 # fields, and a statechart's call that crosses them. It runs `sce-codegen generate`

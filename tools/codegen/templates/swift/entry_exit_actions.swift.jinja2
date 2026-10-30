@@ -38,7 +38,7 @@
 {% endif %}
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml or state.invokes | hybrid or state.invokes | host_invoker %}
         case .{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
             // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}; an error ends it.
@@ -74,6 +74,17 @@
                     documentID: "{{ invoke_info.invoke_id | escape_swift }}"
                 ))
             }
+{% endfor %}
+{% for invoke_info in state.invokes | host_invoker %}
+            // W3C SCXML 6.4.1: an <invoke> a host runs is deferred like any other, so a
+            // state that exits before the macrostep ends never starts it. The id it is
+            // started under is the document's: `done.invoke.<id>` is the name the author
+            // wrote a transition for.
+            deferInvoke(&pendingInvokes, PendingInvoke(
+                invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
+                state: .{{ state_id | to_state_variant }},
+                documentID: "{{ invoke_info.invoke_id | escape_swift }}"
+            ))
 {% endfor %}
 {% if state.is_final and state.donedata %}
 {# `datamodel="sce-static"`: each value is native code (`DoneData::native_content`,
@@ -223,14 +234,16 @@
         default:
             break  // No exit actions
         }
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker %}
         // W3C SCXML 6.4: the invocations of an exited state end with it: one not yet
         // started never starts, and a running session is exited, its states' <onexit>
         // run, before it is dropped. What that exit sends to #_parent is dropped with
         // it (test252).
+{# A host is told to stop what it runs for the state only while that start is still
+   running: the engine knows, and stays silent otherwise. #}
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | scxml or state.invokes | hybrid %}
+{% if state.invokes | scxml or state.invokes | hybrid or state.invokes | host_invoker %}
         case .{{ state_id | to_state_variant }}:
             cancelInvokesForState(&pendingInvokes, .{{ state_id | to_state_variant }})
 {% for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) %}
@@ -238,6 +251,9 @@
             sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = nil
             activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = nil
             sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} = false
+{% endfor %}
+{% for invoke_info in state.invokes | host_invoker %}
+            engine.cancelHostInvoke(processorType: "{{ invoke_info.invoke_type | escape_swift }}", invokeID: "{{ invoke_info.invoke_id | escape_swift }}")
 {% endfor %}
 {% endif %}
 {% endfor %}

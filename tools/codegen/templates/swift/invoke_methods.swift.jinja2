@@ -80,18 +80,29 @@
 {% endfor %}
 {% endfor %}
 {% set child_invokes = ns_invokes.all %}
-{% if child_invokes %}
+{# The `<invoke>`s a host runs (W3C SCXML 6.4.1): deferred and executed beside the child
+   sessions, and handed to the invoker the host registered for their type. #}
+{% set ns_host = namespace(all=[]) %}
+{% for state_id, state in model.states | dictsort %}
+{% for invoke_info in state.invokes | host_invoker %}
+{% set ns_host.all = ns_host.all + [invoke_info] %}
+{% endfor %}
+{% endfor %}
+{% set host_invokes = ns_host.all %}
+{% if child_invokes or host_invokes %}
 
     // ------------------------------------------------------------------
-    // Child sessions (W3C SCXML 6.4)
+    // {{ 'Child sessions' if child_invokes else 'Host invocations' }} (W3C SCXML 6.4)
     // ------------------------------------------------------------------
 
     /// W3C SCXML 6.4: the `<invoke>`s a state's entry deferred to the end of the
     /// macrostep. A state exited before then drops its own.
     private var pendingInvokes: [PendingInvoke<{{ machine_name }}State>] = []
+{% if child_invokes %}
 
     /// W3C SCXML 6.4.1: the invocations running, by the id their `<invoke>` carries.
     private var activeInvokes: [String: ChildSession] = [:]
+{% endif %}
 {% for invoke_info in child_invokes %}
 
     /// The session `<invoke>` `{{ invoke_info.invoke_id }}` started, while its state is active.
@@ -117,6 +128,12 @@
 {% for invoke_info in child_invokes %}
             if pending.documentID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
                 sceStartInvoke{{ invoke_info.field_suffix | to_pascal_case }}(pending, engine: engine)
+                return
+            }
+{% endfor %}
+{% for invoke_info in host_invokes %}
+            if pending.documentID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
+                sceStartHostInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
                 return
             }
 {% endfor %}
@@ -245,6 +262,28 @@
         }
     }
 {% endfor %}
+{% for invoke_info in host_invokes %}
+
+    /// Starts `<invoke type="{{ invoke_info.invoke_type | escape_swift }}" id="{{ invoke_info.invoke_id | escape_swift }}">`
+    /// (W3C SCXML 6.4.1): the invoker the host registered for the type is handed the
+    /// request, under the id the DOCUMENT wrote, which is the name `done.invoke.<id>`
+    /// carries. A type the host declared and never registered an invoker for is the same
+    /// fact as an unsupported one, so the same event, and not a silence that reads as
+    /// started.
+    private func sceStartHostInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: Engine<{{ machine_name }}Policy>) {
+        let request = HostInvokeRequest(
+            processorType: "{{ invoke_info.invoke_type | escape_swift }}",
+            invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
+            sessionID: sessionID
+        )
+        if !engine.performHostInvoke(request) {
+{% if 'error.execution' in model.events %}
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> names an invoker the host declared but never registered"))
+{% endif %}
+        }
+    }
+{% endfor %}
+{% if child_invokes %}
 
     /// Ticks the running sessions (W3C SCXML 6.4): what a child sent before is taken
     /// first, then the child takes its turn, then what it sent in it.
@@ -364,4 +403,5 @@
 {% endfor %}
         return false
     }
+{% endif %}
 {% endif %}
