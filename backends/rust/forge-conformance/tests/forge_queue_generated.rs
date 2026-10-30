@@ -307,11 +307,13 @@ fn the_scq_queue_loses_nothing_between_threads() {
 
 #[test]
 fn the_intrusive_modules_state_what_the_document_required_and_what_it_gives() {
-    assert!(!intrusive::MANY_CONSUMERS, "one consumer needs no flag");
-    assert!(
-        intrusive_many::MANY_CONSUMERS,
-        "many consumers are serialised"
-    );
+    const { assert!(!intrusive::MANY_CONSUMERS, "one consumer needs no flag") };
+    const {
+        assert!(
+            intrusive_many::MANY_CONSUMERS,
+            "many consumers are serialised"
+        )
+    };
     assert_eq!(intrusive::DECLARED_PROGRESS, "blocking");
     assert_eq!(intrusive::PUSH_PROGRESS, "wait-free");
     assert_eq!(intrusive::POP_PROGRESS, "blocking");
