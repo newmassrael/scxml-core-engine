@@ -2990,6 +2990,11 @@
           "file": "backends/go/runtime/configuration.go",
           "symbol": "childArity",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "default_regions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -16304,6 +16309,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "walk_entry",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "descend_into_history",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17105,6 +17115,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "exitState",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "record_histories",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17292,6 +17307,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "effective_target_states_on",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "effective_history_targets",
           "kind": "implements"
         }
       ],

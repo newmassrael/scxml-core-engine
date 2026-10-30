@@ -29,7 +29,7 @@ use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, ConfigurationRejection, DocumentTables, Engine, EventId,
     EventWithMetadata, HistoryId, NoHistory, RunStore, Span, StateId, StateKind, StatePolicy,
-    StateRow, Target, TransitionId, TransitionRow, Workspace,
+    StateRow, Target, TransitionId, TransitionRow, Workspace, PARALLEL,
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -137,6 +137,8 @@ impl StatePolicy for ParallelPolicy {
             Target::state(StateId(0)),
         ],
         initial: TransitionId(3),
+        history: None,
+        parallel: Some(&PARALLEL),
     };
     const STATES: &'static [PState] = &[
         PState::P,
@@ -324,6 +326,8 @@ impl StatePolicy for LinearPolicy {
             Target::state(StateId(0)),
         ],
         initial: TransitionId(2),
+        history: None,
+        parallel: None,
     };
     const STATES: &'static [LState] = &[LState::Root, LState::X1, LState::X2];
     const HISTORIES: &'static [NoHistory] = &[];

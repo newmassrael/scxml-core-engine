@@ -70,6 +70,8 @@ impl StatePolicy for HttpPolicy {
         )],
         targets: &[Target::state(StateId(0))],
         initial: TransitionId(0),
+        history: None,
+        parallel: None,
     };
     const STATES: &'static [HttpState] = &[HttpState::Idle];
     const HISTORIES: &'static [NoHistory] = &[];

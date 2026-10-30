@@ -123,6 +123,8 @@ impl StatePolicy for MockPolicy {
         )],
         targets: &[Target::state(StateId(0))],
         initial: TransitionId(0),
+        history: None,
+        parallel: None,
     };
     const STATES: &'static [St] = &[St::S0];
     const HISTORIES: &'static [NoHistory] = &[];

@@ -478,7 +478,9 @@ pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 /// What a generated policy's tables and buffers are made of — the types
 /// Appendix D's procedures read, named at the crate root because every
 /// generated machine spells them (docs/adr/0064).
-pub use helpers::microstep::{state_scratch, Workspace};
+pub use helpers::microstep::{
+    state_scratch, HistoryProcedures, ParallelProcedures, Workspace, HISTORY, PARALLEL,
+};
 pub use helpers::run_store::{record_words, RunStore};
 pub use helpers::state_set::state_words;
 pub use helpers::tables::{

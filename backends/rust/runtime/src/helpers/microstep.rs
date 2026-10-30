@@ -362,6 +362,112 @@ pub enum WalkStep {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// The features a document may use
+// ════════════════════════════════════════════════════════════════════════
+
+/// The procedures of Appendix D that only a `<history>` reaches, carried by the
+/// tables of a document that has one ([`DocumentTables::history`]) and reached
+/// through them alone (docs/adr/0066).
+///
+/// A program none of whose documents has a `<history>` therefore references
+/// neither [`HISTORY`] nor any function only it names, and the link drops them:
+/// what `NoHistory` once removed from a machine that could not take a history,
+/// removed from the program. The fields are private, so [`HISTORY`] is the only
+/// value there is.
+pub struct HistoryProcedures {
+    /// getEffectiveTargetStates for a `<history>` target.
+    effective: fn(
+        &DocumentTables,
+        RunStoreRef<'_>,
+        HistoryId,
+        &mut StateSet<'_>,
+        &mut [WalkStep],
+    ) -> Option<StateId>,
+    /// addDescendantStatesToEnter for a `<history>` target: the list it
+    /// enters, with the default content it owes put in the entry set.
+    descend: fn(&DocumentTables, RunStoreRef<'_>, HistoryId, &mut EntrySet<'_>) -> Listed,
+    /// The first state a `<history>` recorded from a state on.
+    recorded_from: fn(RunStoreRef<'_>, HistoryId, StateId) -> Option<StateId>,
+    /// exitStates' records of the histories of the states it exits.
+    record: fn(&DocumentTables, RunStoreMut<'_>, StateSetRef<'_>),
+}
+
+/// The procedures of Appendix D that only a `<parallel>` reaches, carried by the
+/// tables of a document that has one ([`DocumentTables::parallel`]); see
+/// [`HistoryProcedures`] for why.
+pub struct ParallelProcedures {
+    /// The entry walk's defaults for the regions of a `<parallel>` nothing on
+    /// the entry set goes into.
+    regions: fn(&DocumentTables, StateId, StateId, &mut SliceVec<'_, WalkStep>, StateSetRef<'_>),
+    /// removeConflictingTransitions.
+    remove_conflicting:
+        fn(&DocumentTables, RunStoreRef<'_>, &mut SliceVec<'_, TransitionId>, Scratch<'_>),
+    /// isInFinalState of a `<parallel>`.
+    in_final: fn(&DocumentTables, StateId, StateSetRef<'_>) -> bool,
+}
+
+/// The `<history>` procedures, the value a generated table writes as
+/// `history: Some(&HISTORY)`.
+///
+/// A constant rather than a `static`: a document's tables are a constant, and a
+/// constant cannot refer to a `static` at the runtime's `rust-version`. The
+/// reference a table takes is promoted to one constant allocation, and a program
+/// that takes none emits none.
+pub const HISTORY: HistoryProcedures = HistoryProcedures {
+    effective: effective_history_targets,
+    descend: descend_into_history,
+    recorded_from: history_recorded_from,
+    record: record_histories,
+};
+
+/// The `<parallel>` procedures, the value a generated table writes as
+/// `parallel: Some(&PARALLEL)`; see [`HISTORY`].
+pub const PARALLEL: ParallelProcedures = ParallelProcedures {
+    regions: default_regions,
+    remove_conflicting: remove_conflicting_transitions,
+    in_final: parallel_in_final_state,
+};
+
+impl core::fmt::Debug for HistoryProcedures {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("HISTORY")
+    }
+}
+
+impl core::fmt::Debug for ParallelProcedures {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("PARALLEL")
+    }
+}
+
+/// The `<history>` procedures of `tables`, which reach a `<history>`.
+#[inline]
+fn history_procedures(tables: &DocumentTables) -> &'static HistoryProcedures {
+    match tables.history {
+        Some(procedures) => procedures,
+        None => procedures_missing(),
+    }
+}
+
+/// The `<parallel>` procedures of `tables`, which reach a `<parallel>`.
+#[inline]
+fn parallel_procedures(tables: &DocumentTables) -> &'static ParallelProcedures {
+    match tables.parallel {
+        Some(procedures) => procedures,
+        None => procedures_missing(),
+    }
+}
+
+/// Tables that name a `<history>` or a `<parallel>` without carrying its
+/// procedures, which [`DocumentTables::check`] refuses: a generator fault. No
+/// formatted message, for the reason [`workspace_too_small`] has none.
+#[cold]
+#[inline(never)]
+fn procedures_missing() -> ! {
+    panic!("a document's tables use a feature without its procedures: sce-codegen wrote them wrong")
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // Selection
 // ════════════════════════════════════════════════════════════════════════
 
@@ -406,11 +512,16 @@ pub fn select_transitions(
             current = tables.parent(state);
         }
     }
-    remove_conflicting_transitions(tables, machine.store().as_ref(), enabled, scratch);
+    // Without a `<parallel>` a configuration has one atomic state, so the walk
+    // above enables one transition at most and there is nothing to conflict.
+    if let Some(parallel) = tables.parallel {
+        (parallel.remove_conflicting)(tables, machine.store().as_ref(), enabled, scratch);
+    }
 }
 
 /// Appendix D's removeConflictingTransitions, over `enabled` itself: what
-/// remains in it is the filtered set, in selection order.
+/// remains in it is the filtered set, in selection order. A
+/// [`ParallelProcedures`] procedure ([`PARALLEL`]).
 ///
 /// Two transitions conflict when their exit sets intersect, and the one whose
 /// source is a descendant of the other's wins; otherwise the one selected
@@ -573,44 +684,68 @@ pub fn effective_target_states_on(
 ) -> Option<StateId> {
     effective.clear();
     let mut first = None;
+    for &target in targets {
+        let added = match target.named() {
+            Named::State(state) => {
+                effective.insert(state);
+                Some(state)
+            }
+            Named::History(history) => {
+                (history_procedures(tables).effective)(tables, store, history, effective, walk)
+            }
+        };
+        if first.is_none() {
+            first = added;
+        }
+    }
+    first
+}
+
+/// The effective targets of the `<history>` target `history`, added to
+/// `effective` on the walk stack `walk`; the first of them it adds.
+///
+/// A [`HistoryProcedures`] procedure ([`HISTORY`]).
+fn effective_history_targets(
+    tables: &DocumentTables,
+    store: RunStoreRef<'_>,
+    history: HistoryId,
+    effective: &mut StateSet<'_>,
+    walk: &mut [WalkStep],
+) -> Option<StateId> {
+    let mut first = None;
     let mut add = |state: StateId| {
         effective.insert(state);
         first.get_or_insert(state);
     };
     let mut stack = SliceVec::new(walk);
-    for &target in targets {
-        stack.push(WalkStep::EffectiveTarget(target));
-        while let Some(step) = stack.pop() {
-            match step {
-                WalkStep::EffectiveTarget(target) => match target.named() {
-                    Named::State(state) => add(state),
-                    // §scxml-D-getEffectiveTargetStates: a history stands for
-                    // the configuration it recorded, and before its parent was
-                    // ever exited for the targets of its default transition —
-                    // which may name histories themselves, so those are walked
-                    // in turn.
-                    Named::History(history) => match store.history_value(history) {
-                        Some(recorded) if !recorded.is_empty() => {
-                            recorded.iter().for_each(&mut add)
-                        }
-                        _ => stack.push(WalkStep::EffectiveDefaults { history, index: 0 }),
-                    },
+    stack.push(WalkStep::EffectiveTarget(Target::history(history)));
+    while let Some(step) = stack.pop() {
+        match step {
+            WalkStep::EffectiveTarget(target) => match target.named() {
+                Named::State(state) => add(state),
+                // §scxml-D-getEffectiveTargetStates: a history stands for the
+                // configuration it recorded, and before its parent was ever
+                // exited for the targets of its default transition — which may
+                // name histories themselves, so those are walked in turn.
+                Named::History(history) => match store.history_value(history) {
+                    Some(recorded) if !recorded.is_empty() => recorded.iter().for_each(&mut add),
+                    _ => stack.push(WalkStep::EffectiveDefaults { history, index: 0 }),
                 },
-                WalkStep::EffectiveDefaults { history, index } => {
-                    let defaults = tables.targets(tables.history(history).default);
-                    if let Some(&next) = defaults.get(usize::from(index)) {
-                        stack.push(WalkStep::EffectiveDefaults {
-                            history,
-                            index: index + 1,
-                        });
-                        stack.push(WalkStep::EffectiveTarget(next));
-                    }
+            },
+            WalkStep::EffectiveDefaults { history, index } => {
+                let defaults = tables.targets(tables.history(history).default);
+                if let Some(&next) = defaults.get(usize::from(index)) {
+                    stack.push(WalkStep::EffectiveDefaults {
+                        history,
+                        index: index + 1,
+                    });
+                    stack.push(WalkStep::EffectiveTarget(next));
                 }
-                // The walk puts down steps of its own kind only. No message: a
-                // formatted one would bring the formatting machinery into every
-                // bare-metal image for a branch nothing reaches.
-                _ => unreachable!(),
             }
+            // The walk puts down steps of its own kind only. No message: a
+            // formatted one would bring the formatting machinery into every
+            // bare-metal image for a branch nothing reaches.
+            _ => unreachable!(),
         }
     }
     first
@@ -757,20 +892,8 @@ pub fn exit_states(
         rest,
     );
 
-    // §scxml-D-exitStates: every history of every state exited is recorded
-    // from the configuration as it stood before the first exit.
-    for (index, history) in tables.histories.iter().enumerate() {
-        if states_to_exit.contains(history.parent) {
-            let mut store = machine.store();
-            let (configuration, mut record) = store.record_history(HistoryId(index as u16));
-            recorded_history(
-                tables,
-                history.parent,
-                history.deep,
-                configuration,
-                &mut record,
-            );
-        }
+    if let Some(history) = tables.history {
+        (history.record)(tables, machine.store(), states_to_exit.as_ref());
     }
     // §scxml-D-exitStates exits the union in exitOrder — descendants before
     // their ancestors and reverse document order among the rest, which
@@ -1077,26 +1200,8 @@ fn walk_entry(
                 // to the configuration it stored, or — before its parent was ever
                 // visited — to its default stored configuration.
                 Named::History(history) => {
-                    let source = match store.history_value(history) {
-                        // §scxml-D-addDescendantStatesToEnter: a history that has
-                        // recorded a configuration enters it, and the ancestors
-                        // between it and the history's parent — a deep history
-                        // records atomic states, which need not be children.
-                        Some(recorded) if !recorded.is_empty() => Listed::Recorded(history),
-                        _ => {
-                            // §scxml-D-addDescendantStatesToEnter: nothing recorded
-                            // yet, so the default transition is taken, and its
-                            // content is owed once the parent has been entered —
-                            // keyed by the parent, a later history of the same
-                            // parent replacing it.
-                            set_default_history_content(
-                                &mut entry.default_history_content,
-                                tables.history(history).parent,
-                                history,
-                            );
-                            Listed::Defaults(history)
-                        }
-                    };
+                    let source =
+                        (history_procedures(tables).descend)(tables, store, history, entry);
                     stack.push(WalkStep::Listed {
                         source,
                         cursor: 0,
@@ -1153,33 +1258,13 @@ fn walk_entry(
                     });
                 }
             }
-            WalkStep::Regions { parallel, next } => {
-                // §scxml-3.4: every child of an active `<parallel>` is active, so
-                // a region nothing on the set descends into is entered by
-                // default. A region's proper descendants are the ids after it up
-                // to its last descendant.
-                let last = tables.last_descendant(parallel);
-                let mut child = next;
-                while child <= last {
-                    let child_last = tables.last_descendant(child);
-                    let after = StateId(child_last.0 + 1);
-                    let taken = entry
-                        .states_to_enter
-                        .as_ref()
-                        .meets(StateId(child.0 + 1), child_last);
-                    if !taken {
-                        if after <= last {
-                            stack.push(WalkStep::Regions {
-                                parallel,
-                                next: after,
-                            });
-                        }
-                        stack.push(WalkStep::Descendants(Target::state(child)));
-                        break;
-                    }
-                    child = after;
-                }
-            }
+            WalkStep::Regions { parallel, next } => (parallel_procedures(tables).regions)(
+                tables,
+                parallel,
+                next,
+                stack,
+                entry.states_to_enter.as_ref(),
+            ),
             // The walk puts down steps of its own kind only; see
             // `effective_target_states_on` for why there is no message.
             _ => unreachable!(),
@@ -1200,7 +1285,8 @@ fn listed_target(
     let targets = match source {
         Listed::Initial(state) => tables.targets(tables.state(state).initial()?),
         Listed::Recorded(history) => {
-            let state = store.history_value(history)?.first_from(StateId(cursor))?;
+            let recorded_from = history_procedures(tables).recorded_from;
+            let state = recorded_from(store, history, StateId(cursor))?;
             return Some((Target::state(state), state.0 + 1));
         }
         Listed::Defaults(history) => tables.targets(tables.history(history).default),
@@ -1248,6 +1334,39 @@ fn first_proper_ancestor(
     }
 }
 
+/// The step [`WalkStep::Regions`] of the `<parallel>` `parallel` from child
+/// `next` on: the first region `states_to_enter` does not go into is entered by
+/// default, with a step for the regions after it put down first. A
+/// [`ParallelProcedures`] procedure ([`PARALLEL`]).
+fn default_regions(
+    tables: &DocumentTables,
+    parallel: StateId,
+    next: StateId,
+    stack: &mut SliceVec<'_, WalkStep>,
+    states_to_enter: StateSetRef<'_>,
+) {
+    // §scxml-3.4: every child of an active `<parallel>` is active, so a region
+    // nothing on the set descends into is entered by default. A region's proper
+    // descendants are the ids after it up to its last descendant.
+    let last = tables.last_descendant(parallel);
+    let mut child = next;
+    while child <= last {
+        let child_last = tables.last_descendant(child);
+        let after = StateId(child_last.0 + 1);
+        if !states_to_enter.meets(StateId(child.0 + 1), child_last) {
+            if after <= last {
+                stack.push(WalkStep::Regions {
+                    parallel,
+                    next: after,
+                });
+            }
+            stack.push(WalkStep::Descendants(Target::state(child)));
+            return;
+        }
+        child = after;
+    }
+}
+
 fn set_default_history_content(
     content: &mut SliceVec<'_, (StateId, HistoryId)>,
     parent: StateId,
@@ -1265,6 +1384,66 @@ fn set_default_history_content(
 // ════════════════════════════════════════════════════════════════════════
 // History
 // ════════════════════════════════════════════════════════════════════════
+
+/// addDescendantStatesToEnter for the `<history>` target `history`: the list
+/// the walk enters, and the default content it owes put in `entry`. A
+/// [`HistoryProcedures`] procedure ([`HISTORY`]).
+fn descend_into_history(
+    tables: &DocumentTables,
+    store: RunStoreRef<'_>,
+    history: HistoryId,
+    entry: &mut EntrySet<'_>,
+) -> Listed {
+    match store.history_value(history) {
+        // §scxml-D-addDescendantStatesToEnter: a history that has recorded a
+        // configuration enters it, and the ancestors between it and the
+        // history's parent — a deep history records atomic states, which need
+        // not be children.
+        Some(recorded) if !recorded.is_empty() => Listed::Recorded(history),
+        _ => {
+            // §scxml-D-addDescendantStatesToEnter: nothing recorded yet, so the
+            // default transition is taken, and its content is owed once the
+            // parent has been entered — keyed by the parent, a later history of
+            // the same parent replacing it.
+            set_default_history_content(
+                &mut entry.default_history_content,
+                tables.history(history).parent,
+                history,
+            );
+            Listed::Defaults(history)
+        }
+    }
+}
+
+/// The first state `history` recorded from `from` on, in document order. A
+/// [`HistoryProcedures`] procedure ([`HISTORY`]).
+fn history_recorded_from(
+    store: RunStoreRef<'_>,
+    history: HistoryId,
+    from: StateId,
+) -> Option<StateId> {
+    store.history_value(history)?.first_from(from)
+}
+
+/// Appendix D's exitStates, its history half over every `<history>`: each
+/// whose parent is in `exited` records what it records. A
+/// [`HistoryProcedures`] procedure ([`HISTORY`]).
+fn record_histories(tables: &DocumentTables, mut store: RunStoreMut<'_>, exited: StateSetRef<'_>) {
+    // §scxml-D-exitStates: every history of every state exited is recorded
+    // from the configuration as it stood before the first exit.
+    for (index, history) in tables.histories.iter().enumerate() {
+        if exited.contains(history.parent) {
+            let (configuration, mut record) = store.record_history(HistoryId(index as u16));
+            recorded_history(
+                tables,
+                history.parent,
+                history.deep,
+                configuration,
+                &mut record,
+            );
+        }
+    }
+}
 
 /// Appendix D's exitStates, its history half: what a `<history>` of `parent`
 /// records as `parent` is exited — for a deep history the active atomic states
@@ -1319,10 +1498,19 @@ pub fn is_in_final_state(
     configuration: StateSetRef<'_>,
 ) -> bool {
     match tables.state(state).kind() {
-        StateKind::Compound => return in_final_child(tables, state, configuration),
-        StateKind::Parallel => {}
-        StateKind::Atomic | StateKind::Final => return false,
+        StateKind::Compound => in_final_child(tables, state, configuration),
+        StateKind::Parallel => (parallel_procedures(tables).in_final)(tables, state, configuration),
+        StateKind::Atomic | StateKind::Final => false,
     }
+}
+
+/// [`is_in_final_state`] of the `<parallel>` `state`. A [`ParallelProcedures`]
+/// procedure ([`PARALLEL`]).
+fn parallel_in_final_state(
+    tables: &DocumentTables,
+    state: StateId,
+    configuration: StateSetRef<'_>,
+) -> bool {
     let last = tables.last_descendant(state);
     let mut next = state.0 + 1;
     while next <= last.0 {

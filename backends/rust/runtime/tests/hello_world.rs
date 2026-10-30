@@ -94,6 +94,8 @@ impl StatePolicy for HwPolicy {
             Target::state(StateId(0)),
         ],
         initial: TransitionId(3),
+        history: None,
+        parallel: None,
     };
     const STATES: &'static [HwState] = &[HwState::Stopped, HwState::Running, HwState::Done];
     const HISTORIES: &'static [NoHistory] = &[];

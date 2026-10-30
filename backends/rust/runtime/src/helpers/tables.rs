@@ -33,6 +33,8 @@
 //! generator writes them. A table written by hand states the same rows, and
 //! [`DocumentTables::check`] says whether they keep the rules above.
 
+use crate::helpers::microstep::{HistoryProcedures, ParallelProcedures};
+
 /// A state: `<state>`, `<parallel>` or `<final>`, by its position in document
 /// order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -337,6 +339,12 @@ pub struct DocumentTables {
     /// The document's initial transition, whose source is the `<scxml>`
     /// element.
     pub initial: TransitionId,
+    /// The procedures only a `<history>` reaches, `Some(&HISTORY)` exactly
+    /// when the document has one (docs/adr/0066).
+    pub history: Option<&'static HistoryProcedures>,
+    /// The procedures only a `<parallel>` reaches, `Some(&PARALLEL)` exactly
+    /// when the document has one.
+    pub parallel: Option<&'static ParallelProcedures>,
 }
 
 /// Which rule a [`DocumentTables`] breaks; [`DocumentTables::check`].
@@ -357,6 +365,10 @@ pub enum TablesFault {
     Kind(StateId),
     /// A row names a state, a history or a transition that does not exist.
     Dangling,
+    /// The document has a `<history>` and the tables carry no
+    /// [`DocumentTables::history`], or a `<parallel>` and no
+    /// [`DocumentTables::parallel`].
+    ProceduresMissing,
 }
 
 impl DocumentTables {
@@ -444,9 +456,10 @@ impl DocumentTables {
     /// Whether the rows keep the rules of this module: every id below
     /// [`MAX_IDS`], every parent before its child, every subtree the range of
     /// ids its children's subtrees fill, every span inside its pool, an initial
-    /// transition for exactly the compound states, and every id a row names a
-    /// row of its table. The procedures assume all of them; a debug build
-    /// checks a machine's tables when it is built.
+    /// transition for exactly the compound states, every id a row names a row
+    /// of its table, and the procedures of each feature the document uses
+    /// carried. The procedures assume all of them; a debug build checks a
+    /// machine's tables when it is built.
     pub fn check(&self) -> Result<(), TablesFault> {
         let states = self.states.len();
         if states > MAX_IDS || self.histories.len() > MAX_IDS || self.transitions.len() > MAX_IDS {
@@ -517,6 +530,15 @@ impl DocumentTables {
         }
         if !transition_ok(self.initial) {
             return Err(TablesFault::Dangling);
+        }
+        let has_parallel = self
+            .states
+            .iter()
+            .any(|row| row.kind == StateKind::Parallel);
+        if (!self.histories.is_empty() && self.history.is_none())
+            || (has_parallel && self.parallel.is_none())
+        {
+            return Err(TablesFault::ProceduresMissing);
         }
         Ok(())
     }

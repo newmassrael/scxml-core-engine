@@ -57,9 +57,10 @@ use sce_rust_runtime::helpers::microstep::{
 };
 use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::helpers::state_set::{StateSet, StateSetRef, Word};
+use sce_rust_runtime::helpers::tables::TablesFault;
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, EventId, HistoryId, HistoryRow, Span, StateId,
-    StateKind, StateRow, Target, TransitionId, TransitionRow, Workspace,
+    StateKind, StateRow, Target, TransitionId, TransitionRow, Workspace, HISTORY, PARALLEL,
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -175,7 +176,13 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables {
             )
         })
         .collect();
+    // The procedures of a feature the document uses, and only those, as the
+    // generator writes them (docs/adr/0066): a document without a `<parallel>`
+    // holds the core to the reference with removeConflictingTransitions absent.
+    let has_parallel = doc.kind.contains(&StateKind::Parallel);
     let tables = DocumentTables {
+        history: (!histories.is_empty()).then_some(&HISTORY),
+        parallel: has_parallel.then_some(&PARALLEL),
         states: leak(states),
         histories: leak(histories),
         transitions: leak(transitions),
@@ -539,6 +546,32 @@ fn chart_plain() -> Plain {
 fn chart_tables() -> &'static DocumentTables {
     static TABLES: OnceLock<&'static DocumentTables> = OnceLock::new();
     TABLES.get_or_init(|| tables_of(&chart_plain()))
+}
+
+/// Tables that name a `<history>` or a `<parallel>` without carrying its
+/// procedures are refused (docs/adr/0066): the core reaches a feature only
+/// through them, and the generator writes them exactly for the documents that
+/// use the feature.
+#[test]
+fn tables_that_use_a_feature_without_its_procedures_are_refused() {
+    let tables = chart_tables();
+    assert!(
+        tables.history.is_some() && tables.parallel.is_some(),
+        "the chart has a `<history>` and a `<parallel>`, so its tables carry both"
+    );
+    let without_history = DocumentTables {
+        history: None,
+        ..*tables
+    };
+    assert_eq!(without_history.check(), Err(TablesFault::ProceduresMissing));
+    let without_parallel = DocumentTables {
+        parallel: None,
+        ..*tables
+    };
+    assert_eq!(
+        without_parallel.check(),
+        Err(TablesFault::ProceduresMissing)
+    );
 }
 
 /// The words of one set of the document's states.

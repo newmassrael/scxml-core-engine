@@ -110,6 +110,8 @@ impl StatePolicy for Test144Policy {
             Target::state(StateId(0)),
         ],
         initial: TransitionId(2),
+        history: None,
+        parallel: None,
     };
     const STATES: &'static [Test144State] = &[
         Test144State::S0,

@@ -1,0 +1,53 @@
+# Mutation cases for "a program pays for the Appendix D features its documents
+# use" (docs/adr/0066).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_program_pays_for_the_features_its_documents_use.cases`.
+#
+# The procedures only a `<history>` or a `<parallel>` reaches are carried by the
+# tables of a document that has one, and `DocumentTables::check` refuses tables
+# that use a feature without them. The cases put back each way that can go
+# wrong:
+#
+# - the check stops refusing a missing procedure set, which
+#   `tables_that_use_a_feature_without_its_procedures_are_refused` in
+#   `tests/microstep_algorithms.rs` refuses;
+# - the core asks for a feature's procedures whatever the document, which the
+#   differential test refuses because its random documents without a
+#   `<parallel>` or a `<history>` carry none: the case is what shows the test
+#   runs the core on such tables at all, so a test that always carried both
+#   would be seen.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --test microstep_algorithms
+mutation_targets backends/rust/runtime/src/helpers/tables.rs backends/rust/runtime/src/helpers/microstep.rs
+mutation_oracles backends/rust/runtime/tests/microstep_algorithms.rs
+
+mutation_case "tables with a <parallel> and no parallel procedures pass the check" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''            || (has_parallel && self.parallel.is_none())''',
+     r'''            || (has_parallel && self.parallel.is_none() && false)''')
+PY
+
+mutation_case "tables with a <history> and no history procedures pass the check" <<'PY'
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     r'''        if (!self.histories.is_empty() && self.history.is_none())''',
+     r'''        if (!self.histories.is_empty() && self.history.is_none() && false)''')
+PY
+
+mutation_case "the selection asks for the parallel procedures whatever the document" <<'PY'
+edit("backends/rust/runtime/src/helpers/microstep.rs",
+     r'''    if let Some(parallel) = tables.parallel {
+        (parallel.remove_conflicting)(tables, machine.store().as_ref(), enabled, scratch);
+    }''',
+     r'''    (parallel_procedures(tables).remove_conflicting)(tables, machine.store().as_ref(), enabled, scratch);''')
+PY
+
+mutation_case "exitStates asks for the history procedures whatever the document" <<'PY'
+edit("backends/rust/runtime/src/helpers/microstep.rs",
+     r'''    if let Some(history) = tables.history {
+        (history.record)(tables, machine.store(), states_to_exit.as_ref());
+    }''',
+     r'''    (history_procedures(tables).record)(tables, machine.store(), states_to_exit.as_ref());''')
+PY
