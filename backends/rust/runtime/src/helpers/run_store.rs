@@ -24,7 +24,7 @@ pub const fn record_words(states: usize, histories: usize) -> usize {
 
 /// A machine's configuration and history records, of the sizes its document
 /// needs: `WORDS` the words of one set of its states
-/// ([`state_words`](super::state_set::state_words)), `RECORD_WORDS` the words
+/// ([`state_words`]), `RECORD_WORDS` the words
 /// of its `HISTORIES` histories' records ([`record_words`]). The generated
 /// policy spells its own as `StatePolicy::RunStore`.
 #[derive(Debug, Clone)]

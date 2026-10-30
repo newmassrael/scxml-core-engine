@@ -52,7 +52,7 @@ use crate::helpers::tables::{
 const STATE_SETS: usize = 3;
 
 /// The words the scratch of a document with `states` states must have room
-/// for: [`STATE_SETS`] sets of [`state_words`] each. The generator writes the
+/// for: three sets of [`state_words`] each. The generator writes the
 /// workspace's size as a call of this function, so the rule is stated once.
 pub const fn state_scratch(states: usize) -> usize {
     STATE_SETS * state_words(states)

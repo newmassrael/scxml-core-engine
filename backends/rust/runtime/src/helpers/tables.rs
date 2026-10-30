@@ -61,8 +61,9 @@ pub struct EventId(pub u16);
 /// the most ids a table can name, so no document reaches it.
 const ABSENT: u16 = u16::MAX;
 
-/// The most states, histories or transitions one table names: every id below
-/// [`ABSENT`], and a [`Target`] keeps one bit for its kind.
+/// The most states, histories or transitions one table names: a [`Target`]
+/// keeps the top bit of its number for whether it names a `<history>`, and an
+/// absent row is the largest number.
 pub const MAX_IDS: usize = 1 << 15;
 
 impl StateId {
