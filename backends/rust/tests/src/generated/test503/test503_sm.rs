@@ -196,6 +196,9 @@ pub const TEST503_TABLES: ::sce_rust_runtime::DocumentTables = {
         ],
         targets: &[],
         initial: TransitionId(6),
+        default_state: ::sce_rust_runtime::StateId(Test503State::S1 as u16),
+        null_event: ::sce_rust_runtime::EventId(3),
+        error_events: &[::sce_rust_runtime::EventId(1)],
         history: None,
         parallel: None,
     }
@@ -620,10 +623,9 @@ impl StatePolicy for Test503Policy {
     // as the const consumed below); absent a declared capacity the bare form
     // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
     // the default). Inert under std (`VecDeque`), so this one emission compiles
-    // on both runtime profiles.
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    // on both runtime profiles. The queue holds events as numbers and only the
+    // payloads as this machine's type (docs/adr/0068).
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
@@ -708,14 +710,6 @@ impl StatePolicy for Test503Policy {
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
     // ======================================================================
-
-    fn initial_state() -> Self::State {
-        // The runtime entry state and the type's `Default` derive are one
-        // concept, sourced from one computation (`default_state_id`) so
-        // they can never diverge: `<scxml initial>`, or the first sorted
-        // state when the initial attribute is unset.
-        Test503State::S1
-    }
 
     // The document's structure — each state's parent, kind, subtree and
     // initial transition, and so its children, each history's parent and
