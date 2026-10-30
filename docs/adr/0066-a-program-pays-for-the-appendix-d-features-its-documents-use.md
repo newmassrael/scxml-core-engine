@@ -1,7 +1,8 @@
 # ADR 0066 — A program pays for the Appendix D features its documents use
 
 - Status: Accepted (2026-10-30), on the owner's instruction after the ADR 0064 acceptance
-  measurement: "구조로 더 줄이기" — repair it structurally, as ADR 0064 decision 6 requires.
+  measurement, to shrink the image by structure: repair it structurally, as ADR 0064 decision 6
+  requires.
 - Amends: ADR 0064 (decisions 2 and 6).
 - Evidence:
   - the watching-zenoh T2G measurement of 6f72d5975e;
