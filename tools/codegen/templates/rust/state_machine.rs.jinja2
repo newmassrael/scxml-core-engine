@@ -1397,6 +1397,38 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% else %}
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 {% endif %}
+{% if model.needs_event_scheduler %}
+    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+{% else %}
+    // W3C SCXML 6.2: this document has no `<send delay>`, no `<send delayexpr>`,
+    // no `<cancel>` and no host-run deadline, so nothing is ever armed on the
+    // delayed-send queue and the machine keeps none: the zero-size
+    // `NoDelayedSends`, where a bounded ring of MAX_SCHEDULED_EVENTS entries was
+    // capacity nothing could fill under no_std. The same emission compiles on
+    // both runtime profiles.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+{% endif %}
+{% set donedata_scan = namespace(stashed=false) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.is_final and state.donedata and not state.parent %}
+{% set donedata_scan.stashed = true %}
+{% endif %}
+{% endfor %}
+{% if donedata_scan.stashed %}
+    // W3C SCXML 5.5: a top-level `<final>` of this document carries
+    // `<donedata>`, whose payload waits here for the invoking parent to lift
+    // it onto `done.invoke.<id>`. The predicate is the stash site's in
+    // entry_exit_actions.rs.jinja2, so a machine keeps a slot exactly when it
+    // writes one.
+    type DoneData = ::sce_rust_runtime::SceString;
+{% else %}
+    // W3C SCXML 5.5: no top-level `<final>` of this document carries
+    // `<donedata>`, so nothing is ever kept for a parent: the zero-size
+    // `NoDoneData`, which reads as the empty string, where a buffer of the
+    // string bound sat unfilled under no_std.
+    type DoneData = sce_rust_runtime::NoDoneData;
+{% endif %}
 
     // docs/adr/0064: the document as the runtime's Appendix D procedures read
     // it, which are compiled once for a program: its tables, and its states,

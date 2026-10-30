@@ -24,13 +24,20 @@
 //!   `ScheduledEntry` under no_std — either the unconditional `event_data`
 //!   payload, or the `send_id` cancel key (elided to `ElidedSendId` here
 //!   because the fixture is cancel-free).
+//! - **Unused-capacity lever**: the fixture has no delayed send, no `<cancel>`
+//!   and no `<donedata>`, so its policy names the zero-size `NoDelayedSends` as
+//!   `StatePolicy::Scheduler` and the zero-size `NoDoneData` as
+//!   `StatePolicy::DoneData`. A generator that went back to giving every
+//!   machine a scheduler ring and a donedata string makes either type non-zero.
 //!
 //! A plain compile gate cannot catch any of these — the reverted form still
 //! compiles — so these `size_of` assertions are the load-bearing gates.
 //! Measured on thumbv7em-none-eabihf: `size_of::<Engine<P>>()` for this machine
-//! is ~832 B, down from ~9.0 KiB before the scheduler `send_id` elision
-//! (~17.5 KiB before the scheduler `event_data` elision, ~23.7 KiB before the
-//! metadata elision). The `send_id` elision alone removes 256 B × 32 = 8 KiB.
+//! was ~832 B while it still carried a scheduler ring (528 B) and a donedata
+//! string (260 B) it could never fill, down from ~9.0 KiB before the scheduler
+//! `send_id` elision (~17.5 KiB before the scheduler `event_data` elision,
+//! ~23.7 KiB before the metadata elision). The `send_id` elision alone removes
+//! 256 B × 32 = 8 KiB.
 
 #![no_std]
 
@@ -41,9 +48,11 @@ use sce_rust_runtime::{Engine, EventMetadata, StatePolicy};
 /// The probe machine's scheduled-send-id storage — the `S` in
 /// `PullScheduler<S>`, whose entries name their event by number
 /// (docs/adr/0069). Codegen selects `ElidedSendId` (zero-size) here
-/// because the fixture has no `<cancel>`; this is exactly the type the
-/// generated `Engine` embeds, so the scheduler bound below measures the real
-/// resident size, not the `SceString`-default `PullScheduler`.
+/// because the fixture has no `<cancel>`. The machine itself keeps no
+/// scheduler (it has no delayed send either, see the unused-capacity lever
+/// below), so the scheduler bound below measures the ring a cancel-free
+/// machine that does delay a send embeds, not the `SceString`-default
+/// `PullScheduler`.
 type ProbeSendId = <EventQueueCapacityProbePolicy as StatePolicy>::ScheduledSendId;
 
 // The levers are gated *directly* at their own types (robust — independent of
@@ -100,6 +109,24 @@ const _: () = assert!(
      be #[cfg(feature = \"std\")]) or the `send_id` cancel key (the cancel-free machine's \
      `type ScheduledSendId` must be `ElidedSendId`, not `SceString`). See the ScheduledEntry \
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
+);
+
+/// Unused-capacity lever. The fixture has no `<send delay>`, no
+/// `<send delayexpr>`, no `<cancel>` and no `<donedata>`, so its engine has
+/// nothing to wait in a delayed-send queue and nothing to keep for a parent:
+/// the generator names the zero-size `NoDelayedSends` and `NoDoneData`. Before
+/// it did, every engine carried the 528 B ring above and a 260 B
+/// `heapless::String<256>`, 788 B of capacity such a document can never fill.
+/// Either type growing means the generator stopped choosing by what the
+/// document uses (the `type Scheduler` / `type DoneData` emission in
+/// tools/codegen/templates/rust/state_machine.rs.jinja2).
+const _: () = assert!(
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::Scheduler>() == 0
+        && core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::DoneData>() == 0,
+    "a machine whose document has no delayed send, no <cancel> and no <donedata> carries a \
+     delayed-send queue or a donedata slot: its policy must name the zero-size NoDelayedSends \
+     and NoDoneData. See the `type Scheduler` / `type DoneData` emission in \
+     tools/codegen/templates/rust/state_machine.rs.jinja2.",
 );
 
 /// The probe machine's tables (docs/adr/0064): the rows of the document the
@@ -163,7 +190,9 @@ const _: () = assert!(
 );
 
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler
-/// `send_id` elision, down from ~9.0 KiB). Catches a gross regression that
+/// `send_id` elision, down from ~9.0 KiB, and before the unused-capacity
+/// lever above took the scheduler ring and the donedata string out of this
+/// machine's engine). Catches a gross regression that
 /// balloons the engine without tripping the precise per-lever bounds above
 /// (queue / metadata / scheduler); set so a single per-entry-string reversion
 /// (~+8 KiB → ~9 KiB) also trips here independently as defense in depth.

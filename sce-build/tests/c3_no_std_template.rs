@@ -1111,6 +1111,147 @@ fn rust_template_builds_no_string_for_a_send_id_or_an_origin() {
     }
 }
 
+/// The engine's delayed-send queue and donedata slot are the policy's, chosen by
+/// what the document uses: a machine that can arm no delayed send keeps no
+/// queue (`NoDelayedSends`), one with no `<donedata>` on a top-level `<final>`
+/// keeps no slot (`NoDoneData`), and every other keeps the one it fills. Under
+/// the bare-metal profile the two were 528 B and 260 B of every engine.
+#[test]
+fn rust_template_chooses_the_scheduler_and_the_donedata_slot_by_what_the_document_uses() {
+    const DELAYED_SEND_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="go" delay="1s"/>
+    </onentry>
+    <transition event="go" target="s1"/>
+  </state>
+  <state id="s1"/>
+</scxml>
+"#;
+    // A `<cancel>` with no delayed send of its own document still needs the
+    // queue: it is the one thing that reads an entry's key.
+    const CANCEL_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <onentry>
+      <cancel sendid="t"/>
+    </onentry>
+    <transition event="go" target="s1"/>
+  </state>
+  <state id="s1"/>
+</scxml>
+"#;
+    const TOP_LEVEL_DONEDATA_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <transition event="go" target="f"/>
+  </state>
+  <final id="f">
+    <donedata><content>done</content></donedata>
+  </final>
+</scxml>
+"#;
+    // A `<final>` inside a compound state raises `done.state.<parent>` with its
+    // data and keeps nothing for a parent session.
+    const NESTED_DONEDATA_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">
+  <state id="c" initial="s0">
+    <state id="s0">
+      <transition event="go" target="f"/>
+    </state>
+    <final id="f">
+      <donedata><content>done</content></donedata>
+    </final>
+  </state>
+</scxml>
+"#;
+    const NO_SCHEDULER: &str = "type Scheduler = sce_rust_runtime::NoDelayedSends;";
+    const PULL_SCHEDULER: &str =
+        "type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;";
+    const NO_SLOT: &str = "type DoneData = sce_rust_runtime::NoDoneData;";
+    const STRING_SLOT: &str = "type DoneData = ::sce_rust_runtime::SceString;";
+    const STASH: &str = "engine.stash_donedata_at_final(";
+
+    // Analysed, as the command line does before it renders: the analysis is
+    // what records whether the document delays or cancels a send.
+    let render = |content: &str, label: &str, no_std: bool| {
+        let mut model = parse(content, label);
+        sce_build::analyzer::analyze(&mut model, label);
+        generate(&model, &template_dir(), no_std).expect("template render must succeed")
+    };
+
+    for no_std in [false, true] {
+        let plain = render(PLAIN_FSM, "plain_slots", no_std);
+        assert!(
+            plain.contains(NO_SCHEDULER),
+            "no_std={no_std}: a document with no delayed send and no <cancel> keeps no queue"
+        );
+        assert!(
+            !plain.contains("PullScheduler"),
+            "no_std={no_std}: a document with no delayed send must not name a scheduler ring"
+        );
+        assert!(
+            plain.contains(NO_SLOT),
+            "no_std={no_std}: a document with no <donedata> keeps no slot"
+        );
+
+        let delayed = render(DELAYED_SEND_FSM, "delayed_slots", no_std);
+        assert!(
+            delayed.contains(PULL_SCHEDULER),
+            "no_std={no_std}: a delayed send waits in a PullScheduler"
+        );
+        assert!(
+            delayed.contains("type ScheduledSendId = sce_rust_runtime::ElidedSendId;"),
+            "no_std={no_std}: a cancel-free queue keys its entries by the zero-size id"
+        );
+        assert!(
+            !delayed.contains(NO_SCHEDULER),
+            "no_std={no_std}: a document that delays a send must keep a queue"
+        );
+        assert!(
+            delayed.contains(NO_SLOT),
+            "no_std={no_std}: a delayed send does not need a donedata slot"
+        );
+
+        let cancel = render(CANCEL_FSM, "cancel_slots", no_std);
+        assert!(
+            cancel.contains(PULL_SCHEDULER),
+            "no_std={no_std}: a <cancel> is answered by a PullScheduler"
+        );
+        assert!(
+            cancel.contains("type ScheduledSendId = ::sce_rust_runtime::SendIdString<"),
+            "no_std={no_std}: a document that cancels keys its entries by their id"
+        );
+    }
+
+    // `<donedata>` is evaluated by the script engine's seam, which the hosted
+    // profile carries.
+    let top_level = render(TOP_LEVEL_DONEDATA_FSM, "top_level_donedata", false);
+    assert!(
+        top_level.contains(STRING_SLOT),
+        "a top-level <final> with <donedata> keeps its payload for the parent in a string"
+    );
+    assert!(
+        top_level.contains(STASH),
+        "the slot is the one the top-level <final>'s entry stashes into"
+    );
+    assert!(
+        top_level.contains(NO_SCHEDULER),
+        "donedata does not need a delayed-send queue"
+    );
+
+    let nested = render(NESTED_DONEDATA_FSM, "nested_donedata", false);
+    assert!(
+        nested.contains(NO_SLOT),
+        "a <donedata> on a nested <final> is carried by done.state and keeps no slot"
+    );
+    assert!(
+        !nested.contains(STASH),
+        "a machine with no slot must not stash into one"
+    );
+}
+
 #[test]
 fn rust_template_elides_parent_external_queue_field_under_no_std() {
     let model = parse(PLAIN_FSM, "plain_nostd_pq");

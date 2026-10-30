@@ -113,9 +113,11 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
     engine.initialize();
     engine.step();
     // A host with a clock drives each of its machines with `tick`, so the
-    // second machine's path through the scheduler is weighed as the first's is:
-    // what the two share is in both images, and what each brings is the
-    // difference (docs/adr/0069).
+    // second machine's `tick` is weighed as the first's is: what the two share
+    // is in both images, and what each brings is the difference
+    // (docs/adr/0069). This document has no delayed send and no `<cancel>`, so
+    // its policy names the zero-size `NoDelayedSends` and its `tick` drains no
+    // queue.
     engine.tick();
     engine.process_event(EventQueueCapacityProbeEvent::Stop);
     engine.is_running()
