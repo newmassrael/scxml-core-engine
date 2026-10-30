@@ -30,6 +30,9 @@ namespace SCE::Forge {
 /// `UnknownVariantTag` — RFC §synth-5-B requires `<sce:default>` when arms
 /// don't exhaust the tag domain (build-time `codec/variant-arm-unreachable`
 /// otherwise), so the default arm catches every unmatched tag at runtime.
+/// A tag the document names whose arm this build leaves out is another fact,
+/// refused as `VariantArmNotBuilt` and recorded on the cursor
+/// (`SceCursor::last_refusal`, docs/adr/0072).
 ///
 /// The TLV chain primitive emits on cpp
 /// (it was originally MCU-only as a conservative scope choice; Zenoh
@@ -90,6 +93,16 @@ enum class CodecError : std::uint8_t {
     /// UTF-8, an integer or `bool` out of its type, a parameter of more values
     /// than one, a `"` in a parameter value.
     LineBadValue = 12,
+    /// Decode-side (docs/adr/0072): the frame's variant tag names an arm the
+    /// document declares under a build feature this build leaves out
+    /// (`<sce:arm feature="<name>">`, whose `SCE_FEATURE_<NAME>` macro is 0).
+    /// The arm's alternative is not in the variant, so the frame is refused
+    /// rather than read as another arm's body. Decode returns `std::nullopt`,
+    /// the C++ decode convention, and records this on the cursor, where
+    /// `SceCursor::last_refusal` tells it apart from running out of bytes.
+    /// Mirrors `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20` of C and the typed
+    /// `CodecError::VariantArmNotBuilt` of Rust.
+    VariantArmNotBuilt = 13,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -149,6 +162,27 @@ public:
         return vle_overflow_;
     }
 
+    /// Record that a decode refused its frame for a reason other than
+    /// running out of bytes (`CodecError::VariantArmNotBuilt`). The decode
+    /// then returns `std::nullopt`; the cursor stands where the refusal was
+    /// found, inside the frame, so the frame is not resumed by appending
+    /// bytes. The record stays until the next refusal replaces it.
+    constexpr void refuse(CodecError error) noexcept {
+        refusal_ = error;
+        refused_ = true;
+    }
+
+    /// The reason the last refused decode over this cursor gave, or
+    /// `std::nullopt` when no decode over it refused a frame. A decode that
+    /// returned `std::nullopt` while this is empty ran out of bytes (or
+    /// overflowed a VLE, `last_vle_overflow`).
+    [[nodiscard]] constexpr std::optional<CodecError> last_refusal() const noexcept {
+        if (refused_) {
+            return refusal_;
+        }
+        return std::nullopt;
+    }
+
 private:
     std::optional<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
         vle_overflow_ = false;
@@ -190,6 +224,8 @@ private:
     std::size_t len_;
     std::size_t pos_;
     bool vle_overflow_ = false;
+    CodecError refusal_ = CodecError::NeedMoreBytes;
+    bool refused_ = false;
 };
 
 /// RFC §synth-5-B string typing (`sce:type="string"`): validate that `[p, p+n)` is a well-formed
