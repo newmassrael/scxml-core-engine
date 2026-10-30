@@ -6,16 +6,18 @@
 # A parent whose carrier holds, in a flag, the tag of a variant it embeds
 # derives the flag's bits from the arm the embedded body holds; a catch-all
 # body holds the tag no arm names, and that tag, masked to the flag's width,
-# is what the parent writes (ADR 0058). The C parent once added nothing for
-# a catch-all body and the C++ parent the bits of its last arm, so the frame
-# decoded into another arm. Each case below breaks one part of the rule: the
-# derivation forgets the catch-all, a C++ chain leaves its term out, the term
-# writes the tag unmasked, or the C case is left out or not shifted.
+# is what the parent writes (ADR 0058). The flag is the body's, so the encode
+# clears it in the stored carrier before it adds the derived bits. The C
+# parent once added nothing for a catch-all body and the C++ parent the bits
+# of its last arm, and each backend added the derived bits to the stored
+# flag. Each case below breaks one part of the rule: the derivation forgets
+# the catch-all, a backend leaves the catch-all out of its term or writes the
+# tag unmasked or unshifted, or a carrier write keeps the stored flag.
 # `sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs` refuses
-# them by the term each backend renders and, where gcc and g++ are present,
-# by a decode and encode of a frame the catch-all reads, which the gated
-# chain and the unmasked tag do not reach: the frame's variant has no gated
-# arm, and its tag fills the flag.
+# them by the term and the carrier write each backend renders and, where gcc
+# and g++ are present, by a decode and encode of two frames whose stored flag
+# is made stale. The runs do not reach the gated C++ chain or the unmasked
+# tag: their variant has no gated arm, and their tags fill the flag.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -57,9 +59,11 @@ PY
 mutation_case "a C parent has no case for a catch-all body" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''    if d.catch_all {
-        switch_block.push_str(&format!(''',
+        switch_block.push_str(&format!(
+            "    case {embed_upper}_BODY_KIND_DEFAULT:''',
      r'''    if d.catch_all && d.bit == u32::MAX {
-        switch_block.push_str(&format!(''')
+        switch_block.push_str(&format!(
+            "    case {embed_upper}_BODY_KIND_DEFAULT:''')
 PY
 
 mutation_case "a C parent adds the catch-all's tag without shifting it to the flag" <<'PY'
@@ -70,4 +74,30 @@ edit("sce-build/src/forge/generator.rs",
      r'''u) << {}); break;\n",
             0u32
         ));''')
+PY
+
+# ── The carrier write ──
+
+mutation_case "no carrier write clears the flags the bodies fill" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                keep: !filled & 0xFF,''',
+     r'''                keep: 0xFF,''')
+PY
+
+mutation_case "a C and C++ carrier write keeps the stored flag" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Language::Cpp | Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),''',
+     r'''        Language::Cpp | Language::C11 => format!("{stored} | {local}"),''')
+PY
+
+mutation_case "a Python and Go carrier write keeps the stored flag" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            format!("({stored} & 0x{keep:02X}) | {local}")''',
+     r'''            format!("{stored} | {local}")''')
+PY
+
+mutation_case "a Kotlin carrier write keeps the stored flag" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Language::Kotlin => format!("(({stored} and 0x{keep:02X}u.toUByte()) or {local})"),''',
+     r'''        Language::Kotlin => format!("({stored} or {local})"),''')
 PY

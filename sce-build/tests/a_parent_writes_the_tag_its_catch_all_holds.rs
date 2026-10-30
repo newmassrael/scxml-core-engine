@@ -2,21 +2,24 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A parent whose carrier holds, in a flag, the tag of a variant it embeds
-//! writes for a catch-all body the tag that body holds (ADR 0058: a catch-all
-//! presents the tag it could not name), masked to the flag's width.
+//! writes in that flag what the embedded body says: the tag of its arm, or for
+//! a catch-all body the tag that body holds (ADR 0058: a catch-all presents
+//! the tag it could not name), masked to the flag's width. The flag is the
+//! body's, so bits the stored carrier holds there are not written.
 //!
 //! The decode of the parent hands the embedded variant the flag's bits as its
 //! tag, and a tag no arm names reaches the catch-all, which keeps it. Bits the
 //! encode derives from anything else make a frame that decodes into another
 //! arm, or into the catch-all with another tag. The Rust source interface
-//! derives them from the tag (`derive_parent_tag`); the C parent once added
-//! nothing for a catch-all body, and the C++ parent the bits of its last arm,
-//! which the catch-all's wrapper fell through to.
+//! derives the flag from the body and writes it in place of the stored one
+//! (`derive_parent_tag`). The other backends once differed: C added nothing
+//! for a catch-all body and C++ the bits of the last arm, and each added the
+//! derived bits to the stored carrier, so stale bits there were written too.
 //!
-//! The render tests hold the term each backend writes; the run tests compile
-//! the C and C++ codecs, decode a frame whose tag no arm names, clear the flag
-//! on the decoded value, and hold the encode to the original frame, since the
-//! carrier byte is the stored header with the derived bits added.
+//! The render tests hold the term each backend writes and its carrier write;
+//! the run tests compile the C and C++ codecs where gcc and g++ are present,
+//! decode a frame, store stale bits in the flag, and hold the encode to the
+//! frame: once for a catch-all body, once for an arm's.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,6 +29,10 @@ use sce_build::{DocumentLabel, ForgeCompileOptions};
 
 /// The catch-all's wrapper the C++ dispatcher declares next to its struct.
 const CPP_WRAPPER: &str = "::SCE::Generated::CaChild::CaChildDefault";
+
+/// The module the Go codecs are generated into, and the run test's
+/// `go.mod` declares.
+const GO_MODULE: &str = "example.com/sce-catch-all";
 
 /// A parent that dispatches an embedded tag-less variant on two bits of its
 /// header, written with its documents to a fresh directory the caller
@@ -102,6 +109,16 @@ fn catch_all_fixture(gated: bool) -> PathBuf {
     dir
 }
 
+/// The options `language` is generated with: Go names the module its
+/// codecs import one another from.
+fn options(language: Language) -> ForgeCompileOptions {
+    let mut options = ForgeCompileOptions::default();
+    if matches!(language, Language::Go) {
+        options.go_module_prefix = Some(GO_MODULE.to_string());
+    }
+    options
+}
+
 /// Every file `language` writes for the fixture's documents, each once, by
 /// its file name.
 fn generate_all(dir: &Path, language: Language) -> Vec<(String, String)> {
@@ -114,7 +131,7 @@ fn generate_all(dir: &Path, language: Language) -> Vec<(String, String)> {
             DocumentLabel::symmetric(stem),
             language,
             dir,
-            &ForgeCompileOptions::default(),
+            &options(language),
         )
         .unwrap_or_else(|e| panic!("{stem} generates for {language:?}: {e}"));
         for (name, code) in output.files {
@@ -131,14 +148,15 @@ fn generate_all(dir: &Path, language: Language) -> Vec<(String, String)> {
     files
 }
 
-/// The parent's generated file for `language`.
+/// The parent's generated file for `language`, which Kotlin names by the
+/// parent's type and every other backend by its document.
 fn parent_code(gated: bool, language: Language) -> String {
     let dir = catch_all_fixture(gated);
     let files = generate_all(&dir, language);
     let _ = std::fs::remove_dir_all(&dir);
     files
         .into_iter()
-        .find(|(name, _)| name.contains("ca_parent"))
+        .find(|(name, _)| name.contains("ca_parent") || name.contains("CaParent"))
         .map(|(_, code)| code)
         .unwrap_or_else(|| panic!("the parent's file for {language:?}"))
 }
@@ -152,14 +170,25 @@ fn cpp_catch_all_term() -> String {
     )
 }
 
-/// The Rust source interface reads the tag a catch-all body holds; the C and
-/// C++ terms below are held to the same rule.
+/// Assert that `code` holds `wanted`, naming `what` when it does not.
+fn assert_holds(code: &str, wanted: &str, what: &str) {
+    assert!(
+        code.contains(wanted),
+        "{what}; wanted\n{wanted}\nin:\n{code}"
+    );
+}
+
+// ── the term of a catch-all body ────────────────────────────────────────
+
+/// The Rust source interface reads the tag a catch-all body holds; the other
+/// backends' terms below are held to the same rule.
 #[test]
 fn the_rust_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Rust);
-    assert!(
-        code.contains("CaChildVariantSource::Default { tag, .. } => u8::from(tag) & 0x3"),
-        "the Rust parent does not derive K from the catch-all's tag:\n{code}"
+    assert_holds(
+        &code,
+        "CaChildVariantSource::Default { tag, .. } => u8::from(tag) & 0x3",
+        "the Rust parent does not derive K from the catch-all's tag",
     );
 }
 
@@ -179,9 +208,10 @@ fn the_c_parent_writes_the_tag_its_catch_all_holds() {
         "    }",
     ]
     .join("\n");
-    assert!(
-        code.contains(&switch),
-        "the C parent does not derive K from the catch-all's tag:\n{code}"
+    assert_holds(
+        &code,
+        &switch,
+        "the C parent does not derive K from the catch-all's tag",
     );
 }
 
@@ -196,9 +226,10 @@ fn the_cpp_parent_writes_the_tag_its_catch_all_holds() {
          static_cast<std::uint8_t>(0x20)));\n",
         cpp_catch_all_term()
     );
-    assert!(
-        code.contains(&derived),
-        "the C++ parent does not derive K from the catch-all's tag:\n{code}"
+    assert_holds(
+        &code,
+        &derived,
+        "the C++ parent does not derive K from the catch-all's tag",
     );
 }
 
@@ -218,17 +249,89 @@ fn the_cpp_parent_of_a_gated_variant_writes_the_tag_its_catch_all_holds() {
         "            static_cast<std::uint8_t>(0x20)));".to_string(),
     ]
     .join("\n");
-    assert!(
-        code.contains(&derived),
-        "the C++ parent of a gated variant does not derive K from the catch-all's tag:\n{code}"
+    assert_holds(
+        &code,
+        &derived,
+        "the C++ parent of a gated variant does not derive K from the catch-all's tag",
+    );
+}
+
+// ── the carrier: the stored flag cleared, the derived bits written ──────
+
+/// The C parent clears K in the stored header before it adds the derived bits.
+#[test]
+fn the_c_parent_writes_k_from_the_body_alone() {
+    let code = parent_code(false, Language::C11);
+    assert_holds(
+        &code,
+        "sce_forge_writer_write_u8(w, (self->header & 0x9Fu) | _derived_header)",
+        "the C parent writes the stored K bits with the derived ones",
+    );
+}
+
+/// The C++ parent clears K in the stored header before it adds the derived
+/// bits.
+#[test]
+fn the_cpp_parent_writes_k_from_the_body_alone() {
+    let code = parent_code(false, Language::Cpp);
+    assert_holds(
+        &code,
+        "w.write_u8((header & 0x9Fu) | _derived_header);",
+        "the C++ parent writes the stored K bits with the derived ones",
+    );
+}
+
+/// The Python parent clears K in the stored header before it adds the derived
+/// bits.
+#[test]
+fn the_python_parent_writes_k_from_the_body_alone() {
+    let code = parent_code(false, Language::Python);
+    assert_holds(
+        &code,
+        "w.write_u8(((self.header & 0x9F) | _derived_header) & 0xFF)",
+        "the Python parent writes the stored K bits with the derived ones",
+    );
+}
+
+/// The Go parent clears K in the stored header before it adds the derived
+/// bits.
+#[test]
+fn the_go_parent_writes_k_from_the_body_alone() {
+    let code = parent_code(false, Language::Go);
+    assert_holds(
+        &code,
+        "w.WriteBytes([]byte{ (s.Header & 0x9F) | _derivedHeader })",
+        "the Go parent writes the stored K bits with the derived ones",
+    );
+}
+
+/// The Kotlin parent clears K in the stored header before it adds the derived
+/// bits.
+#[test]
+fn the_kotlin_parent_writes_k_from_the_body_alone() {
+    let code = parent_code(false, Language::Kotlin);
+    assert_holds(
+        &code,
+        "w.writeU8(((this.header and 0x9Fu.toUByte()) or _derivedHeader).toByte())",
+        "the Kotlin parent writes the stored K bits with the derived ones",
     );
 }
 
 // ── running what was generated ──────────────────────────────────────────
+//
+// Every driver runs the same two frames. The header holds mid (0x1d) and, in K
+// (bits 5 and 6), the tag:
+//   - 0x5d 0x07: tag 2, which no arm names, so the catch-all reads its one
+//     byte; the decoded value's header is then given K = 1 (0x3d);
+//   - 0x3d 0x12 0x34: tag 1, the two-byte arm; its header is given K = 2
+//     (0x5d).
+// Each encode must write the frame back: K from the body, not from the
+// stored header, which would make 0x7d of either.
 
-/// A fresh directory for one run, holding every header the fixture generates
-/// for `language`.
-fn project(language: Language, label: &str) -> PathBuf {
+/// A fresh directory for one run, holding every file of extension `ext` the
+/// fixture generates for `language`; a Go file is in a directory of its own,
+/// named by its package.
+fn project(language: Language, ext: &str, label: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let fixture = catch_all_fixture(false);
@@ -241,21 +344,29 @@ fn project(language: Language, label: &str) -> PathBuf {
     ));
     std::fs::create_dir_all(&dir).expect("make the project directory");
     for (name, code) in files {
-        if name.ends_with(".h") {
-            std::fs::write(dir.join(name), code).expect("write a header");
+        let path = Path::new(&name);
+        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
+            continue;
         }
+        let target = if matches!(language, Language::Go) {
+            let package = dir.join(path.file_stem().expect("a Go file has a stem"));
+            std::fs::create_dir_all(&package).expect("make a package directory");
+            package
+        } else {
+            dir.clone()
+        };
+        std::fs::write(target.join(name), code).expect("write a generated file");
     }
     dir
 }
 
-/// The include directory of a runtime under `backends/`.
-fn runtime_include(rel: &str) -> PathBuf {
+/// A directory of a runtime under `backends/`.
+fn backend(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join(rel)
-        .join("include")
         .canonicalize()
-        .unwrap_or_else(|e| panic!("{rel}/include: {e}"))
+        .unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
 /// Run `command` in `dir` and fail with what it said when it fails.
@@ -273,9 +384,8 @@ fn run(mut command: Command, dir: &Path, what: &str) {
     );
 }
 
-const C_DRIVER: &str = r#"/* Decode a frame whose tag no arm names, clear the tag on the
- * decoded value, and hold the encode to the frame: the carrier's bits come
- * from the catch-all's tag, not from the stored header. */
+const C_DRIVER: &str = r#"/* Decode each frame, store stale bits in K, and hold the encode to the
+ * frame: K comes from the body, not from the stored header. */
 #include "ca_parent.h"
 #include <stdio.h>
 #include <string.h>
@@ -285,44 +395,46 @@ static int fail(const char *what) {
     return 1;
 }
 
-int main(void) {
-    int failed = 0;
-    /* The header holds mid (0x1d) and, in K (bits 5 and 6), the tag 3, which
-     * no arm names; the catch-all's body is one byte. */
-    const uint8_t frame[2] = { 0x7du, 0x07u };
-    sce_forge_cursor_t cursor = sce_forge_cursor_init(frame, sizeof frame);
-    ca_parent_t view;
-    memset(&view, 0, sizeof view);
-    if (ca_parent_decode(&cursor, &view) != SCE_FORGE_CODEC_OK) {
+/* Decode `frame` into `view`, store `stale` as its header, and encode: the
+ * bytes must be the frame's. */
+static int rewrite(const uint8_t *frame, size_t len, uint8_t stale, ca_parent_t *view) {
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(frame, len);
+    memset(view, 0, sizeof *view);
+    if (ca_parent_decode(&cursor, view) != SCE_FORGE_CODEC_OK) {
         return fail("the frame must decode");
     }
-    if (view.key.body.kind != CA_CHILD_BODY_KIND_DEFAULT || view.key.body.default_tag != 3u
-        || view.key.body.arm.default_body.payload != 0x07u) {
-        failed |= fail("tag 3 must reach the catch-all, which keeps it");
-    }
-    view.header = (uint8_t)(view.header & 0x1Fu);
+    view->header = stale;
     uint8_t buf[8];
     sce_forge_writer_t writer = sce_forge_writer_init_buf(buf, sizeof buf);
-    if (ca_parent_encode(&view, &writer) != SCE_FORGE_CODEC_OK) {
+    if (ca_parent_encode(view, &writer) != SCE_FORGE_CODEC_OK) {
         return fail("the decoded value must encode");
     }
-    if (writer.pos != sizeof frame || memcmp(buf, frame, sizeof frame) != 0) {
-        failed |= fail("the encode must write the catch-all's tag into K (header 0x7d)");
+    if (writer.pos != len || memcmp(buf, frame, len) != 0) {
+        return fail("the encode must write K from the body");
     }
-    ca_parent_t again;
-    memset(&again, 0, sizeof again);
-    cursor = sce_forge_cursor_init(buf, writer.pos);
-    if (ca_parent_decode(&cursor, &again) != SCE_FORGE_CODEC_OK
-        || again.key.body.kind != CA_CHILD_BODY_KIND_DEFAULT || again.key.body.default_tag != 3u) {
-        failed |= fail("the written frame must decode into the catch-all with tag 3");
+    return 0;
+}
+
+int main(void) {
+    int failed = 0;
+    ca_parent_t view;
+    const uint8_t catch_all[2] = { 0x5du, 0x07u };
+    failed |= rewrite(catch_all, sizeof catch_all, 0x3du, &view);
+    if (view.key.body.kind != CA_CHILD_BODY_KIND_DEFAULT || view.key.body.default_tag != 2u
+        || view.key.body.arm.default_body.payload != 0x07u) {
+        failed |= fail("tag 2 must reach the catch-all, which keeps it");
+    }
+    const uint8_t wide[3] = { 0x3du, 0x12u, 0x34u };
+    failed |= rewrite(wide, sizeof wide, 0x5du, &view);
+    if (view.key.body.kind != CA_CHILD_BODY_KIND_CA_WIDE || view.key.body.arm.ca_wide.payload != 0x1234u) {
+        failed |= fail("tag 1 must reach the two-byte arm");
     }
     return failed;
 }
 "#;
 
-const CPP_DRIVER: &str = r#"// Decode a frame whose tag no arm names, clear the tag on the decoded
-// value, and hold the encode to the frame: the carrier's bits come from the
-// catch-all's tag, not from the stored header or the last arm.
+const CPP_DRIVER: &str = r#"// Decode each frame, store stale bits in K, and hold the encode to the
+// frame: K comes from the body, not from the stored header.
 #include "ca_parent.h"
 
 #include <cstdint>
@@ -335,67 +447,71 @@ namespace {
 
 using Parent = ::SCE::Generated::CaParent::CaParent;
 using CatchAll = ::SCE::Generated::CaChild::CaChildDefault;
+using Wide = ::SCE::Generated::CaWide::CaWide;
 
 int fail(const char* what) {
     std::printf("%s\n", what);
     return 1;
 }
 
+// Decode `frame`, store `stale` as its header, and encode: the bytes must be
+// the frame's.
+std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8_t stale, int& failed) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    std::optional<Parent> decoded = Parent::decode(cursor);
+    if (!decoded.has_value()) {
+        failed |= fail("the frame must decode");
+        return decoded;
+    }
+    decoded->header = stale;
+    std::vector<std::uint8_t> written;
+    ::SCE::Forge::VectorSink sink(written);
+    if (decoded->encode(sink).has_value()) {
+        failed |= fail("the decoded value must encode");
+    } else if (written != frame) {
+        failed |= fail("the encode must write K from the body");
+    }
+    return decoded;
+}
+
 }  // namespace
 
 int main() {
     int failed = 0;
-    // The header holds mid (0x1d) and, in K (bits 5 and 6), the tag 3, which
-    // no arm names; the catch-all's body is one byte.
-    const std::vector<std::uint8_t> frame{0x7d, 0x07};
-    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
-    std::optional<Parent> decoded = Parent::decode(cursor);
-    if (!decoded.has_value()) {
-        return fail("the frame must decode");
+    const std::optional<Parent> held = rewrite({0x5d, 0x07}, 0x3d, failed);
+    const CatchAll* catch_all = held.has_value() ? std::get_if<CatchAll>(&held->key.body) : nullptr;
+    if (catch_all == nullptr || catch_all->tag != 2 || catch_all->body.payload != 0x07) {
+        failed |= fail("tag 2 must reach the catch-all, which keeps it");
     }
-    const CatchAll* held = std::get_if<CatchAll>(&decoded->key.body);
-    if (held == nullptr || held->tag != 3 || held->body.payload != 0x07) {
-        failed |= fail("tag 3 must reach the catch-all, which keeps it");
-    }
-    decoded->header = static_cast<std::uint8_t>(decoded->header & 0x1Fu);
-    std::vector<std::uint8_t> written;
-    ::SCE::Forge::VectorSink sink(written);
-    if (decoded->encode(sink).has_value()) {
-        return fail("the decoded value must encode");
-    }
-    if (written != frame) {
-        failed |= fail("the encode must write the catch-all's tag into K (header 0x7d)");
-    }
-    ::SCE::Forge::SceCursor again_cursor(written.data(), written.size());
-    const std::optional<Parent> again = Parent::decode(again_cursor);
-    const CatchAll* again_held = again.has_value() ? std::get_if<CatchAll>(&again->key.body) : nullptr;
-    if (again_held == nullptr || again_held->tag != 3) {
-        failed |= fail("the written frame must decode into the catch-all with tag 3");
+    const std::optional<Parent> named = rewrite({0x3d, 0x12, 0x34}, 0x5d, failed);
+    const Wide* wide = named.has_value() ? std::get_if<Wide>(&named->key.body) : nullptr;
+    if (wide == nullptr || wide->payload != 0x1234) {
+        failed |= fail("tag 1 must reach the two-byte arm");
     }
     return failed;
 }
 "#;
 
-/// The C parent writes the frame it decoded from a catch-all body.
+/// The C parent writes back each frame it decoded, whatever its stored K.
 #[test]
-fn the_c_parent_of_a_catch_all_round_trips_its_frame() {
+fn the_c_parent_writes_back_each_frame() {
     let Some(gcc) =
         sce_build::toolchain::require_or_skip("gcc", "compile and run the C parent of a catch-all")
     else {
         return;
     };
-    let dir = project(Language::C11, "c");
+    let dir = project(Language::C11, "h", "c");
     std::fs::write(dir.join("driver.c"), C_DRIVER).expect("write the driver");
     let mut build = Command::new(gcc);
     build
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror"])
         .arg(format!(
             "-I{}",
-            runtime_include("backends/c/forge-runtime").display()
+            backend("backends/c/forge-runtime/include").display()
         ))
         .arg(format!(
             "-I{}",
-            runtime_include("backends/c/runtime").display()
+            backend("backends/c/runtime/include").display()
         ))
         .arg(format!("-I{}", dir.display()))
         .args(["-o", "driver", "driver.c"]);
@@ -404,23 +520,23 @@ fn the_c_parent_of_a_catch_all_round_trips_its_frame() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The C++ parent writes the frame it decoded from a catch-all body.
+/// The C++ parent writes back each frame it decoded, whatever its stored K.
 #[test]
-fn the_cpp_parent_of_a_catch_all_round_trips_its_frame() {
+fn the_cpp_parent_writes_back_each_frame() {
     let Some(gxx) = sce_build::toolchain::require_or_skip(
         "g++",
         "compile and run the C++ parent of a catch-all",
     ) else {
         return;
     };
-    let dir = project(Language::Cpp, "cpp");
+    let dir = project(Language::Cpp, "h", "cpp");
     std::fs::write(dir.join("driver.cpp"), CPP_DRIVER).expect("write the driver");
     let mut build = Command::new(gxx);
     build
         .args(["-std=c++17", "-Wall", "-Wextra", "-Werror"])
         .arg(format!(
             "-I{}",
-            runtime_include("backends/cpp/forge-runtime").display()
+            backend("backends/cpp/forge-runtime/include").display()
         ))
         .arg(format!("-I{}", dir.display()))
         .args(["-o", "driver", "driver.cpp"]);

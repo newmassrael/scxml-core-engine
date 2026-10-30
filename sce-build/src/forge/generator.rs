@@ -7492,13 +7492,13 @@ fn render_codec(
     let needs_streaming_path = !m.positional_layout_is_valid();
 
     // RFC §synth-5-B parent-tag carriers — compute derivations BEFORE the field-meta
-    // builder so per-field encode blocks can append the `| _derived_<carrier>`
-    // suffix at the carrier field. The locals block lives in the codec
-    // emit ctx (rendered at `encode()` entry); the suffix lives per-
-    // field encode block via `inject_parent_tag_carrier_suffix` below.
+    // builder so per-field encode blocks can write the carrier field with its
+    // filled flags cleared and `_derived_<carrier>` added. The locals block
+    // lives in the codec emit ctx (rendered at `encode()` entry); the carrier
+    // write lives per-field encode block via `inject_parent_tag_carrier_suffix`
+    // below.
     let parent_tag_derivations = collect_parent_tag_derivations(m, imports);
-    let parent_tag_carrier_or_suffix =
-        parent_tag_carrier_or_suffix_map(&parent_tag_derivations, lang);
+    let parent_tag_carriers = parent_tag_carrier_or_suffix_map(&parent_tag_derivations, lang);
 
     let fields: Vec<serde_json::Value> = m
         .fields
@@ -8557,14 +8557,15 @@ fn render_codec(
                 if field_encode_blocks {
                     let mut encode_block =
                         present_if_streaming_encode_block(&l, f, &m.fields, m.default_endian);
-                    // RFC §synth-5-B parent-tag carriers — inject `| _derived_<carrier>`
-                    // into the single-byte carrier emit so the derived bits
-                    // land in the outgoing stream. Carrier is uint8 per v1
-                    // rpf lock-in (single-byte field), so the substitution
-                    // targets the n==1 shape of each backend's encode helper.
-                    if let Some(suffix) = parent_tag_carrier_or_suffix.get(&f.id) {
+                    // RFC §synth-5-B parent-tag carriers — write the single-byte
+                    // carrier with its filled flags cleared and the derived
+                    // bits added, so the bits the bodies derive land in the
+                    // outgoing stream. Carrier is uint8 per v1 rpf lock-in
+                    // (single-byte field), so the substitution targets the
+                    // n==1 shape of each backend's encode helper.
+                    if let Some(carrier) = parent_tag_carriers.get(&f.id) {
                         encode_block =
-                            inject_parent_tag_carrier_suffix(&encode_block, &f.id, suffix, lang);
+                            inject_parent_tag_carrier_suffix(&encode_block, &f.id, carrier, lang);
                     }
                     obj.insert("present_if_encode_block".into(), encode_block.into());
                 }
@@ -8718,13 +8719,13 @@ fn render_codec(
         String::new()
     };
 
-    // Apply the parent-tag OR suffix to the encode_exprs simple-path emit. The
+    // Write the parent-tag carriers of the encode_exprs simple-path emit. The
     // simple path is selected when the codec has no streaming-prefix
     // / present-if / variant / embed / repeat fields (rare in
     // practice for parent-tag-dispatch consumers — they almost always have an embed
     // field driving the derivation — but the helper preserves the
     // codec's behavioural surface when the configuration permits).
-    let encode_exprs: Vec<String> = if parent_tag_carrier_or_suffix.is_empty() {
+    let encode_exprs: Vec<String> = if parent_tag_carriers.is_empty() {
         encode_exprs
     } else {
         // Map per-byte: each simple-path encode entry corresponds to
@@ -8734,13 +8735,7 @@ fn render_codec(
             .into_iter()
             .enumerate()
             .map(|(i, e)| {
-                parent_tag_apply_simple_path_suffix(
-                    &e,
-                    i,
-                    &m.fields,
-                    &parent_tag_carrier_or_suffix,
-                    lang,
-                )
+                parent_tag_apply_simple_path_suffix(&e, i, &m.fields, &parent_tag_carriers, lang)
             })
             .collect()
     };
@@ -18759,7 +18754,7 @@ fn decode_multibyte_unified(
 /// import declares `<sce:variant-dispatch>`, resolves the bit/width
 /// from the parent's own flag layout and records one [`ParentTagDerivation`].
 /// Multiple embeds OR-ing onto the same parent carrier are grouped
-/// downstream by `parent_tag_derivation_block` and `parent_tag_carrier_or_suffix`
+/// downstream by `parent_tag_derivation_block` and `parent_tag_carrier_or_suffix_map`
 /// so each carrier emits exactly one local + one OR injection site.
 pub(crate) fn collect_parent_tag_derivations(
     m: &CodecModel,
@@ -19293,124 +19288,165 @@ fn parent_tag_switch_block_c11(
     }
 }
 
+/// A parent-tag carrier some flags of which the embedded bodies fill: the
+/// local the derivation block writes their bits to, and the bits of the
+/// stored value the encode keeps, every bit outside those flags. The flags
+/// are the bodies' (ADR 0058), so a value whose stored carrier still holds
+/// other bits there writes what its bodies say.
+#[derive(Debug, Clone)]
+struct ParentTagCarrier {
+    local: String,
+    keep: u64,
+}
+
 /// RFC §synth-5-B parent-tag carriers — given a codec's derivations, build a map
-/// from carrier field id → per-language OR suffix string (e.g.,
-/// `" | _derived_header"`). Encode helpers consult this map when
-/// emitting the carrier byte so the derived bits land in the
-/// outgoing byte stream.
+/// from carrier field id → the [`ParentTagCarrier`] its encode writes through.
+/// Encode helpers consult this map when emitting the carrier byte so the
+/// derived bits, and not the stored ones, land in the outgoing byte stream.
+/// The name keeps the suffix the carrier write once was, which the spec
+/// ledger binds this section to.
 fn parent_tag_carrier_or_suffix_map(
     derivations: &[ParentTagDerivation],
     lang: crate::generator::Language,
-) -> std::collections::HashMap<String, String> {
+) -> std::collections::HashMap<String, ParentTagCarrier> {
     use crate::generator::Language;
-    let mut out = std::collections::HashMap::new();
-    if derivations.is_empty() {
-        return out;
-    }
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out: std::collections::HashMap<String, ParentTagCarrier> =
+        std::collections::HashMap::new();
     for d in derivations {
-        if !seen.insert(d.carrier_field_id.clone()) {
+        let filled = (((1u64 << d.width) - 1) << d.bit) & 0xFF;
+        if let Some(carrier) = out.get_mut(&d.carrier_field_id) {
+            carrier.keep &= !filled;
             continue;
         }
         let snake = filters::to_snake_case(d.carrier_field_id.clone());
         let pascal = filters::to_pascal_case(d.carrier_field_id.clone());
-        let suffix = match lang {
+        let local = match lang {
             Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
-                format!(" | _derived_{snake}")
+                format!("_derived_{snake}")
             }
-            Language::Kotlin => format!(" or _derived{pascal}"),
-            Language::Go => format!(" | _derived{pascal}"),
+            Language::Kotlin | Language::Go => format!("_derived{pascal}"),
             Language::Swift => no_swift_emitter("parent_tag_carrier_or_suffix_map"),
         };
-        out.insert(d.carrier_field_id.clone(), suffix);
+        out.insert(
+            d.carrier_field_id.clone(),
+            ParentTagCarrier {
+                local,
+                keep: !filled & 0xFF,
+            },
+        );
     }
     out
 }
 
-/// RFC §synth-5-B parent-tag carriers — splice the OR suffix into a streaming
-/// per-field encode block emitted by `streaming_fixed_field_encode_*`.
-/// The carrier is uint8 per v1 rpf lock-in, so each backend's `n == 1`
-/// shape is patched here without touching the multi-byte path.
-fn inject_parent_tag_carrier_suffix(
-    block: &str,
-    field_id: &str,
-    or_suffix: &str,
+/// The byte a parent-tag carrier is written as: `stored`, the expression of
+/// its stored value, with the flags the bodies fill cleared, and the derived
+/// bits added.
+fn parent_tag_carrier_value(
+    stored: &str,
+    carrier: &ParentTagCarrier,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    // `or_suffix` already begins with ` | ` / ` or ` per language.
+    let ParentTagCarrier { local, keep } = carrier;
+    match lang {
+        Language::Rust | Language::Python | Language::Go => {
+            format!("({stored} & 0x{keep:02X}) | {local}")
+        }
+        Language::Cpp | Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),
+        Language::Kotlin => format!("(({stored} and 0x{keep:02X}u.toUByte()) or {local})"),
+        Language::Swift => no_swift_emitter("parent_tag_carrier_value"),
+    }
+}
+
+/// RFC §synth-5-B parent-tag carriers — write the carrier through
+/// [`parent_tag_carrier_value`] in a streaming per-field encode block emitted
+/// by `streaming_fixed_field_encode_*`. The carrier is uint8 per v1 rpf
+/// lock-in, so each backend's `n == 1` shape is patched here without touching
+/// the multi-byte path.
+fn inject_parent_tag_carrier_suffix(
+    block: &str,
+    field_id: &str,
+    carrier: &ParentTagCarrier,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
     match lang {
         Language::Rust => {
-            // `        w.write_u8(self.<id>)?;` → `        w.write_u8(self.<id> | _derived_<id>)?;`
+            // `        w.write_u8(self.<id>)?;` → `        w.write_u8(<value>)?;`
             // The emit site (streaming_fixed_field_encode_rust)
             // snake-cases the field id; the needle here must do the
             // same so substitution finds the actual emit. Idempotent
             // for already-snake ids.
             let snake = filters::to_snake_case(field_id.to_string());
-            let needle = format!("w.write_u8(self.{snake})?;");
-            let replacement = format!("w.write_u8(self.{snake}{or_suffix})?;");
-            block.replace(&needle, &replacement)
+            let stored = format!("self.{snake}");
+            let needle = format!("w.write_u8({stored})?;");
+            let value = parent_tag_carrier_value(&stored, carrier, lang);
+            block.replace(&needle, &format!("w.write_u8({value})?;"))
         }
         Language::Cpp => {
-            // Sink-based emit: `w.write_u8(<id>);` → `w.write_u8(<id> | _derived_<id>);`.
+            // Sink-based emit: `w.write_u8(<id>);` → `w.write_u8(<value>);`.
             // The Cpp uint8 carrier path emits the bare identifier
             // (no narrowing cast — see `streaming_fixed_field_encode_cpp`
             // n=1 branch). parent-tag derivation v1 lock-in only targets uint8
             // carriers, so the single-byte form is the only relevant
             // needle.
             let needle = format!("w.write_u8({field_id});");
-            let replacement = format!("w.write_u8({field_id}{or_suffix});");
-            block.replace(&needle, &replacement)
+            let value = parent_tag_carrier_value(field_id, carrier, lang);
+            block.replace(&needle, &format!("w.write_u8({value});"))
         }
         Language::Kotlin => {
-            // Sink-based emit: `w.writeU8(this.<id>.toByte())` → `w.writeU8((this.<id> or _derived<Id>).toByte())`.
-            let needle = format!("w.writeU8(this.{field_id}.toByte())");
-            let replacement = format!("w.writeU8((this.{field_id}{or_suffix}).toByte())");
-            block.replace(&needle, &replacement)
+            // Sink-based emit: `w.writeU8(this.<id>.toByte())` → `w.writeU8(<value>.toByte())`.
+            let stored = format!("this.{field_id}");
+            let needle = format!("w.writeU8({stored}.toByte())");
+            let value = parent_tag_carrier_value(&stored, carrier, lang);
+            block.replace(&needle, &format!("w.writeU8({value}.toByte())"))
         }
         Language::Go => {
             // Sink-based emit: `w.WriteBytes([]byte{ s.<Pascal> })` →
-            // `w.WriteBytes([]byte{ s.<Pascal> | _derived<Pascal> })`.
+            // `w.WriteBytes([]byte{ <value> })`.
             let pascal = filters::to_pascal_case(field_id.to_string());
-            let needle = format!("w.WriteBytes([]byte{{ s.{pascal} }})");
-            let replacement = format!("w.WriteBytes([]byte{{ s.{pascal}{or_suffix} }})");
-            block.replace(&needle, &replacement)
+            let stored = format!("s.{pascal}");
+            let needle = format!("w.WriteBytes([]byte{{ {stored} }})");
+            let value = parent_tag_carrier_value(&stored, carrier, lang);
+            block.replace(&needle, &format!("w.WriteBytes([]byte{{ {value} }})"))
         }
         Language::C11 => {
             // Sink-based emit: `sce_forge_writer_write_u8(w, self-><snake>)`
-            // → `sce_forge_writer_write_u8(w, self-><snake> | _derived_<snake>)`.
+            // → `sce_forge_writer_write_u8(w, <value>)`.
             // The parent-tag derivation v1 lock-in only targets uint8 carriers,
             // so the n=1 form is the only relevant needle.
             let snake = filters::to_snake_case(field_id.to_string());
-            let needle = format!("sce_forge_writer_write_u8(w, self->{snake}));");
-            let replacement = format!("sce_forge_writer_write_u8(w, self->{snake}{or_suffix}));");
-            block.replace(&needle, &replacement)
+            let stored = format!("self->{snake}");
+            let needle = format!("sce_forge_writer_write_u8(w, {stored}));");
+            let value = parent_tag_carrier_value(&stored, carrier, lang);
+            block.replace(&needle, &format!("sce_forge_writer_write_u8(w, {value}));"))
         }
         Language::Python => {
             // Sink-based emit: `w.write_u8(self.<snake> & 0xFF)` →
-            // `w.write_u8((self.<snake> | _derived_<snake>) & 0xFF)`.
+            // `w.write_u8((<value>) & 0xFF)`.
             let snake = filters::to_snake_case(field_id.to_string());
-            let needle = format!("w.write_u8(self.{snake} & 0xFF)");
-            let replacement = format!("w.write_u8((self.{snake}{or_suffix}) & 0xFF)");
-            block.replace(&needle, &replacement)
+            let stored = format!("self.{snake}");
+            let needle = format!("w.write_u8({stored} & 0xFF)");
+            let value = parent_tag_carrier_value(&stored, carrier, lang);
+            block.replace(&needle, &format!("w.write_u8(({value}) & 0xFF)"))
         }
         Language::Swift => no_swift_emitter("inject_parent_tag_carrier_suffix"),
     }
 }
 
-/// RFC §synth-5-B parent-tag carriers — splice the OR suffix into a simple-path
-/// `encode_exprs` entry that emits the carrier byte. The simple path
-/// uses `byte_groups` keyed by `byte_offset`; we walk codec fields to
-/// recover which carrier (if any) owns the byte at this position and
-/// patch the entry with `| _derived_<carrier>` when it matches.
+/// RFC §synth-5-B parent-tag carriers — write the carrier through
+/// [`parent_tag_carrier_value`] in a simple-path `encode_exprs` entry. The
+/// simple path uses `byte_groups` keyed by `byte_offset`; we walk codec
+/// fields to recover which carrier (if any) owns the byte at this position
+/// and patch the entry when it matches.
 fn parent_tag_apply_simple_path_suffix(
     expr: &str,
     entry_idx: usize,
     fields: &[CodecField],
-    or_suffix: &std::collections::HashMap<String, String>,
+    carriers: &std::collections::HashMap<String, ParentTagCarrier>,
     lang: crate::generator::Language,
 ) -> String {
-    if or_suffix.is_empty() {
+    if carriers.is_empty() {
         return expr.to_string();
     }
     // Reproduce `generate_encode_exprs`'s ordering: fixed-length fields
@@ -19432,25 +19468,21 @@ fn parent_tag_apply_simple_path_suffix(
     // its byte exclusively.
     let carrier = fields
         .iter()
-        .find(|f| f.byte_offset == offset && or_suffix.contains_key(&f.id));
-    let suffix = match carrier.and_then(|c| or_suffix.get(&c.id)) {
-        Some(s) => s.clone(),
-        None => return expr.to_string(),
+        .find(|f| f.byte_offset == offset && carriers.contains_key(&f.id));
+    let Some(carrier) = carrier.and_then(|c| carriers.get(&c.id)) else {
+        return expr.to_string();
     };
-    // Kotlin's simple-path wraps the field ref in `.toByte()`; the OR
-    // must apply BEFORE the narrowing cast so the derived bits land in
-    // the byte. All other backends append the suffix verbatim.
+    // Kotlin's simple-path wraps the field ref in `.toByte()`; the clear and
+    // the OR must apply BEFORE the narrowing cast so the derived bits land in
+    // the byte. All other backends write the entry's expression through it.
     use crate::generator::Language;
     match lang {
-        Language::Kotlin => {
-            if let Some(stem) = expr.strip_suffix(".toByte()") {
-                format!("({stem}{suffix}).toByte()")
-            } else {
-                format!("{expr}{suffix}")
-            }
-        }
+        Language::Kotlin => match expr.strip_suffix(".toByte()") {
+            Some(stem) => format!("{}.toByte()", parent_tag_carrier_value(stem, carrier, lang)),
+            None => parent_tag_carrier_value(expr, carrier, lang),
+        },
         Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
-            format!("{expr}{suffix}")
+            parent_tag_carrier_value(expr, carrier, lang)
         }
         Language::Swift => no_swift_emitter("parent_tag_apply_simple_path_suffix"),
     }
