@@ -452,6 +452,52 @@ fn enum_variants(code: &str, name: &str) -> Vec<String> {
         .collect()
 }
 
+/// The error events the tables name are exactly those whose names begin with
+/// `error.` (§3.12.2), numbered as the enum numbers them (docs/adr/0068): not a
+/// name that has the word without the dot, nor one that has `error.` further
+/// in. The null event is numbered last.
+#[test]
+fn rust_template_names_the_error_events_by_their_prefix() {
+    // Sorted, the events are error.custom (0), errorless (1), go (2) and
+    // not.error.here (3); the null event is 4.
+    let model = parse(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" name="error_names">
+  <state id="s">
+    <transition event="go" target="s"/>
+    <transition event="error.custom" target="s"/>
+    <transition event="errorless" target="s"/>
+    <transition event="not.error.here" target="s"/>
+  </state>
+</scxml>"#,
+        "error_names",
+    );
+    for no_std in [false, true] {
+        let code = generate(&model, &template_dir(), no_std).expect("render");
+        assert_eq!(
+            enum_variants(&code, "ErrorNamesEvent"),
+            [
+                "ErrorCustom = 0,",
+                "Errorless = 1,",
+                "Go = 2,",
+                "NotErrorHere = 3,",
+                "Null = 4,"
+            ],
+            "emit (no_std={no_std}): the events, sorted"
+        );
+        assert_eq!(
+            lines_starting(&code, "error_events:"),
+            ["error_events: &[::sce_rust_runtime::EventId(0),],"],
+            "emit (no_std={no_std}): only `error.custom` is an error event"
+        );
+        assert_eq!(
+            lines_starting(&code, "null_event:"),
+            ["null_event: ::sce_rust_runtime::EventId(4),"],
+            "emit (no_std={no_std}): the null event"
+        );
+    }
+}
+
 /// A transition with more than one target names its list in the pool, which
 /// holds the list's length and then its targets; one with a single target holds
 /// it in its row, and the pool holds nothing for it (docs/adr/0067).
@@ -580,6 +626,33 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             code.contains("ParallelHistoryProbeEvent::Null,\n    ];"),
             "emit (no_std={no_std}): `EVENTS` ends with the null event"
         );
+        // The tables name the null event and the `error.*` events by the same
+        // numbers (docs/adr/0068). The document's `error.*` events are the
+        // enum's `Error…` variants: it names no event that begins with `error`
+        // without the dot.
+        let error_events: String = events
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| variant.starts_with("Error"))
+            .map(|(number, _)| format!("::sce_rust_runtime::EventId({number}),"))
+            .collect();
+        assert!(
+            !error_events.is_empty(),
+            "the fixture names `error.communication`"
+        );
+        assert_eq!(
+            lines_starting(&code, "null_event:"),
+            [format!(
+                "null_event: ::sce_rust_runtime::EventId({}),",
+                events.len() - 1
+            )],
+            "emit (no_std={no_std}): the null event"
+        );
+        assert_eq!(
+            lines_starting(&code, "error_events:"),
+            [format!("error_events: &[{error_events}],")],
+            "emit (no_std={no_std}): the error events"
+        );
         assert_eq!(
             lines_starting(&code, "StateRow::new("),
             [
@@ -644,8 +717,9 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "targets: &[],",
             // The document has a `<history>` and a `<parallel>`, so its tables
             // carry the procedures of both (docs/adr/0066).
-            "initial: TransitionId(19),\n        \
-             history: Some(&::sce_rust_runtime::HISTORY),\n        \
+            // The document has a `<history>` and a `<parallel>`, so its tables
+            // carry the procedures of both (docs/adr/0066).
+            "history: Some(&::sce_rust_runtime::HISTORY),\n        \
              parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables = {",
             "const TABLES: &'static ::sce_rust_runtime::DocumentTables = \
@@ -724,6 +798,8 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     for expected in [
         "targets: &[],",
         "initial: TransitionId(1),",
+        // No event whose name begins with `error.`.
+        "error_events: &[],",
         // Neither a `<history>` nor a `<parallel>`: neither procedure set
         // (docs/adr/0066).
         "history: None,",
@@ -945,8 +1021,10 @@ fn rust_template_builds_a_bare_metal_machine_in_a_constant_expression() {
         "pub const fn new_const(session_id: &'static str) -> Self {",
         "const fn build(session_id: &'static str) -> Self {",
         "impl sce_rust_runtime::ConstStatePolicy for PlainConstPolicy {",
-        "const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueueManager::new();",
-        "<Self as sce_rust_runtime::ConstStatePolicy>::INITIAL_STATE",
+        "const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueue::new();",
+        // The state the engine names before it initialises is a number in the
+        // tables, so the constant engine needs no constant of the state type.
+        "default_state: ::sce_rust_runtime::StateId(PlainConstState::",
         // The tables are a constant the policy refers to (docs/adr/0064): a
         // `static` could not be, on the toolchain the runtime supports.
         "pub const PLAIN_CONST_TABLES: ::sce_rust_runtime::DocumentTables = {",

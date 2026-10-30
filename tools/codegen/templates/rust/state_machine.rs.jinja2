@@ -229,6 +229,21 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables = {
         ],
         targets: &[{% for entry in tables.targets %}{{ entry }}{{ ", " if not loop.last }}{% endfor %}],
         initial: TransitionId({{ tables.initial }}),
+{# The state the engine names before it initialises, and the state type's
+   `Default`: one computation (`default_state_id`, `<scxml initial>` or the
+   first sorted state when the attribute is unset), written as the variant's
+   number so `StatePolicy::initial_state` and the engine read the same one. #}
+        default_state: ::sce_rust_runtime::StateId({{ machine_name }}State::{{ default_state_id | to_state_variant }} as u16),
+        null_event: ::sce_rust_runtime::EventId({{ model.events | length }}),
+{# §scxml-3.12.2: the processor "MUST signal any errors that occur by raising
+   SCXML events whose names begin with 'error.'". It defines `error.execution`
+   and `error.communication`, lets a platform add a suffix to either, and
+   reserves `error.platform` on top, so the prefix is the test: a list of names
+   would be wrong the first time the set grows. The events are numbered by the
+   same sorted loop the enum is, so the numbers cannot disagree with it. The
+   main loop counts an unanswered one and bounds a chain of them by these
+   numbers (docs/adr/0068). #}
+        error_events: &[{% for event_name in model.events | sort %}{% if event_name is startingwith("error.") %}::sce_rust_runtime::EventId({{ loop.index0 }}),{% endif %}{% endfor %}],
         history: {% if tables.history %}Some(&::sce_rust_runtime::HISTORY){% else %}None{% endif %},
         parallel: {% if tables.parallel %}Some(&::sce_rust_runtime::PARALLEL){% else %}None{% endif %},
     }
@@ -1295,12 +1310,10 @@ impl Default for {{ machine_name }}Policy {
 {% endif %}
 
 {% if const_buildable %}
-// The two constants `Engine::new_const` builds its engine from: the state it
-// names before it initialises and an empty queue, as `initial_state` and
-// `EventQueue::default()` give them below.
+// The constant `Engine::new_const` builds its engine from: an empty queue, as
+// `EventQueue::default()` gives it below.
 impl{{ policy_generics_decl }} sce_rust_runtime::ConstStatePolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
-    const INITIAL_STATE: Self::State = {{ machine_name }}State::{{ default_state_id | to_state_variant }};
-    const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueueManager::new();
+    const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueue::new();
 }
 
 {% endif %}
@@ -1339,11 +1352,12 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // as the const consumed below); absent a declared capacity the bare form
     // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
     // the default). Inert under std (`VecDeque`), so this one emission compiles
-    // on both runtime profiles.
+    // on both runtime profiles. The queue holds events as numbers and only the
+    // payloads as this machine's type (docs/adr/0068).
 {% if model.event_queue_capacity %}
-    type EventQueue = sce_rust_runtime::EventQueueManager<sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>, { EVENT_QUEUE_CAPACITY }>;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
 {% else %}
-    type EventQueue = sce_rust_runtime::EventQueueManager<sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>>;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 {% endif %}
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
@@ -1458,18 +1472,6 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
     // ======================================================================
-
-    fn initial_state() -> Self::State {
-        // The runtime entry state and the type's `Default` derive are one
-        // concept, sourced from one computation (`default_state_id`) so
-        // they can never diverge: `<scxml initial>`, or the first sorted
-        // state when the initial attribute is unset.
-{% if const_buildable %}
-        <Self as sce_rust_runtime::ConstStatePolicy>::INITIAL_STATE
-{% else %}
-        {{ machine_name }}State::{{ default_state_id | to_state_variant }}
-{% endif %}
-    }
 
     // The document's structure — each state's parent, kind, subtree and
     // initial transition, and so its children, each history's parent and

@@ -69,7 +69,7 @@ use crate::clock::SceClock;
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
-use crate::helpers::event_queue::EventQueueLike;
+use crate::helpers::event_queue::{EventQueueMut, EventQueueStorage, QueuedEvent};
 use crate::helpers::microstep::{self, Behaviour, Buffers, Entered};
 use crate::helpers::run_store::{RunStorage, RunStoreMut};
 use crate::helpers::state_policy_concepts as concepts;
@@ -972,28 +972,21 @@ pub(crate) struct RunningHostInvoke {
 pub struct Engine<P: StatePolicy> {
     /// Generated per-SM policy struct (datamodel, last-transition flags, etc.).
     pub(crate) policy: P,
-    /// Currently active state (or deepest active state for parallel machines).
-    pub(crate) current_state: P::State,
     /// The configuration and what each `<history>` recorded, as Appendix D's
     /// procedures read and write them (docs/adr/0064).
     pub(crate) run_store: P::RunStore,
     /// W3C SCXML Appendix D: Internal event queue (high priority, `<raise>` + targetless sends).
     ///
     /// The concrete (per-machine, no_std-sized) queue type is supplied by the
-    /// policy via [`StatePolicy::EventQueue`]; the engine drives it through the
-    /// [`EventQueueLike`] abstraction (mirrors C++ `EventQueueAdapterTrait`).
+    /// policy via [`StatePolicy::EventQueue`]; it holds the events as numbers, and
+    /// the engine drives them through [`EventQueueStorage`] (docs/adr/0068).
     pub(crate) internal_queue: P::EventQueue,
     /// W3C SCXML Appendix D: External event queue (low priority, external sends).
     pub(crate) external_queue: P::EventQueue,
-    /// What the main event loop decides on — whether the run goes on, where it
-    /// ended, the budgets — as plain numbers, so the loop compiled once for
-    /// every program reads it directly (docs/adr/0064).
-    pub(crate) main_loop: LoopState,
-    /// §scxml-D-exitInterpreter has run for this run: the configuration is
-    /// empty. `current_state` still names the state the run was last in (the
-    /// type has no "none"), so [`get_active_states`](Self::get_active_states)
-    /// answers from this flag rather than from it.
-    pub(crate) interpreter_exited: bool,
+    /// What the main event loop reads and writes, as numbers without this
+    /// machine's types, so the code that drives the queues and keeps the counts
+    /// is one copy for every machine (docs/adr/0064, docs/adr/0068).
+    pub(crate) core: EngineCore,
     /// §scxml-D-enterStates, late binding: the states whose `<data>` this run
     /// has already bound — `s.isFirstEntry` is false for exactly these. The
     /// rule lives here, once, and the generated entry code asks it
@@ -1002,11 +995,6 @@ pub struct Engine<P: StatePolicy> {
     /// `<data>` to bind late.
     #[cfg(feature = "std")]
     pub(crate) late_bound_states: std::collections::HashSet<P::State>,
-    /// §scxml-5.10.1: whether the event being processed was taken off the
-    /// external queue. Set where it is dequeued — the one moment the queue is
-    /// known — and read when `_event` is bound, so interleaved internal and
-    /// external events each carry their own `_event.type`.
-    pub(crate) current_event_from_external_queue: bool,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
@@ -1093,73 +1081,6 @@ pub struct Engine<P: StatePolicy> {
     /// Macrosteps taken on a scheduler-driven machine before any
     /// [`tick`](Self::tick) — see [`unattended_scheduler_steps`](Self::unattended_scheduler_steps).
     pub(crate) unattended_scheduler_steps: u32,
-    /// Events taken off the external queue that no transition matched — see
-    /// [`discarded_external_events`](Self::discarded_external_events).
-    pub(crate) discarded_external_events: u32,
-    /// The most recent event this engine discarded — see
-    /// [`last_discarded_event`](Self::last_discarded_event).
-    pub(crate) last_discarded_event: Option<P::Event>,
-    /// External events this machine never dequeued because it had stopped —
-    /// see [`unseen_external_events`](Self::unseen_external_events).
-    pub(crate) unseen_external_events: u32,
-    /// The most recent event this machine never looked at — see
-    /// [`last_unseen_event`](Self::last_unseen_event).
-    pub(crate) last_unseen_event: Option<P::Event>,
-    /// Events delivered with a payload the datamodel could not read as
-    /// structure — see [`undecodable_payloads`](Self::undecodable_payloads).
-    pub(crate) undecodable_payloads: u32,
-    /// The most recent event whose payload could not be read — see
-    /// [`last_undecodable_payload`](Self::last_undecodable_payload).
-    pub(crate) last_undecodable_payload: Option<P::Event>,
-    /// `error.*` events this engine raised that no transition matched — see
-    /// [`unhandled_error_events`](Self::unhandled_error_events).
-    pub(crate) unhandled_error_events: u32,
-    /// The most recent `error.*` event that went unhandled — see
-    /// [`last_unhandled_error`](Self::last_unhandled_error).
-    pub(crate) last_unhandled_error: Option<P::Event>,
-    /// Whether the drain is currently executing a transition selected by an
-    /// `error.*` event — the state in which a newly raised error is a *link in
-    /// a chain* rather than a first failure.
-    ///
-    /// This is the whole discriminator behind
-    /// [`error_cascade_events`](Self::error_cascade_events): a document that
-    /// answers five hundred separate failures cleanly never sets it twice in a
-    /// row, and one whose error handler fails sets it on every link.
-    pub(crate) handling_error_event: bool,
-    /// `error.*` events refused because the chain that raised them had reached
-    /// [`MAX_ERROR_CASCADE_DEPTH`] — see
-    /// [`error_cascade_events`](Self::error_cascade_events).
-    pub(crate) error_cascade_events: u32,
-    /// The most recent `error.*` event refused that way — see
-    /// [`last_error_cascade_event`](Self::last_error_cascade_event).
-    pub(crate) last_error_cascade_event: Option<P::Event>,
-    /// Macrosteps this engine stopped at [`MAX_MACROSTEP_MICROSTEPS`] with the
-    /// chain still going — see
-    /// `truncated_macrosteps`.
-    ///
-    /// Present with the `macrostep-diagnostics` feature only, and the RAM is
-    /// the point of leaving it out: this and its sibling below are per-ENGINE,
-    /// so an MCU image holding five machines carries five copies whether or
-    /// not anything reads them.
-    #[cfg(feature = "macrostep-diagnostics")]
-    pub(crate) truncated_macrosteps: u32,
-    /// The state the drain was in when it last stopped that way — see
-    /// `last_truncated_macrostep_state`.
-    #[cfg(feature = "macrostep-diagnostics")]
-    pub(crate) last_truncated_macrostep_state: Option<P::State>,
-    /// Invocations of the main event loop this engine handed back with an
-    /// external event still queued — see
-    /// [`truncated_event_chains`](Self::truncated_event_chains).
-    ///
-    /// Present with the `macrostep-diagnostics` feature only, with its sibling
-    /// below, for the reason `truncated_macrosteps` is: per-ENGINE RAM, whether
-    /// or not anything reads it.
-    #[cfg(feature = "macrostep-diagnostics")]
-    pub(crate) truncated_event_chains: u32,
-    /// The event at the head of the queue the last time a call was handed back
-    /// that way — see [`last_truncated_event`](Self::last_truncated_event).
-    #[cfg(feature = "macrostep-diagnostics")]
-    pub(crate) last_truncated_event: Option<P::Event>,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -1185,25 +1106,22 @@ pub struct Engine<P: StatePolicy> {
 /// The one list the two constructors share, [`Engine::new_in_place`] (which writes
 /// each field to a slot) and `Engine::new_const` (which builds the engine in a
 /// constant expression), so a field added to the struct is given its starting
-/// value once. What differs between them is only what the policy supplies: the
-/// state the engine names before it initialises and the empty queue, as a
-/// function call for the first and as the policy's constants for the second.
+/// value once. What differs between them is only the empty queue the policy
+/// supplies, as a function call for the first and as the policy's constant for
+/// the second; the state the engine names before it initialises is a number in
+/// the tables either way.
 macro_rules! engine_initial_fields {
     (
         $consumer:ident;
         policy: $policy:expr,
-        state: $state:expr,
         queue: $queue:expr,
     ) => {
         $consumer! {
-            current_state: $state,
             run_store: <P::RunStore as RunStorage>::EMPTY,
             policy: $policy,
             internal_queue: $queue,
             external_queue: $queue,
-            main_loop: LoopState::NEW,
-            interpreter_exited: false,
-            current_event_from_external_queue: false,
+            core: EngineCore::new(P::TABLES.default_state),
             #[cfg(feature = "std")]
             late_bound_states: std::collections::HashSet::new(),
             #[cfg(feature = "std")]
@@ -1227,25 +1145,6 @@ macro_rules! engine_initial_fields {
             turn_now: None,
             tick_has_run: false,
             unattended_scheduler_steps: 0,
-            discarded_external_events: 0,
-            last_discarded_event: None,
-            unseen_external_events: 0,
-            last_unseen_event: None,
-            undecodable_payloads: 0,
-            last_undecodable_payload: None,
-            unhandled_error_events: 0,
-            last_unhandled_error: None,
-            handling_error_event: false,
-            error_cascade_events: 0,
-            last_error_cascade_event: None,
-            #[cfg(feature = "macrostep-diagnostics")]
-            truncated_macrosteps: 0,
-            #[cfg(feature = "macrostep-diagnostics")]
-            last_truncated_macrostep_state: None,
-            #[cfg(feature = "macrostep-diagnostics")]
-            truncated_event_chains: 0,
-            #[cfg(feature = "macrostep-diagnostics")]
-            last_truncated_event: None,
             donedata_at_final: SceString::new(),
             auto_send_seq: 0,
         }
@@ -1309,7 +1208,6 @@ impl<P: StatePolicy> Engine<P> {
         engine_initial_fields! {
             write_fields;
             policy: policy,
-            state: P::initial_state(),
             queue: P::EventQueue::default(),
         }
         // SAFETY: the list above wrote every field, and the check beside it makes
@@ -1321,8 +1219,9 @@ impl<P: StatePolicy> Engine<P> {
     /// `const` that a bare-metal program places in a section of its choosing.
     ///
     /// The same engine [`new`](Self::new) returns, with nothing computed at run
-    /// time: the initial state and the empty queues are the policy's constants
-    /// ([`ConstStatePolicy`](crate::policy::ConstStatePolicy)), and the rest of the engine starts at the zeroes
+    /// time: the empty queues are the policy's constant
+    /// ([`ConstStatePolicy`](crate::policy::ConstStatePolicy)), the state it
+    /// names before it initialises is the tables' number, and the rest of the engine starts at the zeroes
     /// and empties every constructor gives it. The program keeps no copy of it on
     /// any stack and runs no code at start-up, which [`new_in_place`](Self::new_in_place)
     /// still needs a call to do.
@@ -1345,7 +1244,6 @@ impl<P: StatePolicy> Engine<P> {
         engine_initial_fields! {
             struct_literal;
             policy: policy,
-            state: P::INITIAL_STATE,
             queue: P::EMPTY_EVENT_QUEUE,
         }
     }
@@ -1569,12 +1467,7 @@ impl<P: StatePolicy> Engine<P> {
     /// ends because the run entered a top-level `<final>`, or the host stops
     /// a run that has not ended. Runs once per run.
     pub(crate) fn exit_interpreter(&mut self) {
-        if self.interpreter_exited {
-            return;
-        }
-        microstep::exit_interpreter(&mut EngineHost { engine: self });
-        self.interpreter_exited = true;
-        self.main_loop.is_running = false;
+        exit_interpreter(&mut EngineHost { engine: self });
     }
 
     /// Execute the policy's `initialize_data_model`.
@@ -1627,9 +1520,9 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     fn initialize_in_turn(&mut self) {
-        self.main_loop.is_running = true;
-        self.main_loop.terminal_state = None;
-        self.interpreter_exited = false;
+        self.core.main_loop.is_running = true;
+        self.core.main_loop.terminal_state = None;
+        self.core.interpreter_exited = false;
         #[cfg(feature = "std")]
         self.late_bound_states.clear();
 
@@ -1648,16 +1541,10 @@ impl<P: StatePolicy> Engine<P> {
             Ok(()),
             "the generated tables break a rule Appendix D's procedures assume"
         );
-        self.run_store.view_mut().configuration().clear();
-        self.enter_states(&[P::TABLES.initial]);
-
-        // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
-        // completes on eventless transitions and internal events, then the
-        // invokes for the states just entered run, and only then is anything
-        // taken off the external queue — so an `autoforward` child is live for
-        // every event `<onentry>` queued on the way in.
-        sce_log_debug!("Engine::initialize: entering main event loop");
-        self.run_main_event_loop();
+        // The entry and the main event loop after it are one turn of the loop,
+        // over one workspace (`Turn::enter_initial_configuration`).
+        sce_log_debug!("Engine::initialize: entering the initial configuration");
+        self.run_turn(true);
         sce_log_debug!("Engine::initialize: main event loop settled");
 
         // §scxml-6.4: Fire completion callback if we reached a final state during init.
@@ -1744,8 +1631,8 @@ impl<P: StatePolicy> Engine<P> {
             self.initialize_data_model_dispatch();
         }
 
-        self.current_state = current;
-        self.interpreter_exited = false;
+        self.core.current_state = P::state_id(current);
+        self.core.interpreter_exited = false;
         // The restored states were entered by the run being resumed, so their
         // late-bound `<data>` is that run's — the host restores it, and a later
         // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
@@ -1755,7 +1642,7 @@ impl<P: StatePolicy> Engine<P> {
         }
         // A configuration restored AT a top-level `<final>` is a run that has
         // already ended there; any other is still running.
-        self.main_loop.terminal_state =
+        self.core.main_loop.terminal_state =
             if P::is_final_state(current) && P::get_parent(current).is_none() {
                 Some(P::state_id(current))
             } else {
@@ -1767,7 +1654,7 @@ impl<P: StatePolicy> Engine<P> {
             .view_mut()
             .set_configuration(configuration.iter().map(|&state| P::state_id(state)));
 
-        self.main_loop.is_running = true;
+        self.core.main_loop.is_running = true;
         Ok(())
     }
 
@@ -1863,7 +1750,7 @@ impl<P: StatePolicy> Engine<P> {
         // clock whatever the engine's lifecycle says, and the count exists to
         // find hosts that never call it at all.
         self.tick_has_run = true;
-        if !self.main_loop.is_running {
+        if !self.core.main_loop.is_running {
             return;
         }
         if self.is_in_final_state() {
@@ -1922,9 +1809,9 @@ impl<P: StatePolicy> Engine<P> {
             }
             if let Some((due, head)) = self.scheduler.next_ready_at_with_event(now) {
                 if due == now {
-                    if popped_due_at_reading >= self.main_loop.max_external_events_per_call {
-                        let head = head.copied();
-                        self.record_truncated_event_chain(head);
+                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call {
+                        let head = head.copied().map(P::event_id);
+                        self.core.record_truncated_event_chain(head);
                         break;
                     }
                     popped_due_at_reading += 1;
@@ -1993,7 +1880,7 @@ impl<P: StatePolicy> Engine<P> {
             // The macrostep this event drives may `<cancel>` a later one, so
             // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
-            if !self.main_loop.is_running || self.is_in_final_state() {
+            if !self.core.main_loop.is_running || self.is_in_final_state() {
                 break;
             }
         }
@@ -2015,15 +1902,15 @@ impl<P: StatePolicy> Engine<P> {
     /// ended — every active state's `<onexit>` runs, innermost first, and the
     /// configuration ends empty. A run that already ended has been exited.
     pub fn stop(&mut self) {
-        if self.main_loop.is_running {
+        if self.core.main_loop.is_running {
             self.exit_interpreter();
         }
-        self.main_loop.is_running = false;
+        self.core.main_loop.is_running = false;
     }
 
     /// Whether the engine is running (not stopped or awaiting completion).
     pub fn is_running(&self) -> bool {
-        self.main_loop.is_running
+        self.core.main_loop.is_running
     }
 
     /// How many macrosteps ran on a scheduler-driven machine before any
@@ -2067,7 +1954,7 @@ impl<P: StatePolicy> Engine<P> {
         // discarded. Cited in the body rather than the doc comment because the
         // ledger's Rust resolver binds a citation to the symbol that encloses
         // it, and a `///` line encloses nothing.
-        self.discarded_external_events
+        self.core.discarded_external_events
     }
 
     /// The most recent event [`discarded_external_events`](Self::discarded_external_events)
@@ -2077,7 +1964,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the question a host debugging a stalled supervisor actually has. Copy,
     /// so reading it costs nothing on the no_std profile.
     pub fn last_discarded_event(&self) -> Option<P::Event> {
-        self.last_discarded_event
+        self.core.last_discarded_event.map(Self::event_of)
     }
 
     /// Record which reading §scxml-B-2-8-1 gave the payload just bound.
@@ -2088,14 +1975,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the ladder working and are recorded by being ignored; the fifth is the
     /// one a host is wrong about.
     pub fn note_payload_reading(&mut self, event: P::Event, reading: crate::PayloadReading) {
-        // §scxml-B-2-8-1 is the clause the reading comes from, named in
-        // prose rather than as a `§` citation: this method REPORTS the rung a
-        // script engine chose, and a bound citation here would claim it
-        // implements the clause. The ladder itself is where that claim belongs.
-        if reading.is_undecodable() {
-            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
-            self.last_undecodable_payload = Some(event);
-        }
+        self.core.note_payload_reading(P::event_id(event), reading);
     }
 
     /// How many events arrived carrying a payload that announced itself as
@@ -2120,7 +2000,7 @@ impl<P: StatePolicy> Engine<P> {
     /// [`last_undecodable_payload`](Self::last_undecodable_payload) says which
     /// delivery it was.
     pub fn undecodable_payloads(&self) -> u32 {
-        self.undecodable_payloads
+        self.core.undecodable_payloads
     }
 
     /// The most recent event [`undecodable_payloads`](Self::undecodable_payloads)
@@ -2130,28 +2010,7 @@ impl<P: StatePolicy> Engine<P> {
     /// shape as [`last_discarded_event`](Self::last_discarded_event), and for
     /// the same reason: a count says something was lost, this says what.
     pub fn last_undecodable_payload(&self) -> Option<P::Event> {
-        self.last_undecodable_payload
-    }
-
-    /// Record one external event this machine will never look at.
-    fn note_unseen_event(&mut self, event: P::Event) {
-        // §scxml-D-mainEventLoop: the loop that would have dequeued this has
-        // ended, so the event is not "pending" — it is over.
-        self.unseen_external_events = self.unseen_external_events.saturating_add(1);
-        self.last_unseen_event = Some(event);
-    }
-
-    /// Empty the external queue into the count above, at the moment the main
-    /// event loop ends.
-    ///
-    /// Drained rather than left in place so each event is counted exactly
-    /// once: a host that keeps calling `step()` on a halted machine would
-    /// otherwise re-count the same queue on every call, and a count that grows
-    /// while nothing arrives is a count nobody can use.
-    fn record_unseen_external_events(&mut self) {
-        while let Some(meta) = self.external_queue.pop() {
-            self.note_unseen_event(meta.event);
-        }
+        self.core.last_undecodable_payload.map(Self::event_of)
     }
 
     /// How many external events the host handed this machine that it never
@@ -2180,7 +2039,7 @@ impl<P: StatePolicy> Engine<P> {
     /// at that consumer's own pinned revision — so the difference was never
     /// the guard, and nothing in this engine could have said so.
     pub fn unseen_external_events(&self) -> u32 {
-        self.unseen_external_events
+        self.core.unseen_external_events
     }
 
     /// The most recent event [`unseen_external_events`](Self::unseen_external_events)
@@ -2190,7 +2049,7 @@ impl<P: StatePolicy> Engine<P> {
     /// what a host debugging a supervisor that stopped answering actually
     /// needs.
     pub fn last_unseen_event(&self) -> Option<P::Event> {
-        self.last_unseen_event
+        self.core.last_unseen_event.map(Self::event_of)
     }
 
     /// How many `error.*` events this engine raised that no transition in any
@@ -2226,7 +2085,7 @@ impl<P: StatePolicy> Engine<P> {
         // and are ignored when nothing matches them. Cited in the body because
         // the ledger's Rust resolver binds a citation to the symbol enclosing
         // it, and a `///` line encloses nothing.
-        self.unhandled_error_events
+        self.core.unhandled_error_events
     }
 
     /// The most recent `error.*` event
@@ -2240,7 +2099,7 @@ impl<P: StatePolicy> Engine<P> {
     /// a count alone does not separate them. Copy, so reading it costs nothing
     /// on the no_std profile.
     pub fn last_unhandled_error(&self) -> Option<P::Event> {
-        self.last_unhandled_error
+        self.core.last_unhandled_error.map(Self::event_of)
     }
 
     /// How many `error.*` events this engine refused to queue because the
@@ -2270,7 +2129,7 @@ impl<P: StatePolicy> Engine<P> {
     /// failure, and any other internal event resets it. Nothing is discarded
     /// that a working document would have processed.
     pub fn error_cascade_events(&self) -> u32 {
-        self.error_cascade_events
+        self.core.error_cascade_events
     }
 
     /// The most recent `error.*` event
@@ -2282,7 +2141,7 @@ impl<P: StatePolicy> Engine<P> {
     /// that answers an unreachable target by talking to it again. Copy, so
     /// reading it costs nothing on the no_std profile.
     pub fn last_error_cascade_event(&self) -> Option<P::Event> {
-        self.last_error_cascade_event
+        self.core.last_error_cascade_event.map(Self::event_of)
     }
 
     /// How many macrosteps this engine stopped short because their chain was
@@ -2324,7 +2183,7 @@ impl<P: StatePolicy> Engine<P> {
     /// "did not happen" — a wrong answer where a compile error is available.
     #[cfg(feature = "macrostep-diagnostics")]
     pub fn truncated_macrosteps(&self) -> u32 {
-        self.truncated_macrosteps
+        self.core.truncated_macrosteps
     }
 
     /// The state this engine was in when it last stopped a macrostep that way,
@@ -2342,7 +2201,7 @@ impl<P: StatePolicy> Engine<P> {
     /// its sibling is.
     #[cfg(feature = "macrostep-diagnostics")]
     pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
-        self.last_truncated_macrostep_state
+        self.core.last_truncated_macrostep_state.map(P::state_of)
     }
 
     /// How many invocations of the main event loop this engine handed back with
@@ -2373,7 +2232,7 @@ impl<P: StatePolicy> Engine<P> {
     /// report waits for the feature.
     #[cfg(feature = "macrostep-diagnostics")]
     pub fn truncated_event_chains(&self) -> u32 {
-        self.truncated_event_chains
+        self.core.truncated_event_chains
     }
 
     /// The event at the head of the queue when this engine last handed a call
@@ -2388,13 +2247,13 @@ impl<P: StatePolicy> Engine<P> {
     /// its sibling is.
     #[cfg(feature = "macrostep-diagnostics")]
     pub fn last_truncated_event(&self) -> Option<P::Event> {
-        self.last_truncated_event
+        self.core.last_truncated_event.map(Self::event_of)
     }
 
     /// The most external events one invocation of the main event loop may take.
     /// Present on every profile: it is the bound, not the report.
     pub fn max_external_events_per_call(&self) -> u32 {
-        self.main_loop.max_external_events_per_call
+        self.core.main_loop.max_external_events_per_call
     }
 
     /// Let a host choose the budget of one invocation. A host that hands the
@@ -2406,7 +2265,7 @@ impl<P: StatePolicy> Engine<P> {
     /// run, not a stricter one. The contract refuses it, and here the type does:
     /// a [`NonZeroU32`](core::num::NonZeroU32) cannot hold it.
     pub fn set_max_external_events_per_call(&mut self, limit: core::num::NonZeroU32) {
-        self.main_loop.max_external_events_per_call = limit.get();
+        self.core.main_loop.max_external_events_per_call = limit.get();
     }
 
     /// Whether the macrostep the last host call drove was stopped at
@@ -2420,12 +2279,12 @@ impl<P: StatePolicy> Engine<P> {
     /// the configuration a stopped macrostep left for a stable one (the
     /// Kotlin snapshot's `truncated`).
     pub fn last_macrostep_truncated(&self) -> bool {
-        self.main_loop.macrostep_truncated
+        self.core.main_loop.macrostep_truncated
     }
 
     /// Current active (leaf) state.
     pub fn get_current_state(&self) -> P::State {
-        self.current_state
+        P::state_of(self.core.current_state)
     }
 
     /// §scxml-3.11: Full list of active states — the configuration Appendix
@@ -2498,7 +2357,7 @@ impl<P: StatePolicy> Engine<P> {
     /// invoked child. The same answer as
     /// [`terminal_state`](Self::terminal_state)`().is_some()`.
     pub fn is_in_final_state(&self) -> bool {
-        self.main_loop.terminal_state.is_some()
+        self.core.main_loop.terminal_state.is_some()
     }
 
     /// The top-level `<final>` the run ended in (§scxml-D-enterStates), or
@@ -2509,7 +2368,7 @@ impl<P: StatePolicy> Engine<P> {
     /// holds afterwards — Appendix D's exitInterpreter leaves the
     /// configuration empty.
     pub fn terminal_state(&self) -> Option<P::State> {
-        self.main_loop.terminal_state.map(P::state_of)
+        self.core.main_loop.terminal_state.map(P::state_of)
     }
 
     /// Appendix D's `s.isFirstEntry`, taken (§scxml-D-enterStates).
@@ -2530,7 +2389,7 @@ impl<P: StatePolicy> Engine<P> {
     /// while an external one waits — or the reverse — is typed by the queue it
     /// was taken from, not by whatever was enqueued last.
     pub fn is_current_event_external(&self) -> bool {
-        self.current_event_from_external_queue
+        self.core.current_event_from_external_queue
     }
 
     /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a
@@ -2590,15 +2449,13 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-3.12.2 names the error events this refuses; the clause itself
         // is silent on a handler that fails, which is why the ceiling is a
         // choice this engine documents rather than a rule it implements.
-        if self.handling_error_event
-            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
-        {
-            self.main_loop.error_cascade_depth =
-                self.main_loop.error_cascade_depth.saturating_add(1);
-            if self.main_loop.error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH {
-                self.error_cascade_events = self.error_cascade_events.saturating_add(1);
-                self.last_error_cascade_event = Some(event.event);
-                if self.error_cascade_events == 1 {
+        if self.core.handling_error_event && P::TABLES.is_error_event(P::event_id(event.event)) {
+            self.core.main_loop.error_cascade_depth =
+                self.core.main_loop.error_cascade_depth.saturating_add(1);
+            if self.core.main_loop.error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH {
+                self.core.error_cascade_events = self.core.error_cascade_events.saturating_add(1);
+                self.core.last_error_cascade_event = Some(P::event_id(event.event));
+                if self.core.error_cascade_events == 1 {
                     sce_log_error!(
                         "Engine::raise: an error handler has raised an error {} times over; \
                          refusing to feed the chain — the document's error handling is failing",
@@ -2608,7 +2465,7 @@ impl<P: StatePolicy> Engine<P> {
                 return;
             }
         }
-        self.internal_queue.raise(event);
+        Self::enqueue(&mut self.internal_queue, event);
     }
 
     /// §scxml-C-1 / 6.2: Raise an external event with optional data and origin.
@@ -2691,7 +2548,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        self.external_queue.raise(meta);
+        Self::enqueue(&mut self.external_queue, meta);
     }
 
     /// EventSchema native lowering: raise an external event carrying a
@@ -2732,7 +2589,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        self.external_queue.raise(meta);
+        Self::enqueue(&mut self.external_queue, meta);
     }
 
     /// Raise a typed event that also carries its payload on the `_event.data`
@@ -2779,7 +2636,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        self.external_queue.raise(meta);
+        Self::enqueue(&mut self.external_queue, meta);
     }
 
     /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
@@ -2875,19 +2732,19 @@ impl<P: StatePolicy> Engine<P> {
     pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
-        self.external_queue.raise(event);
+        Self::enqueue(&mut self.external_queue, event);
     }
 
     /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
     ///
     /// Matches C++ `processEvent(Event)`.
     pub fn process_event(&mut self, event: P::Event) {
-        if !self.main_loop.is_running {
-            // Refused rather than queued, so the drain in
-            // `run_main_event_loop` never sees it — which is why the count is
-            // taken here as well as there. See
+        if !self.core.main_loop.is_running {
+            // Refused rather than queued, so the drain in `Turn::end_run`
+            // never sees it — which is why the count is taken here as well as
+            // there. See
             // [`unseen_external_events`](Self::unseen_external_events).
-            self.note_unseen_event(event);
+            self.core.note_unseen_event(P::event_id(event));
             return;
         }
         self.raise_external(event, "", "");
@@ -2898,9 +2755,9 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `processEvent(Event, const EventMetadata&)`.
     pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
-        if !self.main_loop.is_running {
+        if !self.core.main_loop.is_running {
             // Same refusal as `process_event`, same reason it is counted here.
-            self.note_unseen_event(event);
+            self.core.note_unseen_event(P::event_id(event));
             return;
         }
         let meta = EventWithMetadata {
@@ -2910,7 +2767,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(feature = "std")]
             target: SceString::new(),
         };
-        self.external_queue.raise(meta);
+        Self::enqueue(&mut self.external_queue, meta);
         self.step();
     }
 
@@ -3441,7 +3298,7 @@ impl<P: StatePolicy> Engine<P> {
     /// If the engine has already been initialized.
     pub fn set_clock(&mut self, clock: SceClock) {
         assert!(
-            !self.main_loop.is_running,
+            !self.core.main_loop.is_running,
             "Engine::set_clock must be called before initialize(): this engine has \
              already armed its entry configuration against the previous clock, and \
              deadlines from two clocks do not compare"
@@ -3606,7 +3463,7 @@ impl<P: StatePolicy> Engine<P> {
                 let mut metadata = EventMetadata::external("", "");
                 metadata.data = resp.event_data;
                 if let Some(meta) = Self::arriving_event(&resp.event_name, metadata) {
-                    self.external_queue.raise(meta);
+                    Self::enqueue(&mut self.external_queue, meta);
                 }
             }
         }
@@ -4545,7 +4402,7 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-5.10: `_event.name` is the specific name, whichever descriptor
         // of the document it was matched through.
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
-            self.external_queue.raise(meta);
+            Self::enqueue(&mut self.external_queue, meta);
         }
         true
     }
@@ -4614,7 +4471,7 @@ impl<P: StatePolicy> Engine<P> {
         metadata.data = crate::sce_string_from_str(&format!("\"{reason}\""));
         metadata.invoke_id = crate::sce_string_from_str(invoke_id);
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
-            self.external_queue.raise(meta);
+            Self::enqueue(&mut self.external_queue, meta);
         }
     }
 
@@ -4672,7 +4529,7 @@ impl<P: StatePolicy> Engine<P> {
             let mut metadata = EventMetadata::external("", "");
             metadata.data = reply.event_data.clone();
             if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {
-                self.external_queue.raise(meta);
+                Self::enqueue(&mut self.external_queue, meta);
             }
         }
         Some(replies)
@@ -4718,7 +4575,7 @@ impl<P: StatePolicy> Engine<P> {
     ))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
         // W3C SCXML: if already stopped but reached final state during initialize(), return true
-        if !self.main_loop.is_running {
+        if !self.core.main_loop.is_running {
             return self.is_in_final_state();
         }
 
@@ -4770,9 +4627,60 @@ impl<P: StatePolicy> Engine<P> {
     /// One external event per iteration for the same reason: a state entered
     /// by event N's transition must have its invokes started before N+1 comes
     /// off the queue.
+    /// Put `event` on `queue`: its number and metadata, as the engine's code
+    /// that is the same for every machine drives the queue, and its typed
+    /// payload beside it when this machine's events carry one (docs/adr/0068).
+    /// A schemaless machine's payload is `()`, which nothing stores.
+    fn enqueue(queue: &mut P::EventQueue, event: EventWithMetadata<P::Event, P::Payload>) {
+        let EventWithMetadata {
+            event,
+            payload,
+            metadata,
+            #[cfg(feature = "std")]
+            target,
+        } = event;
+        if core::mem::size_of::<P::Payload>() != 0 {
+            queue.push_payload(payload);
+        }
+        queue.events().push(QueuedEvent {
+            event: P::event_id(event),
+            metadata,
+            #[cfg(feature = "std")]
+            target,
+        });
+    }
+
+    /// The event of this machine a queued number names.
+    #[inline]
+    fn event_of(event: EventId) -> P::Event {
+        P::EVENTS[usize::from(event.0)]
+    }
+
     pub(crate) fn run_main_event_loop(&mut self) {
-        // One workspace for the whole loop: every microstep it takes borrows it
-        // in turn, and it is gone when the call returns (docs/adr/0056 §4).
+        self.run_turn(false);
+    }
+
+    /// One turn of the loop over this machine: lend it the workspace, sized by
+    /// the document, and run the code that is the same for every machine — the
+    /// entry into the initial configuration first when `initial`, then the main
+    /// event loop.
+    ///
+    /// One workspace for the whole turn: every microstep borrows it in turn,
+    /// and it is gone when the call returns (docs/adr/0056 §4). The only part of
+    /// it that is this machine's own is the workspace's size (docs/adr/0068).
+    ///
+    /// Every buffer of the workspace is the size the generator read from the
+    /// document's tree, in both profiles, and a push past one stops the program
+    /// with the generator's name on it: the conformance corpus is the evidence
+    /// that each bound is an upper bound and not an estimate.
+    ///
+    /// Out of line, so the workspace is in this frame and no other: inlined,
+    /// it would sit in the frame of whatever calls `initialize` or `step` for
+    /// as long as that frame lives, rather than for the turn. A consumer
+    /// reported its task setup's frame about 4 KB larger at ADR 0064, where two
+    /// workspaces were built in functions that inline (2026-10-30).
+    #[inline(never)]
+    fn run_turn(&mut self, initial: bool) {
         let mut workspace = P::Workspace::default();
         let (enabled, scratch) = workspace.split();
         Turn {
@@ -4781,143 +4689,59 @@ impl<P: StatePolicy> Engine<P> {
             enabled,
             scratch,
         }
-        .run_main_event_loop();
+        .run(initial);
     }
 
-    /// Say that a call was handed back with work still waiting: the count, and
-    /// what it was still taking. The bound itself is enforced by the caller; this
-    /// is only the report, which waits for the `macrostep-diagnostics` feature.
-    pub(crate) fn record_truncated_event_chain(&mut self, head: Option<P::Event>) {
-        #[cfg(feature = "macrostep-diagnostics")]
-        {
-            self.truncated_event_chains = self.truncated_event_chains.saturating_add(1);
-            self.last_truncated_event = head;
-        }
-        #[cfg(not(feature = "macrostep-diagnostics"))]
-        let _ = head;
-    }
-
-    /// §scxml-D-mainEventLoop: take one event off the internal queue and bind it
-    /// as `_event`; the main loop selects and takes the microstep it selects,
-    /// then hands the outcome to [`end_internal_event`](Self::end_internal_event).
-    /// `None` when the queue is empty.
-    fn take_internal_event(&mut self) -> Option<TakenEvent> {
-        let event_with_meta = self.internal_queue.pop()?;
-        // §scxml-5.10.1: this event came off the internal queue.
-        self.current_event_from_external_queue = false;
-        // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-        self.policy
-            .populate_event_metadata(&event_with_meta.metadata);
-        // EventSchema native lowering: bind the typed payload
-        // that rode with this event so `_event.data.<field>` guards read it
-        // natively. No-op for schemaless policies (`Payload = ()`).
-        self.policy.populate_event_payload(&event_with_meta.payload);
-        // …and when no typed payload rode with it, read that view out of
-        // the `data` every other producer fills.
-        #[cfg(feature = "std")]
-        self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
-        // §scxml-3.12.2: the processor raises `error.*` into this queue and
-        // the clause says they "are ignored if no transition is found that
-        // matches them". Ignoring them is the clause; staying silent about
-        // it is not. `discarded_external_events` deliberately stops at the
-        // external queue because an unmatched `<raise>` has both ends
-        // inside the document — but the sender of an error event is this
-        // engine, so that reasoning does not reach it. The host never wrote
-        // the document, cannot see the failure in the configuration, and is
-        // the only party able to act on it.
-        //
-        // The selection runs first and unconditionally: it is what
-        // processes every internal event, and making it the right-hand
-        // side of an `&&` would skip it for everything that is not an
-        // error.
-        // An error raised from here on is raised *by an error handler*,
-        // which is the one situation the engine cannot leave to the
-        // document: the handler that failed is the same one that will
-        // answer the failure. The flag is what `raise` reads to tell that
-        // apart from a first failure, and it is cleared before anything
-        // else can run so a chain cannot be attributed to the wrong event.
-        let is_error = crate::helpers::event_matching::is_error_event(P::get_event_name(
-            event_with_meta.event,
-        ));
-        // The chain is not ended by the drain doing something else. An
-        // earlier draft reset the depth on every non-error event, which
-        // reads as the careful choice and is the opposite: a handler that
-        // raises its own event before failing — a document that logs, then
-        // fails, which is most of them — leaves the queue alternating
-        // `tick, error, tick, error…`, and each `tick` put the ceiling
-        // back out of reach. The count needs no such guard, because it
-        // only ever rises while an error handler is running.
-        self.handling_error_event = is_error;
-        Some(TakenEvent {
-            event: P::event_id(event_with_meta.event),
-            is_error,
-        })
-    }
-
-    /// What the internal event [`take_internal_event`](Self::take_internal_event)
-    /// bound came to, once the main loop has offered it to the configuration.
-    /// The microstep it took, if any, the loop has already counted against the
-    /// macrostep's budget.
-    fn end_internal_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
-        self.handling_error_event = false;
-        if outcome == EventOutcome::Discarded && taken.is_error {
-            self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
-            self.last_unhandled_error = Some(P::EVENTS[usize::from(taken.event.0)]);
-            sce_log_debug!(
-                "Engine::take_internal_event: error event matched no transition; unhandled"
-            );
-        }
-        self.policy.clear_event_metadata();
-    }
-
-    /// §scxml-D-mainEventLoop: take exactly one event off the external queue,
-    /// run the preliminary `<finalize>` / `autoforward` step against it and bind
-    /// it as `_event`; the main loop then selects transitions and hands the
-    /// outcome to [`end_external_event`](Self::end_external_event).
-    ///
-    /// One event, not a drain: Appendix D returns to the top of the outer loop
-    /// after each external event, so a state entered by this event's
-    /// transition gets its invokes started before the next one is dequeued.
-    pub(crate) fn process_next_external_event(&mut self) -> ExternalEvent {
-        let Some(event_with_meta) = self.external_queue.pop() else {
-            return ExternalEvent::Empty;
-        };
-        // §scxml-6.4: a host-run invocation's `done.invoke` counts only when
-        // `complete_host_invoke` confirmed the invocation was still running
-        // and stamped its token. Without the stamp it may be a cancelled
-        // run's late reply, which the processor ignores — so it is refused
-        // here, counted, and never reaches transition selection. An event was
-        // taken all the same, and the loop goes on to the next.
-        #[cfg(feature = "std")]
-        if event_with_meta.metadata.host_invoke_token.is_none()
+    /// §scxml-6.4: whether the external event `queued` is one the machine
+    /// takes. A host-run invocation's `done.invoke` counts only when
+    /// `complete_host_invoke` confirmed the invocation was still running and
+    /// stamped its token. Without the stamp it may be a cancelled run's late
+    /// reply, which the processor ignores — so it is refused here, counted, and
+    /// never reaches transition selection. An event was taken all the same,
+    /// and the loop goes on to the next. Only the `std` profile has host-run
+    /// invocations.
+    #[cfg(feature = "std")]
+    fn admit_external(&mut self, queued: &QueuedEvent) -> bool {
+        let refused = queued.metadata.host_invoke_token.is_none()
             && crate::host_processor::is_host_invoke_completion(
-                P::get_event_name(event_with_meta.event),
-                event_with_meta.metadata.invoke_id.as_str(),
+                P::get_event_name(Self::event_of(queued.event)),
+                queued.metadata.invoke_id.as_str(),
                 P::HOST_INVOKE_IDS,
-            )
-        {
+            );
+        if refused {
             self.refused_host_invoke_completions =
                 self.refused_host_invoke_completions.saturating_add(1);
-            return ExternalEvent::Refused;
+            if core::mem::size_of::<P::Payload>() != 0 {
+                self.external_queue.pop_payload();
+            }
         }
-        // §scxml-D-mainEventLoop: taking an event off the external queue is
-        // where a macrostep begins, so it is where the previous one's ceiling
-        // stops applying. A machine left inside an endless chain gets a full
-        // budget for each event it is given, and each refusal is counted
-        // separately — which is what tells a host that spins once from one
-        // that spins on everything.
-        //
-        // Here and not at the entry to the loop above, which reads like the
-        // more general boundary and is not one: a machine whose chain was
-        // refused would spend a whole budget re-walking it before it ever
-        // looked at the event the host sent to get it out. The refused events
-        // stay queued either way — this is where the budget that drains them
-        // comes back.
-        self.main_loop.macrostep_truncated = false;
-        self.main_loop.macrostep_microsteps_taken = 0;
-        // §scxml-5.10.1: this event came off the external queue.
-        self.current_event_from_external_queue = true;
-        {
+        !refused
+    }
+
+    /// Bind the event `queued`, just taken off the internal queue or (when
+    /// `external`) the external one, as `_event`: what only this machine's
+    /// policy can do with it, the typed payload queued with it among them.
+    /// For an external event, the preliminary `<finalize>` and autoforward step
+    /// of §scxml-D-mainEventLoop runs first.
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) {
+        let queue = if external {
+            &mut self.external_queue
+        } else {
+            &mut self.internal_queue
+        };
+        let payload = if core::mem::size_of::<P::Payload>() != 0 {
+            queue.pop_payload().unwrap_or_default()
+        } else {
+            P::Payload::default()
+        };
+        let event_with_meta = EventWithMetadata {
+            event: Self::event_of(queued.event),
+            payload,
+            metadata: queued.metadata,
+            #[cfg(feature = "std")]
+            target: queued.target,
+        };
+        if external {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
                 self.with_policy(|policy, engine| {
@@ -4963,114 +4787,38 @@ impl<P: StatePolicy> Engine<P> {
                     policy.forward_to_autoforward_children(name, &metadata, engine)
                 });
             }
-            // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-            self.policy
-                .populate_event_metadata(&event_with_meta.metadata);
-            // EventSchema native lowering: bind the typed payload
-            // that rode with this event so `_event.data.<field>` guards read it
-            // natively. No-op for schemaless policies (`Payload = ()`).
-            self.policy.populate_event_payload(&event_with_meta.payload);
-            // …and when no typed payload rode with it, read that view out of
-            // the `data` every other producer fills.
-            #[cfg(feature = "std")]
-            self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
-            // §scxml-3.1.2: "If no transition matches in any state, the event
-            // is discarded." Discarding it is the rule; being unable to say so
-            // is not part of the rule. The host that put this event on the
-            // queue is the one party that cannot see the outcome — a discard
-            // leaves the configuration exactly as a self transition does — and
-            // it is the party that got the event wrong. Recorded on the
-            // external queue only: an internal `<raise>` that matches nothing
-            // is the document's own business, and both ends of it are in the
-            // document. The count is kept by `end_external_event`, once the
-            // main loop has offered the event to the configuration.
         }
-        ExternalEvent::Taken(TakenEvent {
-            event: P::event_id(event_with_meta.event),
-            is_error: false,
-        })
-    }
-
-    /// What the external event [`process_next_external_event`](Self::process_next_external_event)
-    /// bound came to: a discard is counted and named, for the host that sent it.
-    fn end_external_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
-        if outcome == EventOutcome::Discarded {
-            self.discarded_external_events = self.discarded_external_events.saturating_add(1);
-            self.last_discarded_event = Some(P::EVENTS[usize::from(taken.event.0)]);
-            sce_log_debug!("Engine::process_next_external_event: no transition matched; discarded");
-        }
-        self.policy.clear_event_metadata();
-    }
-
-    /// Publish a macrostep the main loop stopped short at
-    /// [`MAX_MACROSTEP_MICROSTEPS`], from whichever branch of Appendix D's inner
-    /// loop ran out of budget, naming the state the machine is standing in —
-    /// on the walk that cannot end, rather than one the refused microstep would
-    /// have entered.
-    ///
-    /// The report only. The bound is [`LoopState::macrostep_truncated`], which
-    /// the loop sets itself in every profile: it is what stops the drain
-    /// re-entering a chain it already refused — without it the engine spins.
-    /// The counter and the state snapshot are what a host READS, and they are
-    /// kept only with the `macrostep-diagnostics` feature, which `default`
-    /// carries and a bare-metal crate asks for when it reads them (see this
-    /// crate's Cargo.toml for why it is in `default`).
-    #[cfg(feature = "macrostep-diagnostics")]
-    fn report_truncated_macrostep(&mut self) {
-        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
-        self.last_truncated_macrostep_state = Some(self.current_state);
-        sce_log_error!(
-            "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
-            MAX_MACROSTEP_MICROSTEPS
-        );
-    }
-
-    // ════════════════════════════════════════
-    // Appendix D over the generated policy
-    //
-    // The policy answers what only the document knows: which of a state's
-    // transitions an event enables, what a transition's content is, what a
-    // state's onentry and onexit do, what a history recorded. What Appendix D
-    // does with those answers is `helpers::microstep`, written once for every
-    // machine; `EngineHost` is how this engine hands it the policy.
-    //
-    // A machine with a `<parallel>` used to take a second microstep written
-    // into its generated code while every other machine took an LCA walk
-    // here. Neither was the appendix's, and they disagreed about eventless
-    // selection (one never looked above the atomic state, the other looked at
-    // every active state without walking), about the order transition content
-    // runs in, about which states a transition to an ancestor exits, and about
-    // how many targets a transition has — both kept only the first.
-    // ════════════════════════════════════════
-
-    /// Appendix D's enterStates — for the document's initial transition, the
-    /// whole of §scxml-D-interpret's entry into the initial configuration.
-    fn enter_states(&mut self, transitions: &[TransitionId]) {
-        let mut workspace = P::Workspace::default();
-        let (_, scratch) = workspace.split();
-        let entered = microstep::enter_states(
-            P::TABLES,
-            &mut EngineHost { engine: self },
-            transitions,
-            scratch,
-        );
-        self.settle_current_state(entered);
-    }
-
-    /// Point `current_state` at the atomic state the last targeted transition
-    /// brought the machine into ([`Entered::current`]). A microstep of
-    /// targetless transitions entered nothing and moves nothing.
-    ///
-    /// Every buffer of the microstep is the size the generator read from the
-    /// document's tree, in both profiles, and a push past one stops the program
-    /// with the generator's name on it: the conformance corpus is the evidence
-    /// that each bound is an upper bound and not an estimate.
-    fn settle_current_state(&mut self, entered: Entered) {
-        if let Some(current) = entered.current {
-            self.current_state = P::state_of(current);
-        }
+        // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+        self.policy
+            .populate_event_metadata(&event_with_meta.metadata);
+        // EventSchema native lowering: bind the typed payload
+        // that rode with this event so `_event.data.<field>` guards read it
+        // natively. No-op for schemaless policies (`Payload = ()`).
+        self.policy.populate_event_payload(&event_with_meta.payload);
+        // …and when no typed payload rode with it, read that view out of
+        // the `data` every other producer fills.
+        #[cfg(feature = "std")]
+        self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
     }
 }
+
+// ════════════════════════════════════════
+// Appendix D over the generated policy
+//
+// The policy answers what only the document knows: which of a state's
+// transitions an event enables, what a transition's content is, what a
+// state's onentry and onexit do, what a history recorded. What Appendix D
+// does with those answers is `helpers::microstep`, written once for every
+// machine; `EngineHost` is how this engine hands it the policy.
+//
+// A machine with a `<parallel>` used to take a second microstep written
+// into its generated code while every other machine took an LCA walk
+// here. Neither was the appendix's, and they disagreed about eventless
+// selection (one never looked above the atomic state, the other looked at
+// every active state without walking), about the order transition content
+// runs in, about which states a transition to an ancestor exits, and about
+// how many targets a transition has — both kept only the first.
+// ════════════════════════════════════════
 
 /// This engine as [`helpers::microstep`](crate::helpers::microstep) drives it:
 /// the one place the numbers the procedures speak in become this machine's
@@ -5114,7 +4862,7 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
         // of the configuration.
         let row = P::TABLES.state(id);
         if row.kind() == crate::helpers::tables::StateKind::Final && row.parent().is_none() {
-            self.engine.main_loop.terminal_state = Some(id);
+            self.engine.core.main_loop.terminal_state = Some(id);
         }
     }
 
@@ -5193,6 +4941,200 @@ impl LoopState {
     }
 }
 
+/// What the engine keeps that has no type of the machine's: the main loop's
+/// state, the flags the loop sets as it takes events, and the counts a host
+/// reads, each event they name as its number (docs/adr/0068).
+///
+/// A field of the engine, so the code that takes events off the queues, counts
+/// what became of them and ends a run reads and writes it without knowing the
+/// machine, and is compiled once for every program. The typed accessors on
+/// [`Engine`] turn a number back into the machine's event.
+#[derive(Debug, Clone)]
+pub(crate) struct EngineCore {
+    /// What the main event loop decides on — whether the run goes on, where it
+    /// ended, the budgets (docs/adr/0064).
+    pub(crate) main_loop: LoopState,
+    /// The atomic state under the first target of the last transition that
+    /// entered one, or the tables' default state before any did — see
+    /// [`Engine::get_current_state`].
+    pub(crate) current_state: StateId,
+    /// §scxml-D-exitInterpreter has run for this run: the configuration is
+    /// empty. `current_state` still names the state the run was last in (it
+    /// has no "none"), so [`Engine::get_active_states`] answers from this
+    /// flag rather than from it.
+    pub(crate) interpreter_exited: bool,
+    /// §scxml-5.10.1: whether the event being processed was taken off the
+    /// external queue. Set where it is dequeued — the one moment the queue is
+    /// known — and read when `_event` is bound, so interleaved internal and
+    /// external events each carry their own `_event.type`.
+    pub(crate) current_event_from_external_queue: bool,
+    /// Whether the drain is currently executing a transition selected by an
+    /// `error.*` event — the state in which a newly raised error is a *link in
+    /// a chain* rather than a first failure.
+    ///
+    /// This is the whole discriminator behind
+    /// [`Engine::error_cascade_events`]: a document that answers five hundred
+    /// separate failures cleanly never sets it twice in a row, and one whose
+    /// error handler fails sets it on every link.
+    pub(crate) handling_error_event: bool,
+    /// Events taken off the external queue that no transition matched — see
+    /// [`Engine::discarded_external_events`].
+    pub(crate) discarded_external_events: u32,
+    /// The most recent event this engine discarded — see
+    /// [`Engine::last_discarded_event`].
+    pub(crate) last_discarded_event: Option<EventId>,
+    /// External events this machine never dequeued because it had stopped —
+    /// see [`Engine::unseen_external_events`].
+    pub(crate) unseen_external_events: u32,
+    /// The most recent event this machine never looked at — see
+    /// [`Engine::last_unseen_event`].
+    pub(crate) last_unseen_event: Option<EventId>,
+    /// `error.*` events this engine raised that no transition matched — see
+    /// [`Engine::unhandled_error_events`].
+    pub(crate) unhandled_error_events: u32,
+    /// The most recent `error.*` event that went unhandled — see
+    /// [`Engine::last_unhandled_error`].
+    pub(crate) last_unhandled_error: Option<EventId>,
+    /// `error.*` events refused because the chain that raised them had reached
+    /// [`MAX_ERROR_CASCADE_DEPTH`] — see [`Engine::error_cascade_events`].
+    pub(crate) error_cascade_events: u32,
+    /// The most recent `error.*` event refused that way — see
+    /// [`Engine::last_error_cascade_event`].
+    pub(crate) last_error_cascade_event: Option<EventId>,
+    /// Events delivered with a payload the datamodel could not read as
+    /// structure — see [`Engine::undecodable_payloads`].
+    pub(crate) undecodable_payloads: u32,
+    /// The most recent event whose payload could not be read — see
+    /// [`Engine::last_undecodable_payload`].
+    pub(crate) last_undecodable_payload: Option<EventId>,
+    /// Invocations of the main event loop this engine handed back with an
+    /// external event still queued — see `Engine::truncated_event_chains`.
+    ///
+    /// Present with the `macrostep-diagnostics` feature only, with its sibling
+    /// below: per-ENGINE RAM, whether or not anything reads it.
+    #[cfg(feature = "macrostep-diagnostics")]
+    pub(crate) truncated_event_chains: u32,
+    /// The event at the head of the queue the last time a call was handed back
+    /// that way — see `Engine::last_truncated_event`.
+    #[cfg(feature = "macrostep-diagnostics")]
+    pub(crate) last_truncated_event: Option<EventId>,
+    /// Macrosteps this engine stopped at [`MAX_MACROSTEP_MICROSTEPS`] with the
+    /// chain still going — see `Engine::truncated_macrosteps`.
+    ///
+    /// Present with the `macrostep-diagnostics` feature only, and the RAM is
+    /// the point of leaving it out: this and its sibling below are per-ENGINE,
+    /// so an MCU image holding five machines carries five copies whether or
+    /// not anything reads them.
+    #[cfg(feature = "macrostep-diagnostics")]
+    pub(crate) truncated_macrosteps: u32,
+    /// The state the drain was in when it last stopped that way — see
+    /// `Engine::last_truncated_macrostep_state`.
+    #[cfg(feature = "macrostep-diagnostics")]
+    pub(crate) last_truncated_macrostep_state: Option<StateId>,
+}
+
+impl EngineCore {
+    /// An engine that has not started, naming `default_state` (the tables'
+    /// [`DocumentTables::default_state`]).
+    pub(crate) const fn new(default_state: StateId) -> Self {
+        Self {
+            main_loop: LoopState::NEW,
+            current_state: default_state,
+            interpreter_exited: false,
+            current_event_from_external_queue: false,
+            handling_error_event: false,
+            discarded_external_events: 0,
+            last_discarded_event: None,
+            unseen_external_events: 0,
+            last_unseen_event: None,
+            unhandled_error_events: 0,
+            last_unhandled_error: None,
+            error_cascade_events: 0,
+            last_error_cascade_event: None,
+            undecodable_payloads: 0,
+            last_undecodable_payload: None,
+            #[cfg(feature = "macrostep-diagnostics")]
+            truncated_event_chains: 0,
+            #[cfg(feature = "macrostep-diagnostics")]
+            last_truncated_event: None,
+            #[cfg(feature = "macrostep-diagnostics")]
+            truncated_macrosteps: 0,
+            #[cfg(feature = "macrostep-diagnostics")]
+            last_truncated_macrostep_state: None,
+        }
+    }
+
+    /// Record which reading the payload of `event`, just bound, was given: the
+    /// one place the count of payloads that could not be read is kept.
+    pub(crate) fn note_payload_reading(&mut self, event: EventId, reading: crate::PayloadReading) {
+        // §scxml-B-2-8-1 is the clause the reading comes from, named in
+        // prose rather than as a `§` citation: this method REPORTS the rung a
+        // script engine chose, and a bound citation here would claim it
+        // implements the clause. The ladder itself is where that claim belongs.
+        if reading.is_undecodable() {
+            self.undecodable_payloads = self.undecodable_payloads.saturating_add(1);
+            self.last_undecodable_payload = Some(event);
+        }
+    }
+
+    /// Point `current_state` at the atomic state the last targeted transition
+    /// brought the machine into ([`Entered::current`]). A microstep of
+    /// targetless transitions entered nothing and moves nothing.
+    pub(crate) fn settle(&mut self, entered: Entered) {
+        if let Some(current) = entered.current {
+            self.current_state = current;
+        }
+    }
+
+    /// Publish a macrostep the main loop stopped short at
+    /// [`MAX_MACROSTEP_MICROSTEPS`], from whichever branch of Appendix D's inner
+    /// loop ran out of budget, naming the state the machine is standing in —
+    /// on the walk that cannot end, rather than one the refused microstep would
+    /// have entered.
+    ///
+    /// The report only. The bound is [`LoopState::macrostep_truncated`], which
+    /// the loop sets itself in every profile: it is what stops the drain
+    /// re-entering a chain it already refused — without it the engine spins.
+    /// The counter and the state snapshot are what a host READS, and they are
+    /// kept only with the `macrostep-diagnostics` feature, which `default`
+    /// carries and a bare-metal crate asks for when it reads them (see this
+    /// crate's Cargo.toml for why it is in `default`).
+    #[cfg(feature = "macrostep-diagnostics")]
+    pub(crate) fn record_truncated_macrostep(&mut self) {
+        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+        self.last_truncated_macrostep_state = Some(self.current_state);
+        sce_log_error!(
+            "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
+            MAX_MACROSTEP_MICROSTEPS
+        );
+    }
+
+    /// Record one external event this machine will never look at: the one place
+    /// it is recorded, whether a door refused it before queueing or the loop
+    /// that would have dequeued it ended.
+    pub(crate) fn note_unseen_event(&mut self, event: EventId) {
+        // §scxml-D-mainEventLoop: the loop that would have dequeued this has
+        // ended, so the event is not "pending" — it is over.
+        self.unseen_external_events = self.unseen_external_events.saturating_add(1);
+        self.last_unseen_event = Some(event);
+    }
+
+    /// Say that a call was handed back with work still waiting: the count, and
+    /// what it was still taking (`head`). The one place it is recorded, for the
+    /// main loop's external drain and the scheduler's same-instant pops alike.
+    /// The bound itself is the caller's; this is only the report, which waits
+    /// for the `macrostep-diagnostics` feature.
+    pub(crate) fn record_truncated_event_chain(&mut self, head: Option<EventId>) {
+        #[cfg(feature = "macrostep-diagnostics")]
+        {
+            self.truncated_event_chains = self.truncated_event_chains.saturating_add(1);
+            self.last_truncated_event = head;
+        }
+        #[cfg(not(feature = "macrostep-diagnostics"))]
+        let _ = head;
+    }
+}
+
 /// An event a hook took off a queue and bound as `_event`, as the loop offers
 /// it to the configuration.
 #[derive(Debug, Clone, Copy)]
@@ -5203,7 +5145,7 @@ pub(crate) struct TakenEvent {
     is_error: bool,
 }
 
-/// What [`Engine::process_next_external_event`] took off the external queue.
+/// What [`Turn::take_external_event`] took off the external queue.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ExternalEvent {
     /// The queue was empty.
@@ -5219,40 +5161,37 @@ pub(crate) enum ExternalEvent {
 /// The engine as the main event loop drives it: object-safe, so the loop is
 /// one copy for every machine, and implemented once for each machine by
 /// [`EngineHost`].
+///
+/// What is here is what only the machine can do: hand out its queues and the
+/// engine's numbers, bind `_event` through its policy, start its invocations,
+/// and point its current state. Taking events off the queues, counting what
+/// became of them and ending the run are the loop's own, written once over
+/// these (docs/adr/0068).
 trait MainLoop {
     /// The same engine as Appendix D's procedures drive it.
     fn behaviour(&mut self) -> &mut dyn Behaviour;
-    /// What the loop decides on, which it reads and writes itself.
-    fn state(&mut self) -> &mut LoopState;
-    /// The machine's "no event", which selects eventless transitions.
-    fn null_event(&self) -> EventId;
+    /// What the engine keeps as numbers, which the loop reads and writes itself.
+    fn core(&mut self) -> &mut EngineCore;
+    /// The internal queue's events, or the external queue's when `external`.
+    fn queue(&mut self, external: bool) -> EventQueueMut<'_>;
     /// Bind `event` as the `_event` the guards of the coming selection read.
     fn bind_current_event(&mut self, event: EventId);
-    /// Point the current state where a microstep or an entry left it.
-    fn settle(&mut self, entered: Entered);
-    /// Publish the macrostep the loop just stopped at its budget.
-    #[cfg(feature = "macrostep-diagnostics")]
-    fn report_truncated_macrostep(&mut self);
-    /// Whether an internal event waits.
-    fn has_internal_event(&self) -> bool;
-    /// Take the next internal event and bind it.
-    fn take_internal_event(&mut self) -> Option<TakenEvent>;
-    /// What an internal event came to.
-    fn end_internal_event(&mut self, taken: TakenEvent, outcome: EventOutcome);
-    /// Whether an external event waits.
-    fn has_external_event(&self) -> bool;
-    /// Publish that the call is handed back with external events still queued.
-    #[cfg(feature = "macrostep-diagnostics")]
-    fn report_truncated_event_chain(&mut self);
-    /// Take the next external event and bind it.
-    fn process_next_external_event(&mut self) -> ExternalEvent;
-    /// What an external event came to.
-    fn end_external_event(&mut self, taken: TakenEvent, outcome: EventOutcome);
+    /// Bind the event just taken off the internal queue, or the external one
+    /// when `external`, through the machine's policy, with the typed payload
+    /// queued with it; for an external event, after the preliminary
+    /// `<finalize>` and autoforward step.
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool);
+    /// Whether the external event just taken is one the machine takes: a
+    /// host-run invocation's late reply is refused (§scxml-6.4).
+    #[cfg(feature = "std")]
+    fn admit_external(&mut self, queued: &QueuedEvent) -> bool;
+    /// The event bound for the last selection is done with.
+    fn end_event(&mut self);
+    /// The payloads still queued on the external queue, dropped with its
+    /// events when the run ends.
+    fn drop_external_payloads(&mut self);
     /// Start the invocations of the states this macrostep entered.
     fn start_pending_invokes(&mut self);
-    /// The loop is over: report what it did not take, and exit the
-    /// interpreter if the run ended in a final.
-    fn end_run(&mut self);
 }
 
 impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
@@ -5260,12 +5199,16 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self
     }
 
-    fn state(&mut self) -> &mut LoopState {
-        &mut self.engine.main_loop
+    fn core(&mut self) -> &mut EngineCore {
+        &mut self.engine.core
     }
 
-    fn null_event(&self) -> EventId {
-        P::event_id(P::null_event())
+    fn queue(&mut self, external: bool) -> EventQueueMut<'_> {
+        if external {
+            self.engine.external_queue.events()
+        } else {
+            self.engine.internal_queue.events()
+        }
     }
 
     fn bind_current_event(&mut self, event: EventId) {
@@ -5274,48 +5217,23 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
             .with_policy(|policy, engine| policy.bind_current_event(event, engine));
     }
 
-    fn settle(&mut self, entered: Entered) {
-        self.engine.settle_current_state(entered);
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) {
+        self.engine.bind_queued(queued, external);
     }
 
-    #[cfg(feature = "macrostep-diagnostics")]
-    fn report_truncated_macrostep(&mut self) {
-        self.engine.report_truncated_macrostep();
+    #[cfg(feature = "std")]
+    fn admit_external(&mut self, queued: &QueuedEvent) -> bool {
+        self.engine.admit_external(queued)
     }
 
-    fn has_internal_event(&self) -> bool {
-        self.engine.internal_queue.has_events()
+    fn end_event(&mut self) {
+        self.engine.policy.clear_event_metadata();
     }
 
-    fn take_internal_event(&mut self) -> Option<TakenEvent> {
-        self.engine.take_internal_event()
-    }
-
-    fn end_internal_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
-        self.engine.end_internal_event(taken, outcome);
-    }
-
-    fn has_external_event(&self) -> bool {
-        self.engine.external_queue.has_events()
-    }
-
-    #[cfg(feature = "macrostep-diagnostics")]
-    fn report_truncated_event_chain(&mut self) {
-        let head = self
-            .engine
-            .external_queue
-            .queued()
-            .next()
-            .map(|queued| queued.event);
-        self.engine.record_truncated_event_chain(head);
-    }
-
-    fn process_next_external_event(&mut self) -> ExternalEvent {
-        self.engine.process_next_external_event()
-    }
-
-    fn end_external_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
-        self.engine.end_external_event(taken, outcome);
+    fn drop_external_payloads(&mut self) {
+        if core::mem::size_of::<P::Payload>() != 0 {
+            while self.engine.external_queue.pop_payload().is_some() {}
+        }
     }
 
     fn start_pending_invokes(&mut self) {
@@ -5329,13 +5247,18 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         #[cfg(feature = "std")]
         self.engine.start_restored_host_invokes();
     }
+}
 
-    fn end_run(&mut self) {
-        self.engine.record_unseen_external_events();
-        if self.engine.main_loop.terminal_state.is_some() {
-            self.engine.exit_interpreter();
-        }
+/// §scxml-D-exitInterpreter, once per run: every state still active is exited,
+/// and the run is over.
+fn exit_interpreter(host: &mut dyn MainLoop) {
+    if host.core().interpreter_exited {
+        return;
     }
+    microstep::exit_interpreter(host.behaviour());
+    let core = host.core();
+    core.interpreter_exited = true;
+    core.main_loop.is_running = false;
 }
 
 /// One call of the main event loop: the engine it drives, the document it
@@ -5350,6 +5273,36 @@ struct Turn<'a> {
 }
 
 impl Turn<'_> {
+    /// One turn: the entry into the initial configuration first when
+    /// `initial`, then the main event loop.
+    fn run(&mut self, initial: bool) {
+        if initial {
+            self.enter_initial_configuration();
+        }
+        // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
+        // completes on eventless transitions and internal events, then the
+        // invokes for the states just entered run, and only then is anything
+        // taken off the external queue — so an `autoforward` child is live for
+        // every event `<onentry>` queued on the way in.
+        self.run_main_event_loop();
+    }
+
+    /// §scxml-D-interpret: enterStates([doc.initialTransition]) — the
+    /// document's own initial transition, whose source is the `<scxml>`
+    /// element, entered by the same procedure every microstep enters by. It
+    /// may name several states and a `<history>`, so it is a target list, not a
+    /// leaf to walk down to. The configuration starts empty.
+    fn enter_initial_configuration(&mut self) {
+        self.host.behaviour().store().configuration().clear();
+        let entered = microstep::enter_states(
+            self.tables,
+            self.host.behaviour(),
+            &[self.tables.initial],
+            self.scratch.reborrow(),
+        );
+        self.host.core().settle(entered);
+    }
+
     /// §scxml-D-mainEventLoop, for any machine: complete the macrostep, start
     /// the invocations it entered, take one external event, and again, until
     /// the run ends, the external queue is empty, or the call's budget of
@@ -5365,7 +5318,7 @@ impl Turn<'_> {
             // transitions and internal events alone.
             self.complete_macrostep();
 
-            if !self.host.state().goes_on() {
+            if !self.loop_state().goes_on() {
                 // §scxml-D-mainEventLoop ends here, and whatever the host put
                 // on the external queue ends with it. That is the clause: a
                 // machine that has reached a top-level final state exits the
@@ -5384,7 +5337,7 @@ impl Turn<'_> {
                 // §scxml-D-exitInterpreter: the loop is over because the run
                 // entered a top-level final, so every state still active is
                 // exited now — before the completion callback tells a parent.
-                self.host.end_run();
+                self.end_run();
                 break;
             }
 
@@ -5404,30 +5357,30 @@ impl Turn<'_> {
             // event that rescues it is on that queue, and the clause's
             // internal-first priority would otherwise hold it behind a chain
             // that never ends.
-            if !self.host.state().macrostep_truncated && self.host.has_internal_event() {
+            if !self.loop_state().macrostep_truncated && self.host.queue(false).has_events() {
                 continue;
             }
 
-            if !self.host.has_external_event() {
+            if !self.host.queue(true).has_events() {
                 break;
             }
             // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
             // bounds none of this: a machine that sends itself an external event
             // on every one never empties the queue. Past the budget the queue is
             // left exactly as it is and the call hands back, counted.
-            if taken >= self.host.state().max_external_events_per_call {
+            if taken >= self.loop_state().max_external_events_per_call {
                 #[cfg(feature = "macrostep-diagnostics")]
-                self.host.report_truncated_event_chain();
+                self.report_truncated_event_chain();
                 break;
             }
             taken += 1;
-            match self.host.process_next_external_event() {
+            match self.take_external_event() {
                 ExternalEvent::Empty => break,
                 #[cfg(feature = "std")]
                 ExternalEvent::Refused => {}
                 ExternalEvent::Taken(event) => {
                     let outcome = self.take_event(event.event);
-                    self.host.end_external_event(event, outcome);
+                    self.end_external_event(event, outcome);
                 }
             }
         }
@@ -5467,7 +5420,7 @@ impl Turn<'_> {
         // `<final>`; this engine keeps `is_running` for the host's `stop()` and
         // the final it entered for the other half.
         loop {
-            let state = self.host.state();
+            let state = self.loop_state();
             if !state.goes_on() || state.macrostep_truncated {
                 return;
             }
@@ -5477,12 +5430,12 @@ impl Turn<'_> {
                 Eventless::NoneEnabled => {}
             }
 
-            if !self.host.has_internal_event() {
+            if !self.host.queue(false).has_events() {
                 // The queue emptied, so the chain — refused or merely finished —
                 // is over. A machine whose next macrostep starts a new one
                 // starts it from zero, and the count of what was refused stays
                 // where the host reads it.
-                self.host.state().error_cascade_depth = 0;
+                self.loop_state().error_cascade_depth = 0;
                 return;
             }
             if self.refuse_spent_macrostep() {
@@ -5491,7 +5444,7 @@ impl Turn<'_> {
                 // which is where the next macrostep will find it.
                 return;
             }
-            let Some(event) = self.host.take_internal_event() else {
+            let Some(event) = self.take_internal_event() else {
                 return;
             };
             let outcome = self.take_event(event.event);
@@ -5500,9 +5453,9 @@ impl Turn<'_> {
                 // microstep, so it spends no budget. Only a turn that answered
                 // the event moved the machine, and only those are what a
                 // ceiling on microsteps can be counted in.
-                self.host.state().macrostep_microsteps_taken += 1;
+                self.loop_state().macrostep_microsteps_taken += 1;
             }
-            self.host.end_internal_event(event, outcome);
+            self.end_internal_event(event, outcome);
         }
     }
 
@@ -5514,13 +5467,13 @@ impl Turn<'_> {
     /// not reach a stable configuration, and the branch it died in is a detail of
     /// the document.
     fn refuse_spent_macrostep(&mut self) -> bool {
-        let state = self.host.state();
+        let state = self.loop_state();
         if state.macrostep_microsteps_taken < MAX_MACROSTEP_MICROSTEPS {
             return false;
         }
         state.macrostep_truncated = true;
         #[cfg(feature = "macrostep-diagnostics")]
-        self.host.report_truncated_macrostep();
+        self.host.core().record_truncated_macrostep();
         true
     }
 
@@ -5528,7 +5481,7 @@ impl Turn<'_> {
     /// transitions — select them, and take the microstep they select unless the
     /// macrostep's budget is spent.
     fn take_eventless_transitions(&mut self) -> Eventless {
-        let null_event = self.host.null_event();
+        let null_event = self.tables.null_event;
         self.select_transitions(null_event);
         if self.enabled.is_empty() {
             return Eventless::NoneEnabled;
@@ -5541,7 +5494,7 @@ impl Turn<'_> {
             // only the count says so.
             return Eventless::Refused;
         }
-        self.host.state().macrostep_microsteps_taken += 1;
+        self.loop_state().macrostep_microsteps_taken += 1;
         self.take_microstep();
         Eventless::Taken
     }
@@ -5571,7 +5524,158 @@ impl Turn<'_> {
             &self.enabled,
             self.scratch.reborrow(),
         );
-        self.host.settle(entered);
+        self.host.core().settle(entered);
+    }
+
+    /// What the main loop decides on.
+    #[inline]
+    fn loop_state(&mut self) -> &mut LoopState {
+        &mut self.host.core().main_loop
+    }
+
+    /// §scxml-D-mainEventLoop: take one event off the internal queue and bind it
+    /// as `_event`; the loop selects and takes the microstep it selects, then
+    /// hands the outcome to [`end_internal_event`](Self::end_internal_event).
+    /// `None` when the queue is empty.
+    fn take_internal_event(&mut self) -> Option<TakenEvent> {
+        let queued = self.host.queue(false).pop()?;
+        let event = queued.event;
+        // §scxml-5.10.1: this event came off the internal queue.
+        self.host.core().current_event_from_external_queue = false;
+        self.host.bind_queued(queued, false);
+        // §scxml-3.12.2: the processor raises `error.*` into this queue and
+        // the clause says they "are ignored if no transition is found that
+        // matches them". Ignoring them is the clause; staying silent about
+        // it is not. `discarded_external_events` deliberately stops at the
+        // external queue because an unmatched `<raise>` has both ends
+        // inside the document — but the sender of an error event is this
+        // engine, so that reasoning does not reach it. The host never wrote
+        // the document, cannot see the failure in the configuration, and is
+        // the only party able to act on it.
+        //
+        // An error raised from here on is raised *by an error handler*,
+        // which is the one situation the engine cannot leave to the
+        // document: the handler that failed is the same one that will
+        // answer the failure. The flag is what `raise` reads to tell that
+        // apart from a first failure, and it is cleared before anything
+        // else can run so a chain cannot be attributed to the wrong event.
+        //
+        // The chain is not ended by the drain doing something else. An
+        // earlier draft reset the depth on every non-error event, which
+        // reads as the careful choice and is the opposite: a handler that
+        // raises its own event before failing — a document that logs, then
+        // fails, which is most of them — leaves the queue alternating
+        // `tick, error, tick, error…`, and each `tick` put the ceiling
+        // back out of reach. The count needs no such guard, because it
+        // only ever rises while an error handler is running.
+        let is_error = self.tables.is_error_event(event);
+        self.host.core().handling_error_event = is_error;
+        Some(TakenEvent { event, is_error })
+    }
+
+    /// What the internal event [`take_internal_event`](Self::take_internal_event)
+    /// bound came to, once the loop has offered it to the configuration. The
+    /// microstep it took, if any, the loop has already counted against the
+    /// macrostep's budget.
+    fn end_internal_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
+        let core = self.host.core();
+        core.handling_error_event = false;
+        if outcome == EventOutcome::Discarded && taken.is_error {
+            core.unhandled_error_events = core.unhandled_error_events.saturating_add(1);
+            core.last_unhandled_error = Some(taken.event);
+            sce_log_debug!("Engine: an error event matched no transition; unhandled");
+        }
+        self.host.end_event();
+    }
+
+    /// §scxml-D-mainEventLoop: take exactly one event off the external queue,
+    /// run the preliminary `<finalize>` / autoforward step against it and bind
+    /// it as `_event`; the loop then selects transitions and hands the outcome
+    /// to [`end_external_event`](Self::end_external_event).
+    ///
+    /// One event, not a drain: Appendix D returns to the top of the outer loop
+    /// after each external event, so a state entered by this event's
+    /// transition gets its invokes started before the next one is dequeued.
+    fn take_external_event(&mut self) -> ExternalEvent {
+        let Some(queued) = self.host.queue(true).pop() else {
+            return ExternalEvent::Empty;
+        };
+        #[cfg(feature = "std")]
+        if !self.host.admit_external(&queued) {
+            return ExternalEvent::Refused;
+        }
+        let event = queued.event;
+        // §scxml-D-mainEventLoop: taking an event off the external queue is
+        // where a macrostep begins, so it is where the previous one's ceiling
+        // stops applying. A machine left inside an endless chain gets a full
+        // budget for each event it is given, and each refusal is counted
+        // separately — which is what tells a host that spins once from one
+        // that spins on everything.
+        //
+        // Here and not at the entry to the loop above, which reads like the
+        // more general boundary and is not one: a machine whose chain was
+        // refused would spend a whole budget re-walking it before it ever
+        // looked at the event the host sent to get it out. The refused events
+        // stay queued either way — this is where the budget that drains them
+        // comes back.
+        let core = self.host.core();
+        core.main_loop.macrostep_truncated = false;
+        core.main_loop.macrostep_microsteps_taken = 0;
+        // §scxml-5.10.1: this event came off the external queue.
+        core.current_event_from_external_queue = true;
+        self.host.bind_queued(queued, true);
+        ExternalEvent::Taken(TakenEvent {
+            event,
+            is_error: false,
+        })
+    }
+
+    /// What the external event [`take_external_event`](Self::take_external_event)
+    /// bound came to.
+    ///
+    /// §scxml-3.1.2: "If no transition matches in any state, the event is
+    /// discarded." Discarding it is the rule; being unable to say so is not
+    /// part of the rule. The host that put this event on the queue is the one
+    /// party that cannot see the outcome — a discard leaves the configuration
+    /// exactly as a self transition does — and it is the party that got the
+    /// event wrong. Recorded on the external queue only: an internal `<raise>`
+    /// that matches nothing is the document's own business, and both ends of
+    /// it are in the document.
+    fn end_external_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
+        if outcome == EventOutcome::Discarded {
+            let core = self.host.core();
+            core.discarded_external_events = core.discarded_external_events.saturating_add(1);
+            core.last_discarded_event = Some(taken.event);
+            sce_log_debug!("Engine: no transition matched an external event; discarded");
+        }
+        self.host.end_event();
+    }
+
+    /// The loop is over. What the host put on the external queue is counted
+    /// as never looked at and dropped, and the interpreter is exited if the run
+    /// ended in a top-level `<final>`.
+    ///
+    /// Drained rather than left in place so each event is counted exactly once:
+    /// a host that keeps calling `step()` on a halted machine would otherwise
+    /// re-count the same queue on every call, and a count that grows while
+    /// nothing arrives is a count nobody can use.
+    fn end_run(&mut self) {
+        while let Some(queued) = self.host.queue(true).pop() {
+            self.host.core().note_unseen_event(queued.event);
+        }
+        self.host.drop_external_payloads();
+        if self.loop_state().terminal_state.is_some() {
+            exit_interpreter(&mut *self.host);
+        }
+    }
+
+    /// Say that the call is handed back with external events still queued: the
+    /// count, and the event at the head of the queue. The bound itself is the
+    /// caller's; this is only the report.
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_event_chain(&mut self) {
+        let head = self.host.queue(true).front().map(|queued| queued.event);
+        self.host.core().record_truncated_event_chain(head);
     }
 
     /// Offer one event to the configuration and take the microstep it selects.

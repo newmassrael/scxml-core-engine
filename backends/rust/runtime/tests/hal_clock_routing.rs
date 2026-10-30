@@ -102,9 +102,7 @@ impl StatePolicy for MockPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = MockHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
@@ -123,6 +121,9 @@ impl StatePolicy for MockPolicy {
         )],
         targets: &[],
         initial: TransitionId(0),
+        default_state: StateId(St::S0 as u16),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: None,
     };
@@ -140,9 +141,6 @@ impl StatePolicy for MockPolicy {
         EventId(e as u16)
     }
 
-    fn initial_state() -> Self::State {
-        St::S0
-    }
     fn null_event() -> Self::Event {
         Ev::Null
     }

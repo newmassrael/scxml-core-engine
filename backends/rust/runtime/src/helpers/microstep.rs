@@ -951,24 +951,19 @@ pub fn enter_states(
     tables: &DocumentTables,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
-    mut scratch: Scratch<'_>,
+    scratch: Scratch<'_>,
 ) -> Entered {
-    let entered = {
-        let entry = compute_entry_set(
-            tables,
-            machine.store().as_ref(),
-            transitions,
-            scratch.reborrow(),
-        );
-        enter_entry_set(machine, &entry);
-        entry.states_to_enter.as_ref().len()
-    };
+    let entry = compute_entry_set(tables, machine.store().as_ref(), transitions, scratch);
+    enter_entry_set(machine, &entry);
+    let entered = entry.states_to_enter.as_ref().len();
     Entered {
         states: entered,
         current: if entered == 0 {
             None
         } else {
-            current_state(tables, machine.store().as_ref(), transitions, scratch)
+            entry
+                .last_target
+                .map(|target| current_state(tables, machine.store().as_ref(), target))
         },
     }
 }
@@ -990,27 +985,13 @@ fn enter_entry_set(machine: &mut dyn Behaviour, entry: &EntrySet<'_>) {
     }
 }
 
-/// The atomic state the last targeted transition of `transitions` brought the
-/// machine into: the first state it names, dereferenced, then down through the
-/// configuration to an atomic state, taking the first active region of a
-/// `<parallel>` in document order. The answer every backend gives as the
-/// machine's current state.
-fn current_state(
-    tables: &DocumentTables,
-    store: RunStoreRef<'_>,
-    transitions: &[TransitionId],
-    scratch: Scratch<'_>,
-) -> Option<StateId> {
-    let (mut effective, Scratch { walk, .. }) = scratch.take_set(tables);
-    let mut current = transitions.iter().rev().find_map(|&transition| {
-        effective_target_states_on(
-            tables,
-            store,
-            tables.targets(transition),
-            &mut effective,
-            &mut *walk,
-        )
-    })?;
+/// The atomic state the last targeted transition brought the machine into:
+/// `target`, the first state that transition names, dereferenced
+/// ([`EntrySet::last_target`]), then down through the configuration to an
+/// atomic state, taking the first active region of a `<parallel>` in document
+/// order. The answer every backend gives as the machine's current state.
+fn current_state(tables: &DocumentTables, store: RunStoreRef<'_>, target: StateId) -> StateId {
+    let mut current = target;
     let configuration = store.configuration();
     // The configuration is what the microstep entered, so a descent through it
     // cannot disagree with what happened. A compound state with no active child
@@ -1024,7 +1005,7 @@ fn current_state(
             None => break,
         }
     }
-    Some(current)
+    current
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1047,6 +1028,12 @@ pub struct EntrySet<'a> {
     /// Keyed by the history's parent, as the appendix keys it: the content
     /// runs when that parent is entered.
     pub default_history_content: SliceVec<'a, (StateId, HistoryId)>,
+    /// The first effective target of the last transition that has one, in the
+    /// order the transitions were selected: where the machine's current state
+    /// is read down from once the set is entered. Kept here because the set's
+    /// computation already dereferences every target, and what a `<history>`
+    /// recorded does not change while the set is entered.
+    pub last_target: Option<StateId>,
 }
 
 impl EntrySet<'_> {
@@ -1082,6 +1069,7 @@ pub fn compute_entry_set<'a>(
         states_to_enter,
         states_for_default_entry,
         default_history_content: SliceVec::new(rest.history_defaults),
+        last_target: None,
     };
     // One stack for the whole entry set: the walks run one after another, so
     // one stack of the document's size serves them all.
@@ -1120,9 +1108,12 @@ fn add_transition_to_entry_set(
     for &target in targets {
         walk_entry(tables, store, WalkStep::Descendants(target), stack, entry);
     }
-    if effective_target_states_on(tables, store, targets, effective, stack.slots_mut()).is_none() {
+    let Some(first) =
+        effective_target_states_on(tables, store, targets, effective, stack.slots_mut())
+    else {
         return;
-    }
+    };
+    entry.last_target = Some(first);
     let domain = transition_domain(tables, row.source(), effective.as_ref(), row.internal());
     // Every effective target's own subtree went in with the descendants above,
     // so which ancestor walk runs first changes nothing: a region one of them

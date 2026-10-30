@@ -474,7 +474,9 @@ pub use engine::TargetSendOutcome;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;
-pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
+pub use helpers::event_queue::{
+    EventQueue, EventQueueManager, EventQueueMut, EventQueueStorage, QueuedEvent,
+};
 /// What a generated policy's tables and buffers are made of — the types
 /// Appendix D's procedures read, named at the crate root because every
 /// generated machine spells them (docs/adr/0064).

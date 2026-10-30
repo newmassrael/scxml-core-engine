@@ -222,6 +222,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "takeEvent",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "end_external_event",
+          "kind": "references"
         }
       ],
       "coverage_expectation": "informational",
@@ -1253,11 +1258,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/event_matching.rs",
-          "symbol": "is_error_event",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EventMatchingHelper.h",
           "symbol": "isErrorEvent",
           "kind": "implements"
@@ -1527,6 +1527,11 @@
         },
         {
           "file": "sce/include/core/MacrostepCeilings.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/tables.rs",
+          "symbol": "DocumentTables",
           "kind": "references"
         }
       ],
@@ -2430,6 +2435,11 @@
         {
           "file": "sce/include/parsing/SemanticError.h",
           "symbol": "SemanticUnsupportedDatamodel",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/tables.rs",
+          "symbol": "DocumentTables",
           "kind": "references"
         }
       ],
@@ -5825,6 +5835,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseHostInvokeFailure",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "bind_queued",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_queue.rs",
+          "symbol": "QueuedEvent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6241,6 +6261,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "SCE::Static",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineCore",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "take_external_event",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11849,6 +11879,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "SCE::Static",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "bind_queued",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "MainLoop",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12480,6 +12520,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "processNextExternalEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "bind_queued",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -12784,6 +12829,11 @@
           "file": "sce-build/src/forge/static_datamodel.rs",
           "symbol": "invoke",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "bind_queued",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15812,6 +15862,11 @@
           "file": "backends/go/runtime/helpers.go",
           "symbol": "WireParamsFromTypedParams",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_queue.rs",
+          "symbol": "QueuedEvent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -17007,6 +17062,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "exit_interpreter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "EngineCore",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17527,6 +17587,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "beginRun",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "enter_initial_configuration",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -22392,6 +22457,18 @@
       "target_kind": "section",
       "target_id": "scxml-D-selectTransitions",
       "reason": "ADR 0064: StatePolicy no longer has MAX_ENABLED; the bound is a size of the generated Workspace type"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "bound as implements by mistake: the section is exempt, so the citation references it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.2",
+      "reason": "ADR 0068: the error-event test is table data the Rust template writes; the runtime's name test was removed"
     }
   ],
   "frames": {},

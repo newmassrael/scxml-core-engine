@@ -48,9 +48,7 @@ impl StatePolicy for HttpPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
@@ -69,6 +67,10 @@ impl StatePolicy for HttpPolicy {
         )],
         targets: &[],
         initial: TransitionId(0),
+        default_state: StateId(HttpState::Idle as u16),
+        null_event: EventId(0),
+        // `error.execution`, the one event the engine raises here.
+        error_events: &[EventId(1)],
         history: None,
         parallel: None,
     };
@@ -86,10 +88,6 @@ impl StatePolicy for HttpPolicy {
 
     fn event_id(event: Self::Event) -> EventId {
         EventId(event as u16)
-    }
-
-    fn initial_state() -> Self::State {
-        HttpState::Idle
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {

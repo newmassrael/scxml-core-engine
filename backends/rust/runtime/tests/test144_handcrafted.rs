@@ -74,9 +74,7 @@ impl StatePolicy for Test144Policy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // Four flat states and no history: the sets of states are bit vectors of
     // four states, one transition is enabled, and the walks owe three steps
@@ -107,6 +105,10 @@ impl StatePolicy for Test144Policy {
         // Every transition has one target, which its row holds.
         targets: &[],
         initial: TransitionId(2),
+        // C++ `initialState()`: `return State::S0;`
+        default_state: StateId(Test144State::S0 as u16),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: None,
     };
@@ -135,11 +137,6 @@ impl StatePolicy for Test144Policy {
 
     fn event_id(event: Self::Event) -> EventId {
         EventId(event as u16)
-    }
-
-    fn initial_state() -> Self::State {
-        // C++ `return State::S0;`
-        Test144State::S0
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {

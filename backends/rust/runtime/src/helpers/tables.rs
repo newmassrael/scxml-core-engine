@@ -437,6 +437,20 @@ pub struct DocumentTables {
     /// The document's initial transition, whose source is the `<scxml>`
     /// element.
     pub initial: TransitionId,
+    /// The state the machine names before its initial configuration is
+    /// entered: the state type's `Default` and `StatePolicy::initial_state`
+    /// (§scxml-3.2). A number in the tables, so an engine can hold its current
+    /// state as a [`StateId`] from a constant expression (docs/adr/0068).
+    pub default_state: StateId,
+    /// The machine's "no event", which selects eventless transitions. A
+    /// generated machine numbers it last.
+    pub null_event: EventId,
+    /// The events whose names begin with `error.`, in ascending order: the
+    /// ones §scxml-3.12.2 has the processor raise, which the main loop counts
+    /// when one matches nothing and bounds when an error handler raises
+    /// another (docs/adr/0068). Written by the generator from the names, so
+    /// the loop compares numbers and no machine carries a copy of the test.
+    pub error_events: &'static [EventId],
     /// The procedures only a `<history>` reaches, `Some(&HISTORY)` exactly
     /// when the document has one (docs/adr/0066).
     pub history: Option<&'static HistoryProcedures>,
@@ -563,6 +577,12 @@ impl DocumentTables {
         }
     }
 
+    /// Whether `event` is an `error.*` event ([`DocumentTables::error_events`]).
+    #[inline]
+    pub fn is_error_event(&self, event: EventId) -> bool {
+        self.error_events.contains(&event)
+    }
+
     /// Appendix D's isDescendant: whether `state` lies strictly below
     /// `ancestor`. A subtree is a range of ids, so this is two comparisons.
     #[inline]
@@ -657,7 +677,14 @@ impl DocumentTables {
                 }
             }
         }
-        if !transition_ok(self.initial) {
+        if !transition_ok(self.initial) || !state_ok(self.default_state) {
+            return Err(TablesFault::Dangling);
+        }
+        // The error events are named events of the machine, so none is the
+        // null event; ascending, so none repeats.
+        let ascending = self.error_events.windows(2).all(|pair| pair[0] < pair[1]);
+        let named = !self.error_events.contains(&self.null_event);
+        if !ascending || !named {
             return Err(TablesFault::Dangling);
         }
         let has_parallel = self

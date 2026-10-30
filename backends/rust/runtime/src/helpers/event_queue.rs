@@ -28,6 +28,264 @@
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
+use crate::event::EventMetadata;
+#[cfg(not(feature = "std"))]
+use crate::event::EventType;
+use crate::helpers::tables::EventId;
+#[cfg(feature = "std")]
+use crate::SceString;
+
+/// One event on a queue, as the engine's main loop takes it: its number in the
+/// machine's event enum and its metadata (docs/adr/0068).
+///
+/// A number and not the machine's event type, so the code that puts an event on
+/// a queue, takes it off and asks whether there is one is the same for every
+/// machine and compiled once. The typed payload a schema-carrying machine
+/// attaches rides beside it in the queue's own storage ([`EventQueue`]).
+#[derive(Debug, Clone, Default)]
+pub struct QueuedEvent {
+    /// The event's number ([`StatePolicy::event_id`](crate::StatePolicy::event_id)).
+    pub event: EventId,
+    /// What §scxml-5.10 binds into `_event` besides its name.
+    pub metadata: EventMetadata,
+    /// §scxml-C-2: the HTTP POST target URL, for an event a BasicHTTP send
+    /// raised; see [`EventWithMetadata`](crate::EventWithMetadata).
+    #[cfg(feature = "std")]
+    pub target: SceString,
+}
+
+impl QueuedEvent {
+    /// An empty slot of a bounded queue's storage, never read: a slot is
+    /// written before the ring counts it.
+    #[cfg(not(feature = "std"))]
+    const EMPTY: Self = Self {
+        event: EventId(0),
+        metadata: EventMetadata {
+            event_type: EventType::Internal,
+        },
+    };
+}
+
+/// A machine's event queue: its events as numbers, and, for a machine whose
+/// events carry a typed payload, the payloads in the same order
+/// (docs/adr/0068).
+///
+/// The storage is the machine's, sized by its resolved capacity `N` under
+/// `no_std` and unbounded under `std`. The engine drives the events through
+/// [`EventQueueMut`], which has no `N` and no machine type, so the code that
+/// does is one copy for every machine. Only the payloads are the machine's
+/// own, and a schemaless machine's payload is `()`, which nothing stores.
+#[derive(Debug)]
+pub struct EventQueue<Payload, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }> {
+    #[cfg(feature = "std")]
+    events: VecDeque<QueuedEvent>,
+    #[cfg(not(feature = "std"))]
+    slots: [QueuedEvent; N],
+    #[cfg(not(feature = "std"))]
+    head: u16,
+    #[cfg(not(feature = "std"))]
+    len: u16,
+    payloads: EventQueueManager<Payload, N>,
+}
+
+impl<Payload, const N: usize> EventQueue<Payload, N> {
+    /// An empty queue; a constant expression on both profiles, which is what
+    /// lets a policy declare its empty queue as an associated constant.
+    pub const fn new() -> Self {
+        Self {
+            #[cfg(feature = "std")]
+            events: VecDeque::new(),
+            #[cfg(not(feature = "std"))]
+            slots: [QueuedEvent::EMPTY; N],
+            #[cfg(not(feature = "std"))]
+            head: 0,
+            #[cfg(not(feature = "std"))]
+            len: 0,
+            payloads: EventQueueManager::new(),
+        }
+    }
+
+    /// The events, as the engine drives them.
+    #[inline]
+    pub fn events(&mut self) -> EventQueueMut<'_> {
+        EventQueueMut {
+            #[cfg(feature = "std")]
+            events: &mut self.events,
+            #[cfg(not(feature = "std"))]
+            slots: &mut self.slots,
+            #[cfg(not(feature = "std"))]
+            head: &mut self.head,
+            #[cfg(not(feature = "std"))]
+            len: &mut self.len,
+        }
+    }
+
+    /// Whether the queue holds an event.
+    #[inline]
+    pub fn has_events(&self) -> bool {
+        #[cfg(feature = "std")]
+        {
+            !self.events.is_empty()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            self.len != 0
+        }
+    }
+
+    /// The queued events, front first, left in place: what a saved state
+    /// records of the queue and what a report names.
+    pub fn queued(&self) -> impl Iterator<Item = &QueuedEvent> {
+        #[cfg(feature = "std")]
+        {
+            self.events.iter()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let head = usize::from(self.head);
+            (0..usize::from(self.len)).map(move |offset| &self.slots[(head + offset) % N])
+        }
+    }
+
+    /// Put `payload` behind the payloads already queued, for the event pushed
+    /// with it.
+    #[inline]
+    pub fn push_payload(&mut self, payload: Payload) {
+        self.payloads.raise(payload);
+    }
+
+    /// The payload of the event at the front, taken off with it.
+    #[inline]
+    pub fn pop_payload(&mut self) -> Option<Payload> {
+        self.payloads.pop()
+    }
+}
+
+impl<Payload, const N: usize> Default for EventQueue<Payload, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The events of an [`EventQueue`], without its capacity or its payload type:
+/// what the engine's code that is the same for every machine drives
+/// (docs/adr/0068).
+#[derive(Debug)]
+pub struct EventQueueMut<'a> {
+    #[cfg(feature = "std")]
+    events: &'a mut VecDeque<QueuedEvent>,
+    #[cfg(not(feature = "std"))]
+    slots: &'a mut [QueuedEvent],
+    #[cfg(not(feature = "std"))]
+    head: &'a mut u16,
+    #[cfg(not(feature = "std"))]
+    len: &'a mut u16,
+}
+
+impl EventQueueMut<'_> {
+    /// §scxml-3.12.1: put `event` at the back of the queue.
+    ///
+    /// Under `no_std` a push past the machine's resolved depth stops the
+    /// program rather than drop the event: Appendix D processes every queued
+    /// event, so the bounded queue fails loud.
+    pub fn push(&mut self, event: QueuedEvent) {
+        #[cfg(feature = "std")]
+        {
+            self.events.push_back(event);
+        }
+        #[cfg(not(feature = "std"))]
+        ring_push(self.slots, self.head, self.len, event);
+    }
+
+    /// Take the event at the front of the queue, `None` when it is empty.
+    pub fn pop(&mut self) -> Option<QueuedEvent> {
+        #[cfg(feature = "std")]
+        {
+            self.events.pop_front()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            ring_pop(self.slots, self.head, self.len)
+        }
+    }
+
+    /// The event at the front of the queue, left there.
+    pub fn front(&self) -> Option<&QueuedEvent> {
+        #[cfg(feature = "std")]
+        {
+            self.events.front()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            ring_front(self.slots, *self.head, *self.len)
+        }
+    }
+
+    /// Whether the queue holds an event.
+    #[inline]
+    pub fn has_events(&self) -> bool {
+        #[cfg(feature = "std")]
+        {
+            !self.events.is_empty()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            *self.len != 0
+        }
+    }
+}
+
+// The bounded queue's ring: `len` events from `head`, wrapping at the end of
+// `slots`. Free functions over the parts rather than methods of the view, so the
+// host's tests, which build the `std` queue, compile and hold them too.
+
+/// Put `item` behind the `len` items from `head`.
+#[cfg(any(test, not(feature = "std")))]
+fn ring_push<T>(slots: &mut [T], head: &mut u16, len: &mut u16, item: T) {
+    let capacity = slots.len();
+    let count = usize::from(*len);
+    if count == capacity {
+        queue_full();
+    }
+    slots[(usize::from(*head) + count) % capacity] = item;
+    *len += 1;
+}
+
+/// Take the item at `head`, `None` when there is none.
+#[cfg(any(test, not(feature = "std")))]
+fn ring_pop<T: Default>(slots: &mut [T], head: &mut u16, len: &mut u16) -> Option<T> {
+    if *len == 0 {
+        return None;
+    }
+    let first = usize::from(*head);
+    let item = core::mem::take(&mut slots[first]);
+    *head = ((first + 1) % slots.len()) as u16;
+    *len -= 1;
+    Some(item)
+}
+
+/// The item at `head`, left there.
+#[cfg(any(test, not(feature = "std")))]
+fn ring_front<T>(slots: &[T], head: u16, len: u16) -> Option<&T> {
+    if len == 0 {
+        None
+    } else {
+        Some(&slots[usize::from(head)])
+    }
+}
+
+/// A push past a bounded queue's depth. No formatted message, so an image does
+/// not carry the formatting machinery for it.
+#[cfg(any(test, not(feature = "std")))]
+#[cold]
+#[inline(never)]
+fn queue_full() -> ! {
+    panic!(
+        "an event queue is full: raise the machine's <scxml sce:capacity>; Appendix D processes \
+         every queued event, so the engine stops rather than drop one"
+    )
+}
+
 /// FIFO queue for SCXML events with metadata.
 ///
 /// Generic over the event type (typically `EventWithMetadata<E, P>` where `E`
@@ -126,49 +384,44 @@ impl<T, const N: usize> Default for EventQueueManager<T, N> {
     }
 }
 
-/// Queue abstraction the [`Engine`](crate::Engine) depends on (W3C SCXML
-/// Appendix D `internalQueue` / `externalQueue`).
-///
-/// Mirrors the C++ `EventQueueAdapterTrait`
-/// (`sce/include/core/EventQueueConcept.h`): the engine drives the FIFO through
-/// this trait rather than a concrete sized type, so each machine's policy can
-/// supply a [`EventQueueManager<T, N>`] sized to its own resolved capacity
-/// (see [`crate::StatePolicy::EventQueue`]) without the engine hardcoding `N`.
-/// Surface restricted to what the engine's macrostep loop actually drives
-/// (Interface Segregation): `enqueue` / `dequeue` / `isEmpty`, mirroring the
-/// C++ `EventQueueAdapterTrait`'s `popNext()` + `hasEvents()`. The richer
-/// inspection methods (`len` / `is_empty` / `clear`) stay as inherent methods on
-/// [`EventQueueManager`] — they are not part of the engine's dependency.
-pub trait EventQueueLike<T> {
-    /// W3C SCXML Appendix D `enqueue`: append an event to the FIFO back.
-    fn raise(&mut self, event: T);
-    /// W3C SCXML Appendix D `dequeue`: remove and return the FIFO front.
-    fn pop(&mut self) -> Option<T>;
-    /// Whether the queue holds any events (`!isEmpty`).
+/// The queue a machine's policy supplies (W3C SCXML Appendix D `internalQueue`
+/// / `externalQueue`), as the [`Engine`](crate::Engine) drives it: an
+/// [`EventQueue`] at the machine's resolved capacity (see
+/// [`crate::StatePolicy::EventQueue`]), its events through a view without that
+/// capacity (docs/adr/0068).
+pub trait EventQueueStorage<Payload>: Default {
+    /// The events, as the engine drives them.
+    fn events(&mut self) -> EventQueueMut<'_>;
+    /// Whether the queue holds an event.
     fn has_events(&self) -> bool;
     /// The queued events, front first, left in place — what a saved state
-    /// records of a queue (SCE Accepted Subset §2.15), which the macrostep
-    /// loop never needs.
-    fn queued<'a>(&'a self) -> impl Iterator<Item = &'a T>
-    where
-        T: 'a;
+    /// records of a queue (SCE Accepted Subset §2.15).
+    fn queued(&self) -> impl Iterator<Item = &QueuedEvent>;
+    /// Queue the payload of the event pushed with it.
+    fn push_payload(&mut self, payload: Payload);
+    /// Take the payload of the event taken off the front.
+    fn pop_payload(&mut self) -> Option<Payload>;
 }
 
-impl<T, const N: usize> EventQueueLike<T> for EventQueueManager<T, N> {
-    fn raise(&mut self, event: T) {
-        EventQueueManager::raise(self, event)
+impl<Payload, const N: usize> EventQueueStorage<Payload> for EventQueue<Payload, N> {
+    #[inline]
+    fn events(&mut self) -> EventQueueMut<'_> {
+        EventQueue::events(self)
     }
-    fn pop(&mut self) -> Option<T> {
-        EventQueueManager::pop(self)
-    }
+    #[inline]
     fn has_events(&self) -> bool {
-        EventQueueManager::has_events(self)
+        EventQueue::has_events(self)
     }
-    fn queued<'a>(&'a self) -> impl Iterator<Item = &'a T>
-    where
-        T: 'a,
-    {
-        self.iter()
+    fn queued(&self) -> impl Iterator<Item = &QueuedEvent> {
+        EventQueue::queued(self)
+    }
+    #[inline]
+    fn push_payload(&mut self, payload: Payload) {
+        EventQueue::push_payload(self, payload)
+    }
+    #[inline]
+    fn pop_payload(&mut self) -> Option<Payload> {
+        EventQueue::pop_payload(self)
     }
 }
 
@@ -197,6 +450,40 @@ mod tests {
         assert_eq!(q.pop(), Some(2));
         assert_eq!(q.pop(), Some(3));
         assert_eq!(q.pop(), None);
+    }
+
+    /// The bounded queue's ring keeps FIFO order across its wrap-around: a
+    /// ring of three, filled, half drained and filled again, gives its items
+    /// back in the order they went in (docs/adr/0068).
+    #[test]
+    fn the_ring_keeps_fifo_order_across_its_wrap() {
+        let mut slots = [0u16; 3];
+        let (mut head, mut len) = (0u16, 0u16);
+        for item in [1, 2, 3] {
+            ring_push(&mut slots, &mut head, &mut len, item);
+        }
+        assert_eq!(ring_pop(&mut slots, &mut head, &mut len), Some(1));
+        assert_eq!(ring_pop(&mut slots, &mut head, &mut len), Some(2));
+        // The next two land at the end and wrap to the start.
+        ring_push(&mut slots, &mut head, &mut len, 4);
+        ring_push(&mut slots, &mut head, &mut len, 5);
+        assert_eq!(ring_front(&slots, head, len), Some(&3));
+        let drained: Vec<u16> =
+            core::iter::from_fn(|| ring_pop(&mut slots, &mut head, &mut len)).collect();
+        assert_eq!(drained, [3, 4, 5]);
+        assert_eq!(ring_front(&slots, head, len), None);
+    }
+
+    /// A push past the ring's capacity stops the program rather than drop an
+    /// event: Appendix D processes every queued event.
+    #[test]
+    #[should_panic(expected = "an event queue is full")]
+    fn a_push_past_the_ring_is_refused_loud() {
+        let mut slots = [0u16; 2];
+        let (mut head, mut len) = (0u16, 0u16);
+        for item in [1, 2, 3] {
+            ring_push(&mut slots, &mut head, &mut len, item);
+        }
     }
 
     #[test]

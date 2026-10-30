@@ -187,6 +187,12 @@ fn tables_of(doc: &Plain) -> &'static DocumentTables {
         transitions: leak(transitions),
         targets: leak(target_pool),
         initial: document_initial,
+        // The procedures under test are handed the events they select by; the
+        // main loop, which asks for the null event and the error events, is
+        // not driven here, and no engine names a state before it starts.
+        default_state: StateId(0),
+        null_event: EventId(0),
+        error_events: &[],
     };
     assert_eq!(
         tables.check(),
@@ -605,6 +611,9 @@ fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
         transitions: &[TransitionRow::new(None, Target::list(0), false, false)],
         targets: &[Target::count(2), Target::state(StateId(0))],
         initial: TransitionId(0),
+        default_state: StateId(0),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: None,
     };

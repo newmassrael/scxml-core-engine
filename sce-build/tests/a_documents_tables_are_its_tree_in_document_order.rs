@@ -456,6 +456,12 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables {
         transitions: transitions.leak(),
         targets: pool.leak(),
         initial: rt::TransitionId(tables.initial),
+        // What these tests ask is the state tree; the main loop's events and
+        // the state an engine names before it starts are the template's
+        // (docs/adr/0068), not this model's.
+        default_state: rt::StateId(0),
+        null_event: rt::EventId(0),
+        error_events: &[],
         // The feature procedures exactly when the document uses the feature,
         // as the generator writes them (docs/adr/0066).
         history: tables.uses_history().then_some(&sce_rust_runtime::HISTORY),

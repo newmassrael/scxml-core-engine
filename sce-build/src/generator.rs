@@ -3372,8 +3372,9 @@ fn render_rust(
     // sorted state key. This guarantees exactly one `#[default]` marker
     // (the invariant `#[derive(Default)]` requires) and is robust to a
     // multi-token (parallel-root) initial. The template consumes it for
-    // both the marker and the `initial_state()` body, so the two can
-    // never disagree. The externally-drivable surface is the analyzer's
+    // both the marker and the tables' `default_state`, which
+    // `initial_state()` and the engine read, so the two can never
+    // disagree. The externally-drivable surface is the analyzer's
     // structural fact `model.externally_drivable_events` (published;
     // emitted as the `{Machine}Event::EXTERNALLY_DRIVABLE_EVENTS` const),
     // consumed verbatim below — codegen re-derives no partition.

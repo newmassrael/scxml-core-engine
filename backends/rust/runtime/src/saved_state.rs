@@ -59,7 +59,7 @@ use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
-use crate::{Engine, EventQueueLike, EventType, EventWithMetadata, SceClock, StatePolicy};
+use crate::{Engine, EventQueueStorage, EventType, EventWithMetadata, SceClock, StatePolicy};
 
 /// The format of a saved state that names each running child by its id alone
 /// (`schemas/sce-saved-state.v1.schema.json`): a restore starts each again from
@@ -1771,7 +1771,7 @@ pub fn save<P: StatePolicy>(
                 // §scxml-5.10: a queued event is saved under the name it ARRIVED
                 // under, so a restore gives the machine the same `_event.name`.
                 name: if queued.metadata.name.is_empty() {
-                    P::get_event_name(queued.event).to_string()
+                    P::get_event_name(P::EVENTS[usize::from(queued.event.0)]).to_string()
                 } else {
                     queued.metadata.name.to_string()
                 },

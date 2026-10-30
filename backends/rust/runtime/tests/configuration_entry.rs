@@ -80,9 +80,7 @@ impl StatePolicy for ParallelPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // Six states and no history, so the sets of states are bit vectors of six.
     // P, RA, one of A1/A2, RB, B1 are active at once, two of them atomic, so
@@ -133,6 +131,9 @@ impl StatePolicy for ParallelPolicy {
         // Every transition has one target, which its row holds.
         targets: &[],
         initial: TransitionId(3),
+        default_state: StateId(PState::P as u16),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: Some(&PARALLEL),
     };
@@ -160,10 +161,6 @@ impl StatePolicy for ParallelPolicy {
 
     fn event_id(event: Self::Event) -> EventId {
         EventId(event as u16)
-    }
-
-    fn initial_state() -> Self::State {
-        PState::P
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {
@@ -285,9 +282,7 @@ impl StatePolicy for LinearPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // Three states and no history, so the sets of states are bit vectors of
     // three. Root with one of X1/X2 below it: one atomic state active; three
@@ -319,6 +314,9 @@ impl StatePolicy for LinearPolicy {
         // Every transition has one target, which its row holds.
         targets: &[],
         initial: TransitionId(2),
+        default_state: StateId(LState::Root as u16),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: None,
     };
@@ -339,10 +337,6 @@ impl StatePolicy for LinearPolicy {
 
     fn event_id(event: Self::Event) -> EventId {
         EventId(event as u16)
-    }
-
-    fn initial_state() -> Self::State {
-        LState::Root
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {

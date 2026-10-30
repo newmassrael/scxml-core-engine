@@ -56,9 +56,7 @@ impl StatePolicy for HwPolicy {
     type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
-    type EventQueue = sce_rust_runtime::EventQueueManager<
-        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
-    >;
+    type EventQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // A flat document of three states and no history: the sets of states are
     // bit vectors of three states, one transition is enabled, and the walks
@@ -89,6 +87,9 @@ impl StatePolicy for HwPolicy {
         // Every transition has one target, which its row holds.
         targets: &[],
         initial: TransitionId(3),
+        default_state: StateId(HwState::Stopped as u16),
+        null_event: EventId(0),
+        error_events: &[],
         history: None,
         parallel: None,
     };
@@ -106,10 +107,6 @@ impl StatePolicy for HwPolicy {
 
     fn event_id(event: Self::Event) -> EventId {
         EventId(event as u16)
-    }
-
-    fn initial_state() -> Self::State {
-        HwState::Stopped
     }
 
     fn get_event_name(event: Self::Event) -> &'static str {

@@ -49,7 +49,7 @@ use core::hash::Hash;
 
 use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
-use crate::helpers::event_queue::EventQueueLike;
+use crate::helpers::event_queue::EventQueueStorage;
 use crate::helpers::hierarchy::Bounded;
 use crate::helpers::microstep::Buffers;
 use crate::helpers::run_store::RunStorage;
@@ -120,21 +120,22 @@ pub trait StatePolicy: Sized + 'static {
     /// one of each).
     ///
     /// Carries the machine's FIFO **depth** under `--no-default-features`: generated
-    /// code emits `EventQueueManager<EventWithMetadata<Self::Event,
-    /// Self::Payload>, N>` where `N` is the per-document capacity resolved from
-    /// `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity`
-    /// (emitted as `EVENT_QUEUE_CAPACITY`), defaulting to
-    /// [`MAX_EVENT_QUEUE_DEPTH`](crate::MAX_EVENT_QUEUE_DEPTH) when the document
-    /// declares no capacity. Under the std build the depth is inert
+    /// code emits `EventQueue<Self::Payload, N>` where `N` is the per-document
+    /// capacity resolved from `<scxml sce:capacity="N">` / deploy
+    /// `default_event_queue_capacity` (emitted as `EVENT_QUEUE_CAPACITY`),
+    /// defaulting to [`MAX_EVENT_QUEUE_DEPTH`](crate::MAX_EVENT_QUEUE_DEPTH) when
+    /// the document declares no capacity. Under the std build the depth is inert
     /// (`VecDeque`, unbounded — the spec's unbounded `Queue`), so the same
-    /// emission compiles on both runtime profiles.
+    /// emission compiles on both runtime profiles. The queue holds its events as
+    /// numbers, so the engine drives every machine's queue with one copy of its
+    /// code (docs/adr/0068).
     ///
     /// This is the SSOT for the no_std queue size: the bound lives in the
     /// machine (its authored capacity), not in a runtime-crate global. Mirrors
     /// the per-machine [`Payload`](StatePolicy::Payload) / [`Hal`](StatePolicy::Hal)
     /// associated types; like them it has no default (stable Rust forbids
     /// default associated types) and is emitted by every generated policy.
-    type EventQueue: EventQueueLike<EventWithMetadata<Self::Event, Self::Payload>> + Default;
+    type EventQueue: EventQueueStorage<Self::Payload>;
 
     /// Storage for the delayed-send scheduler's per-entry cancel key
     /// (`send_id`), backing §scxml-6.3 `<cancel sendid>`.
@@ -288,7 +289,13 @@ pub trait StatePolicy: Sized + 'static {
     /// Not what `initialize` enters: that is the document's initial transition
     /// (§scxml-3.2), the row [`DocumentTables::initial`] names, which may name
     /// several states and a `<history>`.
-    fn initial_state() -> Self::State;
+    ///
+    /// The state [`DocumentTables::default_state`] numbers: the tables are the
+    /// one place it is written, so the engine (which holds the number) and
+    /// this answer cannot disagree.
+    fn initial_state() -> Self::State {
+        Self::state_of(Self::TABLES.default_state)
+    }
 
     /// The state numbered `id`.
     fn state_of(id: StateId) -> Self::State {
@@ -880,18 +887,18 @@ pub trait StatePolicy: Sized + 'static {
 /// program holds it in a `static` and runs no constructor at start-up and
 /// copies nothing onto its stack.
 ///
-/// A separate trait and not two more items of [`StatePolicy`], because a
-/// constant needs a value written as one: `StatePolicy::initial_state` is a
+/// A separate trait and not one more item of [`StatePolicy`], because a
+/// constant needs a value written as one: `EventQueue::default()` is a
 /// function, and a trait function cannot be called in a constant expression on
-/// the toolchain this crate supports. A policy that is built from run-time
-/// values (a datamodel that reads its initial values from a script, a session id
-/// drawn from the operating system) has no such constants and does not
-/// implement this; it is built by [`Engine::new`](crate::Engine::new) or in its
-/// slot by [`Engine::new_in_place`](crate::Engine::new_in_place).
+/// the toolchain this crate supports. (The state the engine starts naming
+/// needs no such item: it is a number in the tables,
+/// [`DocumentTables::default_state`](crate::DocumentTables::default_state).)
+/// A policy that is built from run-time values (a datamodel that reads its
+/// initial values from a script, a session id drawn from the operating system)
+/// has no such constants and does not implement this; it is built by
+/// [`Engine::new`](crate::Engine::new) or in its slot by
+/// [`Engine::new_in_place`](crate::Engine::new_in_place).
 pub trait ConstStatePolicy: StatePolicy {
-    /// [`StatePolicy::initial_state`], as a constant.
-    const INITIAL_STATE: Self::State;
-
     /// An empty [`StatePolicy::EventQueue`], as a constant: what
     /// `EventQueue::default()` returns.
     const EMPTY_EVENT_QUEUE: Self::EventQueue;
