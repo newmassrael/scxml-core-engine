@@ -151,7 +151,9 @@ pub type StaticStateAlgorithmConfiguration =
 /// transition, each history's default transition and the document's own
 /// initial transition. A state's children are not listed: the numbering is a
 /// pre-order walk, so they are the state's number plus one and each number past
-/// the subtree (`last_descendant`) of the child before.
+/// the subtree (`last_descendant`) of the child before. A transition holds its
+/// only target itself; `targets` holds only the lists of transitions with more
+/// than one, each its length first (docs/adr/0067).
 ///
 /// `history` and `parallel` carry the procedures only a `<history>` or a
 /// `<parallel>` reaches, and are `None` for a document without one, so a
@@ -164,8 +166,8 @@ pub type StaticStateAlgorithmConfiguration =
 /// same.
 pub const STATIC_STATE_ALGORITHM_TABLES: ::sce_rust_runtime::DocumentTables = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
-        TransitionId, TransitionRow,
+        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -175,17 +177,17 @@ pub const STATIC_STATE_ALGORITHM_TABLES: ::sce_rust_runtime::DocumentTables = {
         histories: &[],
         transitions: &[
             // 0: open, transition 0
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 1: open, transition 1
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 2: open, transition 2
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 3: open, transition 3
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 4: the document's initial transition
-            TransitionRow::new(None, Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[Target::state(StateId(0))],
+        targets: &[],
         initial: TransitionId(4),
         history: None,
         parallel: None,

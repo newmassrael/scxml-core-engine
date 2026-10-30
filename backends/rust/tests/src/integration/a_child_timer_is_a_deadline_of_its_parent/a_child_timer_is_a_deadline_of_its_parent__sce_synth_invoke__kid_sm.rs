@@ -148,7 +148,9 @@ pub type AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidConfiguration =
 /// transition, each history's default transition and the document's own
 /// initial transition. A state's children are not listed: the numbering is a
 /// pre-order walk, so they are the state's number plus one and each number past
-/// the subtree (`last_descendant`) of the child before.
+/// the subtree (`last_descendant`) of the child before. A transition holds its
+/// only target itself; `targets` holds only the lists of transitions with more
+/// than one, each its length first (docs/adr/0067).
 ///
 /// `history` and `parallel` carry the procedures only a `<history>` or a
 /// `<parallel>` reaches, and are `None` for a document without one, so a
@@ -162,8 +164,8 @@ pub type AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidConfiguration =
 pub const ACHILD_TIMER_IS_ADEADLINE_OF_ITS_PARENT_SCE_SYNTH_INVOKE_KID_TABLES:
     ::sce_rust_runtime::DocumentTables = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
-        TransitionId, TransitionRow,
+        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -177,17 +179,13 @@ pub const ACHILD_TIMER_IS_ADEADLINE_OF_ITS_PARENT_SCE_SYNTH_INVOKE_KID_TABLES:
         histories: &[],
         transitions: &[
             // 0: first, transition 0
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // 1: second, transition 0
-            TransitionRow::new(Some(StateId(1)), Span { start: 1, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 2: the document's initial transition
-            TransitionRow::new(None, Span { start: 2, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(1)),
-            Target::state(StateId(2)),
-            Target::state(StateId(0)),
-        ],
+        targets: &[],
         initial: TransitionId(2),
         history: None,
         parallel: None,

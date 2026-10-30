@@ -157,7 +157,9 @@ pub type RequestLifeConfiguration =
 /// transition, each history's default transition and the document's own
 /// initial transition. A state's children are not listed: the numbering is a
 /// pre-order walk, so they are the state's number plus one and each number past
-/// the subtree (`last_descendant`) of the child before.
+/// the subtree (`last_descendant`) of the child before. A transition holds its
+/// only target itself; `targets` holds only the lists of transitions with more
+/// than one, each its length first (docs/adr/0067).
 ///
 /// `history` and `parallel` carry the procedures only a `<history>` or a
 /// `<parallel>` reaches, and are `None` for a document without one, so a
@@ -170,8 +172,8 @@ pub type RequestLifeConfiguration =
 /// same.
 pub const REQUEST_LIFE_TABLES: ::sce_rust_runtime::DocumentTables = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
-        TransitionId, TransitionRow,
+        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -214,99 +216,83 @@ pub const REQUEST_LIFE_TABLES: ::sce_rust_runtime::DocumentTables = {
         histories: &[],
         transitions: &[
             // 0: request, transition 0
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 1: request, transition 1
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 2: request, transition 2
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(3)), true, true),
             // 3: request, transition 3
-            TransitionRow::new(Some(StateId(0)), Span { start: 1, len: 1 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(3)), true, true),
             // 4: request, transition 4
-            TransitionRow::new(Some(StateId(0)), Span { start: 2, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 5: request, transition 5
-            TransitionRow::new(Some(StateId(0)), Span { start: 2, len: 1 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(3)), true, true),
             // 6: request, transition 6
-            TransitionRow::new(Some(StateId(0)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 7: request, transition 7
-            TransitionRow::new(Some(StateId(0)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 8: request, transition 8
-            TransitionRow::new(Some(StateId(0)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 9: request, transition 9
-            TransitionRow::new(Some(StateId(0)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 10: open, transition 0
-            TransitionRow::new(Some(StateId(1)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(1)), Target::NONE, true, true),
             // 11: open, transition 1
-            TransitionRow::new(Some(StateId(1)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(1)), Target::NONE, true, true),
             // 12: open, transition 2
-            TransitionRow::new(Some(StateId(1)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(1)), Target::NONE, true, true),
             // 13: open, transition 3
-            TransitionRow::new(Some(StateId(1)), Span { start: 3, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(1)), Target::NONE, true, true),
             // 14: open, transition 4
-            TransitionRow::new(Some(StateId(1)), Span { start: 3, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(8)), false, true),
             // 15: open, transition 5
-            TransitionRow::new(Some(StateId(1)), Span { start: 4, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(9)), false, true),
             // 16: running, transition 0
-            TransitionRow::new(Some(StateId(3)), Span { start: 5, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(3)), Target::NONE, true, true),
             // 17: running, transition 1
-            TransitionRow::new(Some(StateId(3)), Span { start: 5, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(3)), Target::state(StateId(6)), false, true),
             // 18: running, transition 2
-            TransitionRow::new(Some(StateId(3)), Span { start: 6, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(3)), Target::state(StateId(7)), false, true),
             // 19: running, transition 3
-            TransitionRow::new(Some(StateId(3)), Span { start: 7, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(3)), Target::NONE, true, true),
             // 20: running, transition 4
-            TransitionRow::new(Some(StateId(3)), Span { start: 7, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(3)), Target::state(StateId(4)), false, true),
             // 21: interrupted, transition 0
-            TransitionRow::new(Some(StateId(4)), Span { start: 8, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(3)), false, true),
             // 22: interrupted, transition 1
-            TransitionRow::new(Some(StateId(4)), Span { start: 9, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(6)), false, true),
             // 23: interrupted, transition 2
-            TransitionRow::new(Some(StateId(4)), Span { start: 10, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(7)), false, true),
             // 24: interrupted, transition 3
-            TransitionRow::new(Some(StateId(4)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(4)), Target::NONE, true, true),
             // 25: ended, transition 0
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 26: ended, transition 1
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 27: ended, transition 2
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 28: ended, transition 3
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 29: ended, transition 4
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 30: ended, transition 5
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(5)), Target::NONE, true, true),
             // 31: completed, transition 0
-            TransitionRow::new(Some(StateId(6)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(6)), Target::NONE, true, true),
             // 32: failed, transition 0
-            TransitionRow::new(Some(StateId(7)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(7)), Target::NONE, true, true),
             // 33: cancelled, transition 0
-            TransitionRow::new(Some(StateId(8)), Span { start: 11, len: 0 }, true, true),
+            TransitionRow::new(Some(StateId(8)), Target::NONE, true, true),
             // 34: request, initial
-            TransitionRow::new(Some(StateId(0)), Span { start: 11, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // 35: open, initial
-            TransitionRow::new(Some(StateId(1)), Span { start: 12, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 36: ended, initial
-            TransitionRow::new(Some(StateId(5)), Span { start: 13, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(6)), false, false),
             // 37: the document's initial transition
-            TransitionRow::new(None, Span { start: 14, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(3)),
-            Target::state(StateId(3)),
-            Target::state(StateId(3)),
-            Target::state(StateId(8)),
-            Target::state(StateId(9)),
-            Target::state(StateId(6)),
-            Target::state(StateId(7)),
-            Target::state(StateId(4)),
-            Target::state(StateId(3)),
-            Target::state(StateId(6)),
-            Target::state(StateId(7)),
-            Target::state(StateId(1)),
-            Target::state(StateId(2)),
-            Target::state(StateId(6)),
-            Target::state(StateId(0)),
-        ],
+        targets: &[],
         initial: TransitionId(37),
         history: None,
         parallel: None,

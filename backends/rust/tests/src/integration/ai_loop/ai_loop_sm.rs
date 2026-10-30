@@ -209,7 +209,9 @@ pub type AiLoopConfiguration = ::sce_rust_runtime::helpers::hierarchy::BoundedVe
 /// transition, each history's default transition and the document's own
 /// initial transition. A state's children are not listed: the numbering is a
 /// pre-order walk, so they are the state's number plus one and each number past
-/// the subtree (`last_descendant`) of the child before.
+/// the subtree (`last_descendant`) of the child before. A transition holds its
+/// only target itself; `targets` holds only the lists of transitions with more
+/// than one, each its length first (docs/adr/0067).
 ///
 /// `history` and `parallel` carry the procedures only a `<history>` or a
 /// `<parallel>` reaches, and are `None` for a document without one, so a
@@ -222,8 +224,8 @@ pub type AiLoopConfiguration = ::sce_rust_runtime::helpers::hierarchy::BoundedVe
 /// same.
 pub const AI_LOOP_TABLES: ::sce_rust_runtime::DocumentTables = {
     use ::sce_rust_runtime::{
-        DocumentTables, HistoryId, HistoryRow, Span, StateId, StateKind, StateRow, Target,
-        TransitionId, TransitionRow,
+        DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
+        TransitionRow,
     };
     DocumentTables {
         states: &[
@@ -300,124 +302,88 @@ pub const AI_LOOP_TABLES: ::sce_rust_runtime::DocumentTables = {
         ],
         histories: &[
             // 0: where
-            HistoryRow {
-                parent: StateId(2),
-                default: TransitionId(34),
-                deep: false,
-            },
+            HistoryRow::new(StateId(2), TransitionId(34), false),
         ],
         transitions: &[
             // 0: run, transition 0
-            TransitionRow::new(Some(StateId(0)), Span { start: 0, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(20)), false, false),
             // 1: run, transition 1
-            TransitionRow::new(Some(StateId(0)), Span { start: 1, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(21)), false, false),
             // 2: run, transition 2
-            TransitionRow::new(Some(StateId(0)), Span { start: 2, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(24)), false, false),
             // 3: run, transition 3
-            TransitionRow::new(Some(StateId(0)), Span { start: 3, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(22)), false, false),
             // 4: run, transition 4
-            TransitionRow::new(Some(StateId(0)), Span { start: 4, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(23)), false, false),
             // 5: drive, transition 0
-            TransitionRow::new(Some(StateId(1)), Span { start: 5, len: 1 }, true, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(12)), true, false),
             // 6: drive, transition 1
-            TransitionRow::new(Some(StateId(1)), Span { start: 6, len: 1 }, true, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(12)), true, false),
             // 7: drive, transition 2
-            TransitionRow::new(Some(StateId(1)), Span { start: 7, len: 1 }, true, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(8)), true, false),
             // 8: priming, transition 0
-            TransitionRow::new(Some(StateId(3)), Span { start: 8, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(3)), Target::state(StateId(4)), false, false),
             // 9: working, transition 0
-            TransitionRow::new(Some(StateId(4)), Span { start: 9, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(6)), false, true),
             // 10: working, transition 1
-            TransitionRow::new(Some(StateId(4)), Span { start: 10, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(4)), Target::state(StateId(5)), false, false),
             // 11: screening, transition 0
-            TransitionRow::new(Some(StateId(5)), Span { start: 11, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(4)), false, false),
             // 12: screening, transition 1
-            TransitionRow::new(Some(StateId(5)), Span { start: 12, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(12)), false, false),
             // 13: judging, transition 0
-            TransitionRow::new(Some(StateId(6)), Span { start: 13, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(9)), false, false),
             // 14: judging, transition 1
-            TransitionRow::new(Some(StateId(6)), Span { start: 14, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(7)), false, false),
             // 15: judging, transition 2
-            TransitionRow::new(Some(StateId(6)), Span { start: 15, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(6)), Target::state(StateId(4)), false, true),
             // 16: reflecting, transition 0
-            TransitionRow::new(Some(StateId(7)), Span { start: 16, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(7)), Target::state(StateId(8)), false, true),
             // 17: reflecting, transition 1
-            TransitionRow::new(Some(StateId(7)), Span { start: 17, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(7)), Target::state(StateId(4)), false, true),
             // 18: restarting, transition 0
-            TransitionRow::new(Some(StateId(8)), Span { start: 18, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(8)), Target::state(StateId(11)), false, false),
             // 19: restarting, transition 1
-            TransitionRow::new(Some(StateId(8)), Span { start: 19, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(8)), Target::state(StateId(3)), false, false),
             // 20: closing, transition 0
-            TransitionRow::new(Some(StateId(9)), Span { start: 20, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(9)), Target::state(StateId(10)), false, false),
             // 21: closing, transition 1
-            TransitionRow::new(Some(StateId(9)), Span { start: 21, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(9)), Target::state(StateId(5)), false, false),
             // 22: paused, transition 0
-            TransitionRow::new(Some(StateId(12)), Span { start: 22, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(12)), Target::state(StateId(6)), false, true),
             // 23: paused, transition 1
-            TransitionRow::new(Some(StateId(12)), Span { start: 23, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(12)), Target::state(StateId(12)), false, false),
             // 24: paused, transition 2
-            TransitionRow::new(Some(StateId(12)), Span { start: 24, len: 1 }, false, false),
+            TransitionRow::new(
+                Some(StateId(12)),
+                Target::history(HistoryId(0)),
+                false,
+                false,
+            ),
             // 25: paused, transition 3
-            TransitionRow::new(Some(StateId(12)), Span { start: 25, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(12)), Target::state(StateId(13)), false, false),
             // 26: alive, transition 0
-            TransitionRow::new(Some(StateId(15)), Span { start: 26, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(15)), Target::state(StateId(16)), false, false),
             // 27: rebuilding, transition 0
-            TransitionRow::new(Some(StateId(16)), Span { start: 27, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(16)), Target::state(StateId(15)), false, false),
             // 28: within, transition 0
-            TransitionRow::new(Some(StateId(18)), Span { start: 28, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(18)), Target::state(StateId(19)), false, true),
             // 29: within, transition 1
-            TransitionRow::new(Some(StateId(18)), Span { start: 29, len: 1 }, false, true),
+            TransitionRow::new(Some(StateId(18)), Target::state(StateId(18)), false, true),
             // 30: drive, initial
-            TransitionRow::new(Some(StateId(1)), Span { start: 30, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 31: running, initial
-            TransitionRow::new(Some(StateId(2)), Span { start: 31, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(2)), Target::state(StateId(3)), false, false),
             // 32: watch, initial
-            TransitionRow::new(Some(StateId(14)), Span { start: 32, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(14)), Target::state(StateId(15)), false, false),
             // 33: budget, initial
-            TransitionRow::new(Some(StateId(17)), Span { start: 33, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(17)), Target::state(StateId(18)), false, false),
             // 34: where, default
-            TransitionRow::new(Some(StateId(2)), Span { start: 34, len: 1 }, false, false),
+            TransitionRow::new(Some(StateId(2)), Target::state(StateId(4)), false, false),
             // 35: the document's initial transition
-            TransitionRow::new(None, Span { start: 35, len: 1 }, false, false),
+            TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
-        targets: &[
-            Target::state(StateId(20)),
-            Target::state(StateId(21)),
-            Target::state(StateId(24)),
-            Target::state(StateId(22)),
-            Target::state(StateId(23)),
-            Target::state(StateId(12)),
-            Target::state(StateId(12)),
-            Target::state(StateId(8)),
-            Target::state(StateId(4)),
-            Target::state(StateId(6)),
-            Target::state(StateId(5)),
-            Target::state(StateId(4)),
-            Target::state(StateId(12)),
-            Target::state(StateId(9)),
-            Target::state(StateId(7)),
-            Target::state(StateId(4)),
-            Target::state(StateId(8)),
-            Target::state(StateId(4)),
-            Target::state(StateId(11)),
-            Target::state(StateId(3)),
-            Target::state(StateId(10)),
-            Target::state(StateId(5)),
-            Target::state(StateId(6)),
-            Target::state(StateId(12)),
-            Target::history(HistoryId(0)),
-            Target::state(StateId(13)),
-            Target::state(StateId(16)),
-            Target::state(StateId(15)),
-            Target::state(StateId(19)),
-            Target::state(StateId(18)),
-            Target::state(StateId(2)),
-            Target::state(StateId(3)),
-            Target::state(StateId(15)),
-            Target::state(StateId(18)),
-            Target::state(StateId(4)),
-            Target::state(StateId(0)),
-        ],
+        targets: &[],
         initial: TransitionId(35),
         history: Some(&::sce_rust_runtime::HISTORY),
         parallel: Some(&::sce_rust_runtime::PARALLEL),
