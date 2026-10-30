@@ -157,9 +157,9 @@ PY
 mutation_case "the machine always names a state it stopped in" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """    pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
-        self.last_truncated_macrostep_state
+        self.core.last_truncated_macrostep_state.map(P::state_of)
     }""",
      """    pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
-        Some(self.last_truncated_macrostep_state.unwrap_or(self.current_state))
+        Some(self.core.last_truncated_macrostep_state.unwrap_or(self.core.current_state)).map(P::state_of)
     }""")
 PY

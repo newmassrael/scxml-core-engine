@@ -67,13 +67,9 @@ PY
 
 mutation_case "any error is a link, handler or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.core.handling_error_event
-            && P::TABLES.is_error_event(P::event_id(event.event))
-        {
+     """        if self.core.handling_error_event && P::TABLES.is_error_event(P::event_id(event.event)) {
             self.core.main_loop.error_cascade_depth""",
-     """        if (self.core.handling_error_event || true)
-            && P::TABLES.is_error_event(P::event_id(event.event))
-        {
+     """        if (self.core.handling_error_event || true) && P::TABLES.is_error_event(P::event_id(event.event)) {
             self.core.main_loop.error_cascade_depth""")
 PY
 
@@ -106,9 +102,7 @@ PY
 
 mutation_case "the author's own raise counts as a chain link" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.core.handling_error_event
-            && P::TABLES.is_error_event(P::event_id(event.event))
-        {""",
+     """        if self.core.handling_error_event && P::TABLES.is_error_event(P::event_id(event.event)) {""",
      """        if self.core.handling_error_event {""")
 PY
 
