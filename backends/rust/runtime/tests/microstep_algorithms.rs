@@ -2007,9 +2007,15 @@ impl RandomDocument {
     }
 
     /// The capacity the generator gives the walks' stack for this document
-    /// (`sce_build::microstep_bounds`).
+    /// (`sce_build::microstep_bounds`): three steps a level where a
+    /// `<parallel>` can be entered, two where none can.
     fn walk_bound(&self) -> usize {
-        3 * self.depth + self.histories() + 3
+        let steps_a_level = if self.plain.kind.contains(&StateKind::Parallel) {
+            3
+        } else {
+            2
+        };
+        steps_a_level * self.depth + self.histories() + 3
     }
 
     /// The rows of `transitions`, for a failure's message.
@@ -2334,6 +2340,10 @@ impl Lent {
 #[test]
 fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
     let mut deepest_walk = 0;
+    // The deepest walk of a document with no `<parallel>`, whose stack is sized
+    // two steps a level rather than three: held apart so the tighter bound is
+    // asked a real question too.
+    let mut deepest_walk_without_parallel = 0;
     for seed in 1..=4000u64 {
         let _seed = Seed(seed);
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
@@ -2432,7 +2442,15 @@ fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
         }
 
         deepest_walk = deepest_walk.max(lent.walk_high_water());
+        if !doc.plain.kind.contains(&StateKind::Parallel) {
+            deepest_walk_without_parallel =
+                deepest_walk_without_parallel.max(lent.walk_high_water());
+        }
     }
+    assert!(
+        deepest_walk_without_parallel >= 4,
+        "the deepest walk of a document with no <parallel> was {deepest_walk_without_parallel} steps"
+    );
     // The documents do reach into the stack, so the bound the walk slice was
     // sized to was asked a real question and not an empty one.
     assert!(

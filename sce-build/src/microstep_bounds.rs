@@ -47,7 +47,8 @@ pub struct MicrostepBounds {
     /// (`StatePolicy::MAX_DEPTH`), the `<scxml>` element's child being at 1.
     pub depth: usize,
     /// The most steps the entry walks have owed at once (the capacity of
-    /// `StatePolicy::EntryWalk`): `3 * depth + histories + 3`.
+    /// `StatePolicy::EntryWalk`): `3 * depth + histories + 3` for a document
+    /// with a `<parallel>`, `2 * depth + histories + 3` for one without.
     ///
     /// Appendix D's recursions are run over a stack of steps, and a step that has
     /// more to do puts itself back with its next index before the step it spawns,
@@ -56,10 +57,12 @@ pub struct MicrostepBounds {
     /// it (a target's descendants, its ancestors below the state that named it,
     /// the regions of a `<parallel>` among them), so there are at most `depth`
     /// levels. A level holds a list's resumption, the resumption of the walk up
-    /// and the resumption of the region loop: three. A `<history>` adds the
-    /// resumption of its own list at the level of its parent's children, which is
-    /// one more for each of them, and the step being taken puts down at most two
-    /// at once, with one in hand: three of headroom.
+    /// and, where a `<parallel>` is entered, the resumption of the region loop:
+    /// three, or two in a document with no `<parallel>`, which no step of the
+    /// region loop is ever put down for. A `<history>` adds the resumption of its
+    /// own list at the level of its parent's children, which is one more for each
+    /// of them, and the step being taken puts down at most two at once, with one
+    /// in hand: three of headroom.
     pub entry_walk: usize,
 }
 
@@ -104,9 +107,16 @@ impl MicrostepBounds {
 
         let configuration = configuration.unwrap_or(0).max(1);
         let depth = depth.max(1);
+        // The resumptions a level of the entry walk holds: a list's and the walk
+        // up's, and the region loop's only where a `<parallel>` can be entered.
+        let steps_a_level = if model.states.values().any(|s| s.is_parallel) {
+            3
+        } else {
+            2
+        };
         Self {
             configuration,
-            entry_walk: 3 * depth + model.history_states.len() + 3,
+            entry_walk: steps_a_level * depth + model.history_states.len() + 3,
             // A selection that finds nothing still holds an empty buffer, and a
             // buffer of no slots has no use to anything that holds one, so the
             // floor is one.
@@ -293,7 +303,7 @@ mod tests {
                 enabled: 1,
                 history_defaults: 0,
                 depth: 1,
-                entry_walk: 6
+                entry_walk: 5
             }
         );
     }
@@ -422,16 +432,27 @@ mod tests {
                 enabled: 1,
                 history_defaults: 0,
                 depth: 1,
-                entry_walk: 6
+                entry_walk: 5
             }
         );
     }
 
     #[test]
-    fn the_entry_walk_is_three_steps_a_level_and_one_a_history() {
-        // The nested document of the depth test: three levels, and no history.
+    fn the_entry_walk_is_three_steps_a_level_with_a_parallel_and_two_without() {
+        // The nested document of the depth test: three levels, no history and
+        // no `<parallel>`, so no level owes the region loop's resumption.
         let model = document(&[
             ("a", None, false),
+            ("a1", Some("a"), false),
+            ("a2", Some("a"), false),
+            ("a2x", Some("a2"), false),
+            ("b", None, false),
+        ]);
+        assert_eq!(MicrostepBounds::of(&model).entry_walk, 2 * 3 + 3);
+
+        // The same depth with a `<parallel>` on it owes three a level.
+        let model = document(&[
+            ("a", None, true),
             ("a1", Some("a"), false),
             ("a2", Some("a"), false),
             ("a2x", Some("a2"), false),
@@ -440,7 +461,7 @@ mod tests {
         assert_eq!(MicrostepBounds::of(&model).entry_walk, 3 * 3 + 3);
 
         // Two histories add one step each, and the deeper level one history of
-        // the deepest state opens adds three.
+        // the deepest state opens adds two in a document with no `<parallel>`.
         let mut model = document(&[("a", None, false), ("a1", Some("a"), false)]);
         for (id, parent) in [("h1", "a1"), ("h2", "a")] {
             model.history_states.insert(
@@ -459,6 +480,6 @@ mod tests {
         }
         let bounds = MicrostepBounds::of(&model);
         assert_eq!(bounds.depth, 3);
-        assert_eq!(bounds.entry_walk, 3 * 3 + 2 + 3);
+        assert_eq!(bounds.entry_walk, 2 * 3 + 2 + 3);
     }
 }

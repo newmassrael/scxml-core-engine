@@ -717,8 +717,6 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "targets: &[],",
             // The document has a `<history>` and a `<parallel>`, so its tables
             // carry the procedures of both (docs/adr/0066).
-            // The document has a `<history>` and a `<parallel>`, so its tables
-            // carry the procedures of both (docs/adr/0066).
             "history: Some(&::sce_rust_runtime::HISTORY),\n        \
              parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables = {",
@@ -806,8 +804,10 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         "parallel: None,",
         "pub type PlainBoundsConfiguration = \
          ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PlainBoundsState, 1>;",
+        // Two steps of the entry walk a level, not three: no `<parallel>`, so
+        // no region loop is ever resumed.
         "type Workspace = ::sce_rust_runtime::Workspace<\
-         { ::sce_rust_runtime::state_scratch(2) }, 1, 6, 0>;",
+         { ::sce_rust_runtime::state_scratch(2) }, 1, 5, 0>;",
         "type RunStore = ::sce_rust_runtime::RunStore<\
          { ::sce_rust_runtime::state_words(2) }, \
          { ::sce_rust_runtime::record_words(2, 0) }, 0>;",

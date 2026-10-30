@@ -432,5 +432,10 @@ STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::
 #
 # 880 -> 784 (2026-10-30): `exit_states` out of line, `take_microstep` 216 ->
 # 120 under the entry walk.
-STACK_BYTES_PLAIN=784
+#
+# 784 -> 760 (2026-10-30): a document with no `<parallel>` owes its entry walk
+# two steps a level, not three, as no region loop is ever resumed
+# (sce-build/src/microstep_bounds.rs); `run_turn` 168 -> 144 for the first
+# machine's three levels, for no code.
+STACK_BYTES_PLAIN=760
 STACK_TOLERANCE_BYTES=256

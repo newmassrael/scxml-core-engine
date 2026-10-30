@@ -122,7 +122,8 @@ const _: () = assert!(
 /// the deepest point of a call. The generator sizes them to what this
 /// document's state tree bounds, and this machine is three flat states with no
 /// `<history>`, so its sets are bit vectors of three states, one transition is
-/// enabled, the walks owe three steps for its one level and three of headroom,
+/// enabled, the walks owe two steps for its one level (no `<parallel>`, so no
+/// region loop to resume) and three of headroom,
 /// and no history default is ever owed: where a bound written for every
 /// document was 16 and then 32 (516 B an enabled set). The workspace is
 /// asserted to be exactly the type of those bounds, since a capacity that is
@@ -133,7 +134,7 @@ const _: () = assert!(
 /// (sce-build/src/microstep_bounds.rs) or the Rust template's `type Workspace`
 /// (tools/codegen/templates/rust/state_machine.rs.jinja2) changed.
 const _: <EventQueueCapacityProbePolicy as StatePolicy>::Workspace =
-    sce_rust_runtime::Workspace::<{ sce_rust_runtime::state_scratch(3) }, 1, 6, 0>::new();
+    sce_rust_runtime::Workspace::<{ sce_rust_runtime::state_scratch(3) }, 1, 5, 0>::new();
 
 /// Constant-construction lever. A bare-metal program holds its engine in a
 /// `static`, so nothing is built at start-up and no copy of the engine is made on
