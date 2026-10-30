@@ -854,6 +854,11 @@ pub struct NestedBlock<'a> {
     pub cond_constant: Option<bool>,
     pub cond_is_native: bool,
     pub cond_is_pure_in: bool,
+    /// Whether evaluating [`cond`](Self::cond) can fail and raise
+    /// `error.execution` — the branch's own
+    /// [`ElseIfBranch::native_cond_fails`], here for the reason `cond` is:
+    /// the internal-queue bound counts each such condition (docs/adr/0076).
+    pub cond_fails: bool,
     /// Where [`cond`](Self::cond) was written — the branch's own
     /// [`ElseIfBranch::cond_spelling`], here for the reason `cond` is.
     pub cond_spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
@@ -869,6 +874,7 @@ impl<'a> NestedBlock<'a> {
             cond_constant: None,
             cond_is_native: false,
             cond_is_pure_in: false,
+            cond_fails: false,
             cond_spelling: None,
             actions,
         }
@@ -1086,6 +1092,7 @@ impl Action {
                     || branch.is_kt_condition
                     || !branch.native_cond.is_empty(),
                 cond_is_pure_in: branch.is_pure_in_predicate,
+                cond_fails: branch.native_cond_fails,
                 cond_spelling: branch.cond_spelling.as_ref(),
                 actions: branch.actions.as_slice(),
             });

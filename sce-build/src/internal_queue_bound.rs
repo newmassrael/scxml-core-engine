@@ -137,7 +137,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::event_descriptor::attribute_matches;
 use crate::microstep_bounds::MicrostepBounds;
-use crate::model::{Action, DoneData, DoneDataContent, SCXMLModel};
+use crate::model::{Action, BlockRole, DoneData, DoneDataContent, SCXMLModel};
 
 /// The error events generated code and the engine raise into the internal
 /// queue, each only in a document that names it (a machine's event enum has
@@ -453,27 +453,26 @@ impl<'m> Analysis<'m> {
     /// each of which may have failed and raised its error. A failed condition
     /// is false, so the chain goes on, and ends the block once it has run.
     fn conditional(&mut self, action: &Action) -> Result<Cost, String> {
-        let mut branches: Vec<(bool, &[Action])> =
-            vec![(action.native_cond_fails, action.then_actions.as_slice())];
-        branches.extend(
-            action
-                .elseif_branches
-                .iter()
-                .map(|branch| (branch.native_cond_fails, branch.actions.as_slice())),
-        );
+        // The branches through the model's one definition of what lies inside
+        // an action, in document order: the then-block (selected by the
+        // action's own condition), each `<elseif>`, then the `<else>`.
         let mut cost = Cost::NONE;
         let mut failed_before = 0usize;
-        for (condition_fails, branch) in branches {
-            let run = self.list(branch)?;
+        for block in action.nested_blocks() {
+            let condition_fails = match block.role {
+                BlockRole::Then => action.native_cond_fails,
+                BlockRole::ElseIf => block.cond_fails,
+                BlockRole::Else => false,
+                // `<foreach>`'s body, which an `<if>` leaves empty.
+                BlockRole::Body => continue,
+            };
+            let run = self.list(block.actions)?;
             cost.completes = cost.completes.max(run.completes);
             cost.ends = cost.ends.max(after_conditions(failed_before, run));
             if condition_fails {
                 failed_before = failed_before.saturating_add(self.execution_error());
             }
         }
-        let otherwise = self.list(&action.else_actions)?;
-        cost.completes = cost.completes.max(otherwise.completes);
-        cost.ends = cost.ends.max(after_conditions(failed_before, otherwise));
         Ok(cost)
     }
 
@@ -871,7 +870,7 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ElseIfBranch, Param, State, Transition};
+    use crate::model::{Param, State, Transition};
 
     /// A document built state by state, as the static lowering leaves one.
     #[derive(Default)]
@@ -1339,17 +1338,18 @@ mod tests {
     /// goes on, so the `<else>` can follow two errors with its own event.
     #[test]
     fn each_failing_condition_of_an_if_counts_before_the_branch_taken() {
-        let conditional = Action {
+        // Built through the model's own builders, as every reader outside the
+        // model and the parser goes through its accessors.
+        let mut conditional = Action {
             action_type: "if".to_string(),
             native_cond_fails: true,
-            then_actions: Vec::new(),
-            elseif_branches: vec![ElseIfBranch {
-                native_cond_fails: true,
-                ..ElseIfBranch::default()
-            }],
-            else_actions: vec![raise("note")],
             ..Action::default()
         };
+        conditional.push_elseif("", Vec::new());
+        for branch in conditional.branch_conditions_mut() {
+            branch.native_cond_fails = true;
+        }
+        conditional.set_else(vec![raise("note")]);
         let doc = Doc::new()
             .names("error.execution")
             .state("a", None)
