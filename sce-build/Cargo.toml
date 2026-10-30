@@ -1105,6 +1105,14 @@ name = "a_swift_machine_calls_its_host"
 path = "tests/a_swift_machine_calls_its_host.rs"
 required-features = ["cli"]
 
+# The Swift backend's BasicHTTP send (§scxml-C-2): the text the generator writes for the
+# form and the request, and the axes it refuses by name. It runs `sce-codegen generate`,
+# so it carries the `cli` gate.
+[[test]]
+name = "a_swift_machine_sends_over_http"
+path = "tests/a_swift_machine_sends_over_http.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of every optional element in an algorithm
 # (docs/adr/0055, step 9): a slot, a local and a record's optional text and enum
 # fields, and a statechart's call that crosses them. It runs `sce-codegen generate`

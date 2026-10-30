@@ -1,9 +1,9 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 6.2: Send event, to this session's own queues and to its parent, under
-   `datamodel="sce-static"`. What a send carries (a `<param>`, a namelist,
-   `<content>`), another processor type and any other target are refused by name
+{# W3C SCXML 6.2: Send event, to this session's own queues, to its parent and, over the
+   BasicHTTP processor, to a URL, under `datamodel="sce-static"`. Another processor type,
+   any other target and the axes of an HTTP send that are not lowered are refused by name
    before this template runs (`SwiftTarget::unlowered_send`), so none is read here. #}
 {# The error an element raises, with the id of the send it names (W3C SCXML 6.2.4). #}
 {% macro send_error(code, message, send_id) %}
@@ -17,6 +17,9 @@
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set send_id_swift = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_swift) ~ '"' %}
 {% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{# A BasicHTTP send (W3C SCXML C.2): posted at once to the URL the document writes, with the
+   `<param>`s as the form. Its other axes are refused by name before this template runs. #}
+{% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 {% set computed_event = action.native_event %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
 {% set send_prologue = action.native_delay or action.native_event or action.native_target %}
@@ -199,10 +202,21 @@
                     // pair left out, and the message still goes; the error ends the block once
                     // it has. Read at the end of this element.
                     var paramFailed = false
+{% if is_http %}
+                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
+                    // text each value spells, so a second reading of the data model cannot
+                    // disagree with the first.
+                    var sendForm: [String: [String]] = [:]
+{% else %}
                     var sendParts: [PayloadPair] = []
+{% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
+{% if is_http %}
+                    appendFormParam(&sendForm, "{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}"))
+{% else %}
                     sendParts.append(PayloadPair("{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}")))
+{% endif %}
 {% elif param.native_value %}
 {# The value is the `WireValue` the pair's JSON is written from. A checked operation that
    overflows records its failure and answers a zero: the evaluation that failed, reported,
@@ -214,20 +228,28 @@
                         let sceValue: WireValue = {{ param.native_value }}
 {% if param.native_fails %}
                         if !sceFailure.failed {
+{% if is_http %}
+                            appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
+{% else %}
                             sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
                         } else {
 {% if 'error.execution' in model.events %}
                             engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
 {% endif %}
                             paramFailed = true
                         }
+{% elif is_http %}
+                        appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
 {% else %}
                         sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
                     }
 {% endif %}
 {% endfor %}
+{% if not is_http %}
                     let sendEventData = payloadJSON(sendParts)
+{% endif %}
 {% elif action.content %}
 {% if action.content | data_content_is_xml %}
                     // XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER build the DOM.
@@ -288,6 +310,17 @@
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
+{% elif is_http %}
+                    // W3C SCXML C.2: a BasicHTTP send. The engine hands the request to the transport
+                    // the host registered (`setHTTPSendCallback`); a document with no `<content>`
+                    // leaves the body to the pairs, so none is given.
+                    engine.performHTTPSend(
+                        target: "{{ action.target | escape_swift }}",
+                        eventName: {{ event_name_swift }},
+                        content: "",
+                        params: {{ 'sendForm' if sends_params else '[:]' }},
+                        sendID: {{ send_id_swift }}
+                    )
 {% elif static_target == '#_internal' %}
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.

@@ -148,3 +148,32 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
     )
     #expect(WireValue.text("x").json == "\"x\"")
 }
+
+// A form carries a value as ECMAScript's `String(value)`: a text without the quotes JSON
+// wraps it in, a number as the shortest text that reads back, absence as the empty text.
+
+@Test func aFormCarriesEachValueAsTheTextItSpells() {
+    #expect(WireValue.text("busy").formText == "busy")
+    #expect(WireValue.integer(-5).formText == "-5")
+    #expect(WireValue.signed64(-9_223_372_036_854_775_808).formText == "-9223372036854775808")
+    #expect(WireValue.unsigned64(18_446_744_073_709_551_615).formText == "18446744073709551615")
+    #expect(WireValue.real(1.5).formText == "1.5")
+    #expect(WireValue.real(8).formText == "8")
+    #expect(WireValue.truth(true).formText == "true")
+    #expect(WireValue.bytes([0x61, 0xFF]).formText == "aÿ")
+}
+
+@Test func aFormCarriesAnAbsentValueAsTheEmptyTextAndANonFiniteRealByItsName() {
+    #expect(WireValue.null.formText.isEmpty)
+    #expect(WireValue.real(.nan).formText == "NaN")
+    #expect(WireValue.real(.infinity).formText == "Infinity")
+    #expect(WireValue.real(-.infinity).formText == "-Infinity")
+}
+
+@Test func aFormParameterThatRepeatsKeepsEveryValueInDocumentOrder() {
+    var form: [String: [String]] = [:]
+    appendFormParam(&form, "tag", .text("a"))
+    appendFormParam(&form, "n", .integer(2))
+    appendFormParam(&form, "tag", .text("b"))
+    #expect(form == ["tag": ["a", "b"], "n": ["2"]])
+}

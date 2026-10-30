@@ -418,6 +418,31 @@ public enum WireValue {
         case .null: return "null"
         }
     }
+
+    /// The value as the text a form carries (§scxml-C-2): ECMAScript's `String(value)`,
+    /// with absence as the empty text (§scxml-C-1), as every other engine puts it on the
+    /// wire (`ToWireString` in Go). Not `json`, which would wrap a text in quotes that are
+    /// no part of it, and write absence as a word.
+    public var formText: String {
+        switch self {
+        case .text(let value): return value
+        case .integer(let value): return String(value)
+        case .signed64(let value): return int64PayloadText(value)
+        case .unsigned64(let value): return uint64PayloadText(value)
+        case .real(let value): return numberText(value)
+        case .truth(let value): return value ? "true" : "false"
+        case .bytes(let value): return bytesAsPayloadText(value)
+        case .null: return ""
+        }
+    }
+}
+
+/// Adds a `<param>` of a BasicHTTP `<send>` to the form it posts (§scxml-C-2): the value
+/// as the text a form carries it as, after the values `name` already has. A form
+/// parameter may repeat where a JSON key may not, and each value is kept in document
+/// order.
+public func appendFormParam(_ params: inout [String: [String]], _ name: String, _ value: WireValue) {
+    params[name, default: []].append(value.formText)
 }
 
 extension PayloadPair {

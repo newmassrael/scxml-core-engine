@@ -11640,13 +11640,16 @@ impl SwiftTarget {
 
 impl SwiftTarget {
     /// What of `send` this target has no lowering for yet, described for a refusal:
-    /// a processor but the SCXML one, and a target but the machine's own queues and
-    /// its parent.
+    /// a processor but the SCXML one and BasicHTTP, and a target but the machine's own
+    /// queues and its parent.
     fn unlowered_send(send: &Action) -> Option<String> {
         let scxml_processor = |name: &str| {
             name == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE || name == "scxml"
         };
         if !send.send_type.is_empty() && !scxml_processor(&send.send_type) {
+            if send.send_type.contains("BasicHTTPEventProcessor") && send.types.is_empty() {
+                return Self::unlowered_http_send(send);
+            }
             return Some(format!("a <send type=\"{}\">", send.send_type));
         }
         if let Some(other) = send.types.iter().find(|t| !scxml_processor(t)) {
@@ -11668,6 +11671,34 @@ impl SwiftTarget {
             .chain(send.targets.iter().map(String::as_str))
             .find(|target| !own(target))
             .map(|target| format!("a <send target=\"{target}\">"))
+    }
+}
+
+impl SwiftTarget {
+    /// What of a BasicHTTP `<send>` (§scxml-C-2) this target has no lowering for yet.
+    ///
+    /// The send that is lowered posts at once to a URL the document writes, with the
+    /// `<param>`s it names as the form. A delay needs a scheduler of HTTP requests the
+    /// Swift engine has not got, a `<content>` is a body of another kind, and a target,
+    /// event or type an expression computes is a request whose address is known only
+    /// when it runs.
+    fn unlowered_http_send(send: &Action) -> Option<String> {
+        if send.target.is_empty() || !send.targetexpr.is_empty() {
+            return Some("a BasicHTTP <send> whose target is not a URL the document writes".into());
+        }
+        if !send.delay.is_empty() || !send.delayexpr.is_empty() {
+            return Some("a delayed BasicHTTP <send>".into());
+        }
+        if !send.content.is_empty() || !send.contentexpr.is_empty() {
+            return Some("a BasicHTTP <send> with <content>".into());
+        }
+        if !send.eventexpr.is_empty() || !send.typeexpr.is_empty() {
+            return Some("a BasicHTTP <send> whose event or type an expression computes".into());
+        }
+        if !send.idlocation.is_empty() {
+            return Some("a BasicHTTP <send idlocation>".into());
+        }
+        None
     }
 }
 
