@@ -1002,6 +1002,13 @@ impl StatePolicy for StaticInvokeTreePolicy {
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
+    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+    // W3C SCXML 5.5: no top-level `<final>` of this document carries
+    // `<donedata>`, so nothing is ever kept for a parent: the zero-size
+    // `NoDoneData`, which reads as the empty string, where a buffer of the
+    // string bound sat unfilled under no_std.
+    type DoneData = sce_rust_runtime::NoDoneData;
 
     // docs/adr/0064: the document as the runtime's Appendix D procedures read
     // it, which are compiled once for a program: its tables, and its states,

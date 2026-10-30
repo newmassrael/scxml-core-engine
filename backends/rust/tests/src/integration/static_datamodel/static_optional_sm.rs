@@ -1505,6 +1505,19 @@ impl StatePolicy for StaticOptionalPolicy {
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
+    // W3C SCXML 6.2: this document has no `<send delay>`, no `<send delayexpr>`,
+    // no `<cancel>` and no host-run deadline, so nothing is ever armed on the
+    // delayed-send queue and the machine keeps none: the zero-size
+    // `NoDelayedSends`, where a bounded ring of MAX_SCHEDULED_EVENTS entries was
+    // capacity nothing could fill under no_std. The same emission compiles on
+    // both runtime profiles.
+    type Scheduler = sce_rust_runtime::NoDelayedSends;
+    // W3C SCXML 5.5: a top-level `<final>` of this document carries
+    // `<donedata>`, whose payload waits here for the invoking parent to lift
+    // it onto `done.invoke.<id>`. The predicate is the stash site's in
+    // entry_exit_actions.rs.jinja2, so a machine keeps a slot exactly when it
+    // writes one.
+    type DoneData = ::sce_rust_runtime::SceString;
 
     // docs/adr/0064: the document as the runtime's Appendix D procedures read
     // it, which are compiled once for a program: its tables, and its states,

@@ -557,6 +557,13 @@ impl StatePolicy for Test207Policy {
     // scheduler and each temporary a copy of it passes through. Under std it is a
     // `String`, whatever the number.
     type ScheduledSendId = ::sce_rust_runtime::SendIdString<8>;
+    // W3C SCXML 6.2: the delayed-send queue, keyed by the cancel key above.
+    type Scheduler = sce_rust_runtime::PullScheduler<Self::ScheduledSendId>;
+    // W3C SCXML 5.5: no top-level `<final>` of this document carries
+    // `<donedata>`, so nothing is ever kept for a parent: the zero-size
+    // `NoDoneData`, which reads as the empty string, where a buffer of the
+    // string bound sat unfilled under no_std.
+    type DoneData = sce_rust_runtime::NoDoneData;
 
     // docs/adr/0064: the document as the runtime's Appendix D procedures read
     // it, which are compiled once for a program: its tables, and its states,
