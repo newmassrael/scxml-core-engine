@@ -34,18 +34,14 @@ mutation_oracles backends/rust/tests/tests/unseen_event_is_reported.rs
 # this one.
 
 mutation_case "the loop abandons the queue without recording it" <<'PY'
-# The call is kept behind a false guard rather than deleted: `warnings = deny`
-# turns an unused private method into a compile error, and a mutation that will
-# not build is INCONCLUSIVE rather than a verdict. Measured — deleting it
-# outright produced exactly that. The loop's end is the host's `end_run`,
-# which records what the loop left queued and then exits the interpreter.
+# The loop's end is `Turn::end_run`, which drains what the loop left queued,
+# counting and naming each event, and then exits the interpreter. The mutant
+# keeps the drain and drops the record, so the queue is abandoned exactly as
+# before and nothing says so. The popped event stays bound (`let _`) so the
+# loop still reads as a drain rather than as a different defect.
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.engine.record_unseen_external_events();
-        if self.engine.main_loop.terminal_state.is_some() {""",
-     """        if false {
-            self.engine.record_unseen_external_events();
-        }
-        if self.engine.main_loop.terminal_state.is_some() {""")
+     """            self.host.core().note_unseen_event(queued.event);""",
+     """            let _ = queued;""")
 PY
 
 # ── The other refusal site ─────────────────────────────────────────
@@ -56,17 +52,17 @@ PY
 
 mutation_case "the convenience door refuses without recording it" <<'PY'
 # Deletes the RECORD, keeping the early return. Disabling the whole guard
-# instead — `if !self.main_loop.is_running && false` — is an EQUIVALENT MUTANT and was
-# measured as one: control then falls through to `raise_external` + `step`, the
-# loop breaks on the same `!is_running`, and `record_unseen_external_events`
-# counts the very same delivery. 0 of 5 tests red, twice, because the two
-# programs are observably identical. The defect this axis is about is the
-# refusal that records NOTHING, which is this edit.
+# instead — `if !self.core.main_loop.is_running && false` — is an EQUIVALENT
+# MUTANT and was measured as one: control then falls through to
+# `raise_external` + `step`, the loop breaks on the same `!is_running`, and
+# `Turn::end_run` counts the very same delivery. 0 of 5 tests red, twice,
+# because the two programs are observably identical. The defect this axis is
+# about is the refusal that records NOTHING, which is this edit.
 #
-# `note_unseen_event` stays used — the loop's drain calls it — so the tree
-# still compiles under `warnings = deny`.
+# `note_unseen_event` stays used — `process_event_with_meta` calls it — so the
+# tree still compiles under `warnings = deny`.
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.note_unseen_event(event);
+     """            self.core.note_unseen_event(P::event_id(event));
             return;
         }
         self.raise_external(event, "", "");""",
@@ -80,13 +76,16 @@ PY
 # The defect this axis is really about: reporting a refusal as a discard. The
 # two are different facts — the first says the machine never looked, the second
 # says it looked and nothing matched — and a host acts differently on each.
+#
+# Two places see an unseen event, the doors that refuse before queueing and
+# `Turn::end_run` for what the loop left queued, and both record it through
+# `EngineCore::note_unseen_event`. This case, and the one that drops the name
+# below, plant the defect there once, so it reaches both.
 
 mutation_case "a refusal is reported as a discard" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.unseen_external_events = self.unseen_external_events.saturating_add(1);
-        self.last_unseen_event = Some(event);""",
-     """        self.discarded_external_events = self.discarded_external_events.saturating_add(1);
-        self.last_unseen_event = Some(event);""")
+     """        self.unseen_external_events = self.unseen_external_events.saturating_add(1);""",
+     """        self.discarded_external_events = self.discarded_external_events.saturating_add(1);""")
 PY
 
 # ── An always-true count ───────────────────────────────────────────
@@ -98,7 +97,7 @@ mutation_case "every delivery is counted as unseen" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {""",
      """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
-        self.note_unseen_event(event);""")
+        self.core.note_unseen_event(P::event_id(event));""")
 PY
 
 # ── The queue is left in place ─────────────────────────────────────
@@ -108,16 +107,17 @@ PY
 # count at exactly 1 after one refused delivery catches this.
 
 mutation_case "the abandoned queue is counted but not drained" <<'PY'
-# `len()` is deliberately NOT on `EventQueueLike` — the engine's dependency is
-# `raise` / `pop` / `has_events` only — so the re-count defect is expressed with
-# a single pop-and-put-back. A `while` around the same body would not terminate.
+# `len()` is deliberately NOT on `EventQueueMut` — the loop's dependency is
+# `push` / `pop` / `front` / `has_events` only — so the re-count defect is
+# expressed with a single pop-and-put-back. A `while` around the same body
+# would not terminate.
 edit("backends/rust/runtime/src/engine.rs",
-     """        while let Some(meta) = self.external_queue.pop() {
-            self.note_unseen_event(meta.event);
+     """        while let Some(queued) = self.host.queue(true).pop() {
+            self.host.core().note_unseen_event(queued.event);
         }""",
-     """        if let Some(meta) = self.external_queue.pop() {
-            self.note_unseen_event(meta.event);
-            self.external_queue.raise(meta);
+     """        if let Some(queued) = self.host.queue(true).pop() {
+            self.host.core().note_unseen_event(queued.event);
+            self.host.queue(true).push(queued);
         }""")
 PY
 

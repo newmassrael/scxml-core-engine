@@ -36,9 +36,11 @@ mutation_oracles backends/rust/tests/tests/discarded_event_is_observable.rs
 mutation_case "the external dequeue drops the outcome again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        if outcome == EventOutcome::Discarded {
-            self.discarded_external_events = self.discarded_external_events.saturating_add(1);""",
+            let core = self.host.core();
+            core.discarded_external_events = core.discarded_external_events.saturating_add(1);""",
      """        if outcome == EventOutcome::Discarded && false {
-            self.discarded_external_events = self.discarded_external_events.saturating_add(1);""")
+            let core = self.host.core();
+            core.discarded_external_events = core.discarded_external_events.saturating_add(1);""")
 PY
 
 # ── Counting the wrong fact ────────────────────────────────────────
@@ -75,9 +77,11 @@ PY
 mutation_case "every dequeued external event is counted" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        if outcome == EventOutcome::Discarded {
-            self.discarded_external_events = self.discarded_external_events.saturating_add(1);""",
+            let core = self.host.core();
+            core.discarded_external_events = core.discarded_external_events.saturating_add(1);""",
      """        if outcome == EventOutcome::Discarded || true {
-            self.discarded_external_events = self.discarded_external_events.saturating_add(1);""")
+            let core = self.host.core();
+            core.discarded_external_events = core.discarded_external_events.saturating_add(1);""")
 PY
 
 # ── The outcome type's own arms ────────────────────────────────────
@@ -120,7 +124,7 @@ PY
 
 mutation_case "the discarded event is counted but never named" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.last_discarded_event = Some(P::EVENTS[usize::from(taken.event.0)]);""",
+     """            core.last_discarded_event = Some(taken.event);""",
      """            let _ = taken;
-            self.last_discarded_event = None;""")
+            core.last_discarded_event = None;""")
 PY

@@ -49,8 +49,8 @@ PY
 # chain is still bounded and every count still moves, so only
 # `a_refused_chain_is_left_queued_for_the_next_macrostep` can see it: the
 # `resume` chain stops a link short of its end and never finishes, because the
-# link that would have continued it was thrown away. The loop reaches the queue
-# only through its host, so the mutant takes the event there and closes it as
+# link that would have continued it was thrown away. The mutant takes the event
+# with `Turn::take_internal_event` and closes it with `end_internal_event` as
 # answered, which leaves the lost link as the only difference.
 
 mutation_case "the drain swallows the event it refused" <<'PY'
@@ -58,8 +58,8 @@ edit("backends/rust/runtime/src/engine.rs",
      """                // which is where the next macrostep will find it.
                 return;""",
      """                // which is where the next macrostep will find it.
-                if let Some(swallowed) = self.host.take_internal_event() {
-                    self.host.end_internal_event(swallowed, EventOutcome::Taken);
+                if let Some(swallowed) = self.take_internal_event() {
+                    self.end_internal_event(swallowed, EventOutcome::Taken);
                 }
                 return;""")
 PY
@@ -82,7 +82,7 @@ edit("backends/rust/runtime/src/engine.rs",
                 // microstep, so it spends no budget. Only a turn that answered
                 // the event moved the machine, and only those are what a
                 // ceiling on microsteps can be counted in.
-                self.host.state().macrostep_microsteps_taken += 1;
+                self.loop_state().macrostep_microsteps_taken += 1;
             }""",
      """            // MUTANT: the internal branch spends none of the shared budget.""")
 PY
@@ -146,8 +146,8 @@ PY
 
 mutation_case "the spent budget outlives the macrostep that spent it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.main_loop.macrostep_truncated = false;
-        self.main_loop.macrostep_microsteps_taken = 0;
+     """        core.main_loop.macrostep_truncated = false;
+        core.main_loop.macrostep_microsteps_taken = 0;
 """,
      "")
 PY

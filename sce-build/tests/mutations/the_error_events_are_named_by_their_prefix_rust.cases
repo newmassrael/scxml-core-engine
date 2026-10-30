@@ -1,0 +1,77 @@
+# Mutation cases for §scxml-3.12.2 — which of a document's events are the
+# processor's own error events, as the Rust template writes them into the
+# document's tables.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_error_events_are_named_by_their_prefix_rust.cases`.
+#
+# The clause reserves the whole `error.` prefix for the events the processor
+# raises about its own failures. Since docs/adr/0068 the engine never reads an
+# event's name to decide that: it asks `DocumentTables::is_error_event`, whose
+# `error_events` the generator wrote once, by the same sorted loop that numbers
+# the event enum. The prefix test therefore lives in the template and nowhere
+# else, and a defect in it reaches every Rust machine generated afterwards
+# while every committed machine (the ones the runtime tests drive) keeps the
+# list it was generated with. That is why the witness is the template test,
+# which renders a document whose event names sit on each side of the boundary
+# (`error.custom`, `errorless`, `not.error.here`), and not a runtime test.
+#
+# The runtime half of the same classification (the table lookup, and the two
+# places the engine asks it) is held by `unhandled_error_is_observable.cases`
+# and `error_cascade_is_bounded.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test c3_no_std_template
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_oracles sce-build/tests/c3_no_std_template.rs
+
+# ── The prefix ─────────────────────────────────────────────────────
+#
+# A test that names nothing silences the unanswered-error count and the
+# error-chain bound together; one that names everything turns every event the
+# author raised into an engine failure.
+
+mutation_case "no name is an error name" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """{% if event_name is startingwith("error.") %}""",
+     """{% if event_name is startingwith("no.name.starts.with.this.") %}""")
+PY
+
+mutation_case "every name is an error name" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """{% if event_name is startingwith("error.") %}""",
+     """{% if event_name is startingwith("") %}""")
+PY
+
+# The prefix is a prefix, not a substring: an event the author named
+# `not.error.here` is the document's, not the engine's.
+
+mutation_case "the error prefix is matched anywhere in the name" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """{% if event_name is startingwith("error.") %}""",
+     """{% if "error." in event_name %}""")
+PY
+
+# The prefix is `error.` with its dot: `errorless` is a word the author chose.
+
+mutation_case "the dot is dropped from the error prefix" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """{% if event_name is startingwith("error.") %}""",
+     """{% if event_name is startingwith("error") %}""")
+PY
+
+# ── The null event ─────────────────────────────────────────────────
+#
+# No case drops the `| sort` from the loop: the model's events are a sorted
+# set already, so that edit changes no output and could only SURVIVE.
+#
+# The null event is the one past the document's own; written as the first,
+# it is a document event, and the main loop would skip that event's
+# transitions as eventless ones.
+
+mutation_case "the null event takes the first event's number" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """        null_event: ::sce_rust_runtime::EventId({{ model.events | length }}),""",
+     """        null_event: ::sce_rust_runtime::EventId(0),""")
+PY

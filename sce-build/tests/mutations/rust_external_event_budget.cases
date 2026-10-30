@@ -39,20 +39,20 @@ mutation_oracles backends/rust/tests/tests/external_chain_is_bounded.rs
 
 mutation_case "the drain has no budget at all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "            if taken >= self.host.state().max_external_events_per_call {",
-     "            if taken >= self.host.state().max_external_events_per_call && false {")
+     "            if taken >= self.loop_state().max_external_events_per_call {",
+     "            if taken >= self.loop_state().max_external_events_per_call && false {")
 PY
 
 mutation_case "the budget is one event more than it says" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "            if taken >= self.host.state().max_external_events_per_call {",
-     "            if taken > self.host.state().max_external_events_per_call {")
+     "            if taken >= self.loop_state().max_external_events_per_call {",
+     "            if taken > self.loop_state().max_external_events_per_call {")
 PY
 
 mutation_case "the budget is one event fewer than it says" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "            if taken >= self.host.state().max_external_events_per_call {",
-     "            if taken + 1 >= self.host.state().max_external_events_per_call {")
+     "            if taken >= self.loop_state().max_external_events_per_call {",
+     "            if taken + 1 >= self.loop_state().max_external_events_per_call {")
 PY
 
 # ── The refusal leaves the queue alone ──────────────────────────────
@@ -60,17 +60,23 @@ PY
 # Popping before asking consumes the event the drain then declines to run. The
 # chain is still bounded and the count still moves, so only the `resume` outcome
 # can see it: it stops a link short of its end and never finishes, because the
-# link that would have continued it was thrown away. The loop reaches the queue
-# only through its host, so the mutant takes the event there and closes it as
-# answered without offering it to the configuration.
+# link that would have continued it was thrown away. The mutant takes the event
+# with `Turn::take_external_event` and closes it with `end_external_event` as
+# answered, without offering it to the configuration.
 
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                self.host.report_truncated_event_chain();\n                break;\n            }\n            taken += 1;",
-     "                self.host.report_truncated_event_chain();\n                if let ExternalEvent::Taken(swallowed) = self.host.process_next_external_event() {\n                    self.host.end_external_event(swallowed, EventOutcome::Taken);\n                }\n                break;\n            }\n            taken += 1;")
+     "                self.report_truncated_event_chain();\n                break;\n            }\n            taken += 1;",
+     "                self.report_truncated_event_chain();\n                if let ExternalEvent::Taken(swallowed) = self.take_external_event() {\n                    self.end_external_event(swallowed, EventOutcome::Taken);\n                }\n                break;\n            }\n            taken += 1;")
 PY
 
 # ── The cut is said ─────────────────────────────────────────────────
+#
+# Two places make a cut, the main loop's drain
+# (`Turn::report_truncated_event_chain`) and the scheduler's same-instant bound
+# in `tick`, and both record it through `EngineCore::record_truncated_event_chain`.
+# Each case below plants its defect there once, so the cut goes unsaid wherever
+# it is made.
 
 mutation_case "a cut is not counted" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
@@ -104,8 +110,8 @@ PY
 
 mutation_case "the scheduler's same-instant pops have no budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                    if popped_due_at_reading >= self.main_loop.max_external_events_per_call {",
-     "                    if popped_due_at_reading >= self.main_loop.max_external_events_per_call && false {")
+     "                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call {",
+     "                    if popped_due_at_reading >= self.core.main_loop.max_external_events_per_call && false {")
 PY
 
 # The bound must count entries due AT the reading, not every entry popped at it.
@@ -123,7 +129,7 @@ PY
 
 mutation_case "a budget the host sets is ignored" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        self.main_loop.max_external_events_per_call = limit.get();",
+     "        self.core.main_loop.max_external_events_per_call = limit.get();",
      "        let _ = limit;")
 PY
 

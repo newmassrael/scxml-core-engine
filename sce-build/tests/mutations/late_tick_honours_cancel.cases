@@ -38,7 +38,7 @@ edit("backends/rust/runtime/src/engine.rs",
      """            // The macrostep this event drives may `<cancel>` a later one, so
             // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
-            if !self.main_loop.is_running || self.is_in_final_state() {
+            if !self.core.main_loop.is_running || self.is_in_final_state() {
                 break;
             }
         }""",
@@ -187,7 +187,7 @@ PY
 mutation_case "the clock may be swapped after the machine armed its deadlines" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        assert!(
-            !self.main_loop.is_running,
+            !self.core.main_loop.is_running,
             "Engine::set_clock must be called before initialize(): this engine has \\
              already armed its entry configuration against the previous clock, and \\
              deadlines from two clocks do not compare"

@@ -38,7 +38,7 @@ mutation_oracles backends/rust/tests/tests/error_cascade_is_bounded.rs
 
 mutation_case "the refused link is queued anyway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                if self.error_cascade_events == 1 {
+     """                if self.core.error_cascade_events == 1 {
                     sce_log_error!(""",
      """                if false {
                     sce_log_error!(""")
@@ -67,14 +67,14 @@ PY
 
 mutation_case "any error is a link, handler or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.handling_error_event
-            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+     """        if self.core.handling_error_event
+            && P::TABLES.is_error_event(P::event_id(event.event))
         {
-            self.main_loop.error_cascade_depth""",
-     """        if (self.handling_error_event || true)
-            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+            self.core.main_loop.error_cascade_depth""",
+     """        if (self.core.handling_error_event || true)
+            && P::TABLES.is_error_event(P::event_id(event.event))
         {
-            self.main_loop.error_cascade_depth""")
+            self.core.main_loop.error_cascade_depth""")
 PY
 
 # ── The reset ──────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ edit("backends/rust/runtime/src/engine.rs",
                 // is over. A machine whose next macrostep starts a new one
                 // starts it from zero, and the count of what was refused stays
                 // where the host reads it.
-                self.host.state().error_cascade_depth = 0;""",
+                self.loop_state().error_cascade_depth = 0;""",
      """                // MUTANT: the depth outlives the drain that built it.""")
 PY
 
@@ -106,21 +106,21 @@ PY
 
 mutation_case "the author's own raise counts as a chain link" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.handling_error_event
-            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+     """        if self.core.handling_error_event
+            && P::TABLES.is_error_event(P::event_id(event.event))
         {""",
-     """        if self.handling_error_event {""")
+     """        if self.core.handling_error_event {""")
 PY
 
 mutation_case "an unrelated internal event ends the chain again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.handling_error_event = is_error;
-        Some(TakenEvent {""",
+     """        self.host.core().handling_error_event = is_error;
+        Some(TakenEvent { event, is_error })""",
      """        if !is_error {
-            self.main_loop.error_cascade_depth = 0;
+            self.loop_state().error_cascade_depth = 0;
         }
-        self.handling_error_event = is_error;
-        Some(TakenEvent {""")
+        self.host.core().handling_error_event = is_error;
+        Some(TakenEvent { event, is_error })""")
 PY
 
 # ── The count ──────────────────────────────────────────────────────
@@ -132,8 +132,8 @@ PY
 
 mutation_case "the refusal is silent" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.error_cascade_events = self.error_cascade_events.saturating_add(1);""",
-     """                self.error_cascade_events = self.error_cascade_events.saturating_add(0);""")
+     """                self.core.error_cascade_events = self.core.error_cascade_events.saturating_add(1);""",
+     """                self.core.error_cascade_events = self.core.error_cascade_events.saturating_add(0);""")
 PY
 
 # ── Naming what was refused ────────────────────────────────────────
@@ -143,8 +143,8 @@ PY
 
 mutation_case "the engine counts the refusal but never names it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.last_error_cascade_event = Some(event.event);""",
-     """                self.last_error_cascade_event = None;""")
+     """                self.core.last_error_cascade_event = Some(P::event_id(event.event));""",
+     """                self.core.last_error_cascade_event = None;""")
 PY
 
 # ── The ceiling ────────────────────────────────────────────────────

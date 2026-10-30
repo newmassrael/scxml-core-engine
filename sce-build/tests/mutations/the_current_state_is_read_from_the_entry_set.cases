@@ -1,0 +1,32 @@
+# Mutation cases for "the current state is read from the entry set" (docs/adr/0068).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_current_state_is_read_from_the_entry_set.cases`.
+#
+# The machine's current state is the atomic state under the first effective target of the
+# LAST transition of the microstep that has one, read down through the configuration once the
+# entry set is entered. Computing the entry set already dereferences every target, histories
+# among them, and what a `<history>` recorded does not change while the set is entered, so the
+# set keeps that target (`EntrySet::last_target`) instead of a second pass computing it again.
+#
+# The case puts back the order going wrong: the first targeted transition kept rather than
+# the last, which `a_microstep_exits_then_runs_content_in_selection_order_then_enters` refuses.
+# Its microstep takes `a1 -> a2`, then `b1 -> b2`, then a targetless transition, and reads `b2`.
+#
+# No case keeps a history target's parent instead of what it stands for: the descent through
+# the configuration from that parent reaches the same atomic state in every microstep the test
+# takes, so the edit could only SURVIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --test microstep_algorithms
+mutation_targets backends/rust/runtime/src/helpers/microstep.rs
+mutation_oracles backends/rust/runtime/tests/microstep_algorithms.rs
+
+mutation_case "the first targeted transition names the current state" <<'PY'
+edit("backends/rust/runtime/src/helpers/microstep.rs",
+     """    entry.last_target = Some(first);""",
+     """    if entry.last_target.is_none() {
+        entry.last_target = Some(first);
+    }""")
+PY

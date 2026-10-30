@@ -10,7 +10,7 @@
 # the side of the comparison that was right on first measurement.
 #
 # That is worth a round rather than a note. This engine is correct because
-# the main event loop (`Turn::run_main_event_loop`, with `complete_macrostep`
+# the main event loop (`Turn::run_main_event_loop`, with `Turn::complete_macrostep`
 # as its inner loop) implements W3C SCXML Appendix D's two nested loops
 # literally — the inner one runs eventless selection and the internal queue to
 # quiescence, and neither loop asks whether the microstep moved the machine.
@@ -34,12 +34,12 @@ mutation_oracles backends/rust/tests/tests/targetless_transition_completes_macro
 
 mutation_case "the macrostep ends at the external event that opened it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                    self.host.end_external_event(event, outcome);
+     """                    self.end_external_event(event, outcome);
                 }
             }
         }
     }""",
-     """                    self.host.end_external_event(event, outcome);
+     """                    self.end_external_event(event, outcome);
                 }
             }
             break;
@@ -75,7 +75,7 @@ PY
 
 mutation_case "the inner loop runs eventless selection and skips the internal queue" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if !self.host.has_internal_event() {
+     """            if !self.host.queue(false).has_events() {
                 // The queue emptied, so the chain — refused or merely finished —""",
      """            if true {
                 // The queue emptied, so the chain — refused or merely finished —""")

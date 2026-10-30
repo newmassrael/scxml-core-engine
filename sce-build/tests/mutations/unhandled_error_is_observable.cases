@@ -29,7 +29,7 @@
 
 mutation_tests -p sce-rust-tests --test unhandled_error_is_observable
 mutation_targets backends/rust/runtime/src/engine.rs
-mutation_targets backends/rust/runtime/src/helpers/event_matching.rs
+mutation_targets backends/rust/runtime/src/helpers/tables.rs
 mutation_oracles backends/rust/tests/tests/unhandled_error_is_observable.rs
 
 # ── The count itself ───────────────────────────────────────────────
@@ -45,8 +45,8 @@ mutation_oracles backends/rust/tests/tests/unhandled_error_is_observable.rs
 
 mutation_case "the internal drain drops the outcome again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);""",
-     """            self.unhandled_error_events = self.unhandled_error_events.saturating_add(0);""")
+     """            core.unhandled_error_events = core.unhandled_error_events.saturating_add(1);""",
+     """            core.unhandled_error_events = core.unhandled_error_events.saturating_add(0);""")
 PY
 
 # ── Counting an error the document DID answer ──────────────────────
@@ -85,32 +85,29 @@ PY
 # §scxml-3.12.2 reserves the whole `error.` prefix. A classifier that answers
 # for nothing silences the axis; one that answers for everything turns it into
 # the case above, one layer deeper than the call site.
+#
+# The engine reads no event name to classify (docs/adr/0068): the internal
+# drain and `Engine::raise` both ask the document's tables
+# (`DocumentTables::is_error_event`), so one defect there reaches both. The
+# prefix test itself is the generator's, and its cases (substring, dropped dot)
+# are in `the_error_events_are_named_by_their_prefix_rust.cases`, held by the
+# template test: the machine this test drives is committed generated code, so
+# no runtime edit can plant a defect in its list.
 
 mutation_case "no name is an error name" <<'PY'
-edit("backends/rust/runtime/src/helpers/event_matching.rs",
-     """    event_name.starts_with("error.")
-}""",
-     """    event_name.starts_with("no.name.starts.with.this.")
-}""")
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     """        self.error_events.contains(&event)
+    }""",
+     """        self.error_events.contains(&event) && false
+    }""")
 PY
 
 mutation_case "every name is an error name" <<'PY'
-edit("backends/rust/runtime/src/helpers/event_matching.rs",
-     """    event_name.starts_with("error.")
-}""",
-     """    event_name.starts_with("")
-}""")
-PY
-
-# The prefix is a prefix, not a substring: an event the author named
-# `retry.error.execution` is the document's, not the engine's.
-
-mutation_case "the error prefix is matched anywhere in the name" <<'PY'
-edit("backends/rust/runtime/src/helpers/event_matching.rs",
-     """    event_name.starts_with("error.")
-}""",
-     """    event_name.contains("error.")
-}""")
+edit("backends/rust/runtime/src/helpers/tables.rs",
+     """        self.error_events.contains(&event)
+    }""",
+     """        self.error_events.contains(&event) || true
+    }""")
 PY
 
 # ── Naming the error ───────────────────────────────────────────────
@@ -121,8 +118,8 @@ PY
 
 mutation_case "the unhandled error is counted but never named" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.last_unhandled_error = Some(P::EVENTS[usize::from(taken.event.0)]);""",
-     """            self.last_unhandled_error = None;""")
+     """            core.last_unhandled_error = Some(taken.event);""",
+     """            core.last_unhandled_error = None;""")
 PY
 
 # ── What the error SAYS ────────────────────────────────────────────
@@ -164,7 +161,8 @@ PY
 # into the condition — which is what the first draft of this code did — skips
 # `take_event` for every event that is not an error, so nothing in the
 # document runs. The fixture's `<assign>` counters are what notice. The
-# selection is the main loop's, on the internal event its host took and bound.
+# selection is the main loop's, on the internal event
+# `Turn::take_internal_event` took and bound.
 
 mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",

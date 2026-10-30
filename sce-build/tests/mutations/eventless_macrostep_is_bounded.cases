@@ -96,8 +96,8 @@ PY
 
 mutation_case "the ceiling outlives the macrostep that hit it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.main_loop.macrostep_truncated = false;
-        self.main_loop.macrostep_microsteps_taken = 0;
+     """        core.main_loop.macrostep_truncated = false;
+        core.main_loop.macrostep_microsteps_taken = 0;
 """,
      "")
 PY
@@ -137,7 +137,7 @@ edit("backends/rust/runtime/src/engine.rs",
         if self.refuse_spent_macrostep() {""",
      """            return Eventless::NoneEnabled;
         }
-        if self.host.state().macrostep_microsteps_taken >= MAX_MACROSTEP_MICROSTEPS {
+        if self.loop_state().macrostep_microsteps_taken >= MAX_MACROSTEP_MICROSTEPS {
             if let Some(crate::helpers::tables::Named::State(target)) =
                 self.tables.targets(self.enabled[0]).first().map(|target| target.named())
             {
