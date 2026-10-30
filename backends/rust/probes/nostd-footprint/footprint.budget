@@ -137,7 +137,14 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 # 1714 -> 1692 (2026-10-30): a workspace's buffers are not initialised before a
 # buffer writes them (docs/adr/0071), images of 194005 and 195697. `run_turn`
 # no longer fills the walk's slots in a loop on a temporary and copies them in.
-MACHINE_BYTES=1692
+#
+# 1692 -> 1516 (2026-10-30): the per-turn bookkeeping (the clock, the reading
+# latched for a turn, whether `tick` ran) is the core's (docs/adr/0074), and
+# the probe builds its machines under a session id proven when it is compiled
+# (docs/adr/0073), so it links no run-time check of the id; images of 193839
+# and 195355. A machine's `step` fell from 104 bytes to 44 and its `initialize`
+# from 104 to 50.
+MACHINE_BYTES=1516
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -174,7 +181,11 @@ MACHINE_BYTES=1692
 #
 # 1660 -> 1638 (2026-10-30): the workspace's buffers uninitialised
 # (docs/adr/0071), images of 193801 and 195439.
-MACHINE_BYTES_NO_DIAGNOSTICS=1638
+#
+# 1638 -> 1468 (2026-10-30): the per-turn bookkeeping the core's and the
+# session id proven when compiled (docs/adr/0074, docs/adr/0073), images of
+# 193659 and 195127, as above.
+MACHINE_BYTES_NO_DIAGNOSTICS=1468
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -207,7 +218,11 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1638
 # 7312 -> 7366 over 24 symbols (2026-10-30): `exit_states` is out of line, so
 # its frame is not under the entry walk (see STACK_BYTES); images of 194059 and
 # 195751.
-CORE_BYTES=7366
+#
+# 7366 -> 7524 over 27 symbols (2026-10-30): opening a turn, reading the
+# scheduler's time and noting an unattended macrostep are the core's
+# (docs/adr/0074), 158 bytes paid once where each machine paid about 170.
+CORE_BYTES=7524
 
 # The same without the report.
 #
@@ -228,7 +243,10 @@ CORE_BYTES=7366
 #
 # 7204 -> 7258 over 24 symbols (2026-10-30), `exit_states` out of line, as
 # above; images of 193855 and 195493.
-CORE_BYTES_NO_DIAGNOSTICS=7258
+#
+# 7258 -> 7416 over 27 symbols (2026-10-30), the turn's bookkeeping in the core
+# (docs/adr/0074), as above.
+CORE_BYTES_NO_DIAGNOSTICS=7416
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -274,8 +292,13 @@ CORE_BYTES_NO_DIAGNOSTICS=7258
 #
 # 5326 -> 5338 over 17 symbols (2026-10-30): `exit_states` out of line, as
 # above; images of 190886 and 192346.
-MACHINE_BYTES_PLAIN=1460
-CORE_BYTES_PLAIN=5338
+#
+# 1460 -> 1290 and 5338 -> 5496 over 20 symbols (2026-10-30): the turn's
+# bookkeeping in the core and the session id proven when compiled
+# (docs/adr/0074, docs/adr/0073); images of 190716 and 192006, the two-machine
+# image 340 bytes smaller.
+MACHINE_BYTES_PLAIN=1290
+CORE_BYTES_PLAIN=5496
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
