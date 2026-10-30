@@ -47,8 +47,8 @@ use crate::forge::error::ForgeError;
 use crate::forge::expr;
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmStmt, AlgorithmValueType, CodecVariant, Cycle, ForgeDocument,
-    ForgeField, ForgeImport, ListElemType, OptionalElemType, SceType,
+    AlgorithmConstType, AlgorithmStmt, AlgorithmValueType, CodecModel, CodecVariant, Cycle,
+    ForgeDocument, ForgeField, ForgeImport, ListElemType, OptionalElemType, SceType,
 };
 
 /// The aliases of `imports` that `document` or its `cycles` name.
@@ -79,6 +79,29 @@ pub(crate) fn named_aliases(
         .filter(|imp| names.0.contains(imp.alias.as_str()))
         .map(|imp| imp.alias.clone())
         .collect())
+}
+
+/// The names a codec mentions in every build of it: everything but the
+/// arms of its variant compiled under a build feature (docs/adr/0072).
+///
+/// An import named only by such arms is used only in a build with one of
+/// their features, so a backend that drops those arms from a build without
+/// the features drops its use of the import under the same features, and a
+/// build with none of them carries no import it does not read.
+pub(crate) fn codec_names_in_every_build(m: &CodecModel) -> BTreeSet<String> {
+    let mut names = Names::default();
+    names.codec(m, Arms::EveryBuild);
+    names.0
+}
+
+/// Which arms of a codec's variant a walk reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Arms {
+    /// Every arm: what some build of the codec names.
+    All,
+    /// The arms no build feature gates, and the catch-all: what every build
+    /// names.
+    EveryBuild,
 }
 
 /// Every name the walk met — more than the aliases, which
@@ -170,8 +193,36 @@ impl Names {
         fields.into_iter().try_for_each(|f| self.field(f))
     }
 
-    fn codec_variant(&mut self, variant: &CodecVariant) {
+    /// What a codec names: its fields' types and bodies, its variant's arms
+    /// (those `arms` keeps), and its CBOR or content-line entries.
+    fn codec(&mut self, m: &CodecModel, arms: Arms) {
+        for field in &m.fields {
+            self.ty(&field.sce_type);
+            self.opt_name(field.repeat_body_alias.as_deref());
+            self.opt_name(field.tlv_chain_body_alias.as_deref());
+            self.opt_name(field.embed_body_alias.as_deref());
+        }
+        if let Some(variant) = &m.variant {
+            self.codec_variant(variant, arms);
+        }
+        // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1);
+        // an enum one names its import like any positional field.
+        for entry in &m.cbor_entries {
+            self.ty(entry.present_type());
+        }
+        // A content-line codec's entries likewise (SCE_FORGE.md §4.6.4).
+        if let Some(content) = &m.content_line {
+            for entry in &content.entries {
+                self.ty(entry.present_type());
+            }
+        }
+    }
+
+    fn codec_variant(&mut self, variant: &CodecVariant, arms: Arms) {
         for arm in variant.arms.iter().chain(&variant.default_arm) {
+            if arms == Arms::EveryBuild && arm.feature.is_some() {
+                continue;
+            }
             self.name(&arm.body_alias);
         }
     }
@@ -314,26 +365,7 @@ impl Names {
                 Ok(())
             }
             ForgeDocument::Codec(m) => {
-                for field in &m.fields {
-                    self.ty(&field.sce_type);
-                    self.opt_name(field.repeat_body_alias.as_deref());
-                    self.opt_name(field.tlv_chain_body_alias.as_deref());
-                    self.opt_name(field.embed_body_alias.as_deref());
-                }
-                if let Some(variant) = &m.variant {
-                    self.codec_variant(variant);
-                }
-                // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1);
-                // an enum one names its import like any positional field.
-                for entry in &m.cbor_entries {
-                    self.ty(entry.present_type());
-                }
-                // A content-line codec's entries likewise (SCE_FORGE.md §4.6.4).
-                if let Some(content) = &m.content_line {
-                    for entry in &content.entries {
-                        self.ty(entry.present_type());
-                    }
-                }
+                self.codec(m, Arms::All);
                 Ok(())
             }
             ForgeDocument::Filter(m) => self.fields([&m.input, &m.output]),

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0072): a peek-byte variant whose second arm
+     is compiled under the build feature `gated-arm`, which this crate declares
+     and turns on by default. With the feature on, tag 0x02 decodes into arm B;
+     with it off, the arm does not exist and tag 0x02 reaches the catch-all, whose
+     body (arm A's codec) reads the frame as its own. Arm A is the default arm and
+     is held by every build. The arm codecs are the default-marker pair that
+     build.rs Step 4 generates. Read by tests/forge_feature_gated_arm.rs. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_feature_gated_arm">
+  <sce:import src="../../../../tests/forge/resources/codec_default_marker_arm_a.scxml"
+              kind="codec" as="codec_default_marker_arm_a"/>
+  <sce:import src="../../../../tests/forge/resources/codec_default_marker_arm_b.scxml"
+              kind="codec" as="codec_default_marker_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="2"/>
+      </sce:peek-byte>
+      <sce:arm value="0x01" type="codec_default_marker_arm_a" default="true"/>
+      <sce:arm value="0x02" type="codec_default_marker_arm_b" feature="gated-arm"/>
+      <sce:default type="codec_default_marker_arm_a"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

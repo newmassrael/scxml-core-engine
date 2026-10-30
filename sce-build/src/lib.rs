@@ -5999,7 +5999,12 @@ fn validate_and_enrich_imports(
                     ctx.codec_variant_arms_for_inversion = Some(
                         v.arms
                             .iter()
-                            .map(|arm| (arm.body_alias.clone(), arm.value, arm.is_default))
+                            .map(|arm| forge::generator::InvertedArm {
+                                body_alias: arm.body_alias.clone(),
+                                value: arm.value,
+                                is_default: arm.is_default,
+                                feature: arm.feature.clone(),
+                            })
                             .collect(),
                     );
                     ctx.codec_variant_has_default_arm = Some(v.arms.iter().any(|a| a.is_default));

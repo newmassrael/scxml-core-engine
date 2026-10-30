@@ -278,6 +278,17 @@ fn main() {
     codec_modules.dedup();
     write_source_sweeps(&out_dir, &codec_modules, &sweeps);
 
+    // Step 7b: an arm compiled under a build feature (docs/adr/0072). The variant
+    // imports the default-marker arms Step 4 generates; this crate's `gated-arm`
+    // feature decides whether its second arm is compiled, and
+    // `forge_feature_gated_arm.rs` decodes the same frames in either build.
+    generate_stripped_fixtures(
+        &["codec_feature_gated_arm"],
+        &source_fixtures,
+        &out_dir,
+        &options,
+    );
+
     // Step 8: broadcast-log kind (ADR 0062). The generator's output for a log is a
     // module that names the runtime's log over the element codec's struct and
     // stores the element's wire bytes; until it is compiled, nothing shows that

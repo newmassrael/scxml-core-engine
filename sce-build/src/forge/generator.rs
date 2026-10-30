@@ -50,6 +50,86 @@ pub struct EnumText {
     pub value: i128,
 }
 
+/// One `<sce:arm>` of an imported variant codec, as the codec that imports
+/// it reads it: to derive the bits of its own carrier from the arm a value
+/// holds, and to name the arm a decode takes when no tag is given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvertedArm {
+    /// The import alias the imported codec names the arm's body by; its
+    /// PascalCase is the arm's variant.
+    pub body_alias: String,
+    /// The tag the arm is chosen by.
+    pub value: u64,
+    /// Whether the arm is the imported codec's `default="true"` arm.
+    pub is_default: bool,
+    /// The build feature the arm is compiled under (docs/adr/0072), which
+    /// a backend that drops the arm from a build without the feature drops
+    /// the importer's mention of it under too.
+    pub feature: Option<String>,
+}
+
+/// The attribute a Rust item of an arm compiled under the build feature
+/// `feature` carries (docs/adr/0072): `#[cfg(feature = "<feature>")]`, a
+/// Cargo feature of the crate that compiles the codec.
+pub(crate) fn rust_feature_cfg(feature: &str) -> String {
+    format!("#[cfg(feature = \"{feature}\")]")
+}
+
+/// The `#[cfg]` of a Rust import a codec uses only in arms compiled under
+/// build features, keyed by the import's alias: the import is compiled
+/// where one of those arms is (docs/adr/0072). An import any build uses — a
+/// field's, the catch-all's, an arm without a feature's — has no entry.
+fn rust_import_feature_cfgs(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(v) = &m.variant else {
+        return out;
+    };
+    let every_build = crate::forge::import_use::codec_names_in_every_build(m);
+    for imp in imports {
+        if every_build.contains(&imp.alias) {
+            continue;
+        }
+        let features: std::collections::BTreeSet<&str> = v
+            .arms
+            .iter()
+            .filter(|arm| arm.body_alias == imp.alias)
+            .filter_map(|arm| arm.feature.as_deref())
+            .collect();
+        let Some(first) = features.first() else {
+            continue;
+        };
+        let cfg = if features.len() == 1 {
+            rust_feature_cfg(first)
+        } else {
+            format!(
+                "#[cfg(any({}))]",
+                features
+                    .iter()
+                    .map(|f| format!("feature = \"{f}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        out.insert(imp.alias.clone(), cfg);
+    }
+    out
+}
+
+/// The C preprocessor macro an arm compiled under the build feature `feature`
+/// is guarded by (docs/adr/0072): `SCE_FEATURE_` and the name in upper case
+/// with `-` read as `_`. A header that uses it defines it to 1 unless the
+/// build defined it first, so the arm is present unless the build sets it to
+/// 0, as a Cargo feature that is on by default.
+pub(crate) fn c_feature_macro(feature: &str) -> String {
+    format!(
+        "SCE_FEATURE_{}",
+        feature.to_ascii_uppercase().replace('-', "_")
+    )
+}
+
 /// Template-ready import context for a single `<sce:import>`.
 /// Per-language data is computed here; templates consume it directly.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -335,12 +415,11 @@ pub struct ImportContext {
 
     /// RFC parent-tag dispatch: for codec imports whose model declares a
     /// `<sce:variant>`, the variant arm metadata needed for the
-    /// parent's encode-side derivation. Each tuple is
-    /// `(body_alias_snake, arm_value, is_default)` in `<sce:arm>`
-    /// declaration order. `None` for non-codec imports and for codec
-    /// imports with no variant.
+    /// parent's encode-side derivation, one [`InvertedArm`] per
+    /// `<sce:arm>` in declaration order. `None` for non-codec imports and
+    /// for codec imports with no variant.
     #[serde(skip)]
-    pub codec_variant_arms_for_inversion: Option<Vec<(String, u64, bool)>>,
+    pub codec_variant_arms_for_inversion: Option<Vec<InvertedArm>>,
 
     /// RFC parent-tag dispatch: for codec imports whose model declares a
     /// `<sce:variant>`, whether any arm carries `default="true"`.
@@ -6548,6 +6627,66 @@ fn codec_variant_body_borrowed(m: &CodecModel, imports: &[ImportContext]) -> boo
     })
 }
 
+/// Refuse a Rust codec whose variant borrows from the frame only through arms
+/// compiled under a build feature (docs/adr/0072).
+///
+/// The variant enum, its view and its owned form take a lifetime or a storage
+/// parameter when an arm body borrows, and a build without the feature drops
+/// those arms, so it would declare a parameter nothing uses, which Rust refuses
+/// (E0392). The other arms, and the catch-all every such variant has, decide
+/// the parameter in every build; when none of them borrows, no single
+/// declaration is right for both builds. `views` adds the view's own question,
+/// whose borrowing is the view's (an arm body whose builder borrows may have a
+/// view that does not, and the reverse).
+fn refuse_lifetime_held_only_by_feature_arms(
+    m: &CodecModel,
+    imports: &[ImportContext],
+    views: bool,
+) -> Result<(), ForgeError> {
+    let Some(v) = &m.variant else {
+        return Ok(());
+    };
+    let held_only_by_feature_arms = |borrows: &dyn Fn(&str) -> bool| {
+        let every_build = v
+            .arms
+            .iter()
+            .filter(|arm| arm.feature.is_none())
+            .chain(v.default_arm.iter())
+            .any(|arm| borrows(&arm.body_alias));
+        if every_build {
+            return None;
+        }
+        v.arms
+            .iter()
+            .find(|arm| arm.feature.is_some() && borrows(&arm.body_alias))
+    };
+    let builder = |alias: &str| import_codec_borrowed(imports, alias);
+    let view = |alias: &str| import_codec_view_borrowed(imports, alias);
+    let lone = held_only_by_feature_arms(&builder).or_else(|| {
+        if views {
+            held_only_by_feature_arms(&view)
+        } else {
+            None
+        }
+    });
+    let Some(arm) = lone else {
+        return Ok(());
+    };
+    Err(ForgeError::from(GenerateError::unsupported_at(
+        format!(
+            "codec '{}': the arm `{}` (value {:#x}) names the build feature '{}' and is the \
+             only arm whose body borrows from the frame, so a Rust build without the feature \
+             would declare a lifetime its variant does not use (docs/adr/0072); give the \
+             catch-all or an arm without a feature a body that borrows, or drop the feature",
+            m.name,
+            arm.body_alias,
+            arm.value,
+            arm.feature.as_deref().unwrap_or_default(),
+        ),
+        m.source_location.clone(),
+    )))
+}
+
 /// Whether THIS codec's generated Rust struct needs a `<'a>` lifetime
 /// parameter: it holds a scalar `Bytes` / `String` field (decoded as a
 /// zero-copy `&'a [u8]` / `&'a str` view per the `SceCursor::peek_slice
@@ -9160,6 +9299,26 @@ fn render_codec(
                 // one arm per variant carries this (parse-time guard
                 // `codec/variant-duplicate-default-arm`).
                 obj.insert("is_default".into(), arm.is_default.into());
+                // docs/adr/0072: the build feature the arm is compiled under,
+                // as the backends that drop the arm from a build without it
+                // guard each of its items. The other backends keep the arm in
+                // every build, which is the feature on, the default meaning,
+                // and read neither key.
+                if let Some(feature) = &arm.feature {
+                    match lang {
+                        crate::generator::Language::Rust => {
+                            obj.insert("rust_cfg".into(), rust_feature_cfg(feature).into());
+                        }
+                        crate::generator::Language::C11 => {
+                            obj.insert("c_feature_macro".into(), c_feature_macro(feature).into());
+                        }
+                        crate::generator::Language::Cpp
+                        | crate::generator::Language::Kotlin
+                        | crate::generator::Language::Go
+                        | crate::generator::Language::Python
+                        | crate::generator::Language::Swift => {}
+                    }
+                }
                 // RFC variant-default-uniformity on Go: the Go
                 // template emits a `NewT()` constructor on the outer
                 // codec that calls into the declared default arm's own
@@ -9632,6 +9791,35 @@ fn render_codec(
 
     l.insert_imports(&mut ctx, imports);
 
+    if matches!(l.lang, crate::generator::Language::C11) {
+        // docs/adr/0072: every macro an arm of this header is guarded by,
+        // its own arms' and those of an embedded variant whose arm fills a
+        // carrier bit here, each defined to 1 before its first use unless
+        // the build defined it, so the arm is present by default.
+        let mut feature_macros: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        if let Some(v) = &m.variant {
+            feature_macros.extend(
+                v.arms
+                    .iter()
+                    .filter_map(|arm| arm.feature.as_deref())
+                    .map(c_feature_macro),
+            );
+        }
+        for d in collect_parent_tag_derivations(m, imports) {
+            feature_macros.extend(
+                d.arms
+                    .iter()
+                    .filter_map(|arm| arm.feature.as_deref())
+                    .map(c_feature_macro),
+            );
+        }
+        ctx.insert(
+            "c_feature_macros".into(),
+            serde_json::Value::Array(feature_macros.into_iter().map(Into::into).collect()),
+        );
+    }
+
     if matches!(l.lang, crate::generator::Language::Rust) {
         // Codec struct derive line. `Default` is conditional per RFC
         // variant-default-uniformity: codecs whose `<sce:flags>`
@@ -9693,6 +9881,7 @@ fn render_codec(
         // backends own their codec fields and never see these keys.
         let self_borrowed = codec_self_borrowed(m, imports);
         let variant_borrowed = codec_variant_body_borrowed(m, imports);
+        refuse_lifetime_held_only_by_feature_arms(m, imports, emit_views)?;
         ctx.insert(
             "struct_lifetime".into(),
             if self_borrowed { "<'a>" } else { "" }.into(),
@@ -9751,10 +9940,32 @@ fn render_codec(
         // `try_into_owned_in()` deep-copy references; bring it into scope. A
         // non-borrowed codec imports no borrowed bodies (embedding one would
         // make it borrowed), so this is empty there.
+        // docs/adr/0072: an import only arms under a build feature use is
+        // compiled under the same features, in each of its three forms.
+        let import_cfgs = rust_import_feature_cfgs(m, imports);
+        let gated_use = |alias: &str, stmt: String| match import_cfgs.get(alias) {
+            Some(cfg) => format!("{cfg}\n{stmt}"),
+            None => stmt,
+        };
+        ctx.insert(
+            "rust_import_cfg".into(),
+            serde_json::Value::Object(
+                import_cfgs
+                    .iter()
+                    .map(|(alias, cfg)| (alias.clone(), cfg.clone().into()))
+                    .collect(),
+            ),
+        );
         let owned_imports: Vec<serde_json::Value> = imports
             .iter()
             .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
-            .map(|i| format!("use super::{}::{}Owned;", i.namespace, i.type_name).into())
+            .map(|i| {
+                gated_use(
+                    &i.alias,
+                    format!("use super::{}::{}Owned;", i.namespace, i.type_name),
+                )
+                .into()
+            })
             .collect();
         ctx.insert(
             "owned_imports".into(),
@@ -9795,7 +10006,13 @@ fn render_codec(
             let view_imports: Vec<serde_json::Value> = imports
                 .iter()
                 .filter(|i| i.kind == "codec")
-                .map(|i| format!("use super::{}::{}View;", i.namespace, i.type_name).into())
+                .map(|i| {
+                    gated_use(
+                        &i.alias,
+                        format!("use super::{}::{}View;", i.namespace, i.type_name),
+                    )
+                    .into()
+                })
                 .collect();
             ctx.insert(
                 "view_imports".into(),
@@ -12870,7 +13087,7 @@ fn caller_tag_arg_decode(
     }
 
     if let Some(arms) = imp.codec_variant_arms_for_inversion.as_ref() {
-        if let Some((_, default_value, _)) = arms.iter().find(|(_, _, is_default)| *is_default) {
+        if let Some(default_value) = arms.iter().find(|arm| arm.is_default).map(|arm| arm.value) {
             return match lang {
                 Language::Swift => no_swift_emitter("caller_tag_arg_decode"),
                 Language::Rust => format!(", 0x{default_value:X}u8"),
@@ -18585,9 +18802,8 @@ pub(crate) struct ParentTagDerivation {
     bit: u32,
     width: u32,
     present_if: Option<PresentIfPredicate>,
-    /// `(body_alias_snake, arm_value, is_default)` for each embedded
-    /// variant arm in declaration order.
-    arms: Vec<(String, u64, bool)>,
+    /// Each embedded variant arm, in declaration order.
+    arms: Vec<InvertedArm>,
 }
 
 /// RFC §synth-5-B parent-tag dispatch — emit per-language locals at the parent codec's
@@ -18734,8 +18950,8 @@ fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext])
         format!("{snake}.body.index()")
     };
     let mut chain = String::new();
-    for (idx, (_alias, val, _is_default)) in d.arms.iter().enumerate() {
-        let shifted = ((val & mask) << d.bit) & 0xFF;
+    for (idx, arm) in d.arms.iter().enumerate() {
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         let literal = format!("static_cast<std::uint8_t>(0x{shifted:02X})");
         if idx + 1 == d.arms.len() {
             // Final arm is the fallthrough — saves one comparison.
@@ -18762,9 +18978,9 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
     let embed_pascal = parent_tag_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
     let mut arms = Vec::with_capacity(d.arms.len());
-    for (alias, val, _) in &d.arms {
-        let variant = filters::to_pascal_case(alias.clone());
-        let shifted = ((val & mask) << d.bit) & 0xFF;
+    for arm in &d.arms {
+        let variant = filters::to_pascal_case(arm.body_alias.clone());
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         arms.push(format!(
             "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}"
         ));
@@ -18798,9 +19014,9 @@ fn parent_tag_match_term_python(d: &ParentTagDerivation, imports: &[ImportContex
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
     let mut chain = String::new();
-    for (idx, (alias, val, _)) in d.arms.iter().enumerate() {
-        let variant = filters::to_pascal_case(alias.clone());
-        let shifted = ((val & mask) << d.bit) & 0xFF;
+    for (idx, arm) in d.arms.iter().enumerate() {
+        let variant = filters::to_pascal_case(arm.body_alias.clone());
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         let literal = format!("0x{shifted:02X}");
         if idx + 1 == d.arms.len() {
             chain.push_str(&literal);
@@ -18854,9 +19070,9 @@ fn parent_tag_switch_block_go(
         format!("s.{pascal}")
     };
     let mut switch_block = String::from("\tswitch {\n");
-    for (alias, val, _) in &d.arms {
-        let arm_variant = filters::to_pascal_case(alias.clone());
-        let shifted = ((val & mask) << d.bit) & 0xFF;
+    for arm in &d.arms {
+        let arm_variant = filters::to_pascal_case(arm.body_alias.clone());
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         switch_block.push_str(&format!(
             "\tcase {embed}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
         ));
@@ -18886,12 +19102,22 @@ fn parent_tag_switch_block_c11(
     let mask: u64 = (1u64 << d.width) - 1;
     let embed_upper = to_upper_snake(embed_pascal);
     let mut switch_block = format!("    switch (self->{snake}.body.kind) {{\n");
-    for (alias, val, _) in &d.arms {
-        let arm_upper = to_upper_snake(alias);
-        let shifted = ((val & mask) << d.bit) & 0xFF;
+    for arm in &d.arms {
+        let arm_upper = to_upper_snake(&arm.body_alias);
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
+        // An arm the embedded codec compiles under a build feature
+        // (docs/adr/0072) has no kind constant in a build without it, so
+        // its case is compiled under the same macro.
+        let feature_macro = arm.feature.as_deref().map(c_feature_macro);
+        if let Some(name) = &feature_macro {
+            switch_block.push_str(&format!("#if {name}\n"));
+        }
         switch_block.push_str(&format!(
             "    case {embed_upper}_BODY_KIND_{arm_upper}: {local} |= 0x{shifted:02X}u; break;\n"
         ));
+        if feature_macro.is_some() {
+            switch_block.push_str("#endif\n");
+        }
     }
     switch_block.push_str("    default: break;\n    }\n");
     if let Some(p) = &d.present_if {

@@ -36,6 +36,9 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 {% if all_imports %}
 
 {% for imp in all_imports %}
+{% if rust_import_cfg[imp.alias] %}
+{{ rust_import_cfg[imp.alias] }}
+{% endif %}
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
@@ -77,7 +80,13 @@ const _: () = assert!(
 #[allow(dead_code)]
 {{ codec_variant_enum_derives_attr }}
 pub enum {{ struct_name }}Variant{{ variant_lifetime }} {
+{# docs/adr/0072: an arm that names a build feature is compiled under it, in
+   every item that names the arm, so a build without the feature has no such
+   variant and its tag falls to the catch-all. #}
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
     {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),
 {% endfor %}
 {% if variant.default_arm %}
@@ -348,6 +357,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {{ codec_variant_enum_derives_attr }}
 pub enum {{ struct_name }}ViewVariant{{ view_variant_lifetime }} {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
     {{ arm.variant_name }}({{ arm.view_body_type }}{{ arm.view_body_lifetime }}),
 {% endfor %}
 {% if variant.default_arm %}
@@ -447,6 +459,9 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 {% if has_variant %}
         match &self.body {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
             {{ struct_name }}ViewVariant::{{ arm.variant_name }}(_b) => {
                 _out.body = {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::default());
                 if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = &mut _out.body {
@@ -590,6 +605,9 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
 {{ codec_owned_variant_derives_attr }}
 pub enum {{ struct_name }}OwnedVariant{{ variant_owned_generics_decl }} {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
     {{ arm.variant_name }}({{ arm.owned_body_type }}),
 {% endfor %}
 {% if variant.default_arm %}
@@ -609,6 +627,9 @@ impl{{ variant_lifetime }} {{ struct_name }}Variant{{ variant_lifetime }} {
     pub fn {{ variant_into_owned_fn }}{{ variant_owned_generics_impl }}(self) -> Result<{{ struct_name }}OwnedVariant{{ variant_owned_generics_args }}, CodecError> {
         Ok(match self {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
             {{ struct_name }}Variant::{{ arm.variant_name }}(_b) => {{ struct_name }}OwnedVariant::{{ arm.variant_name }}({{ arm.owned_body_into }}),
 {% endfor %}
 {% if variant.default_arm %}
@@ -649,6 +670,9 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
     pub fn {{ variant_as_borrowed_into_fn }}<'o>(&'o self, _out: &mut {{ struct_name }}Variant<'o>){{ variant_as_borrowed_into_ret }} {
         match self {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
             {{ struct_name }}OwnedVariant::{{ arm.variant_name }}(_b) => {
                 *_out = {{ struct_name }}Variant::{{ arm.variant_name }}(Default::default());
                 if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = _out {
@@ -808,6 +832,9 @@ impl{{ variant_lifetime }} {{ struct_name }}Variant{{ variant_lifetime }} {
     pub fn {{ owned_in_origin_fn }}{{ origin_generics_impl }}(self, {{ origin_param }}: {{ origin_ref_type }}) -> Result<{{ struct_name }}OwnedVariant{{ variant_owned_generics_args }}, CodecError> {
         Ok(match self {
 {% for arm in variant.arms %}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
             {{ struct_name }}Variant::{{ arm.variant_name }}(_b) => {{ struct_name }}OwnedVariant::{{ arm.variant_name }}({{ arm.owned_body_into_origin }}),
 {% endfor %}
 {% if variant.default_arm %}

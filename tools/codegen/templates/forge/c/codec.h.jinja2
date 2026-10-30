@@ -52,6 +52,18 @@
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{% if c_feature_macros %}
+
+/* docs/adr/0072: an arm that names a build feature is compiled while its
+ * macro is non-zero, and the macro is 1 unless the build defines it first:
+ * the arm is present by default, and a build that defines the macro to 0
+ * leaves it out, its tags reaching the catch-all arm. */
+{% for feature_macro in c_feature_macros %}
+#ifndef {{ feature_macro }}
+#define {{ feature_macro }} 1
+#endif
+{% endfor %}
+{% endif %}
 
 #define {{ c_min_bytes_macro }} {{ min_bytes }}
 #define {{ c_max_bytes_macro }} {{ max_bytes }}
@@ -75,7 +87,13 @@ SCE_STATIC_ASSERT({{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
  * straight when two arms share a body type). */
 typedef enum {
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
     {{ arm.c_kind_constant }},
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
 {% endfor %}
 {% if variant.default_arm %}
     {{ variant.default_arm.c_kind_constant }},
@@ -87,7 +105,13 @@ typedef struct {
     {{ variant.tag_native_type }} default_tag;  /* valid only when kind == ..._DEFAULT */
     union {
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
         {{ arm.body_type }} {{ arm.c_union_field }};
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
 {% endfor %}
 {% if variant.default_arm %}
         {{ variant.default_arm.body_type }} {{ variant.default_arm.c_union_field }};
@@ -260,11 +284,17 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     sce_forge_codec_status_t _arm_st;
     switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
         case {{ arm.value_literal }}:
             out->body.kind = {{ arm.c_kind_constant }};
             _arm_st = {{ arm.body_decoder }}(cursor, &out->body.arm.{{ arm.c_union_field }}{{ arm.body_decode_args_after_cursor }});
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
 {% endfor %}
         default:
 {% if variant.default_arm %}
@@ -437,9 +467,15 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     /* Append the active arm body's encoded bytes via the same writer. */
     switch (self->body.kind) {
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
         case {{ arm.c_kind_constant }}:
             SCE_FORGE_TRY_WRITE({{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }}, w{{ arm.body_encode_args_with_leading_comma }}));
             break;
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
 {% endfor %}
 {% if variant.default_arm %}
         case {{ variant.default_arm.c_kind_constant }}:

@@ -24,6 +24,12 @@ path = "src/lib.rs"
 # while they lived in the runtime — `cargo test -p sce-forge-conformance
 # --features alloc` runs them, and so does the forge-rust gate.
 alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
+# The build feature the second arm of `fixtures/codec_feature_gated_arm.scxml`
+# is compiled under (docs/adr/0072), on by default as a codec crate's arm
+# feature is. `tests/forge_feature_gated_arm.rs` holds each build to what it
+# decodes: the default one, and `--no-default-features --features alloc`.
+gated-arm = []
+default = ["gated-arm"]
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }

@@ -1246,8 +1246,10 @@ arm values.
 #### §2.8.3 An arm compiled under a build feature (docs/adr/0072)
 
 `<sce:arm feature="<name>">` names a build feature the arm is compiled
-under, in Cargo's kebab case (`[a-z][a-z0-9-]*`). The feature is on by
-default.
+under, in Cargo's kebab case (`[a-z][a-z0-9-]*`). A build with the
+feature on holds the arm; a build with it off has no such arm, and the
+arm's tags reach the catch-all `<sce:default>`, whose body codec decodes
+the frame. The feature is on by default.
 
 ```xml
 <sce:variant tag="peek.mid">
@@ -1261,6 +1263,14 @@ default.
 </sce:variant>
 ```
 
+How each backend leaves the arm out:
+
+| Backend | A build without the feature |
+|---|---|
+| Rust | every item naming the arm carries `#[cfg(feature = "<name>")]`: the variant of each variant enum, each match arm, the source interface's type parameter and the imports only the arm uses; the crate that compiles the codec declares the feature, on by default |
+| C | the arm's kind constant, union member and switch cases sit inside `#if SCE_FEATURE_<NAME>` (upper case, `-` as `_`), which the header defines to 1 unless the build defined it; a build defines it to 0 |
+| C++, Go, Kotlin, Python | the arm is kept in every build, which is the feature on |
+
 The parser refuses the attribute where a build without the feature
 could not be built:
 
@@ -1270,6 +1280,15 @@ could not be built:
 - in a variant with no `<sce:default>`: its arms are proven to cover the
   tag only all together → `codec/variant-feature-needs-catch-all`;
 - a name outside the grammar → `validation/attribute-rule-violated`.
+
+The Rust generator also refuses a variant in which every arm whose body
+borrows from the frame names a feature: a build without the feature
+would declare a lifetime its variant enum does not use.
+
+The catch-all's body codec reads the frame of a left-out arm as its own:
+a `<sce:flag value=...>` constant is the value a body's `Default` holds,
+and is not checked when a frame is decoded, so the catch-all does not
+refuse a frame because its dispatch bits name another arm.
 
 ### §2.9 Composition extensions — `<sce:template>`
 

@@ -1,0 +1,171 @@
+# Mutation cases for "a variant arm may name a build feature" (docs/adr/0072).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_variant_arm_may_name_a_build_feature.cases`.
+#
+# An `<sce:arm feature="<name>">` is compiled only where its feature is on: the
+# Rust codec puts `#[cfg(feature = "<name>")]` on every item that names the
+# arm, and the C codec puts the arm inside `#if SCE_FEATURE_<NAME>`. The parser
+# refuses the attribute where a build without the feature could not be built.
+# Each case below breaks one of those: an item of the gated arm loses its cfg,
+# the cfg lands on the arm every build holds, the source interface names the
+# gated arm in a build without it, or a refusal lets the document through.
+# `sce-build/tests/a_variant_arm_may_name_a_build_feature.rs` refuses the
+# parser and overlay cases, and
+# `sce-build/tests/a_gated_arm_is_compiled_only_where_its_feature_is_on.rs`
+# the Rust and C ones.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_variant_arm_may_name_a_build_feature --test a_gated_arm_is_compiled_only_where_its_feature_is_on
+mutation_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
+mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2
+mutation_targets tools/codegen/templates/forge/c/codec.h.jinja2
+mutation_targets sce-build/src/forge/generator/rust_source.rs
+mutation_targets sce-build/src/forge/generator.rs
+mutation_targets sce-build/src/forge/parser.rs
+mutation_targets sce-build/src/forge/variant_default_overlay.rs
+mutation_oracles sce-build/tests/a_variant_arm_may_name_a_build_feature.rs sce-build/tests/a_gated_arm_is_compiled_only_where_its_feature_is_on.rs
+
+# ── The Rust codec: the cfg dropped, or on the wrong arm ──
+
+mutation_case "the builder's variant enum drops the cfg of a gated arm" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
+    {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),''',
+     r'''    {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),''')
+PY
+
+mutation_case "the builder's variant enum puts the cfg after the arm, on the next one" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
+    {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),''',
+     r'''    {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),
+{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}''')
+PY
+
+mutation_case "the decode's arm on the tag drops the cfg of a gated arm" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
+     r'''{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
+            {{ arm.value_literal }} => {''',
+     r'''            {{ arm.value_literal }} => {''')
+PY
+
+mutation_case "the owned variant enum drops the cfg of a gated arm" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if arm.rust_cfg %}
+    {{ arm.rust_cfg }}
+{% endif %}
+    {{ arm.variant_name }}({{ arm.owned_body_type }}),''',
+     r'''    {{ arm.variant_name }}({{ arm.owned_body_type }}),''')
+PY
+
+mutation_case "an import only a gated arm uses loses its cfg" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if rust_import_cfg[imp.alias] %}
+{{ rust_import_cfg[imp.alias] }}
+{% endif %}
+{{ imp.include_stmt }}''',
+     r'''{{ imp.include_stmt }}''')
+PY
+
+mutation_case "the generator hands the cfg to no arm" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                            obj.insert("rust_cfg".into(), rust_feature_cfg(feature).into());''',
+     r'''                            let _ = feature;''')
+PY
+
+mutation_case "the encode of the source interface drops the cfg of a gated arm" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''            if let Some(feature) = &arm.feature {
+                lines.push(format!("    {}", rust_feature_cfg(feature)));
+            }
+            lines.push(format!(
+                "    {pattern} => {}::write_source(_b, w{}){},",''',
+     r'''            lines.push(format!(
+                "    {pattern} => {}::write_source(_b, w{}){},",''')
+PY
+
+mutation_case "the source enum declares the gated arm's type parameter in every build" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''            .map(|arm| format!("{}{}: ?Sized", arm.cfg_prefix(), arm.generic))''',
+     r'''            .map(|arm| format!("{}: ?Sized", arm.generic))''')
+PY
+
+mutation_case "the accessor names every arm in a build without the feature" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''            .filter(|arm| world.holds(arm))''',
+     r'''            .filter(|_| true)''')
+PY
+
+# ── The C codec ──
+
+mutation_case "the C kind constant of a gated arm is outside its macro" <<'PY'
+edit("tools/codegen/templates/forge/c/codec.h.jinja2",
+     r'''{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+    {{ arm.c_kind_constant }},''',
+     r'''    {{ arm.c_kind_constant }},''')
+PY
+
+mutation_case "the C header never defines the macro to its default" <<'PY'
+edit("tools/codegen/templates/forge/c/codec.h.jinja2",
+     r'''#ifndef {{ feature_macro }}
+#define {{ feature_macro }} 1
+#endif''',
+     r'''/* {{ feature_macro }} */''')
+PY
+
+# ── The parser and the overlay ──
+
+mutation_case "the catch-all may name a feature" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                if let Some(feature) = child.attribute("feature") {
+                    return Err(located(''',
+     r'''                if let Some(feature) = child.attribute("feature").filter(|_| false) {
+                    return Err(located(''')
+PY
+
+mutation_case "the default arm may name a feature" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                    // by every build, so it cannot be one a build leaves out.
+                    if is_default {''',
+     r'''                    // by every build, so it cannot be one a build leaves out.
+                    if is_default && feature.is_empty() {''')
+PY
+
+mutation_case "a gated arm is accepted without a catch-all" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''    if default_arm.is_none() {
+        if let Some((node, arm_value, feature)) = first_feature_arm {''',
+     r'''    if default_arm.is_some() && default_arm.is_none() {
+        if let Some((node, arm_value, feature)) = first_feature_arm {''')
+PY
+
+mutation_case "a feature name may start with a digit" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase())''',
+     r'''    chars.next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())''')
+PY
+
+mutation_case "a feature name may hold an underscore" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')''',
+     r'''        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')''')
+PY
+
+mutation_case "the overlay may make a gated arm the default" <<'PY'
+edit("sce-build/src/forge/variant_default_overlay.rs",
+     r'''        Some(idx) if variant.arms[idx].feature.is_some() => {''',
+     r'''        Some(idx) if variant.arms[idx].feature.is_some() && idx == usize::MAX => {''')
+PY

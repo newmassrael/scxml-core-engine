@@ -252,6 +252,50 @@ struct Arm {
     child: Child,
     /// The tag that names it; `None` for the default arm.
     value: Option<u64>,
+    /// The build feature it is compiled under (docs/adr/0072); `None` for an
+    /// arm every build holds, the default arm among them.
+    feature: Option<String>,
+}
+
+impl Arm {
+    /// The line of `#[cfg]` that compiles an item of this arm only where its
+    /// feature is on, indented by `indent`; nothing for an arm every build
+    /// holds.
+    fn cfg_line(&self, indent: &str) -> String {
+        match &self.feature {
+            Some(feature) => format!("{indent}{}\n", rust_feature_cfg(feature)),
+            None => String::new(),
+        }
+    }
+
+    /// The same `#[cfg]` written in front of an item on its line.
+    fn cfg_prefix(&self) -> String {
+        match &self.feature {
+            Some(feature) => format!("{} ", rust_feature_cfg(feature)),
+            None => String::new(),
+        }
+    }
+}
+
+/// One set of the build features a variant's arms name, and the `#[cfg]`
+/// predicate that holds in exactly the builds with those features on and the
+/// rest off (docs/adr/0072).
+struct World {
+    /// `#[cfg(..)]`, or `None` when no arm names a feature and every build is
+    /// the one world.
+    cfg: Option<String>,
+    /// The features on in this world.
+    on: std::collections::BTreeSet<String>,
+}
+
+impl World {
+    /// Whether `arm` is compiled in this world.
+    fn holds(&self, arm: &Arm) -> bool {
+        match &arm.feature {
+            Some(feature) => self.on.contains(feature),
+            None => true,
+        }
+    }
 }
 
 /// The imported codec a list or an embedded body holds.
@@ -882,6 +926,7 @@ impl<'a> Plan<'a> {
                     generic: format!("A{i}"),
                     child: self.child_of(&arm.body_alias)?,
                     value: Some(arm.value),
+                    feature: arm.feature.clone(),
                 })
             })
             .collect();
@@ -893,10 +938,73 @@ impl<'a> Plan<'a> {
                     generic: "D".to_string(),
                     child,
                     value: None,
+                    feature: None,
                 });
             }
         }
         arms
+    }
+
+    /// The builds the variant's arms tell apart (docs/adr/0072): one for each
+    /// set of the features its arms name, or the single build when they name
+    /// none. An item whose text names the arms a build holds — the type of the
+    /// accessor, whose type parameters are one per arm — is written once per
+    /// world, under that world's `#[cfg]`.
+    fn worlds(&self) -> Vec<World> {
+        let features: Vec<String> = self
+            .arms()
+            .into_iter()
+            .filter_map(|arm| arm.feature)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if features.is_empty() {
+            return vec![World {
+                cfg: None,
+                on: std::collections::BTreeSet::new(),
+            }];
+        }
+        (0..1usize << features.len())
+            .map(|mask| {
+                let on: std::collections::BTreeSet<String> = features
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, _)| (mask >> i) & 1 == 1)
+                    .map(|(_, f)| f.clone())
+                    .collect();
+                let terms: Vec<String> = features
+                    .iter()
+                    .map(|f| {
+                        if on.contains(f) {
+                            format!("feature = \"{f}\"")
+                        } else {
+                            format!("not(feature = \"{f}\")")
+                        }
+                    })
+                    .collect();
+                let predicate = match terms.as_slice() {
+                    [one] => one.clone(),
+                    _ => format!("all({})", terms.join(", ")),
+                };
+                World {
+                    cfg: Some(format!("#[cfg({predicate})]")),
+                    on,
+                }
+            })
+            .collect()
+    }
+
+    /// `render(ty)` for the accessor type of the variant in each world, each
+    /// under its `#[cfg]` line indented by `indent`.
+    fn per_world(&self, indent: &str, render: impl Fn(&str) -> String) -> String {
+        let mut out = String::new();
+        for world in self.worlds() {
+            if let Some(cfg) = &world.cfg {
+                out.push_str(&format!("{indent}{cfg}\n"));
+            }
+            out.push_str(&render(&self.variant_type(&world)));
+        }
+        out
     }
 
     /// The type a tag takes: its carrier's, or the narrowest unsigned type that
@@ -905,12 +1013,13 @@ impl<'a> Plan<'a> {
         codec_totality::tag_type(self.m())
     }
 
-    /// What the accessor of the variant returns: the enum, with the source of
-    /// each arm's body as a type of its own.
-    fn variant_type(&self) -> String {
+    /// What the accessor of the variant returns in `world`: the enum, with the
+    /// source of the body of each arm the world holds as a type of its own.
+    fn variant_type(&self, world: &World) -> String {
         let args: Vec<String> = self
             .arms()
             .iter()
+            .filter(|arm| world.holds(arm))
             .map(|arm| format!("impl {}", arm.child.trait_path))
             .collect();
         format!("{}<'_, {}>", self.body_enum(), args.join(", "))
@@ -921,13 +1030,16 @@ impl<'a> Plan<'a> {
         if arms.is_empty() {
             return String::new();
         }
+        // A type parameter of an arm under a build feature is declared under
+        // it too, as an unused one is an error (E0392).
         let generics: Vec<String> = arms
             .iter()
-            .map(|arm| format!("{}: ?Sized", arm.generic))
+            .map(|arm| format!("{}{}: ?Sized", arm.cfg_prefix(), arm.generic))
             .collect();
         let tag = self.l().type_name(&self.tag_type()).to_string();
         let mut variants = String::new();
         for arm in &arms {
+            variants.push_str(&arm.cfg_line("    "));
             if arm.value.is_some() {
                 variants.push_str(&format!("    {}(&'s {}),\n", arm.variant_name, arm.generic));
             } else {
@@ -1025,6 +1137,7 @@ impl<'a> Plan<'a> {
             let mut arms = String::new();
             let tag = self.l().type_name(&self.tag_type()).to_string();
             for arm in self.arms() {
+                arms.push_str(&arm.cfg_line("    "));
                 if arm.value.is_some() {
                     arms.push_str(&format!(
                         "    {}(&'a {}),\n",
@@ -1087,6 +1200,7 @@ impl<'a> Plan<'a> {
             let parts_body = self.parts_body_name();
             let mut arms = String::new();
             for arm in self.arms() {
+                arms.push_str(&arm.cfg_line("            "));
                 if arm.value.is_some() {
                     arms.push_str(&format!(
                         "            {parts_body}::{name}(_b) => {enum_name}::{name}(*_b),\n",
@@ -1098,10 +1212,11 @@ impl<'a> Plan<'a> {
                     ));
                 }
             }
-            items.push_str(&format!(
-                "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n",
-                ty = self.variant_type(),
-            ));
+            items.push_str(&self.per_world("    ", |ty| {
+                format!(
+                    "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n"
+                )
+            }));
         }
         let lt = self.parts_lt();
         format!(
@@ -1138,10 +1253,9 @@ impl<'a> Plan<'a> {
             ));
         }
         if self.m().variant.is_some() {
-            items.push_str(&format!(
-                "    /// The arm of the variant this value holds.\n    fn body(&self) -> {};\n",
-                self.variant_type()
-            ));
+            items.push_str(&self.per_world("    ", |ty| {
+                format!("    /// The arm of the variant this value holds.\n    fn body(&self) -> {ty};\n")
+            }));
         }
         format!(
             "// ── Source (ADR 0058) ────────────────────────────────────────────────\n\
@@ -1169,10 +1283,9 @@ impl<'a> Plan<'a> {
             ));
         }
         if self.m().variant.is_some() {
-            items.push_str(&format!(
-                "    fn body(&self) -> {} {{\n        (**self).body()\n    }}\n",
-                self.variant_type()
-            ));
+            items.push_str(&self.per_world("    ", |ty| {
+                format!("    fn body(&self) -> {ty} {{\n        (**self).body()\n    }}\n")
+            }));
         }
         format!(
             "impl<T: {trait_name} + ?Sized> {trait_name} for &T {{\n{items}}}\n\n",
@@ -1256,6 +1369,7 @@ impl<'a> Plan<'a> {
             let variant = format!("{}{}", self.name(), form.variant_suffix());
             let mut arms = String::new();
             for arm in self.arms() {
+                arms.push_str(&arm.cfg_line("            "));
                 if arm.value.is_some() {
                     arms.push_str(&format!(
                         "            {variant}::{name}(_b) => {enum_name}::{name}(_b),\n",
@@ -1267,10 +1381,11 @@ impl<'a> Plan<'a> {
                     ));
                 }
             }
-            items.push_str(&format!(
-                "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n",
-                ty = self.variant_type(),
-            ));
+            items.push_str(&self.per_world("    ", |ty| {
+                format!(
+                    "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n"
+                )
+            }));
         }
         let head = match form {
             Form::Builder => format!(
@@ -1429,6 +1544,12 @@ impl<'a> Plan<'a> {
             } else {
                 format!("{enum_name}::Default {{ body: _b, .. }}")
             };
+            // An arm under a build feature is written in every rendering, its
+            // refusal recorded as any arm's (docs/adr/0065), and compiled where
+            // the feature is on (docs/adr/0072).
+            if let Some(feature) = &arm.feature {
+                lines.push(format!("    {}", rust_feature_cfg(feature)));
+            }
             lines.push(format!(
                 "    {pattern} => {}::write_source(_b, w{}){},",
                 arm.child.type_name,
@@ -1467,14 +1588,21 @@ impl<'a> Plan<'a> {
                 import.namespace, import.type_name
             );
             let mask: u64 = (1u64 << d.width) - 1;
+            // An arm the embedded codec compiles under a build feature has no
+            // variant in a build without it, so its arm here is compiled under
+            // the same feature (docs/adr/0072).
             let mut arms: Vec<String> = d
                 .arms
                 .iter()
-                .map(|(alias, value, _)| {
+                .map(|arm| {
                     format!(
-                        "{enum_path}::{}(_) => {}",
-                        filters::to_pascal_case(alias.clone()),
-                        value & mask
+                        "{}{enum_path}::{}(_) => {}",
+                        arm.feature
+                            .as_deref()
+                            .map(|f| format!("{} ", rust_feature_cfg(f)))
+                            .unwrap_or_default(),
+                        filters::to_pascal_case(arm.body_alias.clone()),
+                        arm.value & mask
                     )
                 })
                 .collect();
@@ -1522,6 +1650,9 @@ impl<'a> Plan<'a> {
         let local = self.local("_d_", id);
         let mut arms: Vec<String> = Vec::new();
         for arm in self.arms() {
+            if let Some(feature) = &arm.feature {
+                arms.push(format!("    {}", rust_feature_cfg(feature)));
+            }
             match arm.value {
                 Some(value) => arms.push(format!(
                     "    {enum_name}::{}(_) => {value},",

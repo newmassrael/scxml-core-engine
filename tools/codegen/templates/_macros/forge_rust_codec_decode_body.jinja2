@@ -102,6 +102,11 @@
         match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 {% set arm_body = arm.view_body_type if view_decode else arm.body_type %}
+{# docs/adr/0072: a build without the arm's feature has no such arm, and its
+   tag reaches the catch-all below. #}
+{% if arm.rust_cfg %}
+            {{ arm.rust_cfg }}
+{% endif %}
             {{ arm.value_literal }} => {
                 _out.body = {{ decode_variant_enum }}::{{ arm.variant_name }}({{ arm_body }}::default());
                 if let {{ decode_variant_enum }}::{{ arm.variant_name }}(_b) = &mut _out.body {
