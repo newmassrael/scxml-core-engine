@@ -452,6 +452,52 @@ fn enum_variants(code: &str, name: &str) -> Vec<String> {
         .collect()
 }
 
+/// A transition with more than one target names its list in the pool, which
+/// holds the list's length and then its targets; one with a single target holds
+/// it in its row, and the pool holds nothing for it (docs/adr/0067).
+#[test]
+fn rust_template_puts_only_lists_of_targets_in_the_pool() {
+    // p = 0, x = 1, x1 = 2, x2 = 3, y = 4, y1 = 5, y2 = 6. Row 0 is x2's
+    // transition to x1 and y1; rows 1 and 2 the initial transitions of x and y;
+    // row 3 the document's.
+    let model = parse(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p" name="two_targets">
+  <parallel id="p">
+    <state id="x">
+      <state id="x1"/>
+      <state id="x2"><transition event="go" target="x1 y1"/></state>
+    </state>
+    <state id="y">
+      <state id="y1"/>
+      <state id="y2"/>
+    </state>
+  </parallel>
+</scxml>"#,
+        "two_targets",
+    );
+    for no_std in [false, true] {
+        let code = generate(&model, &template_dir(), no_std).expect("render");
+        assert_eq!(
+            lines_starting(&code, "TransitionRow::new("),
+            [
+                "TransitionRow::new(Some(StateId(3)), Target::list(0), false, false),",
+                "TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),",
+                "TransitionRow::new(Some(StateId(4)), Target::state(StateId(5)), false, false),",
+                "TransitionRow::new(None, Target::state(StateId(0)), false, false),",
+            ],
+            "emit (no_std={no_std}): the transition rows"
+        );
+        assert!(
+            code.contains(
+                "targets: &[Target::count(2), Target::state(StateId(2)), \
+                 Target::state(StateId(5))],"
+            ),
+            "emit (no_std={no_std}): the pool holds the one list, its length first"
+        );
+    }
+}
+
 #[test]
 fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     // The runtime names no capacity of its own for the buffers of Appendix D's
@@ -491,13 +537,16 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         };
         format!("StateRow::new({parent}, StateKind::{kind}, StateId({last}), {initial}),")
     };
-    let transition_row = |source: Option<u16>, target: u16| {
+    // A transition with one target holds it in its row (docs/adr/0067).
+    let transition_row = |source: Option<u16>, target: &str| {
         let source = match source {
             Some(s) => format!("Some(StateId({s}))"),
             None => "None".to_string(),
         };
-        format!("TransitionRow::new({source}, Span {{ start: {target}, len: 1 }}, false, false),")
+        format!("TransitionRow::new({source}, {target}, false, false),")
     };
+    let state = |id: u16| format!("Target::state(StateId({id}))");
+    let history = |id: u16| format!("Target::history(HistoryId({id}))");
     for no_std in [false, true] {
         let code = generate(&model, &template_dir(), no_std).expect("render");
         assert_eq!(
@@ -550,57 +599,49 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "emit (no_std={no_std}): the state rows"
         );
         assert_eq!(
-            lines_starting(&code, "HistoryRow {"),
+            lines_starting(&code, "HistoryRow::new("),
             [
-                "HistoryRow { parent: StateId(1), default: TransitionId(17), deep: true },",
-                "HistoryRow { parent: StateId(5), default: TransitionId(18), deep: false },",
+                "HistoryRow::new(StateId(1), TransitionId(17), true),",
+                "HistoryRow::new(StateId(5), TransitionId(18), false),",
             ],
             "emit (no_std={no_std}): the history rows"
         );
         // The written transitions by source (a1's four, a2's two, a3's, b1's,
         // b2's two, c1's two, c2's two), then the initial transitions of ra,
         // rb and rc, the defaults of ha_deep and hb_shallow, and the
-        // document's: each one target, the n-th of the pool.
-        let sources = [
-            Some(2),
-            Some(2),
-            Some(2),
-            Some(2),
-            Some(3),
-            Some(3),
-            Some(4),
-            Some(6),
-            Some(7),
-            Some(7),
-            Some(10),
-            Some(10),
-            Some(11),
-            Some(11),
-            Some(1),
-            Some(5),
-            Some(8),
-            Some(1),
-            Some(5),
-            None,
+        // document's: each one target, held in its row.
+        let rows = [
+            (Some(2), state(3)),
+            (Some(2), state(4)),
+            (Some(2), state(3)),
+            (Some(2), state(4)),
+            (Some(3), state(2)),
+            (Some(3), history(0)),
+            (Some(4), state(2)),
+            (Some(6), state(7)),
+            (Some(7), state(6)),
+            (Some(7), history(1)),
+            (Some(10), state(10)),
+            (Some(10), state(10)),
+            (Some(11), state(11)),
+            (Some(11), state(11)),
+            (Some(1), state(2)),
+            (Some(5), state(6)),
+            (Some(8), state(9)),
+            (Some(1), state(2)),
+            (Some(5), state(6)),
+            (None, state(0)),
         ];
         assert_eq!(
             lines_starting(&code, "TransitionRow::new("),
-            sources
-                .iter()
-                .zip(0u16..)
+            rows.iter()
                 .map(|(source, target)| transition_row(*source, target))
                 .collect::<Vec<_>>(),
             "emit (no_std={no_std}): the transition rows"
         );
         for expected in [
-            "targets: &[Target::state(StateId(3)), Target::state(StateId(4)), \
-             Target::state(StateId(3)), Target::state(StateId(4)), Target::state(StateId(2)), \
-             Target::history(HistoryId(0)), Target::state(StateId(2)), Target::state(StateId(7)), \
-             Target::state(StateId(6)), Target::history(HistoryId(1)), \
-             Target::state(StateId(10)), Target::state(StateId(10)), Target::state(StateId(11)), \
-             Target::state(StateId(11)), Target::state(StateId(2)), Target::state(StateId(6)), \
-             Target::state(StateId(9)), Target::state(StateId(2)), Target::state(StateId(6)), \
-             Target::state(StateId(0))],",
+            // No transition has more than one target, so the pool is empty.
+            "targets: &[],",
             // The document has a `<history>` and a `<parallel>`, so its tables
             // carry the procedures of both (docs/adr/0066).
             "initial: TransitionId(19),\n        \
@@ -640,6 +681,8 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             // the buffer sizes are the policy's types.
             "children: &[",
             "record: Span",
+            // A row's targets are no span into a pool (docs/adr/0067).
+            "Span {",
             "history_records",
             "max_configuration:",
             "max_walk:",
@@ -672,11 +715,14 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     );
     assert_eq!(
         lines_starting(&flat, "TransitionRow::new("),
-        [transition_row(Some(0), 0), transition_row(None, 1)]
+        [
+            transition_row(Some(0), &state(1)),
+            transition_row(None, &state(0))
+        ]
     );
-    assert!(lines_starting(&flat, "HistoryRow {").is_empty());
+    assert!(lines_starting(&flat, "HistoryRow::new(").is_empty());
     for expected in [
-        "targets: &[Target::state(StateId(1)), Target::state(StateId(0))],",
+        "targets: &[],",
         "initial: TransitionId(1),",
         // Neither a `<history>` nor a `<parallel>`: neither procedure set
         // (docs/adr/0066).

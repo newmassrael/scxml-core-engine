@@ -37,11 +37,12 @@
 //! - a target is as written: a token naming a `<history>` stays a history, for
 //!   the entry procedures to dereference at run time.
 //!
-//! Every number is a `u16`. The runtime keeps the top bit of a target for
-//! whether it names a history and the largest `u16` for an absent state or
-//! transition, so a document with more than [`MAX_IDS`] states, histories or
-//! transitions, or more than [`MAX_TARGETS`] targets, is refused, and the
-//! refusal names the table.
+//! Every number is a `u16`, and every id fits the 14 bits the runtime's rows
+//! give it (docs/adr/0067): the runtime keeps the two bits above an id for what
+//! the row would otherwise spend a byte on, and the largest 14-bit number for an
+//! absent state or transition. So a document with more than [`MAX_IDS`] states,
+//! histories or transitions, or more than [`MAX_TARGETS`] targets, is refused,
+//! and the refusal names the table.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -50,11 +51,10 @@ use std::ops::Range;
 use crate::microstep_bounds::MicrostepBounds;
 use crate::model::{HistoryInfo, SCXMLModel, State};
 
-/// The most states, histories or transitions one table numbers: every id
-/// below `1 << 15`, since a target keeps its top bit for whether it names a
-/// state or a history, and no id reaches the largest `u16`, which a row holds
-/// where a state or a transition is absent.
-pub const MAX_IDS: usize = 1 << 15;
+/// The most states, histories or transitions one table numbers: every 14-bit
+/// number but the largest, which the runtime's rows hold where a state or a
+/// transition is absent (docs/adr/0067).
+pub const MAX_IDS: usize = (1 << 14) - 1;
 
 /// The most targets the pool holds: a transition names its targets as a
 /// [`Span`] of two `u16`s.
@@ -933,16 +933,16 @@ mod tests {
                 })
             );
         }
-        // Every id leaves a target's top bit clear, and none is the largest
-        // `u16`, which stands for an absent state or transition.
-        assert_eq!(MAX_IDS - 1, usize::from(u16::MAX >> 1));
+        // Every id fits the 14 bits a runtime row gives it, and none is the
+        // largest 14-bit number, which stands for an absent state or transition.
+        assert_eq!(MAX_IDS, (1 << 14) - 1);
         let message = TablesError::TooMany {
             table: Table::Transitions,
             count: 40_000,
         }
         .to_string();
         assert!(message.contains("40000 transitions"), "{message}");
-        assert!(message.contains("32768"), "{message}");
+        assert!(message.contains("16383"), "{message}");
         let message = TablesError::TooMany {
             table: Table::Targets,
             count: 70_000,

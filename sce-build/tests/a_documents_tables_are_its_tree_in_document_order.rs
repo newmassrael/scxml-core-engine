@@ -412,40 +412,49 @@ fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables {
     let histories: Vec<rt::HistoryRow> = tables
         .histories
         .iter()
-        .map(|row| rt::HistoryRow {
-            parent: rt::StateId(row.parent),
-            default: rt::TransitionId(row.default),
-            deep: row.deep,
+        .map(|row| {
+            rt::HistoryRow::new(
+                rt::StateId(row.parent),
+                rt::TransitionId(row.default),
+                row.deep,
+            )
         })
         .collect();
+    let target_of = |target: &TargetRef| match *target {
+        TargetRef::State(id) => rt::Target::state(rt::StateId(id)),
+        TargetRef::History(id) => rt::Target::history(rt::HistoryId(id)),
+    };
+    // Packed as the generator packs them (docs/adr/0067): a transition holds
+    // its only target itself, and the pool holds only lists of more than one,
+    // each its length first.
+    let mut pool: Vec<rt::Target> = Vec::new();
     let transitions: Vec<rt::TransitionRow> = tables
         .transitions
         .iter()
         .map(|row| {
+            let targets = match &tables.targets[row.targets.range()] {
+                [] => rt::Target::NONE,
+                [only] => target_of(only),
+                list => {
+                    let position = pool.len() as u16;
+                    pool.push(rt::Target::count(list.len() as u16));
+                    pool.extend(list.iter().map(target_of));
+                    rt::Target::list(position)
+                }
+            };
             rt::TransitionRow::new(
                 row.source.map(rt::StateId),
-                rt::Span {
-                    start: row.targets.start,
-                    len: row.targets.len,
-                },
+                targets,
                 row.internal,
                 row.has_content,
             )
-        })
-        .collect();
-    let targets: Vec<rt::Target> = tables
-        .targets
-        .iter()
-        .map(|target| match *target {
-            TargetRef::State(id) => rt::Target::state(rt::StateId(id)),
-            TargetRef::History(id) => rt::Target::history(rt::HistoryId(id)),
         })
         .collect();
     rt::DocumentTables {
         states: states.leak(),
         histories: histories.leak(),
         transitions: transitions.leak(),
-        targets: targets.leak(),
+        targets: pool.leak(),
         initial: rt::TransitionId(tables.initial),
         // The feature procedures exactly when the document uses the feature,
         // as the generator writes them (docs/adr/0066).

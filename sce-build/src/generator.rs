@@ -2530,10 +2530,30 @@ fn rust_tables(
             })
         })
         .collect();
+    // A target as the runtime's `Target` spells it.
+    let rust_target = |target: &TargetRef| match *target {
+        TargetRef::State(state) => format!("Target::state(StateId({state}))"),
+        TargetRef::History(history) => format!("Target::history(HistoryId({history}))"),
+    };
+    // The pool of the runtime's tables holds only the lists of transitions with
+    // more than one target, each its length followed by its targets; a row holds
+    // its only target itself (docs/adr/0067).
+    let mut pool: Vec<String> = Vec::new();
     let mut written: std::collections::BTreeMap<&str, Vec<usize>> =
         std::collections::BTreeMap::new();
     let mut transitions: Vec<serde_json::Value> = Vec::with_capacity(tables.transitions.len());
     for (number, row) in tables.transitions.iter().enumerate() {
+        let row_targets = &tables.targets[row.targets.range()];
+        let targets = match row_targets {
+            [] => "Target::NONE".to_string(),
+            [only] => rust_target(only),
+            _ => {
+                let position = pool.len();
+                pool.push(format!("Target::count({})", row_targets.len()));
+                pool.extend(row_targets.iter().map(rust_target));
+                format!("Target::list({position})")
+            }
+        };
         // What the row is, for the comment beside it.
         let origin = match (row.origin, row.source) {
             (TransitionOrigin::Written { index_in_source }, Some(source)) => {
@@ -2553,25 +2573,26 @@ fn rust_tables(
         transitions.push(serde_json::json!({
             "origin": origin,
             "source": rust_optional_id("StateId", row.source),
-            "targets_start": row.targets.start,
-            "targets_len": row.targets.len,
+            "targets": targets,
             "internal": row.internal,
             "has_content": row.has_content,
         }));
     }
-    let targets: Vec<serde_json::Value> = tables
-        .targets
-        .iter()
-        .map(|target| match *target {
-            TargetRef::State(state) => serde_json::json!({ "history": false, "id": state }),
-            TargetRef::History(history) => serde_json::json!({ "history": true, "id": history }),
-        })
-        .collect();
+    // A list's position is a 14-bit id field of its row, as a state's id is.
+    if pool.len() > crate::document_tables::MAX_IDS {
+        return Err(GenerateError::unsupported(format!(
+            "the document's transitions with more than one target need {} entries in the \
+             pool of target lists, and a Rust machine's tables hold at most {} \
+             (docs/adr/0067)",
+            pool.len(),
+            crate::document_tables::MAX_IDS
+        )));
+    }
     Ok(serde_json::json!({
         "states": states,
         "histories": histories,
         "transitions": transitions,
-        "targets": targets,
+        "targets": pool,
         "initial": tables.initial,
         "history": tables.uses_history(),
         "parallel": tables.uses_parallel(),
