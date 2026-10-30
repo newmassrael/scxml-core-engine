@@ -331,6 +331,20 @@ fn kind_of(state: &State) -> StateKind {
 }
 
 impl DocumentTables {
+    /// Whether the document has a `<history>`: its tables then carry the
+    /// runtime's `HISTORY` procedures, and only then (docs/adr/0066).
+    pub fn uses_history(&self) -> bool {
+        !self.histories.is_empty()
+    }
+
+    /// Whether the document has a `<parallel>`: its tables then carry the
+    /// runtime's `PARALLEL` procedures, and only then.
+    pub fn uses_parallel(&self) -> bool {
+        self.states
+            .iter()
+            .any(|row| row.kind == StateKind::Parallel)
+    }
+
     /// The tables of `model`'s state tree.
     pub fn of(model: &SCXMLModel) -> Result<Self, TablesError> {
         // The order the generator sorts states in. The sort is stable over the

@@ -2573,6 +2573,8 @@ fn rust_tables(
         "transitions": transitions,
         "targets": targets,
         "initial": tables.initial,
+        "history": tables.uses_history(),
+        "parallel": tables.uses_parallel(),
         "max_configuration": max_configuration,
         "max_enabled": max_enabled,
         "max_history_defaults": max_history_defaults,
