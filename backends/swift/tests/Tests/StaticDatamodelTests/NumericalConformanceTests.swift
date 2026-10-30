@@ -4233,6 +4233,88 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(RpcStatus.unavailable.declaredName == "unavailable", "rpc_status.unavailable declared name")
 }
 
+// MARK: - timer: timer_tester_present
+
+@Test func timerTesterPresentMatchesReference() throws {
+
+    final class Log {
+        var ops: [String] = []
+    }
+
+    final class RecordingClock: ForgeTimer {
+        let log: Log
+        var callback: (() -> Void)?
+
+        init(log: Log) {
+            self.log = log
+        }
+
+        func startPeriodic(intervalMs: Int64, callback: @escaping () -> Void) {
+            log.ops.append("start_periodic:\(intervalMs)")
+            self.callback = callback
+        }
+
+        func startOneShot(delayMs: Int64, callback: @escaping () -> Void) {
+            // Recorded rather than ignored: no template writes it today, and if one
+            // starts this shows up as a difference and not as silence.
+            log.ops.append("start_one_shot:\(delayMs)")
+            self.callback = callback
+        }
+
+        func cancel() {
+            log.ops.append("cancel")
+        }
+    }
+
+    final class RecordingHandler: TimerTesterPresentHandler {
+        let log: Log
+
+        init(log: Log) {
+            self.log = log
+        }
+
+        func fireTesterPresent() {
+            log.ops.append("fired:TesterPresent")
+        }
+    }
+
+    let spec = try oracleSpec("timers", "timer_tester_present")
+    #expect(try oracleInteger(spec.member("period_ms"), as: Int64.self) == TimerTesterPresent.periodMs, "timer_tester_present: periodMs")
+    #expect(try oracleInteger(spec.member("period_us"), as: Int64.self) == TimerTesterPresent.periodUs, "timer_tester_present: periodUs")
+
+    let log = Log()
+    let clock = RecordingClock(log: log)
+    let handler = RecordingHandler(log: log)
+    let scheduler = TimerTesterPresent(handler: handler, timer: clock)
+
+    for (step, entry) in try oracleArray(spec.member("sequence")).enumerated() {
+        log.ops.removeAll()
+        let call = try oracleText(entry.member("call"))
+        switch call {
+        case "start":
+            scheduler.start()
+        case "cancel":
+            scheduler.cancel()
+        case "fire":
+            // Invoking the callback the clock recorded proves the wiring reaches the
+            // handler; calling the handler directly would prove only that the test can
+            // call it.
+            guard let registered = clock.callback else {
+                throw OracleError(description: "timer_tester_present step \(step): no callback registered")
+            }
+            registered()
+        case "on_reset":
+            scheduler.onResetDiagRequestSent()
+        case "on_cancel_exit":
+            scheduler.onCancelSessionActiveExit()
+        default:
+            throw OracleError(description: "timer_tester_present step \(step): unknown call \(call)")
+        }
+
+        let expected = try oracleArray(entry.member("expect")).map { try oracleText($0) }
+        #expect(log.ops == expected, "timer_tester_present step \(step) (\(call))")
+    }}
+
 // MARK: - event-schema: event_schema_hlc
 
 @Test func eventSchemaHlcMatchesReference() throws {
