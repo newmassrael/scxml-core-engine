@@ -106,6 +106,14 @@ pub(super) fn count_function(trait_name: &str, params: &str, args: &str, may_fai
     )
 }
 
+/// The type the default arm of the codec `struct_name` holds its tag in, which
+/// admits no tag the encode could not write ([`codec_totality::UnknownTag`]).
+/// The codec's template defines it beside the variant, from the context
+/// `render_codec` gives it under the same name.
+pub(super) fn unknown_tag_type(struct_name: &str) -> String {
+    format!("{struct_name}UnknownTag")
+}
+
 /// The attribute of a function that writes, for [`Input::inline_encode`].
 pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
     if inline_encode {
@@ -1013,6 +1021,10 @@ impl<'a> Plan<'a> {
         codec_totality::tag_type(self.m())
     }
 
+    fn unknown_tag_type(&self) -> String {
+        unknown_tag_type(self.name())
+    }
+
     /// What the accessor of the variant returns in `world`: the enum, with the
     /// source of the body of each arm the world holds as a type of its own.
     fn variant_type(&self, world: &World) -> String {
@@ -1036,7 +1048,7 @@ impl<'a> Plan<'a> {
             .iter()
             .map(|arm| format!("{}{}: ?Sized", arm.cfg_prefix(), arm.generic))
             .collect();
-        let tag = self.l().type_name(&self.tag_type()).to_string();
+        let tag = self.unknown_tag_type();
         let mut variants = String::new();
         for arm in &arms {
             variants.push_str(&arm.cfg_line("    "));
@@ -1135,7 +1147,7 @@ impl<'a> Plan<'a> {
                 self.parts_lt()
             ));
             let mut arms = String::new();
-            let tag = self.l().type_name(&self.tag_type()).to_string();
+            let tag = self.unknown_tag_type();
             for arm in self.arms() {
                 arms.push_str(&arm.cfg_line("    "));
                 if arm.value.is_some() {
@@ -1610,7 +1622,7 @@ impl<'a> Plan<'a> {
             // what the carrier holds.
             if import.codec_variant_has_catch_all {
                 arms.push(format!(
-                    "{enum_path}::Default {{ tag, .. }} => {ty}::from(tag) & 0x{mask:X}"
+                    "{enum_path}::Default {{ tag, .. }} => {ty}::from(tag.get()) & 0x{mask:X}"
                 ));
             }
             let accessor = self.accessor(embed);
@@ -1658,7 +1670,9 @@ impl<'a> Plan<'a> {
                     "    {enum_name}::{}(_) => {value},",
                     arm.variant_name
                 )),
-                None => arms.push(format!("    {enum_name}::Default {{ tag, .. }} => tag,")),
+                None => arms.push(format!(
+                    "    {enum_name}::Default {{ tag, .. }} => tag.get(),"
+                )),
             }
         }
         lines.push(format!(

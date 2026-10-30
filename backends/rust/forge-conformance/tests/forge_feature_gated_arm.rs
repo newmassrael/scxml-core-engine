@@ -97,7 +97,7 @@ fn a_tag_the_document_does_not_name_reaches_the_catch_all() {
     let decoded = CodecFeatureGatedArm::decode(&mut cursor).expect("the catch-all decodes");
     match &decoded.body {
         CodecFeatureGatedArmVariant::Default { tag, body } => {
-            assert_eq!(*tag, 0x03);
+            assert_eq!(tag.get(), 0x03);
             assert_eq!((body.header, body.payload), (0x03, 0x07));
         }
         other => panic!("tag 0x03 must reach the catch-all; got {other:?}"),

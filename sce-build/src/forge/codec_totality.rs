@@ -7,8 +7,8 @@
 //! presents, docs/adr/0058 §1) it is total exactly when every value the
 //! abstract syntax admits has a frame. Where the abstract syntax is wider than
 //! the encodable set, the encode refuses the difference: a length past the
-//! field that carries it, a list past its bound, a tag past its bits, a flag
-//! that disagrees with the presence it announces. This module names each of
+//! field that carries it, a list past its bound, a flag that disagrees with the
+//! presence it announces. This module names each of
 //! those places, element by element, from the codec model and its roles alone,
 //! so it is the one statement of when an encode can refuse. A codec's
 //! declaration (`sce:encode-may-fail`) is held to it before any backend renders
@@ -17,8 +17,9 @@
 //!
 //! A conversion that cannot fail is not a refusal: a length or a count widens
 //! into a 64-bit field on every target (docs/adr/0065 §5), a count bounded by
-//! its list's `max-count` fits a field that holds the bound, and a tag the
-//! grammar names fits the bits it is written into.
+//! its list's `max-count` fits a field that holds the bound, and a tag fits the
+//! bits it is written into: an arm's is declared there, and a default arm holds
+//! an [`UnknownTag`] (docs/adr/0065 §6 R3).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -40,7 +41,7 @@ pub enum RefusalKind {
     TooManyElements,
     /// A chain longer than its `max-depth`.
     TlvChainOverflow,
-    /// A length, a count or a tag past the field or bits that carry it, or a
+    /// A length or a count past the field or bits that carry it, or a
     /// length the wire holds less an offset (`sce:length-arith`) that would be
     /// negative.
     LengthOutOfRange,
@@ -343,13 +344,11 @@ fn mask_of(bits: u32) -> u64 {
     }
 }
 
-/// The type a variant's tag is held in: the width of the bit-range it is read
-/// from, or the carrier field's own type.
-pub fn tag_type(m: &CodecModel) -> SceType {
-    let Some(variant) = &m.variant else {
-        return SceType::Uint8;
-    };
-    let flag_def = match (&variant.peek_byte, &variant.tag_flag) {
+/// The bit-range a variant's tag is read from, when it is one: a flag of the
+/// peeked byte or of the carrier field.
+fn tag_flag(m: &CodecModel) -> Option<&crate::forge::model::FlagDef> {
+    let variant = m.variant.as_ref()?;
+    match (&variant.peek_byte, &variant.tag_flag) {
         (Some(peek), Some(flag)) => peek.flags.iter().find(|f| &f.name == flag),
         (None, Some(flag)) => variant
             .tag_field
@@ -357,8 +356,16 @@ pub fn tag_type(m: &CodecModel) -> SceType {
             .and_then(|id| m.fields.iter().find(|f| &f.id == id))
             .and_then(|carrier| carrier.flags.iter().find(|f| &f.name == flag)),
         _ => None,
+    }
+}
+
+/// The type a variant's tag is held in: the width of the bit-range it is read
+/// from, or the carrier field's own type.
+pub fn tag_type(m: &CodecModel) -> SceType {
+    let Some(variant) = &m.variant else {
+        return SceType::Uint8;
     };
-    match flag_def {
+    match tag_flag(m) {
         Some(def) => match def.width.max(1) {
             0..=8 => SceType::Uint8,
             9..=16 => SceType::Uint16,
@@ -373,19 +380,70 @@ pub fn tag_type(m: &CodecModel) -> SceType {
     }
 }
 
-/// The largest tag the active arm of `m`'s variant can name: a known arm's
-/// declared value, or any value of the tag's type for a default arm, which
-/// presents the tag it could not name.
-fn tag_bound(m: &CodecModel) -> u64 {
-    let Some(variant) = &m.variant else {
-        return 0;
-    };
-    let known = variant.arms.iter().map(|a| a.value).max().unwrap_or(0);
-    if variant.default_arm.is_some() {
-        known.max(mask_of(unsigned_bits(&tag_type(m)).unwrap_or(64)))
-    } else {
-        known
+/// The tags a variant's default arm may hold (docs/adr/0065 §6 R3): each value
+/// inside the bits the tag is read from and outside every arm's tag.
+///
+/// The arm holds its tag as a type that admits these values and no other, so a
+/// default arm is written as it is and read back as the default arm. Its encode
+/// has nothing to refuse, and the analysis names no refusal for the tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownTag {
+    /// The type the tag is held in ([`tag_type`]).
+    pub ty: SceType,
+    /// The bits the tag is read from: the bit-range's width, or the type's.
+    pub bits: u32,
+    /// The tags the arms name, which a default arm may not hold, in the order
+    /// the document declares them. An arm under a build feature is among them in
+    /// every build: a build without the feature refuses its tag on decode, and
+    /// the default arm never holds it.
+    pub known: Vec<u64>,
+}
+
+impl UnknownTag {
+    /// The largest tag the bits hold, when it is smaller than the largest value
+    /// of the type, so that a tag of the type can be past it.
+    pub fn max_below_type(&self) -> Option<u64> {
+        let type_bits = unsigned_bits(&self.ty).unwrap_or(64);
+        (self.bits < type_bits).then(|| mask_of(self.bits))
     }
+
+    /// Whether `tag` is one a default arm may hold.
+    pub fn admits(&self, tag: u64) -> bool {
+        tag <= mask_of(self.bits) && !self.known.contains(&tag)
+    }
+
+    /// The known tags as runs of consecutive values, each `(first, last)`, in
+    /// ascending order: a backend writes a run as one range.
+    pub fn known_runs(&self) -> Vec<(u64, u64)> {
+        let mut tags = self.known.clone();
+        tags.sort_unstable();
+        tags.dedup();
+        let mut runs: Vec<(u64, u64)> = Vec::new();
+        for tag in tags {
+            match runs.last_mut() {
+                Some((_, last)) if last.checked_add(1) == Some(tag) => *last = tag,
+                _ => runs.push((tag, tag)),
+            }
+        }
+        runs
+    }
+}
+
+/// The tags `m`'s default arm may hold, or `None` when its variant has no
+/// default arm.
+pub fn unknown_tag(m: &CodecModel) -> Option<UnknownTag> {
+    let variant = m.variant.as_ref()?;
+    variant.default_arm.as_ref()?;
+    let ty = tag_type(m);
+    let bits = match tag_flag(m) {
+        Some(def) => def.width.max(1),
+        None => unsigned_bits(&ty).unwrap_or(64),
+    };
+    Some(UnknownTag {
+        ty,
+        bits,
+        known: variant.arms.iter().map(|a| a.value).collect(),
+    })
 }
 
 /// The fields whose size the element `id` is derived from, when it is a
@@ -604,26 +662,11 @@ fn derived(
             }
             return;
         }
-        Derivation::VariantTag { .. } => {
-            // Written whole into the tag's own field, the tag is of that field's
-            // type; written into a bit-range, it must fit the bits.
-            if let ElementId::Flag { .. } = id {
-                let width = flag_width(m, id);
-                if tag_bound(m) > mask_of(width) {
-                    push(
-                        out,
-                        RefusalKind::LengthOutOfRange,
-                        &element,
-                        format!(
-                            "the default arm may present a tag past the {width} bits it is \
-                             written into"
-                        ),
-                    );
-                }
-            }
-            return;
-        }
-        Derivation::ParentTag { .. } | Derivation::ChainContinuation { .. } => return,
+        // A known arm's tag is declared inside the tag's bits, and a default
+        // arm's is an [`UnknownTag`], which holds no other (docs/adr/0065 §6 R3).
+        Derivation::VariantTag { .. }
+        | Derivation::ParentTag { .. }
+        | Derivation::ChainContinuation { .. } => return,
     };
 
     // Several sources of one number agree, or no frame says all of them.
@@ -904,6 +947,60 @@ mod tests {
                </datamodel></scxml>"#,
         );
         assert!(analyse(&m, &mut NoImports).is_total());
+    }
+
+    /// A default arm holds a tag inside the bits the tag is read from and
+    /// outside every arm's tag, so the tag it writes is not a refusal
+    /// (docs/adr/0065 §6 R3).
+    #[test]
+    fn a_default_arm_holds_only_a_tag_its_bits_hold_and_no_arm_names() {
+        let m = model(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                       sce:kind="codec" name="t">
+                 <sce:import src="a.scxml" kind="codec" as="a"/>
+                 <sce:import src="b.scxml" kind="codec" as="b"/>
+                 <datamodel>
+                 <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+                   <sce:flag name="id" bit="0" width="4"/>
+                   <sce:flag name="enc" bit="5" width="2"/>
+                 </sce:flags>
+                 <sce:variant tag="header.enc">
+                   <sce:arm value="0x00" type="a" default="true"/>
+                   <sce:arm value="0x01" type="b"/>
+                   <sce:arm value="0x02" type="b"/>
+                   <sce:default type="a"/>
+                 </sce:variant>
+               </datamodel></scxml>"#,
+        );
+        let unknown = unknown_tag(&m).expect("the variant has a default arm");
+        assert_eq!(
+            unknown,
+            UnknownTag {
+                ty: SceType::Uint8,
+                bits: 2,
+                known: vec![0, 1, 2],
+            }
+        );
+        assert_eq!(unknown.known_runs(), vec![(0, 2)]);
+        assert_eq!(unknown.max_below_type(), Some(3));
+        assert_eq!(
+            (0..=4).filter(|&t| unknown.admits(t)).collect::<Vec<_>>(),
+            vec![3]
+        );
+        assert!(analyse(&m, &mut NoImports).is_total());
+    }
+
+    /// Runs of consecutive tags are written as one range, and the gaps between
+    /// them break the runs.
+    #[test]
+    fn the_known_tags_are_grouped_into_runs_of_consecutive_values() {
+        let unknown = UnknownTag {
+            ty: SceType::Uint8,
+            bits: 8,
+            known: vec![7, 1, 2, 3, 9, 8, 255],
+        };
+        assert_eq!(unknown.known_runs(), vec![(1, 3), (7, 9), (255, 255)]);
+        assert_eq!(unknown.max_below_type(), None);
     }
 
     #[test]

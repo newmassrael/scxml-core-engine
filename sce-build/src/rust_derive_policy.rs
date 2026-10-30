@@ -72,6 +72,11 @@ pub enum RustDeriveCategory {
     /// of [`Self::CodecStruct`] holds this enum, so its derive set
     /// must be the transitive prefix of CodecStruct's derives.
     CodecVariantEnum,
+    /// `codec.rs.jinja2` — `pub struct {{ struct_name }}UnknownTag`, the tag
+    /// a default arm holds (docs/adr/0065 §6 R3). Every variant enum holds
+    /// one, so its derives include theirs; a tag is a plain number, so `Copy`,
+    /// `Eq` and `Hash` besides.
+    CodecUnknownTag,
     /// `event_schema.rs.jinja2` — `pub struct {{ payload_struct_name }}`.
     /// §scxml-5.10 event payload, equivalent wire-typed role.
     EventSchemaPayload,
@@ -191,6 +196,7 @@ impl RustDeriveCategory {
         match self {
             Self::CodecStruct => &["Debug", "Clone", "PartialEq"],
             Self::CodecVariantEnum => &["Debug", "Clone", "PartialEq"],
+            Self::CodecUnknownTag => &["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash"],
             Self::EventSchemaPayload => &["Debug", "Clone", "PartialEq"],
             Self::EventSchemaPlainPayload => &["Debug", "Clone", "Copy", "PartialEq"],
             Self::ForgeEnum => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
@@ -312,6 +318,19 @@ mod tests {
         assert!(RustDeriveCategory::CodecVariantEnum
             .derives()
             .contains(&"Debug"));
+    }
+
+    #[test]
+    fn an_unknown_tag_derives_what_the_variant_holding_it_does() {
+        // A variant enum's default arm holds the tag, so each derive of the
+        // enum needs it of the tag.
+        let tag = RustDeriveCategory::CodecUnknownTag.derives();
+        for derive in RustDeriveCategory::CodecVariantEnum.derives() {
+            assert!(
+                tag.contains(derive),
+                "the unknown tag does not derive {derive}"
+            );
+        }
     }
 
     #[test]

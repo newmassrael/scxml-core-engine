@@ -113,10 +113,11 @@ fn default_marker_round_trips_via_declared_default_arm() {
         CodecVariantDefaultMarkerVariant::Default { tag, .. } => {
             panic!(
                 "round-trip dropped into the catch-all <sce:default> arm \
-                 (tag=0x{tag:02X}) — meaning the inner Default zero-filled \
+                 (tag=0x{:02X}) — meaning the inner Default zero-filled \
                  the header byte (β-Rust inner Default change didn't take \
                  effect) or the outer dispatch table missed the declared \
-                 MID"
+                 MID",
+                tag.get()
             )
         }
     }

@@ -73,6 +73,43 @@ const _: () = assert!(
 {% endif %}
 
 {% if has_variant %}
+{% if variant.unknown_tag %}
+{% set unknown = variant.unknown_tag %}
+/// A tag `{{ struct_name }}` names no arm for, which its default arm holds: a
+/// value inside the {{ unknown.bits }} bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+{{ codec_unknown_tag_derives_attr }}
+pub struct {{ unknown.type_name }}({{ variant.tag_native_type }});
+
+#[allow(dead_code)]
+impl {{ unknown.type_name }} {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: {{ variant.tag_native_type }}) -> Option<Self> {
+{% if unknown.known or unknown.max %}
+        match tag {
+{% if unknown.known %}
+            {{ unknown.known | join(" | ") }} => None,
+{% endif %}
+{% if unknown.max %}
+            _ if tag > {{ unknown.max }} => None,
+{% endif %}
+            _ => Some(Self(tag)),
+        }
+{% else %}
+        Some(Self(tag))
+{% endif %}
+    }
+
+    /// The tag.
+    pub const fn get(self) -> {{ variant.tag_native_type }} {
+        self.0
+    }
+}
+
+{% endif %}
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -91,7 +128,7 @@ pub enum {{ struct_name }}Variant{{ variant_lifetime }} {
 {% endfor %}
 {% if variant.default_arm %}
     {{ variant.default_arm.variant_name }} {
-        tag: {{ variant.tag_native_type }},
+        tag: {{ variant.unknown_tag.type_name }},
         body: {{ variant.default_arm.body_type }}{{ variant.default_arm.body_lifetime }},
     },
 {% endif %}
@@ -116,7 +153,9 @@ impl{{ variant_lifetime }} Default for {{ struct_name }}Variant{{ variant_lifeti
         Self::{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}::default())
 {% else %}
         Self::{{ variant.default_arm.variant_name }} {
-            tag: 0,
+{# A variant with no arm names no tag, so every tag of its bits is the default
+   arm's, 0 among them. #}
+            tag: {{ variant.unknown_tag.type_name }}(0),
             body: {{ variant.default_arm.body_type }}::default(),
         }
 {% endif %}
@@ -369,7 +408,7 @@ pub enum {{ struct_name }}ViewVariant{{ view_variant_lifetime }} {
 {% endfor %}
 {% if variant.default_arm %}
     {{ variant.default_arm.variant_name }} {
-        tag: {{ variant.tag_native_type }},
+        tag: {{ variant.unknown_tag.type_name }},
         body: {{ variant.default_arm.view_body_type }}{{ variant.default_arm.view_body_lifetime }},
     },
 {% endif %}
@@ -385,7 +424,9 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
         Self::{{ variant.arms[0].variant_name }}({{ variant.arms[0].view_body_type }}::default())
 {% else %}
         Self::{{ variant.default_arm.variant_name }} {
-            tag: 0,
+{# A variant with no arm names no tag, so every tag of its bits is the default
+   arm's, 0 among them. #}
+            tag: {{ variant.unknown_tag.type_name }}(0),
             body: {{ variant.default_arm.view_body_type }}::default(),
         }
 {% endif %}
@@ -632,7 +673,7 @@ pub enum {{ struct_name }}OwnedVariant{{ variant_owned_generics_decl }} {
 {% endfor %}
 {% if variant.default_arm %}
     {{ variant.default_arm.variant_name }} {
-        tag: {{ variant.tag_native_type }},
+        tag: {{ variant.unknown_tag.type_name }},
         body: {{ variant.default_arm.owned_body_type }},
     },
 {% endif %}

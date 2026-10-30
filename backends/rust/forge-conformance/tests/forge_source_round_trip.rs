@@ -344,6 +344,7 @@ mod parts {
     use super::codecs::codec_repeat_elem::CodecRepeatElemParts;
     use super::codecs::codec_variant_dispatch::{
         CodecVariantDispatch, CodecVariantDispatchParts, CodecVariantDispatchPartsBody,
+        CodecVariantDispatchUnknownTag,
     };
     use super::codecs::codec_variant_session_close::CodecVariantSessionCloseParts;
     use super::codecs::codec_variant_session_open::CodecVariantSessionOpenParts;
@@ -433,11 +434,15 @@ mod parts {
         // The default arm keeps the tag the grammar could not name.
         assert_eq!(
             write(CodecVariantDispatchPartsBody::Default {
-                tag: 9,
+                tag: CodecVariantDispatchUnknownTag::new(9).expect("no arm names 9"),
                 body: &close
             }),
             [9, 4]
         );
+        // It holds no tag an arm names, which a decode would read back as that
+        // arm (docs/adr/0065 §6 R3).
+        assert_eq!(CodecVariantDispatchUnknownTag::new(1), None);
+        assert_eq!(CodecVariantDispatchUnknownTag::new(2), None);
     }
 
     #[test]

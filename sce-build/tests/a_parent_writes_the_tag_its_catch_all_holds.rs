@@ -188,7 +188,7 @@ fn the_rust_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Rust);
     assert_holds(
         &code,
-        "CaChildVariantSource::Default { tag, .. } => u8::from(tag) & 0x3",
+        "CaChildVariantSource::Default { tag, .. } => u8::from(tag.get()) & 0x3",
         "the Rust parent does not derive K from the catch-all's tag",
     );
 }

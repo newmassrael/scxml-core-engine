@@ -1,0 +1,36 @@
+# Mutation cases for "a default arm holds only a tag no arm names".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_default_arm_holds_only_a_tag_no_arm_names.cases`.
+#
+# A Rust default arm holds its tag as `{Codec}UnknownTag`, which admits a value
+# inside the bits the tag is read from and outside every arm's tag
+# (docs/adr/0065 §6 R3), so its encode has no tag to refuse. Each case widens
+# what the type admits: the tags the arms name, or the values past the tag's
+# bits, which the encode would then write into a bit-range that does not hold
+# them. The Rust goldens of `forge_conformance`, which hold the generated text
+# of every codec with a default arm, refuse both.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/codec_totality.rs
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a default arm may hold a tag an arm names" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{% if unknown.known %}
+            {{ unknown.known | join(" | ") }} => None,
+{% endif %}''',
+     r'''''')
+PY
+
+mutation_case "a default arm's tag is bounded by its type, not by its bits" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        Some(def) => def.width.max(1),
+        None => unsigned_bits(&ty).unwrap_or(64),''',
+     r'''        Some(_) => unsigned_bits(&ty).unwrap_or(64),
+        None => unsigned_bits(&ty).unwrap_or(64),''')
+PY

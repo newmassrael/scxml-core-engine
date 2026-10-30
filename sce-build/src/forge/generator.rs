@@ -9564,6 +9564,41 @@ fn render_codec(
         };
         variant_obj.insert("tag_field".into(), tag_field_ctx.into());
         variant_obj.insert("tag_native_type".into(), tag_native.into());
+        // docs/adr/0065 §6 R3: a Rust default arm holds its tag as a type that
+        // admits the tags it may hold and no other, which the template defines
+        // beside the variant: the tags the arms name, written as `known`, each
+        // run of consecutive tags as one range, and the largest tag its bits
+        // hold, as `max` where a tag of the type can be past it.
+        if matches!(lang, crate::generator::Language::Rust) {
+            if let Some(unknown) = crate::forge::codec_totality::unknown_tag(m) {
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "type_name".into(),
+                    rust_source::unknown_tag_type(&filters::to_pascal_case(m.name.clone())).into(),
+                );
+                obj.insert("bits".into(), unknown.bits.into());
+                obj.insert(
+                    "known".into(),
+                    serde_json::Value::Array(
+                        unknown
+                            .known_runs()
+                            .into_iter()
+                            .map(|(first, last)| {
+                                if first == last {
+                                    first.to_string().into()
+                                } else {
+                                    format!("{first}..={last}").into()
+                                }
+                            })
+                            .collect(),
+                    ),
+                );
+                if let Some(max) = unknown.max_below_type() {
+                    obj.insert("max".into(), max.to_string().into());
+                }
+                variant_obj.insert("unknown_tag".into(), obj.into());
+            }
+        }
         // RFC caller-tag variant shape signal: when true, leaf decode
         // signature gains `tag: u8` parameter (via
         // `dispatch_tag_param_decl` ctx) and the dispatch reads the
@@ -9943,6 +9978,12 @@ fn render_codec(
         ctx.insert(
             "codec_variant_enum_derives_attr".into(),
             crate::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
+                .derives_attr()
+                .into(),
+        );
+        ctx.insert(
+            "codec_unknown_tag_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::CodecUnknownTag
                 .derives_attr()
                 .into(),
         );

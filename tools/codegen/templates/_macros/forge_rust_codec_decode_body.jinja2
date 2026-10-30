@@ -131,9 +131,12 @@
 {% endfor %}
 {% if variant.default_arm %}
 {% set default_body = variant.default_arm.view_body_type if view_decode else variant.default_arm.body_type %}
+{# docs/adr/0065 §6 R3: the arms above take every tag the document names, a
+   build that leaves an arm out refusing its tag, and the tag was read from its
+   bits, so what reaches here is a tag the default arm may hold. #}
             other => {
                 _out.body = {{ decode_variant_enum }}::{{ variant.default_arm.variant_name }} {
-                    tag: other,
+                    tag: {{ variant.unknown_tag.type_name }}(other),
                     body: {{ default_body }}::default(),
                 };
 {% if gated_ns.gated %}

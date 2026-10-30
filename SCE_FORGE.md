@@ -969,7 +969,6 @@ Codegen generates bounds checking for all variable-length fields: frame length i
 
 - a byte or text length past a length field narrower than 64 bits, or empty where the wire holds the length less one (`sce:length-arith`);
 - a list past its `sce:max-count`, or a chain past its `max-depth`;
-- a default arm's tag past the bits it is written into;
 - a gated field whose presence disagrees with a gate the encoder cannot derive (a flag a parent passes in, `a.X || b.Y`, `<chain>.has(..)`);
 - two lists that share one count with different lengths;
 - a CBOR entry past its `sce:max-size` or other than its `sce:length`;
@@ -981,7 +980,7 @@ A codec states which kind it is on its root:
 - absent or `false`, the encode is total;
 - `sce:encode-may-fail="true"`, it can refuse.
 
-The build holds the statement to the places it finds, once, before any backend renders. A codec that states it is total and refuses somewhere is `codec/undeclared-encode-refusal`, at the first such place, with what the value can say there. A codec that states `true` and refuses nowhere is `codec/encode-may-fail-without-refusal`. A conversion that cannot fail is not a refusal: a length into a 64-bit field, a count bounded by its list's `sce:max-count` into a field that holds the bound, a known arm's tag.
+The build holds the statement to the places it finds, once, before any backend renders. A codec that states it is total and refuses somewhere is `codec/undeclared-encode-refusal`, at the first such place, with what the value can say there. A codec that states `true` and refuses nowhere is `codec/encode-may-fail-without-refusal`. A conversion that cannot fail is not a refusal: a length into a 64-bit field, a count bounded by its list's `sce:max-count` into a field that holds the bound, a known arm's tag, and a default arm's tag, which the arm holds as a value inside the bits the tag is read from and outside every arm's tag (docs/adr/0065 §6 R3).
 
 On Rust, a total codec's encode returns only its sink's error:
 
@@ -989,7 +988,7 @@ On Rust, a total codec's encode returns only its sink's error:
 - `encode_to_vec` returns `Vec<u8>`;
 - `measure` returns the witness itself.
 
-The error of `VecSink` and `CountSink` is `core::convert::Infallible`, so the compiler, not a comment, proves that the frame is written. A codec that can refuse returns `CodecError`, which a sink's error joins (`where CodecError: From<K::Error>`). A sink outside the runtime names its error (`type Error = CodecError;`). The other backends keep their encode until each takes the source interface (docs/adr/0058 §6).
+The error of `VecSink` and `CountSink` is `core::convert::Infallible`, so the compiler, not a comment, proves that the frame is written. A codec that can refuse returns `CodecError`, which a sink's error joins (`where CodecError: From<K::Error>`). A sink outside the runtime names its error (`type Error = CodecError;`). A default arm holds its tag as `{Codec}UnknownTag`, whose `new(tag)` returns `None` for a tag past the bits it is read from or one an arm names, and whose `get()` returns the tag; a decode builds one for each tag that reaches the default arm. The other backends keep their encode, and a default arm's tag as a number, until each takes the source interface (docs/adr/0058 §6).
 
 `sce-build/src/forge/codec_totality.rs` is the one statement of where an encode refuses. The Rust encode writes a refusal only where it names one, and the generator stops if the two disagree. `sce-build/tests/codec_totality.rs` holds every codec document in the tree to its statement.
 

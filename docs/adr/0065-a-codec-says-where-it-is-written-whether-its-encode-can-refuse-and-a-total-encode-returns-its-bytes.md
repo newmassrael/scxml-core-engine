@@ -192,6 +192,14 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
 - **R3, the default arm's tag.** A codec emits `XUnknownTag`, a newtype whose constructor admits a value inside the
   tag's bits and outside every known arm's tag. That also closes the case of a default arm that carries a known tag,
   which a decode would read back as the known arm, a break of ADR 0058 §5 law 1.
+  *Landed 2026-10-31, before R1.* A codec that holds a codec that can refuse counts its source before it writes, so
+  the caller's sink is untouched when the held codec refuses, and that count is a second copy of the write in the
+  program. A consumer measured it on a Zenoh `put`, whose one held codec that could refuse was `ext_entry`, and
+  `ext_entry`'s one refusal was this tag. With R3 a codec whose held codecs no longer refuse loses the count. The
+  constructor is `new(tag) -> Option<Self>`, as `char::from_u32` is: a tag an arm names is not a
+  length, and no `CodecError` names it. The decode does not call it: the arms before its catch-all take every tag the
+  document names (an arm left out of a build refusing its tag, ADR 0072) and the tag is read from its bits, so the
+  catch-all builds the value directly. An arm under a build feature is among the known tags in every build.
 - **R4, gate normal forms.** A gate the encoder cannot derive becomes a sum type over the cases it allows:
   - a disjunction `a.X || b.Y` becomes one arm for each satisfying assignment of the flags it names;
   - a flag a parent passes in that gates fields here is derived in the other direction, so the parent's bit is
