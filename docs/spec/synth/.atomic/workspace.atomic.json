@@ -3447,10 +3447,6 @@
           "kind": "references"
         },
         {
-          "file": "tools/codegen/templates/rust/entry_exit_actions.rs.jinja2",
-          "kind": "references"
-        },
-        {
           "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
           "kind": "references"
         },
@@ -7531,6 +7527,12 @@
       "target_kind": "section",
       "target_id": "synth-5-S",
       "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-2",
+      "reason": "ADR 0064 moved history recording into the runtime's run store; the template no longer records a history or cites the section"
     }
   ],
   "frames": {},
