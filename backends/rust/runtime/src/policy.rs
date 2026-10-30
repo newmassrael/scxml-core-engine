@@ -135,6 +135,17 @@ pub trait StatePolicy: Sized + 'static {
     /// by every generated policy.
     type InternalQueue: EventQueueStorage<Self::Payload>;
 
+    /// The internal-queue depth the generator proved from the document, when it
+    /// proved one (docs/adr/0076): the same number as
+    /// [`InternalQueue`](StatePolicy::InternalQueue)'s depth.
+    ///
+    /// A build with debug assertions holds every raise to it, on both profiles.
+    /// Under std the queue is unbounded, so without this a bound too small for
+    /// the document would pass every test and stop only a bare-metal machine;
+    /// with it, each test run of a machine with a proven bound checks the
+    /// proof. `None`, the default, asks nothing.
+    const INTERNAL_QUEUE_BOUND: Option<usize> = None;
+
     /// The queue backing this machine's W3C SCXML Appendix D `externalQueue`:
     /// what the host and other sessions deliver.
     ///

@@ -1,0 +1,26 @@
+# Mutation cases for "a proven internal-queue bound is checked on every raise"
+# (docs/adr/0076).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_proven_internal_queue_bound_is_checked_on_every_raise.cases`.
+#
+# Under std the internal queue is unbounded, so a bound the generator proves
+# too small would pass every test and stop only a bare-metal machine. A build
+# with debug assertions therefore holds each raise to the policy's
+# `INTERNAL_QUEUE_BOUND`. W3C test 415 raises `event1` in its final state's
+# `<onentry>`, and the generator proves its depth `1`; a bound of `0` stands for
+# an analysis that undercounts by one, and the test run must refuse it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test test_415
+mutation_oracles backends/rust/runtime/src/engine.rs
+mutation_targets backends/rust/tests/src/generated/test415/test415_sm.rs
+
+# The proof claims one slot fewer than the document fills.
+mutation_case "test415's proven bound is one event too small" <<'PY'
+edit("backends/rust/tests/src/generated/test415/test415_sm.rs",
+     r'''    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(1);''',
+     r'''    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);''')
+PY

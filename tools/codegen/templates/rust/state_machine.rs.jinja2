@@ -1390,6 +1390,8 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endfor %}
 {% if internal_queue_depth is not none %}
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, {{ internal_queue_depth }}>;
+    // The same bound, held to every run a test build makes (docs/adr/0076).
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some({{ internal_queue_depth }});
 {% elif model.event_queue_capacity %}
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
 {% else %}

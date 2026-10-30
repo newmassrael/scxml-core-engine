@@ -47,10 +47,10 @@ PY
 # never run.
 mutation_case "a dropped payload ring forgets what it holds" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_queue.rs",
-     r'''    fn drop(&mut self) {
-        self.clear();''',
-     r'''    fn drop(&mut self) {
-        let _ = self.len();''')
+     r'''        if core::mem::needs_drop::<T>() {
+            self.clear();''',
+     r'''        if core::mem::needs_drop::<T>() {
+            let _ = self.len();''')
 PY
 
 # What a saved state reads of the events' ring ignores where it starts, so

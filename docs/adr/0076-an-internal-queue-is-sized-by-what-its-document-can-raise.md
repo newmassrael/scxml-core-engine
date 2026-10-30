@@ -48,21 +48,38 @@ events one run of it can enqueue:
 - each `<raise>`, and each `<send>` to `#_internal` without a delay, counts one;
 - an `<if>` counts its largest branch; a `<foreach>` whose body counts more than zero is
   unbounded;
-- the block counts one more if any of its statements can fail and the engine raises an error for
-  that failure into this queue, since the first error ends the block.
+- a statement that can fail counts the errors it raises before the block ends: one for an
+  `<assign>`, `<log>`, `<cancel>` or `<sce:append>` that fails, one per failing `<param>` of a
+  `<send>` (the message still goes), one per failing condition of an `<if>` (the chain goes on);
+- an `<sce:action>` with arguments counts one when the document names `error.execution`, and
+  does not end its block, so each counts.
 
 `R`, the most one microstep can enqueue, is the sum over all blocks (each block runs at most once
-in a microstep, because the exit set, the transition set and the entry set are sets) plus the
-number of states that can raise `done.state.*` (compound states with a `<final>` child, and
-`<parallel>` states). The bound is then:
+in a microstep, because the exit set, the transition set and the entry set are sets), plus:
+
+- one `done.state.*` per compound state with a `<final>` child, and one plus its own `<final>`
+  children per `<parallel>`;
+- one error per `<param>` or content of a `<donedata>` that can fail;
+- for the event that starts a microstep: each guard that can fail, times the most transitions a
+  selection enables, and one error for a typed payload that does not decode.
+
+These are read off the generated code's raise sites, and the analysis
+(`sce-build/src/internal_queue_bound.rs`) lists each with the construct that causes it. A source
+it cannot bound makes the bound not proven: a script engine, an `<invoke>`, a delayed `<send>`
+whose delivery can reach the internal queue, an internal `<send>` whose event name is computed,
+and a guard that can fail on an eventless transition. The bound is then:
 
 - `0` when `R` is `0`: nothing in the document can reach the internal queue.
 - `R × (1 + D)` when `R` is finite, no transition's event descriptor matches an event the internal
-  queue can hold (so a dequeued internal event takes no microstep and raises nothing), and the
-  graph of eventless transitions is acyclic with longest path `D` (so at most `1 + D` microsteps
-  run between the event that starts a macrostep and the first internal dequeue).
-- not proven otherwise: the internal depth follows the external rule, and the generated policy
-  says so.
+  queue can hold (so a dequeued internal event takes no microstep and raises nothing), every
+  eventless transition has a target and a condition that does not read `_event`, and the graph
+  of eventless transitions is acyclic with longest path `D` (so at most `1 + D` microsteps run
+  between the event that starts a macrostep and the first internal dequeue). The graph has an
+  edge from `t` to `u` when `u`'s source can be in the configuration with a target of `t`: an
+  ancestor, a descendant, or a state of another region of a common `<parallel>`, so two regions
+  that each take an eventless transition are a cycle.
+- not proven otherwise, or when the bound exceeds 65,535: the internal depth follows the external
+  rule, and the generated policy says so.
 
 A proven bound is used even where the author declared a capacity, because a smaller declared
 depth stops the program and a larger one is capacity nothing can fill.
@@ -71,6 +88,21 @@ depth stops the program and a larger one is capacity nothing can fill.
 
 `EventQueue<Payload, 0>` is a queue of no slots: its push stops the program, which the bound
 proves never happens. A machine whose internal bound is `0` keeps no internal slots at all.
+
+`heapless::Deque` refuses a depth of zero when it is compiled, so the payloads a queue keeps
+beside its events are a ring of the runtime's own, which takes any depth and drops what it holds
+only when a payload has a drop to run, so a queue of a payload with none (`()`, a number) has no
+drop code.
+
+## Measured (2026-10-31)
+
+- Of the 486 committed Rust machines, 111 have a proven internal depth (74 of them `0`); the rest
+  are not proven, 242 of them because they run a script engine.
+- watching-zenoh's `session_fsm_unicast.scxml` and `peer_connection.scxml` are both proven `0`
+  (nothing raises): each engine's internal queue loses its 64 or 2 slots. The external queue keeps
+  the host's capacity.
+- The footprint probe's machines raise events and are not proven; its six images are byte for
+  byte what they were before this decision, so the code costs nothing where it saves nothing.
 
 ## Consequences
 

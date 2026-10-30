@@ -2482,6 +2482,16 @@ impl<P: StatePolicy> Engine<P> {
                 return;
             }
         }
+        // docs/adr/0076: a proven depth is a claim about every run; a test build
+        // checks it on each raise, where a std queue would grow past it silently.
+        #[cfg(debug_assertions)]
+        if let Some(bound) = P::INTERNAL_QUEUE_BOUND {
+            assert!(
+                self.internal_queue.queued().count() < bound,
+                "the internal queue would hold more events than the bound the generator proved \
+                 for this document ({bound}): the analysis undercounts (docs/adr/0076)"
+            );
+        }
         Self::enqueue(&mut self.internal_queue, event);
     }
 

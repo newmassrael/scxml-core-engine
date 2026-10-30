@@ -400,8 +400,13 @@ impl<T, const N: usize> FixedRing<T, N> {
 
 #[cfg(any(test, not(feature = "std")))]
 impl<T, const N: usize> Drop for FixedRing<T, N> {
+    /// Drops the items held, and only when an item has a drop to run: a
+    /// constant the compiler folds, so a ring of a payload with none (`()`, a
+    /// number) has no drop code, and no copy of it per depth.
     fn drop(&mut self) {
-        self.clear();
+        if core::mem::needs_drop::<T>() {
+            self.clear();
+        }
     }
 }
 
