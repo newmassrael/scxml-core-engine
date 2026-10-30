@@ -405,6 +405,60 @@ target_compile_options(queue_generated_test PRIVATE -Wall -Wextra -Wpedantic -We
 target_link_libraries(queue_generated_test PRIVATE Threads::Threads)
 add_test(NAME queue_generated COMMAND queue_generated_test)
 
+# A variant arm compiled under a build feature (docs/adr/0072), compiled and run
+# in both builds. The two variants are the documents the Rust arm runs
+# (backends/rust/forge-conformance/fixtures), and their arm bodies come from
+# tests/forge/resources. They are generated into a directory of their own, so
+# the arm bodies the numerical catalog also lists (codec_peek_arm_a/b) are not
+# two rules' output in `GENERATED_DIR`. One source is built twice: as it is,
+# where the headers define SCE_FEATURE_GATED_ARM to 1, and with the macro
+# defined to 0, where the gated arms are not alternatives and their tags are
+# refused.
+set(GATED_ARM_FIXTURE_DIR "${REPO_ROOT}/backends/rust/forge-conformance/fixtures")
+set(GATED_ARM_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/feature_gated_arm_headers")
+file(MAKE_DIRECTORY "${GATED_ARM_GENERATED_DIR}")
+set(GATED_ARM_DOCUMENTS
+    "${RESOURCE_DIR}/codec_default_marker_arm_a.scxml"
+    "${RESOURCE_DIR}/codec_default_marker_arm_b.scxml"
+    "${RESOURCE_DIR}/codec_peek_arm_a.scxml"
+    "${RESOURCE_DIR}/codec_peek_arm_b.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_feature_gated_arm.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_feature_gated_arm_no_catch_all.scxml"
+)
+set(GATED_ARM_GENERATED_HEADERS "")
+foreach(_gated_document IN LISTS GATED_ARM_DOCUMENTS)
+    get_filename_component(_gated_fixture "${_gated_document}" NAME_WE)
+    set(_gated_header "${GATED_ARM_GENERATED_DIR}/${_gated_fixture}.h")
+    add_custom_command(
+        OUTPUT "${_gated_header}"
+        COMMAND "${SCE_CODEGEN}" generate "${_gated_document}"
+                --language cpp
+                --output-dir "${GATED_ARM_GENERATED_DIR}"
+                --write-deps "${_gated_header}.d"
+        DEPENDS "${_gated_document}" "${SCE_CODEGEN}"
+        DEPFILE "${_gated_header}.d"
+        COMMENT "Generating C++ feature-gated arm fixture ${_gated_fixture}.h"
+        VERBATIM
+    )
+    list(APPEND GATED_ARM_GENERATED_HEADERS "${_gated_header}")
+endforeach()
+add_custom_target(generate_feature_gated_arm_fixtures_cpp DEPENDS ${GATED_ARM_GENERATED_HEADERS})
+
+foreach(_gated_build IN ITEMS on off)
+    set(_gated_target "feature_gated_arm_${_gated_build}_test")
+    add_executable(${_gated_target} "${CMAKE_CURRENT_SOURCE_DIR}/feature_gated_arm_generated_test.cpp")
+    add_dependencies(${_gated_target} generate_feature_gated_arm_fixtures_cpp)
+    target_include_directories(${_gated_target} PRIVATE
+        "${RUNTIME_INCLUDE_DIR}"
+        "${GATED_ARM_GENERATED_DIR}"
+    )
+    target_compile_options(${_gated_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(_gated_build STREQUAL "off")
+        target_compile_definitions(${_gated_target} PRIVATE SCE_FEATURE_GATED_ARM=0)
+    endif()
+    add_test(NAME feature_gated_arm_${_gated_build} COMMAND ${_gated_target})
+endforeach()
+
 # The queues on real threads, written as histories and judged by the command
 # every backend's histories are judged by (verification layer 2). The recorder
 # runs the runtime's queues and writes one history per run; the second test
