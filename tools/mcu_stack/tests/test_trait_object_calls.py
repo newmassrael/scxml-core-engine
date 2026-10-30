@@ -41,14 +41,18 @@ DISASSEMBLY = """
        0:	push	{r7, lr}
        2:	bl	0 <core::walk>
 			2: R_ARM_THM_CALL	core::walk
+
+00000000 <<Host as core::Hooks>::settle>:
+       0:	push	{r7, lr}
+       2:	blx	r1
 """.splitlines()
 
 BEHAVIOUR = r"as Behaviour>::"
 MAIN_LOOP = r"as MainLoop>::"
 
 
-def analysis(dispatch, indirect=None):
-    return Analysis(parse(DISASSEMBLY), {}, [], {}, indirect, dispatch)
+def analysis(dispatch, indirect=None, complete=None):
+    return Analysis(parse(DISASSEMBLY), {}, [], {}, indirect, dispatch, complete)
 
 
 class TraitObjectCalls(unittest.TestCase):
@@ -74,6 +78,35 @@ class TraitObjectCalls(unittest.TestCase):
         ).worst("core::loop", [], {})
         self.assertEqual(found, 8 + 8 + 32 + 72)
         self.assertEqual(chain[0], "core::loop [8]")
+
+    def test_the_caller_is_a_pattern_and_not_a_substring(self):
+        # An implementation's name holds its trait's path, `core::` among it. A caller stated
+        # as the core's own functions, anchored, does not take the implementation for one:
+        # its call through a register is the host allowance alone, not the core's callees.
+        found, chain = analysis([(r"^core::", BEHAVIOUR)], indirect=16).worst(
+            "<Host as core::Hooks>::settle", [], {}
+        )
+        self.assertEqual(found, 8 + 16)
+        self.assertNotIn("<Host as Behaviour>::enter_state [72]", chain)
+        # The same pattern still reaches the implementations from the core.
+        found, _ = analysis([(r"^core::", BEHAVIOUR)]).worst("core::walk", [], {})
+        self.assertEqual(found, 32 + 72)
+
+    def test_a_core_pointer_call_nothing_states_is_refused_despite_the_host_allowance(self):
+        # `core::loop` calls through a register and no `--dyn` caller names it. Outside the
+        # functions `--dyn-complete` names, the host allowance stands for such a call; inside
+        # them it does not, so a hook or a procedure the mapping forgot cannot hide behind it.
+        found, _ = analysis([("core::walk", BEHAVIOUR)], indirect=16).worst("core::loop", [], {})
+        self.assertEqual(found, 8 + 16)
+        with self.assertRaises(Refusal):
+            analysis([("core::walk", BEHAVIOUR)], indirect=16, complete=r"^core::").worst(
+                "core::loop", [], {}
+            )
+        # Where the calls are stated, they are all the function reaches: no allowance beside.
+        found, _ = analysis([("core::walk", BEHAVIOUR)], indirect=200, complete=r"^core::").worst(
+            "core::walk", [], {}
+        )
+        self.assertEqual(found, 32 + 72)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,11 @@ rather than guessed at:
   run, naming the function it was made in — unless the caller states what it may call. A
   call through a trait object is resolved the way class-hierarchy analysis resolves a
   virtual call: to every implementation of the trait, the worst of them taken
-  (`--dyn caller=callees`, the caller a substring of the calling functions' names, the
-  callees a regular expression over the implementations'). A call through a pointer the host
+  (`--dyn caller=callees`, both regular expressions: the caller over the calling functions'
+  names, the callees over the implementations'). The caller is a pattern and not a substring
+  because an implementation's own name holds its trait's path (`<Host as core::Behaviour>`):
+  a substring of the core's path would take every implementation for a core function, and
+  charge it the core's callees. A call through a pointer the host
   installed is taken to need a stated number of bytes (`--indirect`);
 - a recursion is bounded only by a number the caller states for a function of the cycle
   (`--recursion name=levels`), which for Appendix D's walks is the document's depth; a cycle
@@ -179,15 +182,19 @@ class Refusal(Exception):
 
 
 class Analysis:
-    def __init__(self, functions, recursion, ignored, assumed, indirect, dispatch=()):
+    def __init__(self, functions, recursion, ignored, assumed, indirect, dispatch=(), complete=None):
         self.functions = functions
         self.recursion = recursion
         self.ignored = [re.compile(p) for p in ignored]
         self.assumed = assumed
         self.indirect = indirect
-        # (caller substring, the implementations it may reach through a trait object)
+        # The functions whose every indirect call a `--dyn` caller must state: the host
+        # allowance is for a pointer the host installed, and in these functions a pointer call
+        # is a hook or a procedure whose callees are known, so an unstated one is refused.
+        self.complete = re.compile(complete) if complete else None
+        # (caller pattern, the implementations it may reach through a trait object)
         self.dispatch = [
-            (caller, [name for name in functions if re.search(callees, name)])
+            (re.compile(caller), [name for name in functions if re.search(callees, name)])
             for caller, callees in dispatch
         ]
         self.memo = {}
@@ -197,7 +204,7 @@ class Analysis:
         stated caller pattern it matches reaches."""
         found = []
         for caller, callees in self.dispatch:
-            if caller in name:
+            if caller.search(name):
                 found.extend(callees)
         return list(dict.fromkeys(found))
 
@@ -235,7 +242,18 @@ class Analysis:
             return function.frame + extra, [f"{name} [{function.frame} + {extra} assumed]"]
         allowance = 0
         dyn_callees = self.dyn_callees(name) if function.indirect_calls else []
-        if function.indirect_calls:
+        stated = self.complete is not None and self.complete.search(name)
+        if (
+            function.indirect_calls
+            and stated
+            and not any(caller.search(name) for caller, _ in self.dispatch)
+        ):
+            raise Refusal(
+                f"{name} makes {function.indirect_calls} indirect call(s) and no --dyn caller "
+                f"states what they reach: in a function --dyn-complete names, the host "
+                f"allowance does not stand for them"
+            )
+        if function.indirect_calls and not stated:
             allowed = self.indirect_allowance(name)
             if allowed is None and not dyn_callees:
                 raise Refusal(
@@ -299,6 +317,7 @@ def parse_dispatch(items):
         caller, _, callees = item.partition("=")
         if not caller or not callees:
             raise SystemExit(f"--dyn wants caller=callees, got {item!r}")
+        re.compile(caller)
         re.compile(callees)
         dispatch.append((caller, callees))
     return dispatch
@@ -322,9 +341,14 @@ def main(argv):
                              "inlining may have put in any function; without it an indirect call "
                              "fails the run")
     parser.add_argument("--dyn", action="append", default=[],
-                        help="caller=callees: the functions whose names contain `caller` call "
-                             "through a trait object, and may reach every function whose name "
-                             "matches the regular expression `callees` (repeatable)")
+                        help="caller=callees: the functions whose names match the regular "
+                             "expression `caller` call through a trait object or a procedure "
+                             "pointer, and may reach every function whose name matches the "
+                             "regular expression `callees` (repeatable)")
+    parser.add_argument("--dyn-complete", default=None,
+                        help="a regex of functions whose every indirect call some --dyn caller "
+                             "must match: their pointer calls are hooks and procedures, not the "
+                             "host's, so --indirect does not stand for one left unstated")
     parser.add_argument("--ignore-callee", action="append", default=list(DEFAULT_IGNORED_CALLEES),
                         help="a regex of callees not followed (panic entry points)")
     parser.add_argument("--min-functions", type=int, default=50,
@@ -352,6 +376,7 @@ def main(argv):
         parse_recursion(args.assume),
         args.indirect,
         parse_dispatch(args.dyn),
+        args.dyn_complete,
     )
     worst_bytes, worst_root, worst_chain = -1, None, []
     for root in sorted(roots):
