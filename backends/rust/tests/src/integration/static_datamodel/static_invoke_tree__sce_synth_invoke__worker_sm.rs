@@ -157,6 +157,11 @@ pub type StaticInvokeTreeSceSynthInvokeWorkerConfiguration =
 /// pre-order walk, so they are the state's number plus one and each number past
 /// the subtree (`last_descendant`) of the child before.
 ///
+/// `history` and `parallel` carry the procedures only a `<history>` or a
+/// `<parallel>` reaches, and are `None` for a document without one, so a
+/// program none of whose documents uses a feature links none of its code
+/// (docs/adr/0066).
+///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
@@ -192,6 +197,8 @@ pub const STATIC_INVOKE_TREE_SCE_SYNTH_INVOKE_WORKER_TABLES: ::sce_rust_runtime:
         ],
         targets: &[Target::state(StateId(1)), Target::state(StateId(0))],
         initial: TransitionId(6),
+        history: None,
+        parallel: None,
     }
 };
 
