@@ -1120,6 +1120,12 @@ impl EntrySet<'_> {
 /// descendants, document order between the rest, which is exactly document
 /// order, because that is a pre-order walk: ascending ids, the order a set of
 /// states is read in. So the set is never sorted.
+///
+/// Left to inline into [`enter_states`], unlike [`exit_states`]: the entry
+/// walk runs under it, so out of line its frame stacks on its caller's
+/// instead of sharing it. Measured on the MCU probe without a `<history>` or
+/// `<parallel>`: `enter_states` 200 -> 160 bytes, this 136 on top, the
+/// worst-case stack 760 -> 856.
 pub fn compute_entry_set<'a>(
     tables: &DocumentTables,
     store: RunStoreRef<'_>,
