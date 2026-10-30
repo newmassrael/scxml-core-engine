@@ -20,6 +20,31 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_origin_leaf::CodecOriginLeaf;
 use super::codec_origin_scalar::CodecOriginScalar;
 
+/// A tag `CodecOriginChoice` names no arm for, which its default arm holds: a
+/// value inside the 8 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecOriginChoiceUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecOriginChoiceUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1..=2 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -30,7 +55,7 @@ pub enum CodecOriginChoiceVariant<'a> {
     CodecOriginLeaf(CodecOriginLeaf<'a>),
     CodecOriginScalar(CodecOriginScalar),
     Default {
-        tag: u8,
+        tag: CodecOriginChoiceUnknownTag,
         body: CodecOriginScalar,
     },
 }
@@ -118,7 +143,7 @@ impl<'a> CodecOriginChoice<'a> {
             }
             other => {
                 _out.body = CodecOriginChoiceVariant::Default {
-                    tag: other,
+                    tag: CodecOriginChoiceUnknownTag(other),
                     body: CodecOriginScalar::default(),
                 };
                 if let CodecOriginChoiceVariant::Default { body: _b, .. } = &mut _out.body {
@@ -178,7 +203,7 @@ impl<'a> CodecOriginChoice<'a> {
 pub enum CodecOriginChoiceVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
     CodecOriginLeaf(&'s A0),
     CodecOriginScalar(&'s A1),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecOriginChoiceUnknownTag, body: &'s D },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -203,7 +228,7 @@ pub enum CodecOriginChoicePartsBody<'a> {
     CodecOriginLeaf(&'a super::codec_origin_leaf::CodecOriginLeafParts<'a>),
     CodecOriginScalar(&'a super::codec_origin_scalar::CodecOriginScalarParts),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_origin_scalar::CodecOriginScalarParts },
+    Default { tag: CodecOriginChoiceUnknownTag, body: &'a super::codec_origin_scalar::CodecOriginScalarParts },
 }
 
 /// A value of `CodecOriginChoice` held in the types a caller already has: a source
@@ -263,7 +288,7 @@ impl<'a> CodecOriginChoice<'a> {
         let _d_tag: u8 = match src.body() {
             CodecOriginChoiceVariantSource::CodecOriginLeaf(_) => 1,
             CodecOriginChoiceVariantSource::CodecOriginScalar(_) => 2,
-            CodecOriginChoiceVariantSource::Default { tag, .. } => tag,
+            CodecOriginChoiceVariantSource::Default { tag, .. } => tag.get(),
         };
         w.write_u8(_d_tag)?;
         match src.body() {
@@ -367,7 +392,7 @@ pub enum CodecOriginChoiceOwnedVariant<S: ::sce_forge_runtime::codec::CodecStora
     CodecOriginLeaf(CodecOriginLeafOwned<S>),
     CodecOriginScalar(CodecOriginScalar),
     Default {
-        tag: u8,
+        tag: CodecOriginChoiceUnknownTag,
         body: CodecOriginScalar,
     },
 }

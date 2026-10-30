@@ -20,6 +20,31 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_variant_session_open::CodecVariantSessionOpen;
 use super::codec_variant_session_close::CodecVariantSessionClose;
 
+/// A tag `CodecVariantDispatch` names no arm for, which its default arm holds: a
+/// value inside the 8 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecVariantDispatchUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecVariantDispatchUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1..=2 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -30,7 +55,7 @@ pub enum CodecVariantDispatchVariant {
     CodecVariantSessionOpen(CodecVariantSessionOpen),
     CodecVariantSessionClose(CodecVariantSessionClose),
     Default {
-        tag: u8,
+        tag: CodecVariantDispatchUnknownTag,
         body: CodecVariantSessionClose,
     },
 }
@@ -118,7 +143,7 @@ impl CodecVariantDispatch {
             }
             other => {
                 _out.body = CodecVariantDispatchVariant::Default {
-                    tag: other,
+                    tag: CodecVariantDispatchUnknownTag(other),
                     body: CodecVariantSessionClose::default(),
                 };
                 if let CodecVariantDispatchVariant::Default { body: _b, .. } = &mut _out.body {
@@ -175,7 +200,7 @@ impl CodecVariantDispatch {
 pub enum CodecVariantDispatchVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
     CodecVariantSessionOpen(&'s A0),
     CodecVariantSessionClose(&'s A1),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecVariantDispatchUnknownTag, body: &'s D },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -200,7 +225,7 @@ pub enum CodecVariantDispatchPartsBody<'a> {
     CodecVariantSessionOpen(&'a super::codec_variant_session_open::CodecVariantSessionOpenParts),
     CodecVariantSessionClose(&'a super::codec_variant_session_close::CodecVariantSessionCloseParts),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_variant_session_close::CodecVariantSessionCloseParts },
+    Default { tag: CodecVariantDispatchUnknownTag, body: &'a super::codec_variant_session_close::CodecVariantSessionCloseParts },
 }
 
 /// A value of `CodecVariantDispatch` held in the types a caller already has: a source
@@ -249,7 +274,7 @@ impl CodecVariantDispatch {
         let _d_msg_id: u8 = match src.body() {
             CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_) => 1,
             CodecVariantDispatchVariantSource::CodecVariantSessionClose(_) => 2,
-            CodecVariantDispatchVariantSource::Default { tag, .. } => tag,
+            CodecVariantDispatchVariantSource::Default { tag, .. } => tag.get(),
         };
         w.write_u8(_d_msg_id)?;
         match src.body() {

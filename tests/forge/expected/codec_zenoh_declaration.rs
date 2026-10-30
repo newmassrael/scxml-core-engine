@@ -27,6 +27,32 @@ use super::codec_zenoh_decl_token::CodecZenohDeclToken;
 use super::codec_zenoh_undecl_token::CodecZenohUndeclToken;
 use super::codec_zenoh_decl_final::CodecZenohDeclFinal;
 
+/// A tag `CodecZenohDeclaration` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohDeclarationUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohDeclarationUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            0..=7 | 26 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -44,7 +70,7 @@ pub enum CodecZenohDeclarationVariant<'a> {
     CodecZenohUndeclToken(CodecZenohUndeclToken<'a>),
     CodecZenohDeclFinal(CodecZenohDeclFinal),
     Default {
-        tag: u8,
+        tag: CodecZenohDeclarationUnknownTag,
         body: CodecZenohDeclFinal,
     },
 }
@@ -174,7 +200,7 @@ impl<'a> CodecZenohDeclaration<'a> {
             }
             other => {
                 _out.body = CodecZenohDeclarationVariant::Default {
-                    tag: other,
+                    tag: CodecZenohDeclarationUnknownTag(other),
                     body: CodecZenohDeclFinal::default(),
                 };
                 if let CodecZenohDeclarationVariant::Default { body: _b, .. } = &mut _out.body {
@@ -291,7 +317,7 @@ pub enum CodecZenohDeclarationVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Siz
     CodecZenohDeclToken(&'s A6),
     CodecZenohUndeclToken(&'s A7),
     CodecZenohDeclFinal(&'s A8),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohDeclarationUnknownTag, body: &'s D },
 }
 
 /// Flags of `CodecZenohDeclaration` a parent sets in place of the ones a value presents:
@@ -363,7 +389,7 @@ pub enum CodecZenohDeclarationPartsBody<'a> {
     CodecZenohUndeclToken(&'a super::codec_zenoh_undecl_token::CodecZenohUndeclTokenParts<'a>),
     CodecZenohDeclFinal(&'a super::codec_zenoh_decl_final::CodecZenohDeclFinalParts),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_decl_final::CodecZenohDeclFinalParts },
+    Default { tag: CodecZenohDeclarationUnknownTag, body: &'a super::codec_zenoh_decl_final::CodecZenohDeclFinalParts },
 }
 
 /// A value of `CodecZenohDeclaration` held in the types a caller already has: a source
@@ -469,11 +495,8 @@ impl<'a> CodecZenohDeclaration<'a> {
             CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_) => 6,
             CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_) => 7,
             CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_) => 26,
-            CodecZenohDeclarationVariantSource::Default { tag, .. } => tag,
+            CodecZenohDeclarationVariantSource::Default { tag, .. } => tag.get(),
         };
-        if _d_header_mid > 0x1F {
-            return Err(CodecError::LengthOutOfRange);
-        }
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         if let Some(_o) = over.header_n {
             _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
@@ -631,7 +654,7 @@ pub enum CodecZenohDeclarationOwnedVariant<S: ::sce_forge_runtime::codec::CodecS
     CodecZenohUndeclToken(CodecZenohUndeclTokenOwned<S>),
     CodecZenohDeclFinal(CodecZenohDeclFinal),
     Default {
-        tag: u8,
+        tag: CodecZenohDeclarationUnknownTag,
         body: CodecZenohDeclFinal,
     },
 }

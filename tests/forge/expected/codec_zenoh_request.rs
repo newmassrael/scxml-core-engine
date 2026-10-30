@@ -29,6 +29,32 @@ use super::codec_zenoh_msg_put::CodecZenohMsgPut;
 use super::codec_zenoh_msg_del::CodecZenohMsgDel;
 use super::codec_zenoh_query::CodecZenohQuery;
 
+/// A tag `CodecZenohRequest` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohRequestUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohRequestUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1..=3 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -40,7 +66,7 @@ pub enum CodecZenohRequestVariant<'a> {
     CodecZenohMsgDel(CodecZenohMsgDel<'a>),
     CodecZenohQuery(CodecZenohQuery<'a>),
     Default {
-        tag: u8,
+        tag: CodecZenohRequestUnknownTag,
         body: CodecZenohQuery<'a>,
     },
 }
@@ -189,7 +215,7 @@ impl<'a> CodecZenohRequest<'a> {
             }
             other => {
                 _out.body = CodecZenohRequestVariant::Default {
-                    tag: other,
+                    tag: CodecZenohRequestUnknownTag(other),
                     body: CodecZenohQuery::default(),
                 };
                 if let CodecZenohRequestVariant::Default { body: _b, .. } = &mut _out.body {
@@ -301,7 +327,7 @@ pub enum CodecZenohRequestVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, 
     CodecZenohMsgPut(&'s A0),
     CodecZenohMsgDel(&'s A1),
     CodecZenohQuery(&'s A2),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohRequestUnknownTag, body: &'s D },
 }
 
 /// Flags of `CodecZenohRequest` a parent sets in place of the ones a value presents:
@@ -374,7 +400,7 @@ pub enum CodecZenohRequestPartsBody<'a> {
     CodecZenohMsgDel(&'a super::codec_zenoh_msg_del::CodecZenohMsgDelParts<'a>),
     CodecZenohQuery(&'a super::codec_zenoh_query::CodecZenohQueryParts<'a>),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_query::CodecZenohQueryParts<'a> },
+    Default { tag: CodecZenohRequestUnknownTag, body: &'a super::codec_zenoh_query::CodecZenohQueryParts<'a> },
 }
 
 /// A value of `CodecZenohRequest` held in the types a caller already has: a source
@@ -640,7 +666,7 @@ pub enum CodecZenohRequestOwnedVariant<S: ::sce_forge_runtime::codec::CodecStora
     CodecZenohMsgDel(CodecZenohMsgDelOwned<S>),
     CodecZenohQuery(CodecZenohQueryOwned<S>),
     Default {
-        tag: u8,
+        tag: CodecZenohRequestUnknownTag,
         body: CodecZenohQueryOwned<S>,
     },
 }

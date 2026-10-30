@@ -19,6 +19,32 @@ use sce_forge_runtime::codec::VecSink;
 
 use super::codec_init_syn_body::CodecInitSynBody;
 
+/// A tag `CodecInitSynEnvelope` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecInitSynEnvelopeUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecInitSynEnvelopeUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -28,7 +54,7 @@ use super::codec_init_syn_body::CodecInitSynBody;
 pub enum CodecInitSynEnvelopeVariant {
     CodecInitSynBody(CodecInitSynBody),
     Default {
-        tag: u8,
+        tag: CodecInitSynEnvelopeUnknownTag,
         body: CodecInitSynBody,
     },
 }
@@ -110,7 +136,7 @@ impl CodecInitSynEnvelope {
             }
             other => {
                 _out.body = CodecInitSynEnvelopeVariant::Default {
-                    tag: other,
+                    tag: CodecInitSynEnvelopeUnknownTag(other),
                     body: CodecInitSynBody::default(),
                 };
                 if let CodecInitSynEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
@@ -195,7 +221,7 @@ impl CodecInitSynEnvelope {
 #[allow(dead_code)]
 pub enum CodecInitSynEnvelopeVariantSource<'s, A0: ?Sized, D: ?Sized> {
     CodecInitSynBody(&'s A0),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecInitSynEnvelopeUnknownTag, body: &'s D },
 }
 
 /// Flags of `CodecInitSynEnvelope` a parent sets in place of the ones a value presents:
@@ -243,7 +269,7 @@ impl<T: CodecInitSynEnvelopeSource + ?Sized> CodecInitSynEnvelopeSource for &T {
 pub enum CodecInitSynEnvelopePartsBody<'a> {
     CodecInitSynBody(&'a super::codec_init_syn_body::CodecInitSynBodyParts),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_init_syn_body::CodecInitSynBodyParts },
+    Default { tag: CodecInitSynEnvelopeUnknownTag, body: &'a super::codec_init_syn_body::CodecInitSynBodyParts },
 }
 
 /// A value of `CodecInitSynEnvelope` held in the types a caller already has: a source
@@ -305,11 +331,8 @@ impl CodecInitSynEnvelope {
     pub fn write_source_in<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecInitSynEnvelopeOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let _d_header_mid: u8 = match src.body() {
             CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_) => 1,
-            CodecInitSynEnvelopeVariantSource::Default { tag, .. } => tag,
+            CodecInitSynEnvelopeVariantSource::Default { tag, .. } => tag.get(),
         };
-        if _d_header_mid > 0x1F {
-            return Err(CodecError::LengthOutOfRange);
-        }
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         if let Some(_o) = over.header_s {
             _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);

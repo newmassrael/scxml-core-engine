@@ -25,6 +25,32 @@ use super::codec_zenoh_push::CodecZenohPush;
 use super::codec_zenoh_declare::CodecZenohDeclare;
 use super::codec_zenoh_oam::CodecZenohOam;
 
+/// A tag `CodecZenohNetworkEnvelope` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohNetworkEnvelopeUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohNetworkEnvelopeUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            25..=31 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -40,7 +66,7 @@ pub enum CodecZenohNetworkEnvelopeVariant<'a> {
     CodecZenohDeclare(CodecZenohDeclare<'a>),
     CodecZenohOam(CodecZenohOam<'a>),
     Default {
-        tag: u8,
+        tag: CodecZenohNetworkEnvelopeUnknownTag,
         body: CodecZenohOam<'a>,
     },
 }
@@ -160,7 +186,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
             }
             other => {
                 _out.body = CodecZenohNetworkEnvelopeVariant::Default {
-                    tag: other,
+                    tag: CodecZenohNetworkEnvelopeUnknownTag(other),
                     body: CodecZenohOam::default(),
                 };
                 if let CodecZenohNetworkEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
@@ -224,7 +250,7 @@ pub enum CodecZenohNetworkEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: 
     CodecZenohPush(&'s A4),
     CodecZenohDeclare(&'s A5),
     CodecZenohOam(&'s A6),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohNetworkEnvelopeUnknownTag, body: &'s D },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -254,7 +280,7 @@ pub enum CodecZenohNetworkEnvelopePartsBody<'a> {
     CodecZenohDeclare(&'a super::codec_zenoh_declare::CodecZenohDeclareParts<'a>),
     CodecZenohOam(&'a super::codec_zenoh_oam::CodecZenohOamParts<'a>),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_oam::CodecZenohOamParts<'a> },
+    Default { tag: CodecZenohNetworkEnvelopeUnknownTag, body: &'a super::codec_zenoh_oam::CodecZenohOamParts<'a> },
 }
 
 /// A value of `CodecZenohNetworkEnvelope` held in the types a caller already has: a source
@@ -441,7 +467,7 @@ pub enum CodecZenohNetworkEnvelopeOwnedVariant<S: ::sce_forge_runtime::codec::Co
     CodecZenohDeclare(CodecZenohDeclareOwned<S>),
     CodecZenohOam(CodecZenohOamOwned<S>),
     Default {
-        tag: u8,
+        tag: CodecZenohNetworkEnvelopeUnknownTag,
         body: CodecZenohOamOwned<S>,
     },
 }

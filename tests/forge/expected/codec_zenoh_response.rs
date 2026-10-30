@@ -27,6 +27,32 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 use super::codec_zenoh_reply::CodecZenohReply;
 use super::codec_zenoh_err::CodecZenohErr;
 
+/// A tag `CodecZenohResponse` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohResponseUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohResponseUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            4..=5 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -37,7 +63,7 @@ pub enum CodecZenohResponseVariant<'a> {
     CodecZenohReply(CodecZenohReply<'a>),
     CodecZenohErr(CodecZenohErr<'a>),
     Default {
-        tag: u8,
+        tag: CodecZenohResponseUnknownTag,
         body: CodecZenohReply<'a>,
     },
 }
@@ -200,7 +226,7 @@ impl<'a> CodecZenohResponse<'a> {
             }
             other => {
                 _out.body = CodecZenohResponseVariant::Default {
-                    tag: other,
+                    tag: CodecZenohResponseUnknownTag(other),
                     body: CodecZenohReply::default(),
                 };
                 if let CodecZenohResponseVariant::Default { body: _b, .. } = &mut _out.body {
@@ -314,7 +340,7 @@ impl<'a> CodecZenohResponse<'a> {
 pub enum CodecZenohResponseVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
     CodecZenohReply(&'s A0),
     CodecZenohErr(&'s A1),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohResponseUnknownTag, body: &'s D },
 }
 
 /// Flags of `CodecZenohResponse` a parent sets in place of the ones a value presents:
@@ -383,7 +409,7 @@ pub enum CodecZenohResponsePartsBody<'a> {
     CodecZenohReply(&'a super::codec_zenoh_reply::CodecZenohReplyParts<'a>),
     CodecZenohErr(&'a super::codec_zenoh_err::CodecZenohErrParts<'a>),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_reply::CodecZenohReplyParts<'a> },
+    Default { tag: CodecZenohResponseUnknownTag, body: &'a super::codec_zenoh_reply::CodecZenohReplyParts<'a> },
 }
 
 /// A value of `CodecZenohResponse` held in the types a caller already has: a source
@@ -665,7 +691,7 @@ pub enum CodecZenohResponseOwnedVariant<S: ::sce_forge_runtime::codec::CodecStor
     CodecZenohReply(CodecZenohReplyOwned<S>),
     CodecZenohErr(CodecZenohErrOwned<S>),
     Default {
-        tag: u8,
+        tag: CodecZenohResponseUnknownTag,
         body: CodecZenohReplyOwned<S>,
     },
 }

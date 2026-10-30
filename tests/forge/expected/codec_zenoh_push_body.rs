@@ -20,6 +20,32 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_zenoh_put::CodecZenohPut;
 use super::codec_zenoh_del::CodecZenohDel;
 
+/// A tag `CodecZenohPushBody` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohPushBodyUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohPushBodyUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1..=2 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -30,7 +56,7 @@ pub enum CodecZenohPushBodyVariant {
     CodecZenohPut(CodecZenohPut),
     CodecZenohDel(CodecZenohDel),
     Default {
-        tag: u8,
+        tag: CodecZenohPushBodyUnknownTag,
         body: CodecZenohPut,
     },
 }
@@ -118,7 +144,7 @@ impl CodecZenohPushBody {
             }
             other => {
                 _out.body = CodecZenohPushBodyVariant::Default {
-                    tag: other,
+                    tag: CodecZenohPushBodyUnknownTag(other),
                     body: CodecZenohPut::default(),
                 };
                 if let CodecZenohPushBodyVariant::Default { body: _b, .. } = &mut _out.body {
@@ -158,35 +184,32 @@ impl CodecZenohPushBody {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 2;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -200,7 +223,7 @@ impl CodecZenohPushBody {
 pub enum CodecZenohPushBodyVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
     CodecZenohPut(&'s A0),
     CodecZenohDel(&'s A1),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohPushBodyUnknownTag, body: &'s D },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -230,7 +253,7 @@ pub enum CodecZenohPushBodyPartsBody<'a> {
     CodecZenohPut(&'a super::codec_zenoh_put::CodecZenohPutParts),
     CodecZenohDel(&'a super::codec_zenoh_del::CodecZenohDelParts),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_put::CodecZenohPutParts },
+    Default { tag: CodecZenohPushBodyUnknownTag, body: &'a super::codec_zenoh_put::CodecZenohPutParts },
 }
 
 /// A value of `CodecZenohPushBody` held in the types a caller already has: a source
@@ -275,23 +298,20 @@ impl CodecZenohPushBody {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecZenohPushBodySource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohPushBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecZenohPushBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohPushBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecZenohPushBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _d_header_mid: u8 = match src.body() {
             CodecZenohPushBodyVariantSource::CodecZenohPut(_) => 1,
             CodecZenohPushBodyVariantSource::CodecZenohDel(_) => 2,
-            CodecZenohPushBodyVariantSource::Default { tag, .. } => tag,
+            CodecZenohPushBodyVariantSource::Default { tag, .. } => tag.get(),
         };
-        if _d_header_mid > 0x1F {
-            return Err(CodecError::LengthOutOfRange);
-        }
         let _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         w.write_u8(_c_header)?;
         match src.body() {
@@ -305,17 +325,17 @@ impl CodecZenohPushBody {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohPushBodySource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohPushBodySource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<S: CodecZenohPushBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohPushBody {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -323,10 +343,12 @@ impl<S: CodecZenohPushBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWri
 #[allow(dead_code)]
 impl CodecZenohPushBody {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecZenohPushBodySource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecZenohPushBodySource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a

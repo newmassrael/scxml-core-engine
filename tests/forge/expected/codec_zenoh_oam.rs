@@ -28,6 +28,32 @@ use super::codec_zenoh_ext_unit::CodecZenohExtUnit;
 use super::codec_zenoh_ext_zint::CodecZenohExtZint;
 use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 
+/// A tag `CodecZenohOam` names no arm for, which its default arm holds: a
+/// value inside the 2 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecZenohOamUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecZenohOamUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            0..=2 => None,
+            _ if tag > 3 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -39,7 +65,7 @@ pub enum CodecZenohOamVariant<'a> {
     CodecZenohExtZint(CodecZenohExtZint),
     CodecZenohExtZbuf(CodecZenohExtZbuf<'a>),
     Default {
-        tag: u8,
+        tag: CodecZenohOamUnknownTag,
         body: CodecZenohExtUnit,
     },
 }
@@ -184,7 +210,7 @@ impl<'a> CodecZenohOam<'a> {
             }
             other => {
                 _out.body = CodecZenohOamVariant::Default {
-                    tag: other,
+                    tag: CodecZenohOamUnknownTag(other),
                     body: CodecZenohExtUnit::default(),
                 };
                 if let CodecZenohOamVariant::Default { body: _b, .. } = &mut _out.body {
@@ -280,7 +306,7 @@ pub enum CodecZenohOamVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, D: ?
     CodecZenohExtUnit(&'s A0),
     CodecZenohExtZint(&'s A1),
     CodecZenohExtZbuf(&'s A2),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecZenohOamUnknownTag, body: &'s D },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -321,7 +347,7 @@ pub enum CodecZenohOamPartsBody<'a> {
     CodecZenohExtZint(&'a super::codec_zenoh_ext_zint::CodecZenohExtZintParts),
     CodecZenohExtZbuf(&'a super::codec_zenoh_ext_zbuf::CodecZenohExtZbufParts<'a>),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts },
+    Default { tag: CodecZenohOamUnknownTag, body: &'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts },
 }
 
 /// A value of `CodecZenohOam` held in the types a caller already has: a source
@@ -407,7 +433,6 @@ impl<'a> CodecZenohOam<'a> {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecZenohOamSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -422,12 +447,9 @@ impl<'a> CodecZenohOam<'a> {
             CodecZenohOamVariantSource::CodecZenohExtUnit(_) => 0,
             CodecZenohOamVariantSource::CodecZenohExtZint(_) => 1,
             CodecZenohOamVariantSource::CodecZenohExtZbuf(_) => 2,
-            CodecZenohOamVariantSource::Default { tag, .. } => tag,
+            CodecZenohOamVariantSource::Default { tag, .. } => tag.get(),
         };
         let _p_header_z_0: bool = src.extensions().is_some();
-        if _d_header_enc > 0x3 {
-            return Err(CodecError::LengthOutOfRange);
-        }
         let _c_header: u8 = (((src.header() & !0x60) | (_d_header_enc << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
         w.write_u8(_c_header)?;
         w.write_vle_u16(src.id())?;
@@ -563,7 +585,7 @@ pub enum CodecZenohOamOwnedVariant<S: ::sce_forge_runtime::codec::CodecStorage =
     CodecZenohExtZint(CodecZenohExtZint),
     CodecZenohExtZbuf(CodecZenohExtZbufOwned<S>),
     Default {
-        tag: u8,
+        tag: CodecZenohOamUnknownTag,
         body: CodecZenohExtUnit,
     },
 }

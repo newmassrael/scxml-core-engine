@@ -25,6 +25,32 @@ use super::codec_zenoh_frame::CodecZenohFrame;
 use super::codec_zenoh_fragment::CodecZenohFragment;
 use super::codec_zenoh_join::CodecZenohJoin;
 
+/// A tag `CodecTransportEnvelope` names no arm for, which its default arm holds: a
+/// value inside the 5 bits the tag is read from and outside
+/// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
+/// it holds and read back as the default arm, so no tag it holds is refused.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CodecTransportEnvelopeUnknownTag(u8);
+
+#[allow(dead_code)]
+impl CodecTransportEnvelopeUnknownTag {
+    /// `tag` as a tag no arm names, or `None` when it is past the tag's bits or
+    /// is an arm's.
+    pub const fn new(tag: u8) -> Option<Self> {
+        match tag {
+            1..=7 => None,
+            _ if tag > 31 => None,
+            _ => Some(Self(tag)),
+        }
+    }
+
+    /// The tag.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
@@ -40,7 +66,7 @@ pub enum CodecTransportEnvelopeVariant<'a> {
     CodecZenohFragment(CodecZenohFragment<'a>),
     CodecZenohJoin(CodecZenohJoin<'a>),
     Default {
-        tag: u8,
+        tag: CodecTransportEnvelopeUnknownTag,
         body: CodecZenohClose,
     },
 }
@@ -158,7 +184,7 @@ impl<'a> CodecTransportEnvelope<'a> {
             }
             other => {
                 _out.body = CodecTransportEnvelopeVariant::Default {
-                    tag: other,
+                    tag: CodecTransportEnvelopeUnknownTag(other),
                     body: CodecZenohClose::default(),
                 };
                 if let CodecTransportEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
@@ -273,7 +299,7 @@ pub enum CodecTransportEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Si
     CodecZenohFrame(&'s A4),
     CodecZenohFragment(&'s A5),
     CodecZenohJoin(&'s A6),
-    Default { tag: u8, body: &'s D },
+    Default { tag: CodecTransportEnvelopeUnknownTag, body: &'s D },
 }
 
 /// Flags of `CodecTransportEnvelope` a parent sets in place of the ones a value presents:
@@ -343,7 +369,7 @@ pub enum CodecTransportEnvelopePartsBody<'a> {
     CodecZenohFragment(&'a super::codec_zenoh_fragment::CodecZenohFragmentParts<'a>),
     CodecZenohJoin(&'a super::codec_zenoh_join::CodecZenohJoinParts<'a>),
     /// The tag the grammar could not name, and the body it holds.
-    Default { tag: u8, body: &'a super::codec_zenoh_close::CodecZenohCloseParts },
+    Default { tag: CodecTransportEnvelopeUnknownTag, body: &'a super::codec_zenoh_close::CodecZenohCloseParts },
 }
 
 /// A value of `CodecTransportEnvelope` held in the types a caller already has: a source
@@ -441,11 +467,8 @@ impl<'a> CodecTransportEnvelope<'a> {
             CodecTransportEnvelopeVariantSource::CodecZenohFrame(_) => 5,
             CodecTransportEnvelopeVariantSource::CodecZenohFragment(_) => 6,
             CodecTransportEnvelopeVariantSource::CodecZenohJoin(_) => 7,
-            CodecTransportEnvelopeVariantSource::Default { tag, .. } => tag,
+            CodecTransportEnvelopeVariantSource::Default { tag, .. } => tag.get(),
         };
-        if _d_header_mid > 0x1F {
-            return Err(CodecError::LengthOutOfRange);
-        }
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         if let Some(_o) = over.header_a {
             _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
@@ -597,7 +620,7 @@ pub enum CodecTransportEnvelopeOwnedVariant<S: ::sce_forge_runtime::codec::Codec
     CodecZenohFragment(CodecZenohFragmentOwned<S>),
     CodecZenohJoin(CodecZenohJoinOwned<S>),
     Default {
-        tag: u8,
+        tag: CodecTransportEnvelopeUnknownTag,
         body: CodecZenohClose,
     },
 }
