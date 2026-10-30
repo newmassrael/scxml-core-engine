@@ -52,6 +52,19 @@
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{% if c_feature_macros %}
+
+// docs/adr/0072: an arm that names a build feature is compiled while its
+// macro is non-zero, and the macro is 1 unless the build defines it first:
+// the arm is present by default, and a build that defines the macro to 0
+// leaves its alternative out of the variant, its decode refusing the arm's
+// tag with CodecError::VariantArmNotBuilt, recorded on the cursor.
+{% for feature_macro in c_feature_macros %}
+#ifndef {{ feature_macro }}
+#define {{ feature_macro }} 1
+#endif
+{% endfor %}
+{% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
 
@@ -66,15 +79,32 @@ struct {{ struct_name }}{{ variant.default_arm.variant_name }} {
     {{ variant.default_arm.body_type }} body;
 };
 {% endif %}
-{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
-   every build here, which is the feature on, its default meaning. The arms are
-   alternatives of one `std::variant`, and the default value and a parent's
-   carrier bits name an alternative by its index (`default_arm_index`,
-   `parent_tag_match_term_cpp`), so leaving one out moves every index after it. #}
+{# docs/adr/0072: an arm that names a build feature (`arm.c_feature_macro`) is
+   compiled where the feature's macro is non-zero, as in C. Its alternative is
+   left out of the `std::variant` where the macro is 0, which moves the index of
+   every alternative after it, so everything below names such a variant's
+   alternatives by type (`std::in_place_type_t`, `std::get_if`), and a parent's
+   carrier bits count the index per build (`parent_tag_gated_chain_cpp`). Each
+   separator of the list sits inside the guard of its own alternative: after
+   each one before the last one every build holds
+   (`cpp_last_held_alternative`), before each one after it. A variant without
+   such an arm is written as it always was. #}
 using {{ struct_name }}Variant = std::variant<
+{% if variant.has_feature_gated_arm %}
+{% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+    {{ ", " if loop.index0 > variant.cpp_last_held_alternative else "" }}{{ arm.body_type }}{{ "," if loop.index0 < variant.cpp_last_held_alternative else "" }}
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
+{% endfor %}
+{% else %}
 {% for arm in variant.arms %}
     {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}
 {% endfor %}
+{% endif %}
 {% if variant.default_arm %}
     {{ struct_name }}{{ variant.default_arm.variant_name }}
 {% endif %}
@@ -86,7 +116,15 @@ struct {{ struct_name }} {
     {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% endif %};
 {% endfor %}
 {% if has_variant %}
-{% if variant.default_arm_index is defined %}
+{% if variant.default_arm_index is defined and variant.has_feature_gated_arm %}
+    // RFC variant-default-uniformity (Cpp): a freshly-constructed
+    // envelope holds the arm marked `<sce:arm default="true"/>`, which
+    // every build holds (docs/adr/0072), encoding its wire-MID for
+    // byte-exact round-trip. The arm is selected by its type, since an
+    // arm before it under a build feature is not an alternative where
+    // that feature's macro is 0, and its index differs per build.
+    {{ struct_name }}Variant body{std::in_place_type_t<{% for arm in variant.arms %}{% if arm.is_default %}{{ arm.body_type }}{% endif %}{% endfor %}>{}};
+{% elif variant.default_arm_index is defined %}
     // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed
@@ -170,12 +208,22 @@ struct {{ struct_name }} {
         {{ struct_name }}Variant body;
         switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
             case {{ arm.value_literal }}: {
                 auto _arm = {{ arm.body_type }}::decode(cursor{{ arm.body_decode_args_after_cursor }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
+{% if arm.c_feature_macro %}
+#else
+            case {{ arm.value_literal }}:
+                cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);
+                return std::nullopt;
+#endif
+{% endif %}
 {% endfor %}
             default: {
 {% if variant.default_arm %}
@@ -389,9 +437,15 @@ struct {{ struct_name }} {
 {% endif %}
         // Append the active arm body's encoded bytes.
 {% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
             if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
 {% endfor %}
 {% if variant.default_arm %}
         if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {

@@ -5,23 +5,28 @@
 //! (docs/adr/0072).
 //!
 //! The Rust codec gates every item that names the arm on
-//! `#[cfg(feature = "<name>")]`, and the C codec puts it inside
+//! `#[cfg(feature = "<name>")]`, and the C and C++ codecs put it inside
 //! `#if SCE_FEATURE_<NAME>`, which the header defines to 1 unless the build
 //! defined it. A build without the feature has no such arm, and its decode
 //! refuses the arm's tag (`CodecError::VariantArmNotBuilt`,
-//! `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT`) rather than read the frame as the
-//! catch-all's. C++, Go, Kotlin and Python keep the arm in every build, which
-//! is the feature on.
+//! `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT`, and in C++ `std::nullopt` with
+//! `CodecError::VariantArmNotBuilt` recorded on the cursor) rather than read
+//! the frame as the catch-all's. The C++ variant's alternatives move where one
+//! is left out, so such a variant names them by type, and a parent's carrier
+//! bits count their index per build. Go, Kotlin and Python keep the arm in
+//! every build, which is the feature on.
 //!
 //! What a document without the attribute renders is held by the committed
 //! goldens of every codec under `tests/forge/expected/`, which this change
 //! leaves as they were; the six `codec_zenoh_request` cases of
 //! `forge_conformance.rs` (`forge_codec_zenoh_request_rust`,
-//! `forge_c11_codec_zenoh_request` and the four others) hold the request
-//! below without its features.
+//! `forge_c11_codec_zenoh_request`, `forge_codec_zenoh_request_cpp` and the
+//! three others) hold the request below without its features.
 //!
 //! The decode of each Rust build is run by
-//! `backends/rust/forge-conformance/tests/forge_feature_gated_arm.rs`.
+//! `backends/rust/forge-conformance/tests/forge_feature_gated_arm.rs`, and of
+//! each C++ build by the `feature_gated_arm_on` and `feature_gated_arm_off`
+//! tests of `backends/cpp/forge-runtime/tests/conformance`.
 
 use std::path::PathBuf;
 
@@ -388,6 +393,336 @@ fn every_c_item_of_a_gated_arm_is_inside_its_macro() {
             );
         }
     }
+}
+
+/// The C++ macro of the request's gated arms.
+const CPP_GUARD: &str = "#if SCE_FEATURE_REQUEST_PUT_DEL";
+const CPP_PUT: &str = "::SCE::Generated::CodecZenohMsgPut::CodecZenohMsgPut";
+const CPP_DEL: &str = "::SCE::Generated::CodecZenohMsgDel::CodecZenohMsgDel";
+const CPP_QUERY: &str = "::SCE::Generated::CodecZenohQuery::CodecZenohQuery";
+
+/// Whether `code` names a `std::variant` alternative by a fixed index: an
+/// `in_place_index`, or `.index() == ` followed by a number. Where an
+/// alternative before it is under a feature, that number is the alternative's
+/// index only in the build where the feature is on.
+fn names_an_alternative_by_a_fixed_index(code: &str) -> bool {
+    code.contains("in_place_index")
+        || code
+            .match_indices(".index() == ")
+            .any(|(at, needle)| code[at + needle.len()..].starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Every item of the C++ codec that names the put or the delete arm sits
+/// inside `#if SCE_FEATURE_REQUEST_PUT_DEL`, which the header defines to 1
+/// before its first use unless the build defined it: the arm's alternative of
+/// the `std::variant`, its decode case and its encode branch. The query arm's
+/// items do not.
+#[test]
+fn every_cpp_item_of_a_gated_arm_is_inside_its_macro() {
+    let code = generate(Language::Cpp, &ForgeCompileOptions::default());
+    let default_on =
+        "#ifndef SCE_FEATURE_REQUEST_PUT_DEL\n#define SCE_FEATURE_REQUEST_PUT_DEL 1\n#endif\n";
+    assert_eq!(
+        code.matches(default_on).count(),
+        1,
+        "the macro is defined to 1 once, unless the build defined it:\n{code}"
+    );
+    let first_use = code.find(CPP_GUARD).expect("the gated arms are guarded");
+    assert!(
+        code.find(default_on).expect("defined") < first_use,
+        "the macro is used before the header defines it"
+    );
+
+    // The alternatives: each gated one with its separator inside its guard,
+    // so the list is well formed in both builds.
+    let alternatives = [
+        "using CodecZenohRequestVariant = std::variant<".to_string(),
+        CPP_GUARD.to_string(),
+        format!("    {CPP_PUT},"),
+        "#endif".to_string(),
+        CPP_GUARD.to_string(),
+        format!("    {CPP_DEL},"),
+        "#endif".to_string(),
+        format!("    {CPP_QUERY},"),
+        "    CodecZenohRequestDefault".to_string(),
+        ">;".to_string(),
+    ]
+    .join("\n");
+    assert!(
+        code.contains(&alternatives),
+        "the variant's alternatives are not the gated list:\n{code}"
+    );
+
+    let lines: Vec<&str> = code.lines().collect();
+    let gated_item = |line: &str| {
+        let t = line.trim();
+        t.contains("CodecZenohMsgPut")
+            || t.contains("CodecZenohMsgDel")
+            || t == "case 1: {"
+            || t == "case 2: {"
+    };
+    // The alternative, the decode case and the encode branch of each of the
+    // two arms.
+    let guards: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.trim() == CPP_GUARD)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(guards.len(), 6, "three items of each gated arm:\n{code}");
+    for at in guards {
+        assert!(
+            gated_item(lines[at + 1]),
+            "`{CPP_GUARD}` stands in front of something every build holds:\n{}",
+            lines[at + 1]
+        );
+        let close = lines[at + 1..]
+            .iter()
+            .position(|l| matches!(l.trim(), "#endif" | "#else"))
+            .expect("the guard is closed");
+        assert!(
+            lines[at + 1..at + 1 + close]
+                .iter()
+                .all(|l| !l.contains("CodecZenohQuery")),
+            "the query arm is inside the gated arm's guard"
+        );
+    }
+    let query_alternative = format!("{CPP_QUERY},");
+    let query_encode = format!("if (auto _p = std::get_if<{CPP_QUERY}>");
+    let mut query_items = 0usize;
+    for (at, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if t == query_alternative || t == "case 3: {" || t.starts_with(query_encode.as_str()) {
+            query_items += 1;
+            assert_ne!(
+                lines[at - 1].trim(),
+                CPP_GUARD,
+                "the query arm, which every build holds, is guarded:\n{t}"
+            );
+        }
+    }
+    assert_eq!(query_items, 3, "the query's alternative, case and encode");
+}
+
+/// In a C++ build without the feature, the decode's case for each gated arm's
+/// tag is the other branch of the arm's guard, and it records the refusal on
+/// the cursor before it returns, so a caller tells it from a frame short of
+/// bytes.
+#[test]
+fn a_cpp_build_without_the_feature_refuses_the_gated_arms_tag() {
+    let code = generate(Language::Cpp, &ForgeCompileOptions::default());
+    let lines: Vec<&str> = code.lines().collect();
+    let refusals: Vec<[&str; 4]> = lines
+        .windows(5)
+        .filter(|w| w[0].trim() == "#else")
+        .map(|w| [w[1].trim(), w[2].trim(), w[3].trim(), w[4].trim()])
+        .collect();
+    let refusal = |case: &'static str| {
+        [
+            case,
+            "cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);",
+            "return std::nullopt;",
+            "#endif",
+        ]
+    };
+    assert_eq!(
+        refusals,
+        vec![refusal("case 1:"), refusal("case 2:")],
+        "each gated arm's decode case is refused where its macro is 0:\n{code}"
+    );
+}
+
+/// A C++ variant with a gated arm names no alternative by a fixed index: its
+/// default value is the default arm chosen by type, which every build holds
+/// at a different index (2 with the feature, 0 without).
+#[test]
+fn a_cpp_variant_with_a_gated_arm_names_its_alternatives_by_type() {
+    let code = generate(Language::Cpp, &ForgeCompileOptions::default());
+    assert!(
+        code.contains(&format!(
+            "    CodecZenohRequestVariant body{{std::in_place_type_t<{CPP_QUERY}>{{}}}};\n"
+        )),
+        "the default value is not the query arm chosen by type:\n{code}"
+    );
+    assert!(
+        !names_an_alternative_by_a_fixed_index(&code),
+        "an alternative is named by an index that moves with the feature:\n{code}"
+    );
+}
+
+/// When the last arm is under a feature and no catch-all follows it, its
+/// separator goes before it, inside its guard, so the build without it does
+/// not end the list with a comma.
+#[test]
+fn a_cpp_gated_last_alternative_carries_its_separator_before_it() {
+    let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="gated_last">
+  <sce:import src="codec_peek_arm_a.scxml" kind="codec" as="codec_peek_arm_a"/>
+  <sce:import src="codec_peek_arm_b.scxml" kind="codec" as="codec_peek_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="1"/>
+      </sce:peek-byte>
+      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_peek_arm_b" feature="gated-arm"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let code = sce_build::compile_forge_with_imports(
+        document,
+        DocumentLabel::symmetric("gated_last"),
+        Language::Cpp,
+        &resource_dir(),
+        &ForgeCompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("the gated variant generates for C++: {e}"))
+    .files
+    .into_iter()
+    .map(|(_, code)| code)
+    .collect::<Vec<_>>()
+    .join("\n");
+    let alternatives = [
+        "using GatedLastVariant = std::variant<",
+        "    ::SCE::Generated::CodecPeekArmA::CodecPeekArmA",
+        "#if SCE_FEATURE_GATED_ARM",
+        "    , ::SCE::Generated::CodecPeekArmB::CodecPeekArmB",
+        "#endif",
+        ">;",
+    ]
+    .join("\n");
+    assert!(
+        code.contains(&alternatives),
+        "the gated last alternative does not carry its separator before it:\n{code}"
+    );
+}
+
+/// A parent whose carrier bits an embedded variant's arm fills compares the
+/// embedded body's index with one counted per build: the term of the gated
+/// arm is under its macro, and the arm after it adds 1 where the macro is
+/// non-zero. The last arm every build holds is the fallthrough.
+#[test]
+fn a_cpp_parent_counts_a_gated_variants_index_per_build() {
+    let dir = gated_dispatch_fixture();
+    let parent = std::fs::read_to_string(dir.join("gated_parent.scxml")).expect("read parent");
+    let output = sce_build::compile_forge_with_imports(
+        &parent,
+        DocumentLabel::symmetric("gated_parent"),
+        Language::Cpp,
+        &dir,
+        &ForgeCompileOptions::default(),
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let code = output
+        .unwrap_or_else(|e| panic!("the parent of a gated variant generates for C++: {e}"))
+        .files
+        .into_iter()
+        .find(|(name, _)| name.contains("gated_parent"))
+        .map(|(_, code)| code)
+        .expect("the parent's header");
+    let default_on = "#ifndef SCE_FEATURE_LOCAL_ARM\n#define SCE_FEATURE_LOCAL_ARM 1\n#endif\n";
+    assert_eq!(
+        code.matches(default_on).count(),
+        1,
+        "the parent defines the embedded arm's macro to 1 once:\n{code}"
+    );
+    let derived = [
+        "        const std::uint8_t _derived_header = static_cast<std::uint8_t>((",
+        "#if SCE_FEATURE_LOCAL_ARM",
+        "            key.body.index() == static_cast<std::size_t>(0) ? static_cast<std::uint8_t>(0x00) :",
+        "#endif",
+        "            key.body.index() == static_cast<std::size_t>(0 + (SCE_FEATURE_LOCAL_ARM ? 1 : 0)) ? static_cast<std::uint8_t>(0x20) :",
+        "            static_cast<std::uint8_t>(0x40)));",
+    ]
+    .join("\n");
+    assert!(
+        code.contains(&derived),
+        "the carrier bits do not count the embedded index per build:\n{code}"
+    );
+    assert!(
+        code.find(default_on).expect("defined") < code.find(&derived).expect("derived"),
+        "the macro is used before the parent defines it"
+    );
+    assert!(
+        !names_an_alternative_by_a_fixed_index(&code),
+        "the parent names an embedded alternative by an index that moves:\n{code}"
+    );
+}
+
+/// A parent that dispatches an embedded tag-less variant on two bits of its
+/// header, the variant's first arm under the feature `local-arm`, its second
+/// the default arm and its third an arm every build holds, written to a fresh
+/// directory the caller removes.
+fn gated_dispatch_fixture() -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "sce_gated_dispatch_{}_{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).expect("make the fixture directory");
+    let body = |name: &str, ty: &str, bits: u32| {
+        format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}">
+  <datamodel>
+    <sce:field id="payload" sce:type="{ty}" sce:byte="0" sce:bit-size="{bits}"/>
+  </datamodel>
+</scxml>"#
+        )
+    };
+    let documents = [
+        (
+            "gated_parent",
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="gated_parent">
+  <sce:import src="gated_child.scxml" kind="codec" as="gated_child">
+    <sce:variant-dispatch flag="header.K"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="K" bit="5" width="2"/>
+    </sce:flags>
+    <sce:embed id="key" type="gated_child" sce:byte="1"/>
+  </datamodel>
+</scxml>"#
+                .to_string(),
+        ),
+        (
+            "gated_child",
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="gated_child">
+  <sce:import src="gated_local.scxml" kind="codec" as="gated_local"/>
+  <sce:import src="gated_nonlocal.scxml" kind="codec" as="gated_nonlocal"/>
+  <sce:import src="gated_wide.scxml" kind="codec" as="gated_wide"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="gated_local" feature="local-arm"/>
+      <sce:arm value="0x01" type="gated_nonlocal" default="true"/>
+      <sce:arm value="0x02" type="gated_wide"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#
+                .to_string(),
+        ),
+        ("gated_local", body("gated_local", "uint8", 8)),
+        ("gated_nonlocal", body("gated_nonlocal", "uint16", 16)),
+        ("gated_wide", body("gated_wide", "uint32", 32)),
+    ];
+    for (name, text) in documents {
+        std::fs::write(dir.join(format!("{name}.scxml")), text).expect("write a fixture");
+    }
+    dir
 }
 
 /// A Rust build without the feature keeps only the arms without one, and the

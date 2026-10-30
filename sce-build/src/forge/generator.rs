@@ -137,6 +137,25 @@ pub(crate) fn c_feature_macro(feature: &str) -> String {
     )
 }
 
+/// The position, among a C++ variant's alternatives (its arms in declaration
+/// order, then the catch-all's wrapper when there is one), of the last
+/// alternative every build holds (docs/adr/0072). The template writes a comma
+/// after each alternative before it and before each one after it, each inside
+/// the guard of its own alternative, so no build's list has a stray separator.
+/// The catch-all is never under a feature, so with one it is that alternative.
+/// When every arm is under a feature and there is no catch-all, no alternative
+/// is held by every build, and the last arm stands in: the list is right where
+/// every feature is on.
+fn cpp_last_held_alternative(v: &CodecVariant) -> usize {
+    if v.default_arm.is_some() {
+        return v.arms.len();
+    }
+    v.arms
+        .iter()
+        .rposition(|arm| arm.feature.is_none())
+        .unwrap_or_else(|| v.arms.len().saturating_sub(1))
+}
+
 /// Template-ready import context for a single `<sce:import>`.
 /// Per-language data is computed here; templates consume it directly.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -9310,7 +9329,8 @@ fn render_codec(
                 // docs/adr/0072: the build feature the arm is compiled under,
                 // as the backends that drop the arm from a build without it
                 // guard each of its items, and the guard of the decode arm
-                // that refuses its tag there. The other backends keep the arm in
+                // that refuses its tag there. C and C++ share the
+                // preprocessor's macro. The other backends keep the arm in
                 // every build, which is the feature on, the default meaning,
                 // and read neither key.
                 if let Some(feature) = &arm.feature {
@@ -9319,11 +9339,10 @@ fn render_codec(
                             obj.insert("rust_cfg".into(), rust_feature_cfg(feature).into());
                             obj.insert("rust_cfg_off".into(), rust_feature_cfg_off(feature).into());
                         }
-                        crate::generator::Language::C11 => {
+                        crate::generator::Language::C11 | crate::generator::Language::Cpp => {
                             obj.insert("c_feature_macro".into(), c_feature_macro(feature).into());
                         }
-                        crate::generator::Language::Cpp
-                        | crate::generator::Language::Kotlin
+                        crate::generator::Language::Kotlin
                         | crate::generator::Language::Go
                         | crate::generator::Language::Python
                         | crate::generator::Language::Swift => {}
@@ -9715,6 +9734,22 @@ fn render_codec(
                 serde_json::Value::Number(idx.into()),
             );
         }
+        // docs/adr/0072: a C++ variant with an arm under a build feature leaves
+        // that arm's alternative out of its `std::variant` where the feature's
+        // macro is 0, so no alternative after it has one index in every build.
+        // The template names such a variant's alternatives by type, and writes
+        // its alternative list with each separator inside the guard of the
+        // alternative it belongs to: a comma after every alternative before the
+        // last one every build holds, and before every one after it.
+        if matches!(lang, crate::generator::Language::Cpp)
+            && v.arms.iter().any(|a| a.feature.is_some())
+        {
+            variant_obj.insert("has_feature_gated_arm".into(), true.into());
+            variant_obj.insert(
+                "cpp_last_held_alternative".into(),
+                serde_json::Value::Number(cpp_last_held_alternative(v).into()),
+            );
+        }
         variant_obj.insert("arms".into(), serde_json::Value::Array(arm_ctx));
         if let Some(d) = default_ctx {
             variant_obj.insert("default_arm".into(), d);
@@ -9801,11 +9836,15 @@ fn render_codec(
 
     l.insert_imports(&mut ctx, imports);
 
-    if matches!(l.lang, crate::generator::Language::C11) {
+    if matches!(
+        l.lang,
+        crate::generator::Language::C11 | crate::generator::Language::Cpp
+    ) {
         // docs/adr/0072: every macro an arm of this header is guarded by,
         // its own arms' and those of an embedded variant whose arm fills a
         // carrier bit here, each defined to 1 before its first use unless
-        // the build defined it, so the arm is present by default.
+        // the build defined it, so the arm is present by default. C and C++
+        // share the preprocessor, and so the macro.
         let mut feature_macros: std::collections::BTreeSet<String> =
             std::collections::BTreeSet::new();
         if let Some(v) = &m.variant {
@@ -18946,7 +18985,9 @@ fn parent_tag_embed_pascal<'a>(d: &ParentTagDerivation, imports: &'a [ImportCont
 /// Single-embed match-expression term for Cpp. Uses std::variant
 /// alternative index dispatch via a chained ternary so the result
 /// type is `std::uint8_t` without needing `std::visit` or overloaded
-/// helpers. Optional embeds add a `has_value()` gate; absent → 0.
+/// helpers. Optional embeds add a `has_value()` gate; absent → 0. An
+/// embedded variant with an arm under a build feature is written by
+/// `parent_tag_gated_chain_cpp`, whose indices hold in every build.
 fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
     // imp lookup ensures the embed alias resolves (parity with the
     // other backends); Cpp's variant dispatch is by `.index()` so the
@@ -18959,6 +19000,25 @@ fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext])
     } else {
         format!("{snake}.body.index()")
     };
+    let chain = if d.arms.iter().any(|arm| arm.feature.is_some()) {
+        parent_tag_gated_chain_cpp(d, &body_access, mask)
+    } else {
+        parent_tag_chain_cpp(d, &body_access, mask)
+    };
+    if d.present_if.is_some() {
+        format!("({snake}.has_value() ? ({chain}) : static_cast<std::uint8_t>(0))")
+    } else {
+        // Wrap once so the outer `... | ...` chain in
+        // `parent_tag_derivation_local_for_carrier` composes without
+        // surprise precedence.
+        format!("({chain})")
+    }
+}
+
+/// The chained ternary of `parent_tag_match_term_cpp` over an embedded
+/// variant every build holds each arm of: arm `i` is the alternative at index
+/// `i`, and the last arm is the fallthrough.
+fn parent_tag_chain_cpp(d: &ParentTagDerivation, body_access: &str, mask: u64) -> String {
     let mut chain = String::new();
     for (idx, arm) in d.arms.iter().enumerate() {
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
@@ -18970,14 +19030,58 @@ fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext])
             chain.push_str(&format!("{body_access} == {idx} ? {literal} : "));
         }
     }
-    if d.present_if.is_some() {
-        format!("({snake}.has_value() ? ({chain}) : static_cast<std::uint8_t>(0))")
-    } else {
-        // Wrap once so the outer `... | ...` chain in
-        // `parent_tag_derivation_local_for_carrier` composes without
-        // surprise precedence.
-        format!("({chain})")
+    chain
+}
+
+/// The chained ternary of `parent_tag_match_term_cpp` over an embedded
+/// variant with an arm under a build feature (docs/adr/0072). The embedded
+/// header leaves such an arm's alternative out where the feature's macro is 0,
+/// so the term the arm adds is compiled under the same macro, and the index of
+/// every alternative after it is counted per build: the arms before it every
+/// build holds, plus `(SCE_FEATURE_<NAME> ? 1 : 0)` for each one before it
+/// under a feature. The fallthrough, which the catch-all's wrapper reaches, is
+/// the last arm every build holds, so it is the same arm in every build, and
+/// the last arm, as in a variant without a gated arm, when that one is held by
+/// every build; it is 0 when every arm is under a feature.
+fn parent_tag_gated_chain_cpp(d: &ParentTagDerivation, body_access: &str, mask: u64) -> String {
+    let literal_of = |arm: &InvertedArm| {
+        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
+        format!("static_cast<std::uint8_t>(0x{shifted:02X})")
+    };
+    let fallthrough = d.arms.iter().rposition(|arm| arm.feature.is_none());
+    let mut chain = String::from("\n");
+    let mut held_before = 0usize;
+    let mut gated_before: Vec<String> = Vec::new();
+    for (idx, arm) in d.arms.iter().enumerate() {
+        let feature_macro = arm.feature.as_deref().map(c_feature_macro);
+        if Some(idx) != fallthrough {
+            let mut index = format!("static_cast<std::size_t>({held_before}");
+            for name in &gated_before {
+                index.push_str(&format!(" + ({name} ? 1 : 0)"));
+            }
+            index.push(')');
+            if let Some(name) = &feature_macro {
+                chain.push_str(&format!("#if {name}\n"));
+            }
+            chain.push_str(&format!(
+                "            {body_access} == {index} ? {} :\n",
+                literal_of(arm)
+            ));
+            if feature_macro.is_some() {
+                chain.push_str("#endif\n");
+            }
+        }
+        match feature_macro {
+            Some(name) => gated_before.push(name),
+            None => held_before += 1,
+        }
     }
+    let last = fallthrough.map_or_else(
+        || "static_cast<std::uint8_t>(0)".to_string(),
+        |idx| literal_of(&d.arms[idx]),
+    );
+    chain.push_str(&format!("            {last}"));
+    chain
 }
 
 /// Single-embed match-expression term for Kotlin. Uses `when` over the

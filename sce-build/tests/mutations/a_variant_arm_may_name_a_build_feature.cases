@@ -5,18 +5,23 @@
 #
 # An `<sce:arm feature="<name>">` is compiled only where its feature is on: the
 # Rust codec puts `#[cfg(feature = "<name>")]` on every item that names the
-# arm, and the C codec puts the arm inside `#if SCE_FEATURE_<NAME>`; where the
-# feature is off, the decode refuses the arm's tag instead. The parser refuses
-# the attribute on the arm every build must hold. Each case below breaks one
-# of those: an item of the gated arm loses its cfg, the cfg lands on the arm
-# every build holds, the source interface names the gated arm in a build
-# without it, the refusal of the tag is not written, or a refusal of the
-# attribute lets the document through. The run of the off-build itself is
-# `a_build_without_an_arms_feature_refuses_its_tag.cases`.
+# arm, and the C and C++ codecs put the arm inside `#if SCE_FEATURE_<NAME>`;
+# where the feature is off, the decode refuses the arm's tag instead. A C++
+# variant with such an arm names its alternatives by type, and a parent counts
+# their index per build. The parser refuses the attribute on the arm every
+# build must hold. Each case below breaks one of those: an item of the gated
+# arm loses its cfg or its guard, the cfg lands on the arm every build holds,
+# the source interface names the gated arm in a build without it, a C++
+# alternative is named by an index that moves, the refusal of the tag is not
+# written, or a refusal of the attribute lets the document through. The run of
+# the Rust off-build itself is
+# `a_build_without_an_arms_feature_refuses_its_tag.cases`; the C++ builds are
+# run by the `feature_gated_arm_on` and `feature_gated_arm_off` tests of
+# `backends/cpp/forge-runtime/tests/conformance`.
 # `sce-build/tests/a_variant_arm_may_name_a_build_feature.rs` refuses the
 # parser and overlay cases, and
 # `sce-build/tests/a_gated_arm_is_compiled_only_where_its_feature_is_on.rs`
-# the Rust and C ones.
+# the Rust, C and C++ ones.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -25,6 +30,7 @@ mutation_tests -p sce-build --test a_variant_arm_may_name_a_build_feature --test
 mutation_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
 mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2
 mutation_targets tools/codegen/templates/forge/c/codec.h.jinja2
+mutation_targets tools/codegen/templates/forge/cpp/codec.h.jinja2
 mutation_targets sce-build/src/forge/generator/rust_source.rs
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets sce-build/src/forge/parser.rs
@@ -129,6 +135,78 @@ edit("tools/codegen/templates/forge/c/codec.h.jinja2",
      r'''/* {{ feature_macro }} */''')
 PY
 
+# ── The C++ codec ──
+
+mutation_case "the C++ alternative of a gated arm is outside its macro" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+    {{ ", " if loop.index0 > variant.cpp_last_held_alternative else "" }}''',
+     r'''    {{ ", " if loop.index0 > variant.cpp_last_held_alternative else "" }}''')
+PY
+
+mutation_case "a gated last C++ alternative carries its separator after it" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''    {{ ", " if loop.index0 > variant.cpp_last_held_alternative else "" }}{{ arm.body_type }}{{ "," if loop.index0 < variant.cpp_last_held_alternative else "" }}''',
+     r'''    {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}''')
+PY
+
+mutation_case "the C++ encode branch of a gated arm is outside its macro" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
+            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
+        }
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}''',
+     r'''        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
+            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
+        }''')
+PY
+
+mutation_case "the C++ default value names the default arm by its index" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''    {{ struct_name }}Variant body{std::in_place_type_t<{% for arm in variant.arms %}{% if arm.is_default %}{{ arm.body_type }}{% endif %}{% endfor %}>{}};''',
+     r'''    {{ struct_name }}Variant body{std::in_place_index_t<{{ variant.default_arm_index }}>{}};''')
+PY
+
+mutation_case "the C++ header never defines the macro to its default" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if matches!(
+        l.lang,
+        crate::generator::Language::C11 | crate::generator::Language::Cpp
+    ) {''',
+     r'''    if matches!(l.lang, crate::generator::Language::C11) {''')
+PY
+
+mutation_case "the generator does not mark a C++ variant that has a gated arm" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            variant_obj.insert("has_feature_gated_arm".into(), true.into());''',
+     r'''            let _ = "has_feature_gated_arm";''')
+PY
+
+mutation_case "a C++ parent compares a gated variant's index with a fixed number" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let chain = if d.arms.iter().any(|arm| arm.feature.is_some()) {''',
+     r'''    let chain = if d.arms.iter().any(|arm| arm.feature.is_some() && arm.value == u64::MAX) {''')
+PY
+
+mutation_case "a C++ parent counts no gated alternative before an arm" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                index.push_str(&format!(" + ({name} ? 1 : 0)"));''',
+     r'''                let _ = name;''')
+PY
+
+mutation_case "a C++ parent's term of a gated arm is outside its macro" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                chain.push_str(&format!("#if {name}\n"));''',
+     r'''                let _ = name;''')
+PY
+
 # ── The refusal of a left-out arm's tag ──
 
 mutation_case "the Rust decode does not refuse a left-out arm's tag" <<'PY'
@@ -153,6 +231,23 @@ edit("tools/codegen/templates/forge/c/codec.h.jinja2",
             return SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT;
 #endif''',
      r'''#endif''')
+PY
+
+mutation_case "the C++ decode does not refuse a left-out arm's tag" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''#else
+            case {{ arm.value_literal }}:
+                cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);
+                return std::nullopt;
+#endif''',
+     r'''#endif''')
+PY
+
+mutation_case "the C++ decode refuses a left-out arm's tag without saying why" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''                cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);
+''',
+     r'''''')
 PY
 
 # ── The parser and the overlay ──
