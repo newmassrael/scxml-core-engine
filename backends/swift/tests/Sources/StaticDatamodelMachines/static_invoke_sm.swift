@@ -391,6 +391,9 @@ public final class StaticInvokePolicy: InvocablePolicy {
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeSceSynthInvokeWorkerPolicy()
+        // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
+        // initializes.
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,

@@ -412,6 +412,9 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeControlPolicy()
+        // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
+        // initializes.
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -463,13 +466,13 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeWatcherPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeParamsSceSynthInvokeWatcherPolicy.InvokeParams()
         do {
             seed.vStart = self.vBase
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -521,8 +524,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeParamsSceSynthInvokeWorkerPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeParamsSceSynthInvokeWorkerPolicy.InvokeParams()
         do {
             seed.vStart = self.vBase
@@ -531,6 +533,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
             seed.vEnabled = self.vEnabled
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,

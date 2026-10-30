@@ -474,8 +474,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeGivenPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeGivenPolicy.InvokeParams()
         do {
             seed.vSize = self.vSize
@@ -484,14 +483,13 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
             let sceFailure = Failure()
             let sceValue: String? = (self.vLabel).map { (scePresent) in Checked.bounded(sceFailure, scePresent, capacity: 8) }
             if sceFailure.failed {
-                // W3C SCXML 5.7.1: the failure is reported and the value left out: the
-                // child starts with the one its `<data>` gave it.
                 engine.raise(EventWithMetadata.platformError(StaticInvokeOptionalEvent.errorExecution, message: "<invoke> <param name='label'> could not be read"))
             } else {
                 seed.vLabel = sceValue
             }
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -543,8 +541,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeLiftedPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeLiftedPolicy.InvokeParams()
         do {
             seed.vSize = 5
@@ -553,14 +550,13 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
             let sceFailure = Failure()
             let sceValue: String? = Checked.bounded(sceFailure, "xy", capacity: 8)
             if sceFailure.failed {
-                // W3C SCXML 5.7.1: the failure is reported and the value left out: the
-                // child starts with the one its `<data>` gave it.
                 engine.raise(EventWithMetadata.platformError(StaticInvokeOptionalEvent.errorExecution, message: "<invoke> <param name='label'> could not be read"))
             } else {
                 seed.vLabel = sceValue
             }
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -612,8 +608,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeAbsentPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeAbsentPolicy.InvokeParams()
         do {
             seed.vSize = self.vNosize
@@ -622,6 +617,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
             seed.vLabel = nil
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -673,13 +669,13 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeReplacedPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeReplacedPolicy.InvokeParams()
         do {
             seed.vSize = self.vSize ?? 0
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -731,21 +727,19 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeOverPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeOverPolicy.InvokeParams()
         do {
             let sceFailure = Failure()
             let sceValue: String? = Checked.bounded(sceFailure, self.vLengthy, capacity: 4)
             if sceFailure.failed {
-                // W3C SCXML 5.7.1: the failure is reported and the value left out: the
-                // child starts with the one its `<data>` gave it.
                 engine.raise(EventWithMetadata.platformError(StaticInvokeOptionalEvent.errorExecution, message: "<invoke> <param name='label'> could not be read"))
             } else {
                 seed.vLabel = sceValue
             }
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
@@ -797,21 +791,19 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         let childSessionID = "\(sessionID).\(pending.invokeID)"
         let childPolicy = StaticInvokeOptionalSceSynthInvokeFitsPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
-        // initializes. Each is the value of the child's variable of the same name, whose
-        // slot is named as that variable's property is (`SwiftTarget::field_name`).
+        // initializes.
         var seed = StaticInvokeOptionalSceSynthInvokeFitsPolicy.InvokeParams()
         do {
             let sceFailure = Failure()
             let sceValue: String? = Checked.bounded(sceFailure, "wxyz", capacity: 4)
             if sceFailure.failed {
-                // W3C SCXML 5.7.1: the failure is reported and the value left out: the
-                // child starts with the one its `<data>` gave it.
                 engine.raise(EventWithMetadata.platformError(StaticInvokeOptionalEvent.errorExecution, message: "<invoke> <param name='label'> could not be read"))
             } else {
                 seed.vLabel = sceValue
             }
         }
         childPolicy.acceptParams(seed)
+
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
