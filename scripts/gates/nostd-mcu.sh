@@ -382,6 +382,7 @@ sce_footprint_stack() {
         "${roots[@]}" ${recursion[@]+"${recursion[@]}"} "${assume[@]}" "${dispatch[@]}" \
         --dyn-complete "$STACK_DYN_COMPLETE" \
         --indirect "$STACK_INDIRECT_BYTES" \
+        --root-frame-max "$STACK_ROOT_FRAME_BYTES" \
         --min-functions "$STACK_MIN_FUNCTIONS" --report)" \
         || sce_gate_fail "worst-case stack could not be computed ($label)"
     # The last line is the worst root's number; the lines above it are each root's chain.

@@ -86,6 +86,22 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
     engine.is_running()
 }
 
+/// `Engine::tick` — the call a host with a clock drives a machine with: it
+/// dispatches the delayed sends that are due, then runs the macrostep. The path
+/// through the scheduler is the one `step` never reaches, so without this
+/// entry point a document's `<send delay>` cost nothing in the image and its
+/// footprint was the one a consumer's firmware alone could see.
+#[no_mangle]
+pub extern "C" fn sce_footprint_tick() -> bool {
+    let Ok(policy) = FirstPolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return false;
+    };
+    let mut engine = Engine::new(policy);
+    engine.initialize();
+    engine.tick();
+    engine.is_running()
+}
+
 /// A second machine of a different document, driven the way the first is, with
 /// the `second-machine` feature only (docs/adr/0064, decision 7). The gate
 /// weighs the image with and without it: the difference is what one more

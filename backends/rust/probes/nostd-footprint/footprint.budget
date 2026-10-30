@@ -68,10 +68,12 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # The shared core, by the path of its own symbols (an awk extended regular
 # expression over the demangled name): Appendix D's procedures
 # (`helpers::microstep`), the document's tables (`helpers::tables`), the sets of
-# states and the run store (`helpers::state_set`, `helpers::run_store`), and the
-# main event loop (`engine::Turn`). A machine's implementation of the core's
-# traits names the trait inside its `<.. as ..>` and is not matched.
-CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables)::|engine::Turn[>:])'
+# states and the run store (`helpers::state_set`, `helpers::run_store`), the
+# main event loop (`engine::Turn`), and since docs/adr/0068 the queues as the
+# loop sees them (`helpers::event_queue`: a queue holds numbers, and the view
+# the loop drives has no machine type). A machine's implementation of the
+# core's traits names the trait inside its `<.. as ..>` and is not matched.
+CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables|event_queue)::|engine::Turn[>:])'
 
 # The probe machines' crates (an extended regular expression): a core symbol
 # that names one was instantiated for that machine.
@@ -103,7 +105,14 @@ FEATURE_PROCEDURE_PATTERN="sce_rust_runtime::helpers::microstep::(${FEATURE_PROC
 #
 # 1750 -> 1726 (2026-10-30): a row is as small as its numbers
 # (docs/adr/0067), images of 193896 and 195622.
-MACHINE_BYTES=1726
+#
+# 1726 -> 1008 (2026-10-30): the engine takes events as numbers and a machine
+# brings only what is its own (docs/adr/0068), images of 194197 and 195205. The
+# images are not comparable with the ones above: the probe now drives `tick`
+# too (`sce_footprint_tick`), the path through the scheduler `step` never
+# reached, which the first machine pays for and the second, with no delayed
+# send, does not.
+MACHINE_BYTES=1008
 
 # The same without the report, the bound left in place: the build a bare-metal
 # crate that writes `default-features = false` gets (docs/adr/0053).
@@ -128,7 +137,10 @@ MACHINE_BYTES=1726
 #
 # 1648 -> 1624 (2026-10-30): a row is as small as its numbers
 # (docs/adr/0067), images of 193576 and 195200.
-MACHINE_BYTES_NO_DIAGNOSTICS=1624
+#
+# 1624 -> 998 (2026-10-30): events as numbers (docs/adr/0068), images of
+# 193991 and 194989, the probe driving `tick` as above.
+MACHINE_BYTES_NO_DIAGNOSTICS=998
 
 # What the program pays once, with the report: the core's `.text`.
 #
@@ -146,7 +158,15 @@ MACHINE_BYTES_NO_DIAGNOSTICS=1624
 #
 # 6696 -> 6702 over 21 symbols (2026-10-30): the rows' fields are decoded, and
 # a row's targets by one out-of-line `DocumentTables::targets` (docs/adr/0067).
-CORE_BYTES=6702
+#
+# 6702 -> 7374 over 23 symbols (2026-10-30): what every machine compiled for
+# itself around the main loop (taking an event off a queue, the counts, the end
+# of a run, the entry into the initial configuration) is the core's, written
+# once (docs/adr/0068), and the queue the loop drives is counted with it
+# (`helpers::event_queue` joined CORE_SYMBOLS, 152 of the bytes). The machine's
+# figure above fell by 718 while the core gained 672: the core is paid once, a
+# machine's figure for each.
+CORE_BYTES=7374
 
 # The same without the report.
 #
@@ -158,7 +178,10 @@ CORE_BYTES=6702
 # through the tables (docs/adr/0066), as above.
 #
 # 6678 -> 6684 over 21 symbols (2026-10-30), the rows decoded (docs/adr/0067).
-CORE_BYTES_NO_DIAGNOSTICS=6684
+#
+# 6684 -> 7266 over 23 symbols (2026-10-30), events as numbers and the queue
+# counted with the core (docs/adr/0068), as above.
+CORE_BYTES_NO_DIAGNOSTICS=7266
 
 # A program none of whose documents has a `<history>` or a `<parallel>`, without
 # the report (docs/adr/0066, decision 4): the probe's `plain-documents`, whose
@@ -180,8 +203,15 @@ CORE_BYTES_NO_DIAGNOSTICS=6684
 # as its numbers (docs/adr/0067), images of 190446 and 192040. The core is
 # smaller although it now decodes the rows: what the decoding costs is one
 # `DocumentTables::targets` of 104 bytes, and every caller of it lost more.
-MACHINE_BYTES_PLAIN=1594
-CORE_BYTES_PLAIN=4474
+#
+# 1594 -> 1076 and 4474 -> 5058 over 14 symbols (2026-10-30): events as
+# numbers (docs/adr/0068), images of 191050 and 192126 with the probe driving
+# `tick`. Without `tick`, the same change measured 192040 -> 191476 for the two
+# machines: what a machine brought around the loop is the core's now, and the
+# entry set names where the current state is read from rather than a second
+# pass dereferencing the targets again (`enter_states` 1050 -> 952).
+MACHINE_BYTES_PLAIN=1076
+CORE_BYTES_PLAIN=5058
 
 # Drift allowed either way before the gate speaks, in BYTES, for each figure.
 # Wide enough that an unrelated inlining decision does not cry wolf, tight
@@ -252,6 +282,13 @@ MIN_CORE_SYMBOLS=8
 # (docs/adr/0066), and the chain is `initialize` (360) through `run_main_event_loop` (328),
 # `Turn::run_main_event_loop`, `take_event`, `take_microstep` (232), `enter_states` (224),
 # `walk_entry` (136) and `default_regions` (48), now a function of its own.
+#
+# 1392 -> 1120 (2026-10-30), both configurations: one workspace for a whole turn,
+# built in `Engine::run_turn` and nowhere else (docs/adr/0068). The chain is
+# `step` (24) through `run_turn` (328, the workspace), `Turn::run` (104),
+# `take_event`, `take_microstep` (232), `remove_conflicting_transitions` (160),
+# `compute_exit_set`, `effective_target_states_on` and the history's
+# `effective_history_targets`.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
@@ -293,7 +330,19 @@ STACK_DYN+=" \sas\s${P}Behaviour>::=^${P}parallel_in_final_state\$"
 STACK_DYN+=" ^<sce_rust_runtime::engine::Engine<|\sas\ssce_rust_runtime::engine::MainLoop>::=${ALL_FEATURES}"
 STACK_DYN_COMPLETE='^<?sce_rust_runtime::(helpers::microstep::|engine::Turn[>:])'
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1392
+STACK_BYTES=1120
+
+# The most a root's OWN frame may take: what an entry point a host calls keeps
+# in the host's frame when it is inlined there. Held apart from the worst case,
+# which cannot see it: a buffer that moves from a callee into the root stays on
+# the same chain.
+#
+# 64 (2026-10-30): `initialize` takes 16 and `step` 24 in every configuration.
+# At ADR 0064 the turn's workspace was built in functions that inline into them,
+# and a consumer measured its task setup's frame 4256 bytes larger, its stepping
+# function's 1320 larger, until `Engine::run_turn` was kept out of line
+# (docs/adr/0068). One more workspace in a root is hundreds of bytes over this.
+STACK_ROOT_FRAME_BYTES=64
 
 # The roots and the worst-case stack of the `plain-documents` image, whose first machine is
 # `PlainFootprintProbePolicy`.
@@ -304,6 +353,9 @@ STACK_BYTES=1392
 #
 # 1152 -> 1128 (2026-10-30): a row is as small as its numbers (docs/adr/0067), and the frames
 # of the chain that decoded targets inline are smaller.
+#
+# 1128 -> 928 (2026-10-30): one workspace per turn in `run_turn` (240), and the
+# entry no longer dereferences the targets twice (docs/adr/0068).
 STACK_ROOTS_PLAIN='Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::step Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::initialize Engine<sce_nostd_plain_machine::PlainFootprintProbePolicy>>::process_event'
-STACK_BYTES_PLAIN=1128
+STACK_BYTES_PLAIN=928
 STACK_TOLERANCE_BYTES=256

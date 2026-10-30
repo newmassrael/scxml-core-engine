@@ -323,6 +323,19 @@ def parse_dispatch(items):
     return dispatch
 
 
+def root_frames_over(functions, roots, limit):
+    """The roots whose own frame takes more than `limit` bytes, with that frame, in name order.
+
+    A root is a function a host calls. What it keeps in its own frame, an inlining puts in the
+    host's calling function as well, where it stays for as long as that function runs: a
+    workspace meant for one turn of the engine, built in a function that inlines into the
+    root, ends up in a consumer's task setup (docs/adr/0068). The worst-case stack does not
+    see that move, because the bytes are on the same chain either way."""
+    if limit is None:
+        return []
+    return [(root, functions[root].frame) for root in sorted(roots) if functions[root].frame > limit]
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("disassembly", help="objdump -d -r -C --no-show-raw-insn output, or - for stdin")
@@ -353,6 +366,11 @@ def main(argv):
                         help="a regex of callees not followed (panic entry points)")
     parser.add_argument("--min-functions", type=int, default=50,
                         help="fewer functions than this means the disassembly was not read")
+    parser.add_argument("--root-frame-max", type=int, default=None,
+                        help="bytes: the most a root's OWN frame may take. A root is an entry "
+                             "point a host calls, and whatever it holds in its frame an inlining "
+                             "puts in the host's frame too, for as long as that frame lives; the "
+                             "worst case alone does not see a buffer move into it")
     parser.add_argument("--report", action="store_true", help="print each root's chain")
     args = parser.parse_args(argv)
 
@@ -368,6 +386,13 @@ def main(argv):
     if not roots:
         print(f"worst_case_stack: no function matches the roots {args.root}", file=sys.stderr)
         return 2
+    over = root_frames_over(functions, roots, args.root_frame_max)
+    if over:
+        for root, frame in over:
+            print(f"worst_case_stack: the root {root} takes {frame} byte(s) in its own frame, over "
+                  f"the {args.root_frame_max} a root may: a buffer meant for a call below it "
+                  f"has been inlined into it", file=sys.stderr)
+        return 3
 
     analysis = Analysis(
         functions,
