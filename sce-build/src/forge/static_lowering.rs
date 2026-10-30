@@ -11683,17 +11683,13 @@ impl StaticTarget for SwiftTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
-    // An algorithm is the one kind the Swift backend generates (in part, the rest
-    // refused where it is imported, `StaticCallee::unlowered_by`): a static member
-    // of the caseless enum its unit declares, in the machine's own module. A
-    // transform, a condition, a lookup, an interpolation and a validator have no
-    // Swift unit yet.
-    // An algorithm and a condition, the kinds a Swift unit is written for
-    // ([`crate::forge::codegen_matrix::ships_in_part`]) that a machine calls.
+    // Every kind that is a function of its inputs (an algorithm, a condition, a lookup,
+    // a transform, an interpolation, a validator) is a static member of the caseless
+    // enum its unit declares, in the machine's own module. A document the Swift unit
+    // does not lower (in part, [`crate::forge::codegen_matrix::ships_in_part`]) is
+    // refused where it is imported, `StaticCallee::unlowered_by`.
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
-        (callee.kind.is_algorithm()
-            || callee.kind.forge_kind() == crate::forge::model::ForgeKind::Condition)
-            .then(|| generated_callee(Language::Swift, callee, None))
+        Some(generated_callee(Language::Swift, callee, None))
     }
     // A call that hands an algorithm a record, or takes one back, goes through an
     // adapter of the machine's file: the machine holds a record in a struct of its own
@@ -12210,6 +12206,25 @@ impl StaticTarget for SwiftTarget {
         Some(format!(
             "{{ (sceValue: {from_type}) -> {into} in switch sceValue {{ {} }} }}({value})",
             arms.join("; ")
+        ))
+    }
+    // A function of another kind the machine calls (a lookup, a transform) takes and
+    // answers the enum document's own type, so a value of the machine's crosses through
+    // these two, the crossing a call of an algorithm writes inline.
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two functions of the file, each a `switch` over every variant.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Swift);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "/// A value of `{ty}` as the variant of the same declared name of `{document}`.\n\
+             private func {to}(_ v: {ty}) -> {document} {{\n    return {into}\n}}\n\n\
+             /// A value of `{document}` as the variant of the same declared name of `{ty}`.\n\
+             private func {from}(_ v: {document}) -> {ty} {{\n    return {back}\n}}"
         ))
     }
     // An `Array` of the element: a value, so a host that reads one holds a copy and

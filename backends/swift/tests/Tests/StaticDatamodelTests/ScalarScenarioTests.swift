@@ -155,6 +155,29 @@ private func invoke() -> Machine {
     return drive(policy, variables: ["completed": { integer(policy.completed) }])
 }
 
+private func forgeCalls() -> Machine {
+    let policy = StaticForgeCallsPolicy()
+    return drive(
+        policy,
+        variables: [
+            "gear": { integer(policy.gear) },
+            "ratio": { integer(policy.ratio) },
+            "code": { integer(policy.code) },
+            "misses": { integer(policy.misses) },
+            "level": { integer(policy.level) },
+            "offset": { integer(policy.offset) },
+            "accepted": { .bool(policy.accepted) },
+            "rpm": { integer(policy.rpm) },
+            "limit": { real(policy.limit) },
+            "highs": { integer(policy.highs) },
+            "phase": { .text(policy.phase.declaredName) },
+            "weight": { .text(policy.weight.declaredName) },
+            "customer": { .text(policy.customer) },
+            "known": { .bool(policy.known) },
+        ]
+    )
+}
+
 private func invokeParams() -> Machine {
     let policy = StaticInvokeParamsPolicy()
     return drive(policy, variables: ["completed": { integer(policy.completed) }])
@@ -1299,6 +1322,10 @@ private func recordBytes() -> Machine {
 
 @Test func aChildSessionIsStartedDrivenAndEndedByItsParent() {
     replay("static_invoke", invoke())
+}
+
+@Test func aMachineCallsTheKindsThatAreFunctionsOfTheirInputs() {
+    replay("static_forge_calls", forgeCalls())
 }
 
 @Test func aChildIsHandedTheValuesItsInvokeNames() {
