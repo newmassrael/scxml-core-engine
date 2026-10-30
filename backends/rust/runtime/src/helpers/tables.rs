@@ -74,8 +74,8 @@ const ID_BITS: u16 = (1 << 14) - 1;
 const ABSENT: u16 = ID_BITS;
 
 /// The most states, histories or transitions one table names, and the most
-/// entries its pool of target lists holds: every 14-bit number but
-/// [`ABSENT`].
+/// entries its pool of target lists holds: every 14-bit number but the
+/// largest, which stands for an absent state or transition.
 pub const MAX_IDS: usize = ABSENT as usize;
 
 impl StateId {
@@ -343,8 +343,8 @@ impl TransitionRow {
 ///
 /// A [`TransitionRow`] holds its targets as one of these (docs/adr/0067): the
 /// only target it has, which is most transitions; [`Target::NONE`] for a
-/// targetless one; or with [`LIST_BIT`] set, the position of a list in the
-/// pool, whose first entry is its length ([`Target::count`]) and the rest its
+/// targetless one; or [`Target::list`], the position of a list in the pool,
+/// whose first entry is its length ([`Target::count`]) and the rest its
 /// targets. [`DocumentTables::targets`] reads all three as a slice of targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
