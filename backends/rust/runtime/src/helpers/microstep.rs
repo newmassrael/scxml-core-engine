@@ -181,7 +181,7 @@ pub struct Scratch<'a> {
     /// The words of the sets of states.
     pub sets: &'a mut [Word],
     /// The slots of the walks' steps.
-    pub walk: &'a mut [MaybeUninit<WalkStep>],
+    pub walk: &'a mut WalkSlots,
     /// The slots of the history default content an entry set owes.
     pub history_defaults: &'a mut [MaybeUninit<(StateId, HistoryId)>],
 }
@@ -412,6 +412,10 @@ pub enum WalkStep {
     },
 }
 
+/// The slots a walk keeps its steps in: uninitialised until a [`SliceVec`]
+/// over them writes one (docs/adr/0071).
+pub type WalkSlots = [MaybeUninit<WalkStep>];
+
 // ════════════════════════════════════════════════════════════════════════
 // The features a document may use
 // ════════════════════════════════════════════════════════════════════════
@@ -432,7 +436,7 @@ pub struct HistoryProcedures {
         RunStoreRef<'_>,
         HistoryId,
         &mut StateSet<'_>,
-        &mut [MaybeUninit<WalkStep>],
+        &mut WalkSlots,
     ) -> Option<StateId>,
     /// addDescendantStatesToEnter for a `<history>` target: the list it
     /// enters, with the default content it owes put in the entry set.
@@ -731,7 +735,7 @@ pub fn effective_target_states_on(
     store: RunStoreRef<'_>,
     targets: &[Target],
     effective: &mut StateSet<'_>,
-    walk: &mut [MaybeUninit<WalkStep>],
+    walk: &mut WalkSlots,
 ) -> Option<StateId> {
     effective.clear();
     let mut first = None;
@@ -761,7 +765,7 @@ fn effective_history_targets(
     store: RunStoreRef<'_>,
     history: HistoryId,
     effective: &mut StateSet<'_>,
-    walk: &mut [MaybeUninit<WalkStep>],
+    walk: &mut WalkSlots,
 ) -> Option<StateId> {
     let mut first = None;
     let mut add = |state: StateId| {
