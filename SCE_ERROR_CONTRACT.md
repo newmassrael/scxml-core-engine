@@ -748,6 +748,7 @@ references against a real document and drift silently.
 | `broadcast-log/wrap-bound-below-deploy-minimum` | `generate` | no |  |
 | `broadcast-log/wrap-bound-unstated` | `generate` | no |  |
 | `codec/dma-alignment-unsatisfiable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/encode-may-fail-without-refusal` | `validation` | no | SCE Forge §4.6 |
 | `codec/flag-bind-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-duplicate-input` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-input-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
@@ -759,6 +760,7 @@ references against a real document and drift silently.
 | `codec/repeat-count-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/tlv-chain-depth-unspecified` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/tlv-chain-truncate-under-entry-flag` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/undeclared-encode-refusal` | `validation` | no | SCE Forge §4.6 |
 | `codec/variant-arm-body-caller-tag-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-arm-inner-mid-undeclared` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-arm-mid-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |

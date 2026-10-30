@@ -28,7 +28,34 @@
 // Gated on `alloc` like the other round-trip tests.
 #![cfg(feature = "alloc")]
 
-use sce_forge_runtime::codec::{SceCursor, VecSink};
+use sce_forge_runtime::codec::{CodecError, Measured, SceCursor, SourceWrite, VecSink};
+
+/// What an encode answered, as one type whichever codec gave it, so that one
+/// sweep holds every codec to the same laws: a codec whose encode is total
+/// answers with no error of its own (over a `VecSink` the error type is
+/// uninhabited, and its `measure` returns the witness itself), and one that can
+/// refuse answers with a `CodecError` (docs/adr/0065).
+trait Answer<T> {
+    fn answer(self) -> Result<T, CodecError>;
+}
+
+impl<T> Answer<T> for Result<T, CodecError> {
+    fn answer(self) -> Result<T, CodecError> {
+        self
+    }
+}
+
+impl<T> Answer<T> for Result<T, core::convert::Infallible> {
+    fn answer(self) -> Result<T, CodecError> {
+        self.map_err(CodecError::from)
+    }
+}
+
+impl<'s, C: SourceWrite<S>, S: ?Sized> Answer<Measured<'s, C, S>> for Measured<'s, C, S> {
+    fn answer(self) -> Result<Measured<'s, C, S>, CodecError> {
+        Ok(self)
+    }
+}
 
 /// A deterministic byte source: the same frames on every run and every host.
 struct Rng(u64);
@@ -56,11 +83,12 @@ macro_rules! agree {
         match <$ty>::decode(&mut SceCursor::new(frame)) {
             Ok(value) => {
                 let mut by_source = Vec::new();
-                let verdict = <$ty>::encode_source(&value, &mut VecSink::new(&mut by_source));
+                let verdict =
+                    <$ty>::encode_source(&value, &mut VecSink::new(&mut by_source)).answer();
                 // The method is the function, applied to the value.
                 let mut by_method = Vec::new();
                 assert_eq!(
-                    value.encode(&mut VecSink::new(&mut by_method)),
+                    value.encode(&mut VecSink::new(&mut by_method)).answer(),
                     verdict,
                     "encode answers another verdict than encode_source, frame {frame:02x?}"
                 );
@@ -70,13 +98,13 @@ macro_rules! agree {
                 // value the encode refuses has no length (docs/adr/0061). The
                 // window is filled twice with different bytes, so a byte left
                 // unwritten cannot pass for one that matched.
-                match <$ty>::measure(&value) {
+                match <$ty>::measure(&value).answer() {
                     Ok(measured) => {
                         assert!(verdict.is_ok(), "measure admits a value encode refuses, frame {frame:02x?}");
                         assert_eq!(measured.len(), by_source.len(), "measure counts other bytes, frame {frame:02x?}");
                         for fill in [0x00u8, 0xFF] {
                             let mut window = vec![fill; by_source.len()];
-                            <$ty>::measure(&value).unwrap().write_into(&mut window);
+                            <$ty>::measure(&value).answer().unwrap().write_into(&mut window);
                             assert_eq!(window, by_source, "the window holds other bytes, frame {frame:02x?}");
                         }
                     }
@@ -116,9 +144,11 @@ macro_rules! agree {
                         panic!("the encode writes undecodable bytes for frame {frame:02x?}: {e:?}")
                     });
                     let mut by_again = Vec::new();
-                    <$ty>::encode_source(&again, &mut VecSink::new(&mut by_again)).unwrap_or_else(
-                        |e| panic!("the encode refuses its own frame, from frame {frame:02x?}: {e:?}"),
-                    );
+                    <$ty>::encode_source(&again, &mut VecSink::new(&mut by_again))
+                        .answer()
+                        .unwrap_or_else(|e| {
+                            panic!("the encode refuses its own frame, from frame {frame:02x?}: {e:?}")
+                        });
                     assert_eq!(
                         by_again, by_source,
                         "the encode does not keep its own frame, from frame {frame:02x?}"
@@ -140,7 +170,8 @@ macro_rules! agree {
                         panic!("the view refuses frame {frame:02x?} that decode accepts: {e:?}")
                     });
                     let mut by_view = Vec::new();
-                    let from_view = <$ty>::encode_source(&viewed, &mut VecSink::new(&mut by_view));
+                    let from_view =
+                        <$ty>::encode_source(&viewed, &mut VecSink::new(&mut by_view)).answer();
                     assert_eq!(
                         from_view, verdict,
                         "a view answers another verdict for frame {frame:02x?}"
@@ -150,8 +181,8 @@ macro_rules! agree {
                         "a view writes other bytes for frame {frame:02x?}"
                     );
                     assert_eq!(
-                        <$ty>::measure(&viewed).map(|m| m.len()),
-                        <$ty>::measure(&value).map(|m| m.len()),
+                        <$ty>::measure(&viewed).answer().map(|m| m.len()),
+                        <$ty>::measure(&value).answer().map(|m| m.len()),
                         "a view is another length for frame {frame:02x?}"
                     );
                 )?
@@ -161,7 +192,7 @@ macro_rules! agree {
                     });
                     let mut by_owned = Vec::new();
                     let from_owned =
-                        <$ty>::encode_source(&owned, &mut VecSink::new(&mut by_owned));
+                        <$ty>::encode_source(&owned, &mut VecSink::new(&mut by_owned)).answer();
                     assert_eq!(
                         from_owned, verdict,
                         "an owned form answers another verdict for frame {frame:02x?}"
@@ -199,6 +230,7 @@ macro_rules! sweep {
         let mut by_default = Vec::new();
         if <$ty>::default()
             .encode(&mut VecSink::new(&mut by_default))
+            .answer()
             .is_ok()
         {
             seeds.push(by_default);

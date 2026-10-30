@@ -534,13 +534,14 @@ fn element_type_procedure_emits() {
 // store at all.
 
 /// A body codec carrying a bounded string, so codecs that embed or list it
-/// are borrowed and get an owned mirror.
+/// are borrowed and get an owned mirror. Its length is written in a `uint8`, so
+/// its encode can refuse a longer string and the codec declares so.
 fn borrowed_body_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="{name}" version="1.0">
   <datamodel>
     <sce:field id="hop_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="hop" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
@@ -565,13 +566,15 @@ fn fixed_body_doc(name: &str) -> String {
     )
 }
 
-/// An element codec whose only complex field is a bounded list of `body`.
+/// An element codec whose only complex field is a bounded list of `body`. A list
+/// can be given more entries than its `max-count`, so its encode can refuse and
+/// the codec declares so, whatever `body` is.
 fn list_element_doc(name: &str, body: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="{name}" version="1.0">
   <sce:import src="{body}.scxml" kind="codec" as="{body}"/>
   <datamodel>
     <sce:field id="hop_count" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -671,7 +674,7 @@ fn bounded_string_element_is_stored_at_the_inline_profile() {
     let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="pattern_entry" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="pattern_entry" version="1.0">
   <datamodel>
     <sce:field id="pattern_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="pattern" sce:type="string" sce:byte="1" sce:bit-size="length-ref"

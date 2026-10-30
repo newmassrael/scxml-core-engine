@@ -36,8 +36,11 @@ pub const MAX_SKIP_DEPTH: u32 = 16;
 
 // ── Writing ─────────────────────────────────────────────────────────────
 
+// A write refuses nothing of its own: what is left is the sink's error
+// (docs/adr/0065 §4), so a codec whose entries cannot break a bound is total.
+
 /// Write a head of `major` carrying `value`, in its shortest form.
-pub fn write_head<S: SceSink + ?Sized>(w: &mut S, major: u8, value: u64) -> Result<(), CodecError> {
+pub fn write_head<S: SceSink + ?Sized>(w: &mut S, major: u8, value: u64) -> Result<(), S::Error> {
     let m = major << 5;
     if value < 24 {
         w.write_u8(m | value as u8)
@@ -56,29 +59,29 @@ pub fn write_head<S: SceSink + ?Sized>(w: &mut S, major: u8, value: u64) -> Resu
 }
 
 /// Write an unsigned integer.
-pub fn write_uint<S: SceSink + ?Sized>(w: &mut S, value: u64) -> Result<(), CodecError> {
+pub fn write_uint<S: SceSink + ?Sized>(w: &mut S, value: u64) -> Result<(), S::Error> {
     write_head(w, MAJOR_UNSIGNED, value)
 }
 
 /// Write `false` or `true`.
-pub fn write_bool<S: SceSink + ?Sized>(w: &mut S, value: bool) -> Result<(), CodecError> {
+pub fn write_bool<S: SceSink + ?Sized>(w: &mut S, value: bool) -> Result<(), S::Error> {
     w.write_u8((MAJOR_SIMPLE << 5) | if value { 21 } else { 20 })
 }
 
 /// Write a text string.
-pub fn write_text<S: SceSink + ?Sized>(w: &mut S, value: &str) -> Result<(), CodecError> {
-    write_head(w, MAJOR_TEXT, value.len() as u64)?;
+pub fn write_text<S: SceSink + ?Sized>(w: &mut S, value: &str) -> Result<(), S::Error> {
+    write_head(w, MAJOR_TEXT, crate::codec::widen_usize(value.len()))?;
     w.write_bytes(value.as_bytes())
 }
 
 /// Write a byte string.
-pub fn write_bytes<S: SceSink + ?Sized>(w: &mut S, value: &[u8]) -> Result<(), CodecError> {
-    write_head(w, MAJOR_BYTES, value.len() as u64)?;
+pub fn write_bytes<S: SceSink + ?Sized>(w: &mut S, value: &[u8]) -> Result<(), S::Error> {
+    write_head(w, MAJOR_BYTES, crate::codec::widen_usize(value.len()))?;
     w.write_bytes(value)
 }
 
 /// Write the head of a definite-length map of `entries` entries.
-pub fn write_map_head<S: SceSink + ?Sized>(w: &mut S, entries: u64) -> Result<(), CodecError> {
+pub fn write_map_head<S: SceSink + ?Sized>(w: &mut S, entries: u64) -> Result<(), S::Error> {
     write_head(w, MAJOR_MAP, entries)
 }
 

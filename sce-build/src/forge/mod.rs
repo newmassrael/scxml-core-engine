@@ -13,6 +13,7 @@ pub mod codec_failure;
 pub mod codec_format;
 pub mod codec_roles;
 pub mod codec_size;
+pub mod codec_totality;
 pub mod codegen_markers;
 pub mod codegen_matrix;
 pub mod const_fold;

@@ -3218,7 +3218,7 @@ fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="chain_flag_refusal">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="chain_flag_refusal">
   <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
     <sce:flag-bind input="wide" source="head.W"/>
   </sce:import>
@@ -3357,7 +3357,7 @@ fn an_entry_flag_bind_that_cannot_hold_is_refused_with_its_reason() {
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="prev_bind_refusal">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="prev_bind_refusal">
   <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
     {import_binds}
   </sce:import>
@@ -4057,7 +4057,7 @@ fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_re
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="chain_has_refusal">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="chain_has_refusal">
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:field id="lead" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -4126,7 +4126,7 @@ fn a_plain_integer_identifier_has_no_flags_to_leave_out() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="chain_has_plain_except">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="chain_has_plain_except">
   <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
   <datamodel>
     <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
@@ -5569,7 +5569,7 @@ fn forge_codec_tlv_chain_truncate_under_exhaust_or_depth_compiles() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="truncate_exhaust">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="truncate_exhaust">
   <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
   <datamodel>
     <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -5862,7 +5862,7 @@ fn forge_codec_repeat_present_if_unconditional_count_accepts() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="cogating_unconditional">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="cogating_unconditional">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -12390,10 +12390,10 @@ mod tests {
 
     fn check(frame: &[u8]) {
         let owned = owned_of(frame);
-        let projected = owned.as_borrowed().encode_to_vec().expect("encode");
+        let projected = owned.as_borrowed().encode_to_vec();
         assert_eq!(projected.as_slice(), frame, "projection re-encodes the frame");
         assert_eq!(
-            owned.encode_to_vec().expect("encode").as_slice(),
+            owned.encode_to_vec().as_slice(),
             projected.as_slice(),
             "owned encode must write what the projection writes"
         );
@@ -12403,8 +12403,8 @@ mod tests {
         let mut wrong = owned_of(frame);
         wrong.header ^= 0x40;
         assert_eq!(
-            wrong.encode_to_vec().expect("encode").as_slice(),
-            wrong.as_borrowed().encode_to_vec().expect("encode").as_slice(),
+            wrong.encode_to_vec().as_slice(),
+            wrong.as_borrowed().encode_to_vec().as_slice(),
             "the derivation runs on the owned form as it does on the projection"
         );
     }
@@ -13360,7 +13360,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -13382,7 +13382,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -13501,7 +13501,7 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
         r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -13521,7 +13521,7 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -19789,7 +19789,7 @@ mod tests {
         // Re-borrow + encode round-trips through the borrowed view.
         let borrowed = owned.as_borrowed();
         assert_eq!(borrowed.payload.len(), 50);
-        assert_eq!(borrowed.encode_to_vec().expect("encode").len(), 52);
+        assert_eq!(borrowed.encode_to_vec().len(), 52);
     }
 }
 "#;
@@ -20390,7 +20390,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_axis1_b_leaf.scxml" kind="codec" as="codec_axis1_b_leaf">
     <sce:flag-bind input="has_suffix" source="header.N"/>
   </sce:import>
@@ -20406,7 +20406,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -20543,7 +20543,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_axis1_d1_with_input.scxml" kind="codec" as="codec_axis1_d1_with_input">
     <sce:flag-bind input="S" source="header.S"/>
   </sce:import>
@@ -20564,7 +20564,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let with_input = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
   </sce:flag-inputs>
@@ -20712,7 +20712,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_axis1_embed_disp.scxml" kind="codec" as="codec_axis1_embed_disp">
     <sce:variant-dispatch flag="header.M"/>
     <sce:flag-bind input="N" source="header.N"/>
@@ -20733,7 +20733,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_axis1_arm_a.scxml" kind="codec" as="codec_axis1_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -20756,7 +20756,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -21311,7 +21311,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_multi_disp.scxml" kind="codec" as="codec_multi_disp">
     <sce:flag-bind input="N" source="header.N"/>
     <sce:flag-bind input="M" source="header.M"/>
@@ -21333,7 +21333,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="codec_multi_arm_a.scxml" kind="codec" as="codec_multi_arm_a">
     <sce:flag-bind input="N" source="N"/>
     <sce:flag-bind input="M" source="M"/>
@@ -21363,14 +21363,14 @@ fn axis1_inversion_multi_flag_input_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
     <sce:flag-input name="M" width="1"/>
     <sce:flag-input name="P" width="1"/>
   </sce:flag-inputs>
   <datamodel>
-    <sce:field id="x"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="x"    sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="opt_n" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="N"/>
     <sce:field id="opt_m" sce:type="uint8" sce:byte="2" sce:bit-size="8" sce:present-if="M"/>
     <sce:field id="opt_p" sce:type="uint8" sce:byte="3" sce:bit-size="8" sce:present-if="P"/>
@@ -21699,7 +21699,7 @@ fn axis1_present_if_camelcase_field_compiles() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -21811,7 +21811,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_entry = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <datamodel>
     <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
@@ -21826,7 +21826,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let repeat_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
   <datamodel>
     <sce:field  id="lenN"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -21848,7 +21848,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
   <sce:import src="camelcase_tlv_entry.scxml" kind="codec" as="camelcase_tlv_entry"/>
   <datamodel>
     <sce:tlv-chain id="myChain" type="camelcase_tlv_entry"
@@ -22484,7 +22484,7 @@ mod tests {
         assert_eq!(view.state, EnumSessionState::SafetySystem);
         assert_eq!(view.code, EnumUdsNrc::ResponsePending);
         assert_eq!(view.detail, 7);
-        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
     }
 
     #[test]
@@ -22496,7 +22496,7 @@ mod tests {
         assert_eq!(view.code.to_underlying(), 250);
         // And it survives the way back out: carrying the value is the
         // point, so re-encoding must not collapse it onto a declared one.
-        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
     }
 
     #[test]
@@ -22695,7 +22695,7 @@ mod tests {
         let view = CodecEnumGated::decode(&mut cursor).expect("decode without the gated field");
         assert_eq!(view.code, EnumUdsNrc::ConditionsNotCorrect);
         assert!(view.state.is_none());
-        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
     }
 
     #[test]
@@ -22704,7 +22704,7 @@ mod tests {
         let mut cursor = SceCursor::new(&frame);
         let view = CodecEnumGated::decode(&mut cursor).expect("decode with the gated field");
         assert_eq!(view.state, Some(EnumSessionState::ExtendedDiagnostic));
-        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
     }
 
     #[test]

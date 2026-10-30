@@ -733,6 +733,12 @@ fn render_rust(
     let l = LangCtx::new(Language::Rust, imports);
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
+    // docs/adr/0065: whether the encode can refuse a value, which decides what
+    // `encode` and `encode_to_vec` return.
+    ctx.insert(
+        "encode_may_fail".into(),
+        crate::forge::codec_totality::may_fail(m, imports).into(),
+    );
     // A value lives in the bounded storage its `sce:max-size` names, so neither
     // direction allocates and the struct borrows nothing from its input.
     let mut entries = entries_context(&l, m, |n| format!("heapless::String<{n}>"), |_| None);

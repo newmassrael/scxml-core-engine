@@ -116,6 +116,8 @@
         "algorithm/append-type-mismatch",
         "algorithm/undeclared-integer-failure",
         "algorithm/require-without-may-fail",
+        "codec/undeclared-encode-refusal",
+        "codec/encode-may-fail-without-refusal",
         "scxml/top-level-script-unloaded",
         "scxml/unsupported-datamodel",
         "scxml/null-datamodel-forbids-construct",

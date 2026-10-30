@@ -26,7 +26,7 @@
        after_shm  : encoding    (VLE u64), slice_count (VLE u64), slices -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_value_zbuf">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_value_zbuf">
   <sce:import src="codec_zenoh_value_slice.scxml" kind="codec" as="codec_zenoh_value_slice"/>
   <sce:flag-inputs>
     <sce:flag-input name="after_shm" width="1"/>

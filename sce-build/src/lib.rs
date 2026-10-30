@@ -2417,6 +2417,49 @@ pub fn codec_roles_file(
     Ok(Some(forge::codec_roles::classify(model, &import_ctx)))
 }
 
+/// The codec at `path` and where its encode can refuse a value
+/// (docs/adr/0065 §2), read as `compile_forge_file` reads it: expanded,
+/// parsed, its imports resolved and enriched, which is what a codec it holds is
+/// judged by. `None` for a document that is not a codec.
+pub fn codec_totality_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<
+    Option<(forge::model::CodecModel, forge::codec_totality::Totality)>,
+    forge::error::Located<forge::error::ForgeError>,
+> {
+    use forge::error::Located;
+
+    let loaded = load_forge_source(path, include_dirs)?;
+    let path_text = path.to_string_lossy();
+    let label = DocumentLabel::for_input_path(&path_text);
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let Some(parsed) = forge::parser::parse_forge_with_imports(loaded.text(), label)
+        .map_err(|err| loaded.positions.authored(err))?
+    else {
+        return Ok(None);
+    };
+    let forge::model::ForgeDocument::Codec(model) = parsed.document else {
+        return Ok(None);
+    };
+    let language = generator::Language::Rust;
+    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
+        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+    validate_and_enrich_imports(
+        &mut import_ctx,
+        &parsed.imports,
+        base_dir,
+        &language,
+        options,
+        label.diagnostic_label,
+    )
+    .map_err(|err| loaded.positions.authored(err))?;
+    let totality =
+        forge::codec_totality::analyse(&model, &mut forge::codec_totality::Resolved(&import_ctx));
+    Ok(Some((model, totality)))
+}
+
 /// Compile a forge (non-statechart) SCXML from already-read content.
 ///
 /// Uses single-parse path: detects kind and parses model in one XML parse.
@@ -3882,6 +3925,14 @@ pub fn compile_forge_from_parsed(
         // An optional record stands only where an optional record of its own schema
         // is declared: the identity its type does not carry, held here once.
         forge::optional_record_call::check_algorithm(m, &import_ctx, options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+    }
+
+    // A codec states whether its encode can refuse a value (docs/adr/0065):
+    // the statement is held to the refusals the encode has, once, before any
+    // language is rendered, for the reason the checks above give.
+    if let forge::model::ForgeDocument::Codec(m) = &parsed.document {
+        forge::codec_totality::check(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }
 
@@ -5492,27 +5543,54 @@ fn codec_has_source_recursive(
     })
 }
 
-/// Whether the encode of a codec can refuse a value (ADR 0058): the codec's own
-/// reasons (`forge::generator::source_can_refuse_with`) or those of a codec it
-/// holds. A parent's `encode_to_vec` has an error to return exactly when this
-/// holds.
+/// Whether the encode of a codec can refuse a value (docs/adr/0065 §2): a
+/// refusal of its own ([`forge::codec_totality`]) or of a codec it holds. A
+/// parent's `encode_to_vec` has an error to return exactly when this holds.
 fn codec_source_can_refuse_recursive(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> bool {
-    forge::generator::source_can_refuse_with(cm, |alias| {
-        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
-            Some(codec_source_can_refuse_recursive(
-                inner.model,
-                inner.imports,
-                inner.base_dir,
-                inner.visited,
-            ))
-        })
-        .unwrap_or(false)
-    })
+    /// The imports of a codec read from its document: each codec import
+    /// resolved and judged in turn, each enum import read for its carrier.
+    struct Unresolved<'a> {
+        imports: &'a [forge::model::ForgeImport],
+        base_dir: &'a Path,
+        visited: &'a mut HashSet<PathBuf>,
+    }
+
+    impl forge::codec_totality::Imports for Unresolved<'_> {
+        fn codec_may_fail(&mut self, alias: &str) -> bool {
+            with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
+                Some(codec_source_can_refuse_recursive(
+                    inner.model,
+                    inner.imports,
+                    inner.base_dir,
+                    inner.visited,
+                ))
+            })
+            .unwrap_or(false)
+        }
+
+        fn enum_carrier(&mut self, alias: &str) -> Option<forge::model::SceType> {
+            let imp = self.imports.iter().find(|i| i.alias == alias)?;
+            match forge::import_source::parse_quietly(self.base_dir, imp)?.document {
+                forge::model::ForgeDocument::Enum(em) => Some(em.underlying_type),
+                _ => None,
+            }
+        }
+    }
+
+    !forge::codec_totality::analyse(
+        cm,
+        &mut Unresolved {
+            imports,
+            base_dir,
+            visited,
+        },
+    )
+    .is_total()
 }
 
 /// One import alias resolved to its parsed codec model, handed to a

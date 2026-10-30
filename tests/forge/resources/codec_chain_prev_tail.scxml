@@ -14,7 +14,7 @@
        byte 1..: entries to the end of the frame -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_tail">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_prev_tail">
   <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
     <sce:flag-bind input="tagged" source="head.T"/>
   </sce:import>

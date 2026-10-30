@@ -51,7 +51,7 @@
      closures lifted that — both ship on all 6 backends now. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_entry">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_ext_entry">
   <sce:import src="codec_zenoh_ext_unit.scxml" kind="codec" as="codec_zenoh_ext_unit"/>
   <sce:import src="codec_zenoh_ext_zint.scxml" kind="codec" as="codec_zenoh_ext_zint"/>
   <sce:import src="codec_zenoh_ext_zbuf.scxml" kind="codec" as="codec_zenoh_ext_zbuf"/>

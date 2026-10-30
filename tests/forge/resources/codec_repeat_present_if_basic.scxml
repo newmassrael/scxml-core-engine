@@ -36,7 +36,7 @@
        has_list=1+2:  [0x01, 0x02, 0xBE, 0xEF, 0xFA, 0xCE] (two elems) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_repeat_present_if_basic">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_repeat_present_if_basic">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">

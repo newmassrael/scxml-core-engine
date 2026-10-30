@@ -489,6 +489,10 @@
               "description": "The document is `sce:encoding=\"content-line\"` (SCE_FORGE.md §4.6.4): its encode and decode can refuse a value, a case may be `decode_only` (an input the codec reads and does not write), and its `optional<T>` entries are `optional` and its `sce:max-count` ones `list` fields. Derived from the same parse the generator reads; fixtures.json never states it.",
               "type": "boolean"
             },
+            "encode_may_fail": {
+              "description": "The document declares `sce:encode-may-fail` (docs/adr/0065): its `encode_to_vec` returns a `Result` the fragment unwraps, where a codec whose encode is total returns its bytes. Derived from the same parse the generator reads; fixtures.json never states it.",
+              "type": "boolean"
+            },
             "fields": {
               "type": "array",
               "items": {

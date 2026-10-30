@@ -706,6 +706,12 @@ pub enum FixtureSpec {
         /// states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         content_line: bool,
+        /// The document declares `sce:encode-may-fail` (docs/adr/0065): its
+        /// `encode_to_vec` returns a `Result` the fragment unwraps, where a
+        /// codec whose encode is total returns its bytes. Derived from the
+        /// same parse the generator reads; fixtures.json never states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        encode_may_fail: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1364,7 +1370,15 @@ impl Manifest {
                     has_test_vectors,
                     cbor,
                     content_line,
+                    encode_may_fail,
                 } => {
+                    if *encode_may_fail {
+                        return Err(format!(
+                            "fixture {}: codec `encode_may_fail` is derived from the \
+                             SCXML (sce:encode-may-fail); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                     if *cbor {
                         return Err(format!(
                             "fixture {}: codec `cbor` is derived from the \
@@ -2345,10 +2359,12 @@ fn derive_codec_shape(
     fields: &mut [StructField],
     cbor: &mut bool,
     content_line: &mut bool,
+    encode_may_fail: &mut bool,
 ) -> Result<(), String> {
     let model = read_codec_model(scxml_path, fixture_name)?;
     *cbor = model.encoding == crate::forge::model::CodecEncoding::Cbor;
     *content_line = model.encoding == crate::forge::model::CodecEncoding::ContentLine;
+    *encode_may_fail = model.encode_may_fail;
     let missing = |field: &StructField, what: &str| {
         format!(
             "fixture {fixture_name}: field `{}` is not an entry of the {what} codec {}",
@@ -3235,9 +3251,17 @@ pub fn render_harness(
                 has_test_vectors,
                 cbor,
                 content_line,
+                encode_may_fail,
             } => {
                 if document_exists(&scxml_path) {
-                    derive_codec_shape(&scxml_path, &fixture_name, fields, cbor, content_line)?;
+                    derive_codec_shape(
+                        &scxml_path,
+                        &fixture_name,
+                        fields,
+                        cbor,
+                        content_line,
+                        encode_may_fail,
+                    )?;
                 }
                 // RFC §synth-5-B test-vector: enrich the manifest with the
                 // SCXML-derived `<sce:test-vector>` flag so the per-language
@@ -3558,13 +3582,14 @@ mod tests {
             panic!("{fixture} is a codec");
         };
         let mut fields = fields.clone();
-        let (mut cbor, mut content_line) = (false, false);
+        let (mut cbor, mut content_line, mut encode_may_fail) = (false, false, false);
         derive_codec_shape(
             &found.document_path(&root.join("tests/forge/resources")),
             fixture,
             &mut fields,
             &mut cbor,
             &mut content_line,
+            &mut encode_may_fail,
         )
         .expect("the shape derives");
         assert!(content_line && !cbor);
@@ -3628,13 +3653,14 @@ mod tests {
             enum_open: false,
             members: Vec::new(),
         }];
-        let (mut cbor, mut content_line) = (false, false);
+        let (mut cbor, mut content_line, mut encode_may_fail) = (false, false, false);
         let refusal = derive_codec_shape(
             &root.join("tests/forge/resources/codec_content_line_records.scxml"),
             "codec_content_line_records",
             &mut fields,
             &mut cbor,
             &mut content_line,
+            &mut encode_may_fail,
         )
         .expect_err("a record parameter is not a field");
         assert!(

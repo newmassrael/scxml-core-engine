@@ -21,8 +21,12 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
         {{ f.name_snake }}: {{ f.value_literal_rust }},
 {% endfor %}
     };
+{% if encode_may_fail %}
     let encoded = actual.encode_to_vec()
         .expect("<sce:test-vector> at SCXML L{{ tv.source_line }}: encode refused the value");
+{% else %}
+    let encoded = actual.encode_to_vec();
+{% endif %}
     let expected: &[u8] = {{ tv.bytes_literal_rust }};
     assert_eq!(
         encoded.as_slice(), expected,
@@ -68,9 +72,13 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
+{% if encode_may_fail %}
         owned.as_borrowed().encode_to_vec()
             .expect("<sce:test-vector> at SCXML L{{ tv.source_line }}: as_borrowed encode refused the value")
             .as_slice(), expected,
+{% else %}
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+{% endif %}
         "<sce:test-vector> at SCXML L{{ tv.source_line }}: as_borrowed re-encode mismatch"
     );
 {% endif %}

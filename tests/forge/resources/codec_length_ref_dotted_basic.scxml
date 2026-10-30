@@ -26,7 +26,7 @@
        carrier=0xF5 payload=[0..14]                 → 0xF5 0x00..0x0E (16 bytes; payload_len=15 max for 4-bit width) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_length_ref_dotted_basic">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_length_ref_dotted_basic">
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="hdr"         bit="0" width="4"/>

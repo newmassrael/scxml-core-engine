@@ -79,6 +79,10 @@ struct Shape {
     id: &'static str,
     /// Resource documents it imports, generated alongside it.
     imports: &'static [&'static str],
+    /// Whether the document states that its encode can refuse a value
+    /// (`sce:encode-may-fail`, docs/adr/0065): a list or a chain can be given
+    /// more entries than its bound, and the build holds the statement to that.
+    encode_may_fail: bool,
     /// The `<datamodel>` body; `NAME` is replaced by the candidate.
     datamodel: &'static str,
     /// Frames that must decode and encode back to themselves.
@@ -94,6 +98,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "fixed",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="b" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>"#,
@@ -103,6 +108,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "vle",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="NAME" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="z" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>"#,
@@ -112,6 +118,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "bytes_named",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="n" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="NAME" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
@@ -122,6 +129,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "length_named",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="NAME" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
@@ -132,6 +140,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "string_named",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="n" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="NAME" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
@@ -142,6 +151,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "flags_gate",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:flags id="NAME" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="on" bit="0"/>
@@ -154,6 +164,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "tail",
         imports: &[],
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="h" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="NAME" sce:type="bytes" sce:byte="1" sce:bit-size="tail"
@@ -164,6 +175,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "repeat_count",
         imports: SLICE_SET,
+        encode_may_fail: true,
         datamodel: r#"
     <sce:field id="NAME" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:repeat id="items" type="codec_chain_has_marker_slice" sce:byte="1"
@@ -174,6 +186,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "repeat_named",
         imports: SLICE_SET,
+        encode_may_fail: true,
         datamodel: r#"
     <sce:field id="n" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:repeat id="NAME" type="codec_chain_has_marker_slice" sce:byte="1"
@@ -184,6 +197,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "chain_named",
         imports: ENTRY_SET,
+        encode_may_fail: true,
         datamodel: r#"
     <sce:tlv-chain id="NAME" type="codec_zenoh_ext_entry" sce:byte="0"
                    max-depth="4" on-overflow="reject"
@@ -195,6 +209,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "embed_named",
         imports: SLICE_SET,
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="h" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:embed id="NAME" type="codec_chain_has_marker_slice" sce:byte="1"/>"#,
@@ -267,10 +282,15 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
             format!("  <sce:import src=\"{f}\" kind=\"codec\" as=\"{stem}\"/>\n")
         })
         .collect();
+    let declared = if shape.encode_may_fail {
+        r#" sce:encode-may-fail="true""#
+    } else {
+        ""
+    };
     let scxml = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="{doc_name}">
+       sce:kind="codec"{declared} sce:default-endian="big" name="{doc_name}">
 {imports}  <datamodel>{}
   </datamodel>
 </scxml>"#,

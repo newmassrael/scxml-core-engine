@@ -46,7 +46,7 @@
                                                                   (UTF-8: é = 0xC3 0xA9) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_present_if_string">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_present_if_string">
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="has_text" bit="0"/>

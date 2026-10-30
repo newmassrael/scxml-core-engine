@@ -273,6 +273,26 @@ impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     }
 }
 
+impl From<core::convert::Infallible> for CodecError {
+    /// A sink that cannot refuse (docs/adr/0065 §4) has no error to become this
+    /// one; the conversion lets `?` cross from such a sink into a `may-fail`
+    /// codec's encode.
+    fn from(never: core::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
+// A `usize` is at most 64 bits on every target Rust supports, so a length or a
+// count widens into a `u64` field without a check (docs/adr/0065 §5).
+const _: () = assert!(usize::BITS <= u64::BITS);
+
+/// `n` as a `u64`: the widening of a length or a count into a 64-bit field,
+/// which cannot fail, written as one that cannot (docs/adr/0065 §5).
+#[inline(always)]
+pub const fn widen_usize(n: usize) -> u64 {
+    n as u64
+}
+
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_slice` to bounds-check + read fixed-offset bytes positionally,
 /// then `advance` after the construction succeeds.
@@ -390,14 +410,26 @@ impl<'a> SceCursor<'a> {
 /// provided as default methods so concrete sinks MAY override them for
 /// efficiency without changing the call surface.
 ///
+/// The sink states what a write can refuse with (docs/adr/0065 §4): a sink of
+/// bounded room refuses with `CodecError::BufferOverflow`, and a sink that
+/// cannot refuse (a growing `Vec`, a counter) says so with
+/// [`core::convert::Infallible`]. A codec whose encode is total then returns
+/// the sink's error alone, and over a sink that cannot refuse the type proves
+/// that the frame is written.
+///
 /// Object safety: no `Self` in return positions, no generics on trait
-/// methods, no associated types. Callers may coerce a concrete sink to
-/// `&mut dyn SceSink` when monomorphization cost is not desired.
+/// methods. Callers may coerce a concrete sink to
+/// `&mut dyn SceSink<Error = CodecError>` when monomorphization cost is not
+/// desired.
 pub trait SceSink {
+    /// What a write is refused with: `CodecError` for a sink whose room runs
+    /// out, `Infallible` for one that cannot refuse.
+    type Error: core::fmt::Debug;
+
     /// Append `bytes` to the underlying storage. Concrete sinks raise
     /// `CodecError::BufferOverflow` when the destination has
     /// insufficient remaining capacity; growable sinks return `Ok(())`.
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError>;
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
 
     /// Bytes written by this sink instance since it wrapped the
     /// destination. Used by codec emit for offset-aware writes (DMA-
@@ -409,37 +441,37 @@ pub trait SceSink {
     fn position(&self) -> usize;
 
     /// Append a single byte. Default impl forwards to `write_bytes`.
-    fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+    fn write_u8(&mut self, b: u8) -> Result<(), Self::Error> {
         self.write_bytes(&[b])
     }
 
     /// Append a little-endian `u16` (2 bytes).
-    fn write_u16_le(&mut self, v: u16) -> Result<(), CodecError> {
+    fn write_u16_le(&mut self, v: u16) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_le_bytes())
     }
 
     /// Append a big-endian `u16` (2 bytes).
-    fn write_u16_be(&mut self, v: u16) -> Result<(), CodecError> {
+    fn write_u16_be(&mut self, v: u16) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_be_bytes())
     }
 
     /// Append a little-endian `u32` (4 bytes).
-    fn write_u32_le(&mut self, v: u32) -> Result<(), CodecError> {
+    fn write_u32_le(&mut self, v: u32) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_le_bytes())
     }
 
     /// Append a big-endian `u32` (4 bytes).
-    fn write_u32_be(&mut self, v: u32) -> Result<(), CodecError> {
+    fn write_u32_be(&mut self, v: u32) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_be_bytes())
     }
 
     /// Append a little-endian `u64` (8 bytes).
-    fn write_u64_le(&mut self, v: u64) -> Result<(), CodecError> {
+    fn write_u64_le(&mut self, v: u64) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_le_bytes())
     }
 
     /// Append a big-endian `u64` (8 bytes).
-    fn write_u64_be(&mut self, v: u64) -> Result<(), CodecError> {
+    fn write_u64_be(&mut self, v: u64) -> Result<(), Self::Error> {
         self.write_bytes(&v.to_be_bytes())
     }
 
@@ -450,7 +482,7 @@ pub trait SceSink {
     /// continuation bytes) carries a full 8 data bits with no flag, so a
     /// u64 caps at 9 bytes — the canonical Zenoh ZInt form (RFC
     /// §synth-5-B Appendix B). `VLE_LEN = ceil((max_bits - 1) / 7)`.
-    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), Self::Error> {
         let cont_max = (max_bits - 1).div_ceil(7) - 1;
         let mut v = value;
         let mut n = 0u32;
@@ -463,17 +495,17 @@ pub trait SceSink {
     }
 
     /// Append a `vle_u16` field (1-3 wire bytes).
-    fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), Self::Error> {
         self.write_vle_inner(v as u64, 16)
     }
 
     /// Append a `vle_u32` field (1-5 wire bytes).
-    fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), Self::Error> {
         self.write_vle_inner(v as u64, 32)
     }
 
     /// Append a `vle_u64` field (1-9 wire bytes). Canonical Zenoh ZInt.
-    fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), Self::Error> {
         self.write_vle_inner(v, 64)
     }
 }
@@ -545,6 +577,9 @@ impl<'a> $name<'a> {
 }
 
 impl<'a> SceSink for $name<'a> {
+    /// The window runs out of room.
+    type Error = CodecError;
+
     #[$inline_bytes]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
         let Some(end) = self.pos.checked_add(bytes.len()) else {
@@ -717,14 +752,17 @@ impl CountSink {
 }
 
 impl SceSink for CountSink {
+    /// A count has no room to run out of.
+    type Error = core::convert::Infallible;
+
     #[inline]
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
         self.written += bytes.len();
         Ok(())
     }
 
     #[inline]
-    fn write_u8(&mut self, _b: u8) -> Result<(), CodecError> {
+    fn write_u8(&mut self, _b: u8) -> Result<(), Self::Error> {
         self.written += 1;
         Ok(())
     }
@@ -732,7 +770,7 @@ impl SceSink for CountSink {
     /// The length of the VLE and not a loop of byte writes: one count of the
     /// value's bits and a division by a constant (docs/adr/0061 §4).
     #[inline]
-    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), Self::Error> {
         self.written += vle_len(value, max_bits);
         Ok(())
     }
@@ -740,19 +778,19 @@ impl SceSink for CountSink {
     // The three widths state their cap as a constant, so the length of a VLE is
     // computed with nothing left to find out at run time.
     #[inline]
-    fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), Self::Error> {
         self.written += vle_len_u16(v);
         Ok(())
     }
 
     #[inline]
-    fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), Self::Error> {
         self.written += vle_len_u32(v);
         Ok(())
     }
 
     #[inline]
-    fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), Self::Error> {
         self.written += vle_len_u64(v);
         Ok(())
     }
@@ -806,15 +844,23 @@ pub const fn vle_len_u64(v: u64) -> usize {
 /// each codec that has a source and takes no flag from a parent; it forwards to
 /// the codec's own skeleton and states no wire rule.
 pub trait SourceWrite<S: ?Sized> {
+    /// What the codec's write reports over a sink whose own error is `E`
+    /// (docs/adr/0065 §4): `E` alone for a codec whose encode is total, and
+    /// `CodecError` for one that declares `sce:encode-may-fail`, whose refusal
+    /// of a source the sink's error joins.
+    type Error<E>;
+
     /// The skeleton of the codec, run into any sink.
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>;
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), Self::Error<K::Error>>
+    where
+        CodecError: From<K::Error>;
 
     /// The skeleton run into `window` through the sink the codec chooses, and the
     /// bytes it wrote. A codec generated to fold its writes into the caller
     /// (`--inline-encode`) chooses the sink that does the same; any other writes
     /// through [`SliceSink`].
     #[inline]
-    fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+    fn write_window(src: &S, window: &mut [u8]) -> Result<usize, Self::Error<CodecError>> {
         let mut sink = SliceSink::new(window);
         Self::write(src, &mut sink)?;
         Ok(sink.position())
@@ -882,14 +928,18 @@ impl<'s, C: SourceWrite<S>, S: ?Sized> Measured<'s, C, S> {
 pub fn write_window<C: SourceWrite<S>, S: ?Sized>(
     src: &S,
     window: &mut [u8],
-) -> Result<usize, CodecError> {
+) -> Result<usize, C::Error<CodecError>> {
     C::write_window(src, window)
 }
 
 /// Count `src` as codec `C` writes it: the size of the frame, or the refusal the
-/// encode would give, with nothing written anywhere.
+/// encode would give, with nothing written anywhere. The count cannot refuse, so
+/// a codec whose encode is total has no error here at all
+/// (`C::Error<Infallible>` is `Infallible`, docs/adr/0065 §4).
 #[inline(always)]
-pub fn measure<C: SourceWrite<S>, S: ?Sized>(src: &S) -> Result<Measured<'_, C, S>, CodecError> {
+pub fn measure<C: SourceWrite<S>, S: ?Sized>(
+    src: &S,
+) -> Result<Measured<'_, C, S>, C::Error<core::convert::Infallible>> {
     let mut count = CountSink::new();
     C::write(src, &mut count)?;
     Ok(Measured {
@@ -930,12 +980,15 @@ impl<'a> VecSink<'a> {
 
 #[cfg(feature = "alloc")]
 impl<'a> SceSink for VecSink<'a> {
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+    /// The vector grows; an allocation that fails aborts, as `Vec` does.
+    type Error = core::convert::Infallible;
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
         self.buf.extend_from_slice(bytes);
         Ok(())
     }
 
-    fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+    fn write_u8(&mut self, b: u8) -> Result<(), Self::Error> {
         self.buf.push(b);
         Ok(())
     }
@@ -1219,6 +1272,8 @@ mod tests {
             len: usize,
         }
         impl SceSink for Reference {
+            type Error = CodecError;
+
             fn write_bytes(&mut self, b: &[u8]) -> Result<(), CodecError> {
                 self.bytes[self.len..self.len + b.len()].copy_from_slice(b);
                 self.len += b.len();
@@ -1292,8 +1347,8 @@ mod tests {
         let mut slice = SliceSink::new(&mut a);
         let mut window = WindowSink::new(&mut b);
         for k in [
-            &mut slice as &mut dyn SceSink,
-            &mut window as &mut dyn SceSink,
+            &mut slice as &mut dyn SceSink<Error = CodecError>,
+            &mut window as &mut dyn SceSink<Error = CodecError>,
         ] {
             k.write_u8(1).unwrap();
             k.write_u8(2).unwrap();
@@ -1346,14 +1401,71 @@ mod tests {
     struct Pair;
 
     impl<S: PairSource + ?Sized> SourceWrite<S> for Pair {
-        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        type Error<E> = CodecError;
+
+        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>
+        where
+            CodecError: From<K::Error>,
+        {
             if src.bytes().len() > 8 {
                 return Err(CodecError::LengthOutOfRange);
             }
             w.write_vle_u32(src.number())?;
             w.write_vle_u16(src.bytes().len() as u16)?;
-            w.write_bytes(src.bytes())
+            w.write_bytes(src.bytes())?;
+            Ok(())
         }
+    }
+
+    #[test]
+    fn a_length_widens_into_a_64_bit_field_whole() {
+        // Every value of the host's `usize` is the same `u64` (docs/adr/0065 §5).
+        for n in [
+            0usize,
+            1,
+            255,
+            256,
+            65_535,
+            65_536,
+            usize::MAX / 2,
+            usize::MAX,
+        ] {
+            assert_eq!(widen_usize(n), n as u64);
+            assert_eq!(usize::try_from(widen_usize(n)), Ok(n));
+        }
+    }
+
+    /// A codec by hand whose encode is total: the `vle_u32` of [`Pair`] alone.
+    struct Number;
+
+    impl<S: PairSource + ?Sized> SourceWrite<S> for Number {
+        type Error<E> = E;
+
+        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error>
+        where
+            CodecError: From<K::Error>,
+        {
+            w.write_vle_u32(src.number())
+        }
+    }
+
+    #[test]
+    fn a_total_codec_is_measured_and_counted_with_no_error_to_handle() {
+        // The patterns are irrefutable: the count cannot refuse, and the codec
+        // has no refusal of its own, so the error types are uninhabited
+        // (docs/adr/0065 §4). That this compiles is the test.
+        let held = Held(300, b"");
+        let Ok(measured) = measure::<Number, _>(&held);
+        let mut count = CountSink::new();
+        let Ok(()) = Number::write(&held, &mut count);
+        assert_eq!(measured.len(), count.len());
+        assert_eq!(measured.len(), 2);
+        // Into a window, the sink's own error is what remains.
+        let mut short = [0u8; 1];
+        assert_eq!(
+            write_window::<Number, _>(&held, &mut short),
+            Err(CodecError::BufferOverflow)
+        );
     }
 
     struct Held(u32, &'static [u8]);
@@ -1421,7 +1533,12 @@ mod tests {
     struct Chosen;
 
     impl<S: PairSource + ?Sized> SourceWrite<S> for Chosen {
-        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        type Error<E> = CodecError;
+
+        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>
+        where
+            CodecError: From<K::Error>,
+        {
             Pair::write(src, w)
         }
 
@@ -1525,12 +1642,13 @@ mod tests {
 
     #[test]
     fn sce_sink_is_object_safe_via_dyn() {
-        // If SceSink ever gains a Self-returning method, generic param,
-        // or associated type, this line stops compiling. The pin
-        // protects the documented object-safety guarantee.
+        // If SceSink ever gains a Self-returning method or a generic
+        // param, this line stops compiling. The pin protects the
+        // documented object-safety guarantee; the sink's error is named,
+        // as an associated type of a trait object is.
         let mut buf = [0u8; 4];
         let mut s = SliceSink::new(&mut buf);
-        let d: &mut dyn SceSink = &mut s;
+        let d: &mut dyn SceSink<Error = CodecError> = &mut s;
         d.write_u32_le(0x0102_0304).unwrap();
         assert_eq!(buf, [0x04, 0x03, 0x02, 0x01]);
     }

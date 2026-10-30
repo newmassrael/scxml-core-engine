@@ -125,8 +125,9 @@ is transitive, through the import resolution `codec_source_can_refuse` uses toda
 
 The check runs once, before any backend renders, so every backend and `check` refuse the same documents.
 
-- A codec declared total with a refusal is refused with `codec/undeclared-encode-refusal`, once for each refusal, at
-  the element's row, with the reason. Two repairs are right and the record proposes neither: declare
+- A codec declared total with a refusal is refused with `codec/undeclared-encode-refusal` at the row of the first
+  element the encode refuses at, with the reason, as every other validation of a document reports its first
+  refusal. `sce-build/tests/codec_totality.rs` lists every place of every codec at once. Two repairs are right and the record proposes neither: declare
   `sce:encode-may-fail="true"`, or change the grammar so the refusal is gone (a wider length field, a bound the
   value's type already keeps).
 - A codec declared `may-fail` with no refusal is refused with `codec/encode-may-fail-without-refusal`. A declaration

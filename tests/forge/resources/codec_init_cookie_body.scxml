@@ -35,7 +35,7 @@
                                       → 0x01 (1 byte) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_init_cookie_body">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_init_cookie_body">
   <sce:flag-inputs>
     <sce:flag-input name="A" width="1"/>
   </sce:flag-inputs>

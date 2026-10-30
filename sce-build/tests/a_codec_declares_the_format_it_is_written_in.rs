@@ -383,11 +383,25 @@ fn printed(document: &str) -> String {
     String::from_utf8(run.stdout).expect("the document is UTF-8")
 }
 
+/// `document` with its root stating that its encode can refuse a value
+/// (`sce:encode-may-fail`, docs/adr/0065): a statement no format rewrite adds or
+/// removes, so a document that needs it carries it before the rewrite.
+fn declaring_encode_may_fail(document: &str) -> String {
+    document.replacen(
+        r#"sce:kind="codec""#,
+        r#"sce:kind="codec" sce:encode-may-fail="true""#,
+        1,
+    )
+}
+
 #[test]
 fn codec_format_prints_a_document_that_check_accepts() {
+    // Each encode can refuse a value: the CBOR one at `d`, other than its
+    // `sce:length`, the content-line one at a text its line cannot carry. Check
+    // holds the rewrite to that statement, so each states it.
     for document in [
-        cbor("", MIXED_ENTRIES),
-        content_line("", MIXED_CONTENT_LINE),
+        declaring_encode_may_fail(&cbor("", MIXED_ENTRIES)),
+        declaring_encode_may_fail(&content_line("", MIXED_CONTENT_LINE)),
     ] {
         let rewritten = printed(&document);
         assert!(
@@ -454,9 +468,10 @@ fn the_document_codec_format_prints_reads_with_the_optionality_format_1_said() {
 }
 
 /// The root of `codec_cbor_map.scxml` and everything below it, as it was written
-/// in format 1.
+/// in format 1, with the statement that its encode can refuse a value
+/// (`sce:encode-may-fail`), which no format rewrite adds.
 const CBOR_MAP_FORMAT_1: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor" name="codec_cbor_map" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" name="codec_cbor_map" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <data id="source" sce:type="string" sce:key="1" sce:required="true" sce:max-size="64" sce:direction="out"/>
@@ -470,10 +485,10 @@ const CBOR_MAP_FORMAT_1: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml
 "#;
 
 /// The root of `codec_content_line_records.scxml` and everything below it, as it
-/// was written in format 1.
+/// was written in format 1, with the same statement that its encode can refuse.
 const CONTENT_LINE_RECORDS_FORMAT_1: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0"
-       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="content-line" sce:component="VEVENT"
        name="codec_content_line_records">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>

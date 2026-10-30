@@ -253,9 +253,10 @@ impl {{ struct_name }} {
         Ok(())
     }
 
+{% if encode_may_fail %}
     /// Encode this component into `w`. A value past its declared bound, or one
     /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
         Self::encode_source(self, w)
     }
 
@@ -266,4 +267,19 @@ impl {{ struct_name }} {
         self.encode(&mut VecSink::new(&mut out))?;
         Ok(out)
     }
+{% else %}
+    /// Encode this component into `w`. No value is one a line refuses
+    /// (docs/adr/0065), so the only error is the sink's own.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        Self::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
+        out
+    }
+{% endif %}
 }

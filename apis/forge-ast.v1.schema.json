@@ -3137,6 +3137,11 @@
               ],
               "description": "Document-level default endianness."
             },
+            "encode_may_fail": {
+              "default": false,
+              "description": "`sce:encode-may-fail` on the root (SCE_FORGE.md §4.6, docs/adr/0065 §1): the codec's statement that its encode can refuse a value. `false`, the default, states that it cannot. The build holds the statement to [`crate::forge::codec_totality`] before any backend renders.",
+              "type": "boolean"
+            },
             "encoding": {
               "allOf": [
                 {

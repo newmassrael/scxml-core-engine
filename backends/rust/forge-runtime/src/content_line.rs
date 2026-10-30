@@ -671,9 +671,11 @@ pub struct ContentLineWriter<'s, S: SceSink + ?Sized> {
     column: usize,
 }
 
+// The lines of the component, and the values no line refuses (a number, a
+// `bool`): what is left of an error is the sink's (docs/adr/0065 §4).
 impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
     /// Write `BEGIN:<component>`.
-    pub fn begin(sink: &'s mut S, component: &'static str) -> Result<Self, CodecError> {
+    pub fn begin(sink: &'s mut S, component: &'static str) -> Result<Self, S::Error> {
         sink.write_bytes(b"BEGIN:")?;
         sink.write_bytes(component.as_bytes())?;
         sink.write_bytes(b"\r\n")?;
@@ -685,7 +687,7 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
     }
 
     /// Write `END:<component>`.
-    pub fn finish(self) -> Result<(), CodecError> {
+    pub fn finish(self) -> Result<(), S::Error> {
         self.sink.write_bytes(b"END:")?;
         self.sink.write_bytes(self.component.as_bytes())?;
         self.sink.write_bytes(b"\r\n")
@@ -693,7 +695,7 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
 
     /// Write one unit — a character, or an escape — on the current line, after
     /// cutting the line if it would pass [`FOLD_WIDTH`] octets.
-    fn unit(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+    fn unit(&mut self, bytes: &[u8]) -> Result<(), S::Error> {
         if self.column + bytes.len() > FOLD_WIDTH {
             self.sink.write_bytes(b"\r\n ")?;
             self.column = 1;
@@ -703,7 +705,7 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         Ok(())
     }
 
-    fn units(&mut self, text: &str) -> Result<(), CodecError> {
+    fn units(&mut self, text: &str) -> Result<(), S::Error> {
         for c in text.chars() {
             let mut buf = [0u8; 4];
             self.unit(c.encode_utf8(&mut buf).as_bytes())?;
@@ -711,17 +713,67 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         Ok(())
     }
 
-    fn end_line(&mut self) -> Result<(), CodecError> {
+    fn end_line(&mut self) -> Result<(), S::Error> {
         self.column = 0;
         self.sink.write_bytes(b"\r\n")
     }
 
     /// Start a property's line with its name.
-    pub fn property(&mut self, name: &str) -> Result<(), CodecError> {
+    pub fn property(&mut self, name: &str) -> Result<(), S::Error> {
         self.column = 0;
         self.units(name)
     }
 
+    fn digits(&mut self, negative: bool, mut magnitude: u64) -> Result<(), S::Error> {
+        let mut buf = [0u8; 21];
+        let mut at = buf.len();
+        loop {
+            at -= 1;
+            buf[at] = b'0' + (magnitude % 10) as u8;
+            magnitude /= 10;
+            if magnitude == 0 {
+                break;
+            }
+        }
+        if negative {
+            at -= 1;
+            buf[at] = b'-';
+        }
+        self.unit(b":")?;
+        for b in &buf[at..] {
+            self.unit(core::slice::from_ref(b))?;
+        }
+        self.end_line()
+    }
+
+    /// Write `:<value>` as decimal digits and end the line.
+    pub fn uint(&mut self, value: u64) -> Result<(), S::Error> {
+        self.digits(false, value)
+    }
+
+    /// Write `:<value>` as decimal digits, `-` first when negative, and end the
+    /// line.
+    pub fn int(&mut self, value: i64) -> Result<(), S::Error> {
+        self.digits(value < 0, value.unsigned_abs())
+    }
+
+    /// Write `:TRUE` or `:FALSE` and end the line.
+    pub fn boolean(&mut self, value: bool) -> Result<(), S::Error> {
+        self.unit(b":")?;
+        for b in if value { &b"TRUE"[..] } else { &b"FALSE"[..] } {
+            self.unit(core::slice::from_ref(b))?;
+        }
+        self.end_line()
+    }
+}
+
+// The values a line refuses (a text past its size or with a control character,
+// a list of values outside its count, a variant with no text): the writer
+// reports `CodecError`, which the sink's error joins.
+impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S>
+where
+    CodecError: From<S::Error>,
+{
     /// Write `;<name>=<value>`, quoting the value when it holds `:`, `;` or `,`.
     /// A value past `max_size` is `LineTooLong`; one with a control character or a
     /// `"` is `LineBadValue`.
@@ -774,7 +826,8 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         } else {
             self.units(value)?;
         }
-        self.end_line()
+        self.end_line()?;
+        Ok(())
     }
 
     /// Write `:<value>{separator}<value>…` and end the line (docs/adr/0014). No
@@ -837,13 +890,15 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
             }
             self.value_units(value.as_ref(), text)?;
         }
-        self.end_line()
+        self.end_line()?;
+        Ok(())
     }
 
     /// The units of a value: one character each, escaped when `text`.
     fn value_units(&mut self, value: &str, text: bool) -> Result<(), CodecError> {
         if !text {
-            return self.units(value);
+            self.units(value)?;
+            return Ok(());
         }
         for c in value.chars() {
             let mut buf = [0u8; 4];
@@ -856,48 +911,6 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
             }
         }
         Ok(())
-    }
-
-    fn digits(&mut self, negative: bool, mut magnitude: u64) -> Result<(), CodecError> {
-        let mut buf = [0u8; 21];
-        let mut at = buf.len();
-        loop {
-            at -= 1;
-            buf[at] = b'0' + (magnitude % 10) as u8;
-            magnitude /= 10;
-            if magnitude == 0 {
-                break;
-            }
-        }
-        if negative {
-            at -= 1;
-            buf[at] = b'-';
-        }
-        self.unit(b":")?;
-        for b in &buf[at..] {
-            self.unit(core::slice::from_ref(b))?;
-        }
-        self.end_line()
-    }
-
-    /// Write `:<value>` as decimal digits and end the line.
-    pub fn uint(&mut self, value: u64) -> Result<(), CodecError> {
-        self.digits(false, value)
-    }
-
-    /// Write `:<value>` as decimal digits, `-` first when negative, and end the
-    /// line.
-    pub fn int(&mut self, value: i64) -> Result<(), CodecError> {
-        self.digits(value < 0, value.unsigned_abs())
-    }
-
-    /// Write `:TRUE` or `:FALSE` and end the line.
-    pub fn boolean(&mut self, value: bool) -> Result<(), CodecError> {
-        self.unit(b":")?;
-        for b in if value { &b"TRUE"[..] } else { &b"FALSE"[..] } {
-            self.unit(core::slice::from_ref(b))?;
-        }
-        self.end_line()
     }
 
     /// Write `;<name>=<text>` for the variant of `table` with `carrier`. A text is
@@ -913,7 +926,8 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         self.unit(b";")?;
         self.units(name)?;
         self.unit(b"=")?;
-        self.units(text)
+        self.units(text)?;
+        Ok(())
     }
 
     /// Write `:<text>` for the variant of `table` with `carrier` and end the line
@@ -923,7 +937,8 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         let text = text_of(table, carrier)?;
         self.unit(b":")?;
         self.units(text)?;
-        self.end_line()
+        self.end_line()?;
+        Ok(())
     }
 }
 

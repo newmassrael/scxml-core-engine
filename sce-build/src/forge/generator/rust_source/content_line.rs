@@ -20,6 +20,7 @@
 //! the caller's sink untouched.
 
 use super::super::*;
+use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::model::{ContentLineEntry, ContentLineModel};
 
 /// What the interface of one codec is made from.
@@ -35,6 +36,20 @@ pub(in super::super) struct Input<'a> {
 struct Plan<'a> {
     input: &'a Input<'a>,
     model: &'a ContentLineModel,
+    /// Where the encode can refuse a value (docs/adr/0065), which every
+    /// refusal written here must be in.
+    totality: Totality,
+}
+
+impl Plan<'_> {
+    /// `return Err(CodecError::LineRequiredMissing);` for the entry `e`.
+    fn required_missing(&self, e: &ContentLineEntry) -> String {
+        format!(
+            "return Err({});",
+            self.totality
+                .require(RefusalKind::LineRequiredMissing, &e.id)
+        )
+    }
 }
 
 impl Plan<'_> {
@@ -87,6 +102,10 @@ impl Plan<'_> {
     fn write_value(&self, e: &ContentLineEntry) -> String {
         let text = e.text;
         let max_size = e.max_size.unwrap_or(0);
+        // A value the line writer can refuse: recorded where it is written.
+        if e.separator.is_some() || matches!(e.present_type(), SceType::String | SceType::Enum(_)) {
+            self.totality.require(RefusalKind::LineBadValue, &e.id);
+        }
         if let Some(separator) = &e.separator {
             let max_values = e.max_values.unwrap_or(0);
             return format!(
@@ -113,6 +132,8 @@ impl Plan<'_> {
         let accessor = self.member(&p.id);
         let param = p.param.as_deref().unwrap_or_default();
         let max_size = p.max_size.unwrap_or(0);
+        // Every parameter's value is one the line writer can refuse.
+        self.totality.require(RefusalKind::LineBadValue, &p.id);
         let call = |value: &str| match p.present_type() {
             SceType::Enum(r) => format!(
                 "out.enum_param(\"{param}\", TEXTS_{}, u64::from({}))?;",
@@ -237,7 +258,8 @@ impl Plan<'_> {
         if self.model.reads_records(e) {
             if e.is_required() {
                 body.push(format!(
-                    "if src.{accessor}().next().is_none() {{\n    return Err(CodecError::LineRequiredMissing);\n}}"
+                    "if src.{accessor}().next().is_none() {{\n    {}\n}}",
+                    self.required_missing(e)
                 ));
             }
             body.push(format!("for record in src.{accessor}() {{"));
@@ -260,7 +282,8 @@ impl Plan<'_> {
         } else if e.max_count.is_some() {
             if e.is_required() {
                 body.push(format!(
-                    "if src.{accessor}().next().is_none() {{\n    return Err(CodecError::LineRequiredMissing);\n}}"
+                    "if src.{accessor}().next().is_none() {{\n    {}\n}}",
+                    self.required_missing(e)
                 ));
             }
             body.push(format!("for v in src.{accessor}() {{"));
@@ -306,7 +329,7 @@ impl Plan<'_> {
                     body.push("    }".to_string());
                 } else {
                     body.push(format!("    }} else if {any_param} {{"));
-                    body.push("        return Err(CodecError::LineRequiredMissing);".to_string());
+                    body.push(format!("        {}", self.required_missing(e)));
                     body.push("    }".to_string());
                 }
                 body.push("}".to_string());
@@ -325,7 +348,7 @@ impl Plan<'_> {
                     body.push("}".to_string());
                 } else {
                     body.push(format!("}} else if {any_param} {{"));
-                    body.push("    return Err(CodecError::LineRequiredMissing);".to_string());
+                    body.push(format!("    {}", self.required_missing(e)));
                     body.push("}".to_string());
                 }
             }
@@ -384,8 +407,26 @@ impl Plan<'_> {
         for e in self.model.entries.iter().filter(|e| e.param.is_none()) {
             self.write_entry(e, &mut body);
         }
-        body.push("out.finish()".to_string());
+        body.push("out.finish()?;".to_string());
+        body.push("Ok(())".to_string());
         let body = super::indent(&body, 8);
+        let may_fail = !self.totality.is_total();
+        // A component whose values a line can refuse is written into a sink
+        // that only counts first, so a refusal leaves the caller's sink
+        // untouched; one whose values no line refuses has nothing to find.
+        let (doc, guard) = if may_fail {
+            (
+                "\x20   /// cannot carry is refused before the first byte is written.\n",
+                "\x20       Self::count_source(src)?;\n",
+            )
+        } else {
+            (
+                "\x20   /// cannot carry is not one a value of it can say: the only error is the\n\
+                 \x20   /// sink's (docs/adr/0065).\n",
+                "",
+            )
+        };
+        let result = super::write_result(may_fail, "K");
         format!(
             "{records}\
              // ── Source (ADR 0058) ────────────────────────────────────────────────\n\
@@ -397,22 +438,24 @@ impl Plan<'_> {
              impl {name} {{\n\
              \x20   /// Encode what `src` says as one component into `w`: the properties\n\
              \x20   /// present in declaration order, folded at 75 octets. A value the lines\n\
-             \x20   /// cannot carry is refused before the first byte is written.\n\
-             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
-             \x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;\n\
+             {doc}\
+             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
+             {guard}\
              \x20       Self::write_source(src, w)\n\
              \x20   }}\n\n\
              \x20   /// [`Self::encode_source`] without the pre-pass a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
              {inline}\
-             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
              {body}\
-             \x20   }}\n\
+             \x20   }}\n\n\
+             {count}\
              }}\n\n\
              {measure}",
+            count = super::count_function(&trait_name, "", "", may_fail),
             records = self.record_traits(),
             inline = super::write_attribute(self.input.inline_encode),
-            measure = super::measure_impl(name, "", &trait_name, self.input.inline_encode),
+            measure = super::measure_impl(name, "", &trait_name, self.input.inline_encode, may_fail),
         )
     }
 }
@@ -424,5 +467,14 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
         .content_line
         .as_ref()
         .expect("a content-line codec carries its entries");
-    Plan { input, model }.text()
+    // A content-line codec imports no codec: its refusals are its own.
+    let totality = codec_totality::analyse(input.m, &mut codec_totality::Resolved(&[]));
+    let plan = Plan {
+        input,
+        model,
+        totality,
+    };
+    let text = plan.text();
+    plan.totality.assert_all_written(&input.m.name);
+    text
 }

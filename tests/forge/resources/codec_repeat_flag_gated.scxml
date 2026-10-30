@@ -13,7 +13,7 @@
        byte 2..: `count` elements, each laid out by W (present iff L) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_repeat_flag_gated">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_repeat_flag_gated">
   <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
     <sce:flag-bind input="wide" source="head.W"/>
   </sce:import>

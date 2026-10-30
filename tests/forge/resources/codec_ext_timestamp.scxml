@@ -23,7 +23,7 @@
      bytes. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_ext_timestamp">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_ext_timestamp">
   <datamodel>
     <sce:field id="time"    sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="zid_size" sce:type="uint8"  sce:byte="1" sce:bit-size="8"/>

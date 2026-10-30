@@ -20,7 +20,7 @@
   storage rather than on a stack.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="envelope">
+       version="1.0" sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" sce:codec-format="2" name="envelope">
   <sce:import kind="enum" src="pattern_kind.scxml" as="PatternKind"/>
   <sce:import kind="enum" src="payload_codec.scxml" as="PayloadCodec"/>
   <sce:import kind="enum" src="rpc_status.scxml" as="RpcStatus"/>

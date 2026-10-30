@@ -70,11 +70,16 @@
 {% endif %}
 {% endfor %}
         }
-        {# An encode refuses a value it cannot carry (SCE_FORGE.md §4.6.1,
-           docs/adr/0058), so `encode_to_vec` returns a Result; every case is
-           a value the codec carries. #}
+{% if f.encode_may_fail %}
+        {# The document declares that its encode can refuse a value it cannot
+           carry (docs/adr/0065), so `encode_to_vec` returns a Result; every
+           case is a value the codec carries. #}
         .encode_to_vec()
         .unwrap_or_else(|e| panic!("{{ f.name }} case {i}: encode must succeed, refused with {e:?}"));
+{% else %}
+        {# An encode that refuses no value returns its bytes (docs/adr/0065). #}
+        .encode_to_vec();
+{% endif %}
         assert_eq!(
             encoded, expected_bytes,
             "{{ f.name }} case {i} encode"

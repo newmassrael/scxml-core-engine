@@ -12,7 +12,7 @@
        byte 4+   : payload     (bytes, length = payload_len) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="little" name="codec_length_ref_uint32_le">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="little" name="codec_length_ref_uint32_le">
   <datamodel>
     <sce:field id="payload_len" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
     <sce:field id="payload"     sce:type="bytes"  sce:byte="4" sce:bit-size="length-ref"

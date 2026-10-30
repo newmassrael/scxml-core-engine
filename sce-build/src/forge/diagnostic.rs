@@ -979,6 +979,13 @@ pub enum DiagnosticCode {
     // `may-fail`, which has no failure to hand its caller.
     #[serde(rename = "algorithm/require-without-may-fail")]
     AlgorithmRequireWithoutMayFail,
+    // ── A codec's statement of its encode's totality (SCE_FORGE.md §4.6,
+    //    docs/adr/0065): the statement disagrees with the refusals the
+    //    build finds. ───────────────────────────────────────────────────
+    #[serde(rename = "codec/undeclared-encode-refusal")]
+    CodecUndeclaredEncodeRefusal,
+    #[serde(rename = "codec/encode-may-fail-without-refusal")]
+    CodecEncodeMayFailWithoutRefusal,
 
     // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
@@ -3792,6 +3799,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Integer arithmetic contract (SCE_FORGE.md §3.4.1)
         AlgorithmUndeclaredIntegerFailure,
         AlgorithmRequireWithoutMayFail,
+        // A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065)
+        CodecUndeclaredEncodeRefusal,
+        CodecEncodeMayFailWithoutRefusal,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
         // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
@@ -4626,6 +4636,11 @@ impl DiagnosticCode {
             | AlgorithmConstIntegerFailure
             | AlgorithmRequireWithoutMayFail => Some("SCE Forge §3.4.1"),
 
+            // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ──
+            CodecUndeclaredEncodeRefusal | CodecEncodeMayFailWithoutRefusal => {
+                Some("SCE Forge §4.6")
+            }
+
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
@@ -5401,6 +5416,8 @@ impl DiagnosticCode {
             | AlgorithmAppendTypeMismatch
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | CodecUndeclaredEncodeRefusal
+            | CodecEncodeMayFailWithoutRefusal
             | ScxmlTopLevelScriptUnloaded
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
@@ -5890,6 +5907,8 @@ impl DiagnosticCode {
             AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
             AlgorithmUndeclaredIntegerFailure => "algorithm/undeclared-integer-failure",
             AlgorithmRequireWithoutMayFail => "algorithm/require-without-may-fail",
+            CodecUndeclaredEncodeRefusal => "codec/undeclared-encode-refusal",
+            CodecEncodeMayFailWithoutRefusal => "codec/encode-may-fail-without-refusal",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
@@ -8220,6 +8239,34 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // operation — so the record names neither.
             fix: None,
             key_fragments: vec![algorithm.clone(), operation.clone(), hazard.clone(), ty.clone()],
+        },
+        ValidationError::CodecUndeclaredEncodeRefusal {
+            codec,
+            element,
+            kind,
+            reason: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecUndeclaredEncodeRefusal,
+            stage: Stage::Validation,
+            expected: None,
+            // The element the encode refuses at is what the author declares
+            // for or changes; why is the message's.
+            actual: Some(element.clone()),
+            // Two repairs are right — declare `sce:encode-may-fail="true"`, or
+            // change the grammar so the encode cannot refuse there — so the
+            // record names neither.
+            fix: None,
+            key_fragments: vec![codec.clone(), element.clone(), kind.clone()],
+        },
+        ValidationError::CodecEncodeMayFailWithoutRefusal { codec } => DiagnosticPayload {
+            code: DiagnosticCode::CodecEncodeMayFailWithoutRefusal,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some("true".to_string()),
+            // The repair is to drop the attribute, which no `Fix` variant
+            // removes; the message names it.
+            fix: None,
+            key_fragments: vec![codec.clone()],
         },
         ValidationError::AlgorithmRequireWithoutMayFail { algorithm, cond } => DiagnosticPayload {
             code: DiagnosticCode::AlgorithmRequireWithoutMayFail,
@@ -15564,6 +15611,26 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fcf5d2957a0327ef","code":"algorithm/require-without-may-fail","stage":"validation","spec":"SCE Forge §3.4.1","message":"algorithm 'days_in_month': <sce:require cond=\"month >= 1\"> fails to the caller, and the algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or drop the precondition","actual":"month >= 1"}"#,
             ),
+            // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ─
+            (
+                "forge/codec-undeclared-encode-refusal",
+                ValidationError::CodecUndeclaredEncodeRefusal {
+                    codec: "codec_length_ref".into(),
+                    element: "len".into(),
+                    kind: "LengthOutOfRange".into(),
+                    reason: "the number may be past 255, the largest its field holds".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3935b6b4b08e1267","code":"codec/undeclared-encode-refusal","stage":"validation","spec":"SCE Forge §4.6","message":"codec 'codec_length_ref': the encode refuses a value at `len`: the number may be past 255, the largest its field holds (LengthOutOfRange), and the codec does not declare sce:encode-may-fail=\"true\" — declare it, or change the grammar so the encode cannot refuse there","actual":"len"}"#,
+            ),
+            (
+                "forge/codec-encode-may-fail-without-refusal",
+                ValidationError::CodecEncodeMayFailWithoutRefusal {
+                    codec: "codec_flags_basic".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4c5d5eae31684876","code":"codec/encode-may-fail-without-refusal","stage":"validation","spec":"SCE Forge §4.6","message":"codec 'codec_flags_basic' declares sce:encode-may-fail=\"true\", and its encode refuses no value — drop the declaration","actual":"true"}"#,
+            ),
             // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -19055,6 +19122,8 @@ mod tests {
             XmlParse
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | CodecUndeclaredEncodeRefusal
+            | CodecEncodeMayFailWithoutRefusal
             | XmlSchemaValidation
             | XmlFileNotFound
             | XmlXIncludeMissingHref
@@ -20100,6 +20169,8 @@ mod tests {
                 | AlgorithmAppendTypeMismatch
                 | AlgorithmUndeclaredIntegerFailure
                 | AlgorithmRequireWithoutMayFail
+                | CodecUndeclaredEncodeRefusal
+                | CodecEncodeMayFailWithoutRefusal
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
@@ -20483,9 +20554,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            488,
+            490,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 488 distinct variants to match the DiagnosticCode \
+             expected 490 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21152,6 +21223,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmAppendTypeMismatch
             | AlgorithmUndeclaredIntegerFailure
             | AlgorithmRequireWithoutMayFail
+            | CodecUndeclaredEncodeRefusal
+            | CodecEncodeMayFailWithoutRefusal
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule

@@ -11,7 +11,7 @@
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="little"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="little"
        name="broadcast_log_conformance_flagged_event" version="1.0">
   <sce:flag-inputs>
     <sce:flag-input name="has_value" width="1"/>

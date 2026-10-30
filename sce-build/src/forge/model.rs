@@ -2945,6 +2945,12 @@ pub struct CodecModel {
     /// the pair cannot be half set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_line: Option<ContentLineModel>,
+    /// `sce:encode-may-fail` on the root (SCE_FORGE.md §4.6, docs/adr/0065 §1):
+    /// the codec's statement that its encode can refuse a value. `false`, the
+    /// default, states that it cannot. The build holds the statement to
+    /// [`crate::forge::codec_totality`] before any backend renders.
+    #[serde(default)]
+    pub encode_may_fail: bool,
 }
 
 /// How a codec lays its fields on the wire (SCE_FORGE.md §4.6).

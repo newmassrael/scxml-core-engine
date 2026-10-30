@@ -33,7 +33,7 @@
        H=1, N=2: [0x01, 0x02, 0xCA,0xFE, 0xBE,0xEF, 0x11,0x11, 0x22,0x22] -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_repeat_unconditional_count">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_repeat_unconditional_count">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:flags id="options" sce:type="uint8" sce:byte="0" sce:bit-size="8">

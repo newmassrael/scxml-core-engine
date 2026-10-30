@@ -19,7 +19,7 @@
        xmlns:sce="http://sce.dev/ext"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
-       sce:kind="codec"
+       sce:kind="codec" sce:encode-may-fail="true"
        name="keyexpr_entry"
        version="1.0">
   <datamodel>

@@ -333,7 +333,8 @@ fn an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() 
     loop {
         match deployed::read(&log, &mut reader) {
             Ok(deployed::BroadcastLogConformanceDeployedRead::Item { element, .. }) => {
-                stored.push(element.encode_to_vec().expect("the owned record encodes"));
+                // The record's encode is total (docs/adr/0065).
+                stored.push(element.encode_to_vec());
             }
             Ok(deployed::BroadcastLogConformanceDeployedRead::Empty) => break,
             other => panic!("unexpected answer: {other:?}"),

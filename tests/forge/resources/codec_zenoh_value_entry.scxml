@@ -13,7 +13,7 @@
      (ext_id 0..3, M 4, enc 5..6, Z 7); the unit and z64 arms are shared with it. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_value_entry">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_value_entry">
   <sce:import src="codec_zenoh_ext_unit.scxml" kind="codec" as="codec_zenoh_ext_unit"/>
   <sce:import src="codec_zenoh_ext_zint.scxml" kind="codec" as="codec_zenoh_ext_zint"/>
   <sce:import src="codec_zenoh_value_zbuf.scxml" kind="codec" as="codec_zenoh_value_zbuf">

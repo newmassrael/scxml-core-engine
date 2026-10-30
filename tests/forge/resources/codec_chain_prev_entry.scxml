@@ -18,7 +18,7 @@
        tagged=1       : one more byte, tag (uint8) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_entry">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_prev_entry">
   <sce:flag-inputs>
     <sce:flag-input name="after_marker" width="1"/>
     <sce:flag-input name="tagged" width="1"/>

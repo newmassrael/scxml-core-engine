@@ -268,7 +268,7 @@
 //!     inbound <event> [when <expr>]
 //!     outbound <event> encode <e>
 //!
-//!   codec <name> endian <e> [input-length <n>]
+//!   codec <name> endian <e> [input-length <n>] [encode-may-fail]
 //!     flag-input <name> width <n>
 //!     field <id>: <type> at byte <n> [bit <n>] size <bit-size>
 //!       endian <e> / max-size <n> / length-field <f> / length-arith <i>
@@ -3283,6 +3283,9 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
         head.push(Part::Word(Word::InputLength));
         head.push(Part::Text(n.to_string()));
     }
+    if m.encode_may_fail {
+        head.push(Part::Word(Word::EncodeMayFail));
+    }
     out.line_of(head);
 
     out.nested(|out| {
@@ -3302,18 +3305,22 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
     out.nodes
 }
 
-/// `codec <name> encoding cbor`, then one line per map entry:
+/// `codec <name> encoding cbor [encode-may-fail]`, then one line per map entry:
 /// `entry <id>: <type> key <n> [length <n>] [max-size <n>]`, where `<type>` is
 /// the bare type of an entry that must be present and `optional<T>` that of one
 /// that may be absent (docs/adr/0055, section 8).
 fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line_of(vec![
+    let mut head = vec![
         Part::Word(Word::Codec),
         Part::Text(text(&m.name).into_owned()),
         Part::Word(Word::Encoding),
         Part::Word(Word::Cbor),
-    ]);
+    ];
+    if m.encode_may_fail {
+        head.push(Part::Word(Word::EncodeMayFail));
+    }
+    out.line_of(head);
     out.nested(|out| {
         for e in &m.cbor_entries {
             let mut line = format!(
@@ -3334,7 +3341,8 @@ fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     out.nodes
 }
 
-/// `codec <name> encoding content-line component <C>`, then one line per entry:
+/// `codec <name> encoding content-line component <C> [encode-may-fail]`, then
+/// one line per entry:
 /// `entry <id>: <type> property <P> [param <Q>] [text] [max-size <n>]
 /// [max-count <n>]` (docs/adr/0010), where `<type>` is the bare type of an entry
 /// that must be present and `optional<T>` that of one that may be absent
@@ -3344,14 +3352,18 @@ fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
     let Some(content) = &m.content_line else {
         return out.nodes;
     };
-    out.line_of(vec![
+    let mut head = vec![
         Part::Word(Word::Codec),
         Part::Text(text(&m.name).into_owned()),
         Part::Word(Word::Encoding),
         Part::Word(Word::ContentLine),
         Part::Word(Word::Component),
         Part::Text(text(&content.component).into_owned()),
-    ]);
+    ];
+    if m.encode_may_fail {
+        head.push(Part::Word(Word::EncodeMayFail));
+    }
+    out.line_of(head);
     out.nested(|out| {
         for e in &content.entries {
             let mut line = format!(

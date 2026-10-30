@@ -471,6 +471,12 @@ fn render_rust(
         SceType::Bytes => "&'a [u8]".to_string(),
         other => l.type_name(other).into_owned(),
     })?;
+    // docs/adr/0065: whether the encode can refuse a value, which decides what
+    // `encode` and `encode_to_vec` return.
+    ctx.insert(
+        "encode_may_fail".into(),
+        crate::forge::codec_totality::may_fail(m, imports).into(),
+    );
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for entry in entries.iter_mut() {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();

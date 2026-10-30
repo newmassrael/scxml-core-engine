@@ -9,7 +9,7 @@
      MCU-only. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_tlv_entry">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_tlv_entry">
   <datamodel>
     <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>

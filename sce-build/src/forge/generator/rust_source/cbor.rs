@@ -17,6 +17,7 @@
 
 use super::super::*;
 use crate::forge::cbor_codec;
+use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::model::CborEntry;
 
 /// What the interface of one codec is made from.
@@ -50,31 +51,47 @@ fn accessor_type(input: &Input<'_>, e: &CborEntry) -> String {
     }
 }
 
-/// The statements that write the value `v` of `e`, after its key.
-fn write_value(input: &Input<'_>, e: &CborEntry) -> Vec<String> {
+/// The statements that write the value `v` of `e`, after its key. A refusal is
+/// written where `totality` names one, and only there.
+fn write_value(input: &Input<'_>, totality: &Totality, e: &CborEntry) -> Vec<String> {
     let mut out = Vec::new();
-    let bound = |out: &mut Vec<String>, test: String, refusal: &str| {
+    let bound = |out: &mut Vec<String>, test: String, kind: RefusalKind| {
         out.push(format!("if {test} {{"));
-        out.push(format!("    return Err(CodecError::{refusal});"));
+        out.push(format!(
+            "    return Err({});",
+            totality.require(kind, &e.id)
+        ));
         out.push("}".to_string());
     };
     match cbor_codec::kind(e) {
         "bool" => out.push("cbor::write_bool(w, v)?;".to_string()),
         "text" => {
             if let Some(max) = e.max_size {
-                bound(&mut out, format!("v.len() > {max}"), "CborOutOfRange");
+                bound(
+                    &mut out,
+                    format!("v.len() > {max}"),
+                    RefusalKind::CborOutOfRange,
+                );
             }
             out.push("cbor::write_text(w, v)?;".to_string());
         }
         "bytes" => {
             if let Some(max) = e.max_size {
-                bound(&mut out, format!("v.len() > {max}"), "CborOutOfRange");
+                bound(
+                    &mut out,
+                    format!("v.len() > {max}"),
+                    RefusalKind::CborOutOfRange,
+                );
             }
             out.push("cbor::write_bytes(w, v)?;".to_string());
         }
         "bytes_exact" => {
             let length = e.length.expect("an exact byte string declares its length");
-            bound(&mut out, format!("v.len() != {length}"), "CborWrongLength");
+            bound(
+                &mut out,
+                format!("v.len() != {length}"),
+                RefusalKind::CborWrongLength,
+            );
             out.push("cbor::write_bytes(w, v)?;".to_string());
         }
         "enum" => {
@@ -85,18 +102,21 @@ fn write_value(input: &Input<'_>, e: &CborEntry) -> Vec<String> {
                 .expect("the import resolved the enum's carrier");
             let underlying = input.l.codec_carrier_expr(e.present_type(), "v");
             // A signed carrier can hold a value no unsigned integer carries.
-            out.push(if matches!(
-                carrier,
-                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
-            ) {
-                format!(
-                    "cbor::write_uint(w, u64::try_from({underlying}).map_err(|_| CodecError::CborOutOfRange)?)?;"
-                )
-            } else if carrier == SceType::Uint64 {
-                format!("cbor::write_uint(w, {underlying})?;")
-            } else {
-                format!("cbor::write_uint(w, u64::from({underlying}))?;")
-            });
+            out.push(
+                if matches!(
+                    carrier,
+                    SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
+                ) {
+                    format!(
+                        "cbor::write_uint(w, u64::try_from({underlying}).map_err(|_| {})?)?;",
+                        totality.require(RefusalKind::CborOutOfRange, &e.id)
+                    )
+                } else if carrier == SceType::Uint64 {
+                    format!("cbor::write_uint(w, {underlying})?;")
+                } else {
+                    format!("cbor::write_uint(w, u64::from({underlying}))?;")
+                },
+            );
         }
         _ => {
             if *e.present_type() == SceType::Uint64 {
@@ -137,6 +157,8 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
 
     // The entries as written: the map head counts the present ones, then each
     // follows in ascending key order.
+    let totality = codec_totality::analyse(m, &mut codec_totality::Resolved(input.imports));
+    let may_fail = !totality.is_total();
     let required = m.cbor_entries.iter().filter(|e| e.is_required()).count();
     let mut body: Vec<String> = Vec::new();
     let optional: Vec<&CborEntry> = m.cbor_entries.iter().filter(|e| !e.is_required()).collect();
@@ -156,7 +178,7 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
     by_key.sort_by_key(|e| e.key);
     for e in by_key {
         let acc = accessor(e);
-        let write = write_value(input, e);
+        let write = write_value(input, &totality, e);
         if e.is_required() {
             body.push(format!("let v = src.{acc}();"));
             body.push(format!("cbor::write_uint(w, {})?;", e.key));
@@ -170,6 +192,24 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
     }
     body.push("Ok(())".to_string());
     let body = super::indent(&body, 8);
+    totality.assert_all_written(&m.name);
+
+    // A map whose entries can break a bound is written into a sink that only
+    // counts first, so a refusal leaves the caller's sink untouched; one whose
+    // entries cannot has nothing to find first.
+    let (doc, guard) = if may_fail {
+        (
+            "\x20   /// declared bound is refused before the first byte is written.\n",
+            "\x20       Self::count_source(src)?;\n",
+        )
+    } else {
+        (
+            "\x20   /// declared bound is not one a value of it can break: the only error is\n\
+             \x20   /// the sink's (docs/adr/0065).\n",
+            "",
+        )
+    };
+    let result = super::write_result(may_fail, "K");
 
     format!(
         "// ── Source (ADR 0058) ────────────────────────────────────────────────\n\
@@ -183,20 +223,22 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
          impl{lt} {name}{lt} {{\n\
          \x20   /// Encode what `src` says as one CBOR map into `w`: the entries present in\n\
          \x20   /// ascending key order, every head in its shortest form. An entry past its\n\
-         \x20   /// declared bound is refused before the first byte is written.\n\
-         \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
-         \x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;\n\
+         {doc}\
+         \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
+         {guard}\
          \x20       Self::write_source(src, w)\n\
          \x20   }}\n\n\
          \x20   /// [`Self::encode_source`] without the pre-pass a parent has already made.\n\
          \x20   #[doc(hidden)]\n\
          {inline}\
-         \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+         \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> {result} {{\n\
          {body}\
-         \x20   }}\n\
+         \x20   }}\n\n\
+         {count}\
          }}\n\n\
          {measure}",
+        count = super::count_function(&trait_name, "", "", may_fail),
         inline = super::write_attribute(input.inline_encode),
-        measure = super::measure_impl(name, lt, &trait_name, input.inline_encode),
+        measure = super::measure_impl(name, lt, &trait_name, input.inline_encode, may_fail),
     )
 }

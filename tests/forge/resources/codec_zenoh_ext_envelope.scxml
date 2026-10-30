@@ -34,7 +34,7 @@
        0x52 = ext_id=2,  M=1, enc=2 (ZBuf), Z=0  →  0x52 = 0x40 | 0x10 | 0x02 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_envelope">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_ext_envelope">
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>

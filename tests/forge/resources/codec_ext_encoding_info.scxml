@@ -43,7 +43,7 @@
         observable. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_ext_encoding_info">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_ext_encoding_info">
   <datamodel>
     <sce:flags id="combined_id" sce:type="uint32" sce:byte="0" sce:bit-size="vle">
       <sce:flag name="has_schema" bit="0"/>

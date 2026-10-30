@@ -145,6 +145,12 @@ skip the counting pre-pass of §3; it is not part of the signature, so adding a 
 its consumers' types. A procedure whose `<send>` payload is such a call fails the send with `Event::Fail` and the
 error, as the service failing would.
 
+*Amended by ADR 0065 (2026-10-30).* The facade is no longer uniformly fallible. A codec states on its root whether
+its encode can refuse a value (`sce:encode-may-fail`), and the build holds the statement to the refusals it finds. A
+total codec's `encode_to_vec` returns `Vec<u8>` and its `encode` only the sink's error. The stability argument above
+is kept, by the declaration: a codec that gains a refusal changes its declaration in the same commit, and the build
+refuses it where it is written until it does.
+
 ### 3. The encode checks the source and computes what the encoding determines before anything is written
 
 *Amended; as landed in step 2.* A builder cannot hold a value that breaks a bound its types state: a

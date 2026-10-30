@@ -10,7 +10,7 @@
   write is observable.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_map" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_map" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <data id="source" sce:type="string" sce:key="1" sce:max-size="64" sce:direction="out"/>

@@ -1425,6 +1425,38 @@ pub enum ValidationError {
     )]
     AlgorithmRequireWithoutMayFail { algorithm: String, cond: String },
 
+    /// SCE_FORGE.md §4.6, docs/adr/0065 §3: a codec that does not declare
+    /// `sce:encode-may-fail="true"` states that its encode is total, and the
+    /// encode refuses a value its source admits at `element`. Reported once
+    /// for each place the encode refuses.
+    ///
+    /// No `fix`: two repairs are right and the record cannot choose — declare
+    /// `sce:encode-may-fail="true"`, or change the grammar so the refusal is
+    /// gone (a wider field, a bound the value's type already keeps).
+    #[error(
+        "codec '{codec}': the encode refuses a value at `{element}`: {reason} ({kind}), and the \
+         codec does not declare sce:encode-may-fail=\"true\" — declare it, or change the grammar \
+         so the encode cannot refuse there"
+    )]
+    CodecUndeclaredEncodeRefusal {
+        codec: String,
+        element: String,
+        /// The error the encode returns there (`LengthOutOfRange`, …), or
+        /// that a codec it holds refuses.
+        kind: String,
+        reason: String,
+    },
+
+    /// SCE_FORGE.md §4.6, docs/adr/0065 §3: a codec declares
+    /// `sce:encode-may-fail="true"` and its encode refuses no value. A
+    /// declaration that is not true tells every consumer to handle an error
+    /// that cannot occur.
+    #[error(
+        "codec '{codec}' declares sce:encode-may-fail=\"true\", and its encode refuses no value \
+         — drop the declaration"
+    )]
+    CodecEncodeMayFailWithoutRefusal { codec: String },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

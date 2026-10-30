@@ -22,7 +22,7 @@
      length-ref bytes field, a VLE count and a repeat. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_chain_has_envelope">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_has_envelope">
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <sce:import src="codec_chain_has_slice.scxml" kind="codec" as="codec_chain_has_slice"/>
   <datamodel>

@@ -34,7 +34,7 @@
        zid_len_m1=15 zid=[16 bytes 0x10..0x1F]       → 0x0F 0x10..0x1F (17 bytes) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_scout_zid_body">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_scout_zid_body">
   <datamodel>
     <sce:field id="zid_len_m1" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="zid" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"

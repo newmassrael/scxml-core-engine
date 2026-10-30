@@ -24,15 +24,6 @@ use std::path::Path;
 mod rust_source;
 mod rust_view;
 
-/// Whether the encode of a codec can refuse a value (ADR 0058), given whether
-/// each codec it imports can. See [`rust_source::can_refuse_with`].
-pub(crate) fn source_can_refuse_with(
-    m: &CodecModel,
-    child_refuses: impl FnMut(&str) -> bool,
-) -> bool {
-    rust_source::can_refuse_with(m, child_refuses)
-}
-
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(
@@ -9735,6 +9726,13 @@ fn render_codec(
             })?;
             ctx.insert("source_block".into(), text.into());
         }
+        // docs/adr/0065: whether the encode can refuse a value, which decides
+        // what every form's `encode` and `encode_to_vec` return. Read from the
+        // one analysis the source block was written by.
+        ctx.insert(
+            "encode_may_fail".into(),
+            crate::forge::codec_totality::may_fail(m, imports).into(),
+        );
         ctx.insert(
             "cursor_lifetime".into(),
             if self_borrowed { "'a" } else { "'_" }.into(),
@@ -25422,6 +25420,7 @@ fn render_procedure_cpp(
         &procedure_type_ctx,
         &rename_map,
         None,
+        imports,
     )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
@@ -25951,11 +25950,9 @@ fn render_procedure_c_l2(
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
-                        // A codec's encode refuses a value it cannot carry
-                        // (ADR 0058), so a payload that is one is a `Result`.
                         "payload_fallible": payload_expr
                             .as_deref()
-                            .is_some_and(|e| e.contains(".encode_to_vec()")),
+                            .is_some_and(|e| payload_may_fail(e, imports)),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))
                 })
@@ -26618,12 +26615,24 @@ fn build_procedure_non_final_states(
 }
 
 /// Build states with onentry sends for procedure templates.
+/// Whether a `<send>` payload, as the procedure writes it, is the encode of a
+/// codec that can refuse the value (docs/adr/0065 §4): its `encode_to_vec` is
+/// then a `Result`, and the send fails with the refusal. A codec whose encode
+/// is total returns its bytes, and a send of them has nothing to fail with.
+fn payload_may_fail(expr: &str, imports: &[ImportContext]) -> bool {
+    imports
+        .iter()
+        .filter(|i| i.kind == "codec" && i.codec_source_can_refuse)
+        .any(|i| expr.contains(&format!("{}.encode_to_vec()", i.member_name)))
+}
+
 fn build_procedure_states_with_entry(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
     payload_rename_map: Option<&std::collections::HashMap<&str, &str>>,
+    imports: &[ImportContext],
 ) -> Result<Vec<serde_json::Value>, ForgeError> {
     let payload_map = payload_rename_map.unwrap_or(rename_map);
     m.states
@@ -26672,11 +26681,9 @@ fn build_procedure_states_with_entry(
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
-                        // A codec's encode refuses a value it cannot carry
-                        // (ADR 0058), so a payload that is one is a `Result`.
                         "payload_fallible": payload_expr
                             .as_deref()
-                            .is_some_and(|e| e.contains(".encode_to_vec()")),
+                            .is_some_and(|e| payload_may_fail(e, imports)),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))
                 })
@@ -27102,6 +27109,7 @@ fn render_procedure_kotlin(
         &procedure_type_ctx,
         &rename_map,
         None,
+        imports,
     )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
@@ -27381,6 +27389,7 @@ fn render_procedure_rust(
         &procedure_type_ctx,
         &rename_map,
         Some(&payload_rename_map),
+        imports,
     )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
@@ -27608,6 +27617,7 @@ fn render_procedure_go(
         &procedure_type_ctx,
         &rename_map,
         None,
+        imports,
     )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
@@ -27821,6 +27831,7 @@ fn render_procedure_python(
         &procedure_type_ctx,
         &rename_map,
         None,
+        imports,
     )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
@@ -36859,6 +36870,10 @@ fn render_codec_test_vector_sidecar(
         "test_vectors".into(),
         minijinja::Value::from_serialize(&rows),
     );
+    // docs/adr/0065: a codec that declares its encode can refuse a value has
+    // a `Result` to unwrap; one whose encode is total returns its bytes. The
+    // declaration is what the build has held to the analysis.
+    ctx.insert("encode_may_fail".into(), m.encode_may_fail.into());
     // Consumer-requested owned-projection round-trip (Rust): a plain
     // codec sidecar-eligible here is borrowed iff it holds a scalar
     // `Bytes` / `String` view (no embed / repeat / tlv / variant bodies

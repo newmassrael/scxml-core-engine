@@ -63,7 +63,8 @@ use sce_forge_runtime::codec::SceCursor;
 #[test]
 fn default_marker_round_trips_via_declared_default_arm() {
     let original = CodecVariantDefaultMarker::default();
-    let bytes = original.encode_to_vec().expect("the default value encodes");
+    // The codec's encode is total (docs/adr/0065): it returns its bytes.
+    let bytes = original.encode_to_vec();
 
     // Sanity: encode must emit at least the inner arm B's wire shape
     // (1 byte header + 2 byte uint16 payload = 3 bytes).
@@ -121,7 +122,7 @@ fn default_marker_round_trips_via_declared_default_arm() {
     }
 
     // Re-encode must produce byte-equal output to the first encode.
-    let re_encoded = decoded.encode_to_vec().expect("the decoded value encodes");
+    let re_encoded = decoded.encode_to_vec();
     assert_eq!(
         bytes, re_encoded,
         "decode → encode produced different bytes; round-trip is not \

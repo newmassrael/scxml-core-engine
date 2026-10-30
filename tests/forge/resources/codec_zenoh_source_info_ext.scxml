@@ -48,7 +48,7 @@
          envelope = 0x13 0xF0 ... 0x00 0x00 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_source_info_ext">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_source_info_ext">
   <sce:import src="codec_zenoh_source_info.scxml" kind="codec"
               as="codec_zenoh_source_info"/>
   <datamodel>

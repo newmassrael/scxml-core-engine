@@ -53,7 +53,7 @@
      header + ext chain). Ships on all 6 backends. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_declaration">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_declaration">
   <sce:import src="codec_zenoh_decl_kexpr.scxml"      kind="codec" as="codec_zenoh_decl_kexpr">
     <sce:flag-bind input="N" source="header.N"/>
   </sce:import>

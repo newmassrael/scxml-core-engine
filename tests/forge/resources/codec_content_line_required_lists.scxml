@@ -18,7 +18,7 @@
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0"
-       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"
        name="codec_content_line_required_lists">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>

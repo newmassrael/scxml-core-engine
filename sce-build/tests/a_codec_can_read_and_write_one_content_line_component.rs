@@ -34,6 +34,12 @@ fn document(root_attrs: &str, entries: &str) -> String {
     )
 }
 
+/// The root attribute that states the codec's encode can refuse a value
+/// (`sce:encode-may-fail`, docs/adr/0065). A content-line string, enum or
+/// parameter entry is one the encode can refuse, so a document holding one that is
+/// generated states it.
+const ENCODE_MAY_FAIL: &str = r#" sce:encode-may-fail="true""#;
+
 /// The shape of the component the calendar reads: required text, a TEXT, a
 /// property with a parameter, a rule carried as written, a repeated property and
 /// a bool and an integer. An entry of a bare type is required and one of
@@ -523,7 +529,7 @@ fn every_backend_generates_a_content_line_codec() {
 fn the_generator_writes_the_codec_in_every_language() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
-    std::fs::write(&source, document("", EVENT)).expect("write the document");
+    std::fs::write(&source, document(ENCODE_MAY_FAIL, EVENT)).expect("write the document");
     for language in emitting(ForgeKind::Codec) {
         let lang = language.canonical_name();
         let out = dir.path().join(format!("out_{lang}"));
@@ -553,7 +559,7 @@ fn the_generator_writes_the_codec_in_every_language() {
 fn rust_generates_the_codec_and_it_reads_and_writes_through_the_runtime_alone() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
-    std::fs::write(&source, document("", EVENT)).expect("write the document");
+    std::fs::write(&source, document(ENCODE_MAY_FAIL, EVENT)).expect("write the document");
     let out = dir.path().join("out_rust");
     let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .args(["generate", "-l", "rust", "-o"])
@@ -592,12 +598,13 @@ fn rust_generates_the_codec_and_it_reads_and_writes_through_the_runtime_alone() 
 // ── An enum entry (docs/adr/0015) ───────────────────────────────────────
 
 /// A codec that imports an enum as `Status` and reads it as a property's value,
-/// as a repeated property's value and as a parameter.
+/// as a repeated property's value and as a parameter. Its encode can refuse an
+/// enum value with no text its line can carry, so it states so.
 fn enum_document(entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT" name="probe_event" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT" name="probe_event" version="1.0">
   <sce:import kind="enum" src="probe_status.scxml" as="Status"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>

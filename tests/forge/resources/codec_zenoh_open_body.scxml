@@ -40,7 +40,7 @@
          cookie=[0xCA, 0xFE, 0xBA, 0xBE] → 0x78 0x2A 0x04 0xCA 0xFE 0xBA 0xBE -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_open_body">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_open_body">
   <sce:flag-inputs>
     <sce:flag-input name="A" width="1"/>
   </sce:flag-inputs>

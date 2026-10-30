@@ -965,6 +965,34 @@ Byte-level encode/decode. Bit position, size, endianness.
 
 Codegen generates bounds checking for all variable-length fields: frame length is validated against `sce:byte` offset + `sce:max-size` before access. Decode returns an error/empty result for truncated frames.
 
+**Whether the encode can refuse a value — `sce:encode-may-fail`** (docs/adr/0065). An encode is total when every value a source can present (docs/adr/0058 §1) has a frame. It refuses a value at these places:
+
+- a byte or text length past a length field narrower than 64 bits, or empty where the wire holds the length less one (`sce:length-arith`);
+- a list past its `sce:max-count`, or a chain past its `max-depth`;
+- a default arm's tag past the bits it is written into;
+- a gated field whose presence disagrees with a gate the encoder cannot derive (a flag a parent passes in, `a.X || b.Y`, `<chain>.has(..)`);
+- two lists that share one count with different lengths;
+- a CBOR entry past its `sce:max-size` or other than its `sce:length`;
+- a content-line value its line cannot carry;
+- a codec it holds refusing.
+
+A codec states which kind it is on its root:
+
+- absent or `false`, the encode is total;
+- `sce:encode-may-fail="true"`, it can refuse.
+
+The build holds the statement to the places it finds, once, before any backend renders. A codec that states it is total and refuses somewhere is `codec/undeclared-encode-refusal`, at the first such place, with what the value can say there. A codec that states `true` and refuses nowhere is `codec/encode-may-fail-without-refusal`. A conversion that cannot fail is not a refusal: a length into a 64-bit field, a count bounded by its list's `sce:max-count` into a field that holds the bound, a known arm's tag.
+
+On Rust, a total codec's encode returns only its sink's error:
+
+- `encode` and `encode_source` return `Result<(), K::Error>`;
+- `encode_to_vec` returns `Vec<u8>`;
+- `measure` returns the witness itself.
+
+The error of `VecSink` and `CountSink` is `core::convert::Infallible`, so the compiler, not a comment, proves that the frame is written. A codec that can refuse returns `CodecError`, which a sink's error joins (`where CodecError: From<K::Error>`). A sink outside the runtime names its error (`type Error = CodecError;`). The other backends keep their encode until each takes the source interface (docs/adr/0058 §6).
+
+`sce-build/src/forge/codec_totality.rs` is the one statement of where an encode refuses. The Rust encode writes a refusal only where it names one, and the generator stops if the two disagree. `sce-build/tests/codec_totality.rs` holds every codec document in the tree to its statement.
+
 **`sce:max-size` and the Rust owned form**: `sce:max-size` (default 256, `BYTES_DEFAULT_MAX`) sizes the encode buffer and the inline capacity of that field; it is *not* an on-wire ceiling. The Rust borrowed view is always a zero-copy `&[u8]` / `&str` of any length. The lifetime-free owned mirror is `{Codec}Owned<S>`, parameterised by a storage profile `S: CodecStorage` rather than fixed at build-configuration time: `{Codec}Owned<Heap>` holds growable containers with every declared capacity advisory, `{Codec}Owned<Inline>` holds each field inline at its declared capacity and never allocates, and **both exist in the same binary**. Bare `{Codec}Owned` is `DefaultStorage` — `Heap` where an allocator is available, `Inline` on the heap-free tier — so a heap-capable program can still pin a real-time value to storage that is guaranteed not to allocate, and a `list`- or `embed`-bearing codec has an owned form on the MCU tier as well (the mirror carries no `alloc` gate). `try_into_owned_in::<S>()` picks the profile at a decode boundary and `try_into_owned()` takes the default; on `Inline` a field past its declared capacity raises `CodecError::TooManyElements` (the same bound decode enforces), on `Heap` the copy cannot fail. `transcode_in::<D>()` moves a value between profiles as a checked projection — a value that does not fit the destination is rejected, never truncated. A hand-assembled builder names the profile once, on the binding or the enclosing return type (`let v: {Codec}Owned = {Codec}Owned { .. }`), because an associated container type cannot be run backwards to recover `S` from a value; each field's `N` then infers from the field type via the profile's ctor (`SceBytes::from_slice(&v)?` on the default profile) rather than being hardcoded.
 
 **Filling a value in place — `decode_into` and `try_as_borrowed_into` (Rust)**: a bounded list (`<sce:repeat>`, `<sce:tlv-chain>`) is a `heapless::Vec<T, N>` in the borrowed view, and a `heapless::Vec` moves by copying its whole declared capacity, not its length. A `decode` that returns its value therefore copies the declared maximum at every hop on the way up — the struct literal, `Ok(..)`, a variant wrapper, the caller's binding — and a projection that returns a borrowed view does the same. Every Rust codec offers `X::decode_into(cursor, &mut out, <flag inputs>, <tag>)`, which takes the arguments `decode` takes after the cursor and builds each list, embedded body and variant arm in the field of `out` where it will live, and every owned mirror offers `try_as_borrowed_into(&self, &mut out)` (`as_borrowed_into` where the projection cannot fail), which does the same from the owned side. `decode` and `try_as_borrowed` remain, as wrappers over them, and cost one move of the result. On `Err`, `out` holds what was filled so far and is not to be read; on success every field of `out` is overwritten and each list is cleared first, so a destination can be reused. Measured on the Zenoh request codecs for `thumbv7em-none-eabihf` at `opt-level = "s"`, `Request::decode` made 15 copy calls of up to 1439 bytes and `Request::decode_into` makes 2 of 22 bytes; the owned→borrowed projection of a response went from about 3.9 KB of list and body copies to none beyond one entry at a time. A caller on a path where the copy shows holds the destination itself and calls the `_into` form. A sender that holds an owned value does not need the projection at all: every owned mirror has `encode(&self, w, <flag inputs>)` and `encode_to_vec`, which write the bytes straight from the owned fields, the bytes `try_as_borrowed` followed by the borrowed `encode` writes. It is the same emission as the borrowed form (one skeleton, and only the reads that go through a storage container differ), and it refuses what the projection refused: a list longer than the borrowed view declares raises `CodecError::TooManyElements`, so its `encode_to_vec` is fallible for a codec holding a bounded list. Measured on the Zenoh request codecs for `thumbv7em-none-eabihf` at `opt-level = "s"`, sending a request through the projection by value reaches 4.1 KB of copy sites and a 3.5 KB stack frame, through `try_as_borrowed_into` 0.5 KB and 1.8 KB, and through the owned `encode` none and no frame of its own.

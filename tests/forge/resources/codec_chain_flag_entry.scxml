@@ -14,7 +14,7 @@
        wide=1 : byte 1..2  long_value (uint16, big endian) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_chain_flag_entry">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_flag_entry">
   <sce:flag-inputs>
     <sce:flag-input name="wide" width="1"/>
   </sce:flag-inputs>

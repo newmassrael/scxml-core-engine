@@ -40,7 +40,7 @@
          → 0x02 0xFD 0x10 0x11 ... 0x1F -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_scout">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_scout">
   <datamodel>
     <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:flags id="cbyte" sce:type="uint8" sce:byte="1" sce:bit-size="8">

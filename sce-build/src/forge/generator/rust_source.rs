@@ -22,6 +22,7 @@
 
 use super::*;
 use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, Role};
+use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
 
 pub(super) mod cbor;
 pub(super) mod content_line;
@@ -57,6 +58,54 @@ pub(super) struct Input<'a> {
     pub(super) inline_encode: bool,
 }
 
+/// What a function of a codec that writes into the sink `sink` returns, with
+/// the bound it needs (docs/adr/0065 §4): the sink's error alone for a codec
+/// whose encode is total, and `CodecError`, which the sink's error joins, for
+/// one that can refuse.
+pub(super) fn write_result(may_fail: bool, sink: &str) -> String {
+    if may_fail {
+        format!("Result<(), CodecError> where CodecError: From<{sink}::Error>")
+    } else {
+        format!("Result<(), {sink}::Error>")
+    }
+}
+
+/// `count_source`: the bytes a codec's `write_source` writes for `src`, run into
+/// a sink that only counts. A codec whose encode is total counts with nothing to
+/// handle; one that can refuse returns the refusal.
+///
+/// It is a function of its own, and the count is never run inline in a function
+/// that writes into the caller's sink `K`, because such a function of a codec
+/// that can refuse carries the bound `CodecError: From<K::Error>`, and Rust then
+/// selects that bound for the count's `CodecError: From<Infallible>` too, which
+/// it cannot satisfy. `params` and `args` are the codec's flag inputs as
+/// declared and as passed on.
+pub(super) fn count_function(trait_name: &str, params: &str, args: &str, may_fail: bool) -> String {
+    let (ret, run, out) = if may_fail {
+        (
+            "Result<usize, CodecError>",
+            format!("Self::write_source(src, &mut _c{args})?;"),
+            "Ok(_c.len())",
+        )
+    } else {
+        (
+            "usize",
+            format!("let Ok(()) = Self::write_source(src, &mut _c{args});"),
+            "_c.len()",
+        )
+    };
+    format!(
+        "\x20   /// The bytes [`Self::write_source`] writes for `src`, counted with\n\
+         \x20   /// nothing written.\n\
+         \x20   #[doc(hidden)]\n\
+         \x20   pub fn count_source<S: {trait_name} + ?Sized>(src: &S{params}) -> {ret} {{\n\
+         \x20       let mut _c = ::sce_forge_runtime::codec::CountSink::new();\n\
+         \x20       {run}\n\
+         \x20       {out}\n\
+         \x20   }}\n"
+    )
+}
+
 /// The attribute of a function that writes, for [`Input::inline_encode`].
 pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
     if inline_encode {
@@ -70,7 +119,9 @@ pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
 /// codec has none yet.
 pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     let plan = Plan::of(input)?;
-    Ok(plan.text())
+    let text = plan.text();
+    plan.totality.assert_all_written(&input.m.name);
+    Ok(text)
 }
 
 /// The link from a codec's `write_source` to the counted-source witness
@@ -79,7 +130,18 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
 /// no wire rule; the one statement is `write_source`. `lt` is the codec's
 /// lifetime parameter (`<'a>` or nothing). A codec that takes a flag from its
 /// parent is written only through that parent and has no measure.
-pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str, inline_encode: bool) -> String {
+///
+/// A codec whose encode is total states the sink's error as its own
+/// (`type Error<E> = E`), so its measure, whose count cannot refuse, returns the
+/// witness with no `Result` (docs/adr/0065 §4); one that can refuse states
+/// `CodecError`.
+pub(super) fn measure_impl(
+    name: &str,
+    lt: &str,
+    trait_name: &str,
+    inline_encode: bool,
+    may_fail: bool,
+) -> String {
     let generics = match lt.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
         Some(lifetime) => format!("<{lifetime}, S: {trait_name} + ?Sized>"),
         None => format!("<S: {trait_name} + ?Sized>"),
@@ -105,23 +167,46 @@ pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str, inline_encode
     } else {
         String::new()
     };
+    let (error, write_error) = if may_fail {
+        ("CodecError", "CodecError")
+    } else {
+        ("E", "K::Error")
+    };
+    let measure = if may_fail {
+        format!(
+            "\x20   /// The size of the frame [`Self::encode_source`] writes for `src`, found\n\
+             \x20   /// with nothing written, or the refusal that encode would give. The result\n\
+             \x20   /// writes the frame into a window of exactly that size and cannot fail.\n\
+             {inline}\
+             \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {{\n\
+             \x20       ::sce_forge_runtime::codec::measure(src)\n\
+             \x20   }}\n\n"
+        )
+    } else {
+        format!(
+            "\x20   /// The size of the frame [`Self::encode_source`] writes for `src`, found\n\
+             \x20   /// with nothing written: the encode refuses no value, so neither does\n\
+             \x20   /// this. The result writes the frame into a window of exactly that size\n\
+             \x20   /// and cannot fail.\n\
+             {inline}\
+             \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {{\n\
+             \x20       let Ok(measured) = ::sce_forge_runtime::codec::measure(src);\n\
+             \x20       measured\n\
+             \x20   }}\n\n"
+        )
+    };
     format!(
         "impl{generics} ::sce_forge_runtime::codec::SourceWrite<S> for {name}{lt} {{\n\
+         \x20   type Error<E> = {error};\n\n\
          {inline}\
-         \x20   fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+         \x20   fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), {write_error}> where CodecError: From<K::Error> {{\n\
          \x20       Self::write_source(src, w)\n\
          \x20   }}\n\
          {window_choice}\
          }}\n\n\
          #[allow(dead_code)]\n\
          impl{lt} {name}{lt} {{\n\
-         \x20   /// The size of the frame [`Self::encode_source`] writes for `src`, found\n\
-         \x20   /// with nothing written, or the refusal that encode would give. The result\n\
-         \x20   /// writes the frame into a window of exactly that size and cannot fail.\n\
-         {inline}\
-         \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {{\n\
-         \x20       ::sce_forge_runtime::codec::measure(src)\n\
-         \x20   }}\n\n\
+         {measure}\
          \x20   /// Write `src` into `window` in one pass and return the bytes it is, for a\n\
          \x20   /// window as large as the caller can spare. On an error the window holds a\n\
          \x20   /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].\n\
@@ -189,6 +274,9 @@ struct Plan<'a> {
     roles: CodecRoles,
     /// `{Struct}Source`.
     trait_name: String,
+    /// Where the encode can refuse a value (docs/adr/0065): the one statement
+    /// of it, which every refusal written here must be in.
+    totality: Totality,
 }
 
 /// Whether `m` has a source interface, given whether each codec it imports has
@@ -206,35 +294,6 @@ pub(crate) fn supported_with(
         .map(|alias| (alias, import_has_source(alias)))
         .collect();
     check(m, &|alias| known.get(alias).copied().unwrap_or(false)).is_ok()
-}
-
-/// Whether the encode of a value of `m` can refuse it, given whether each codec
-/// it holds can. A conservative answer: a codec that cannot refuse writes every
-/// value it is given, so its `encode_to_vec` has no error to return, and one
-/// that is said to refuse and does not has an error it never returns.
-///
-/// A value is refused where an element is derived into a type that may not hold
-/// it (a length, a count, a tag), where a gate is checked against the source,
-/// where a list passes its bound, and where a codec it holds refuses. A CBOR or
-/// content-line codec refuses a value past its bounds.
-pub(crate) fn can_refuse_with(m: &CodecModel, mut child_refuses: impl FnMut(&str) -> bool) -> bool {
-    if m.encoding != CodecEncoding::Positional {
-        return true;
-    }
-    let roles = codec_roles::classify(m, &[]);
-    let derives = roles.derived().any(|(_, by)| {
-        by.iter().any(|d| {
-            !matches!(
-                d,
-                Derivation::PresenceOf { .. } | Derivation::ChainContinuation { .. }
-            )
-        })
-    });
-    derives
-        || !roles.checks.is_empty()
-        || m.variant.is_some()
-        || m.fields.iter().any(|f| f.is_repeat() || f.is_tlv_chain())
-        || child_aliases(m).into_iter().any(&mut child_refuses)
 }
 
 /// Whether the borrowed source of a codec (`{Codec}Parts`) carries a lifetime:
@@ -281,19 +340,6 @@ fn child_aliases(m: &CodecModel) -> Vec<&str> {
     aliases
 }
 
-/// The import alias of the codec a list or an embedded body holds.
-fn child_alias(field: &CodecField) -> Option<&str> {
-    if field.is_repeat() {
-        field.repeat_body_alias.as_deref()
-    } else if field.is_tlv_chain() {
-        field.tlv_chain_body_alias.as_deref()
-    } else if field.is_embed() {
-        field.embed_body_alias.as_deref()
-    } else {
-        None
-    }
-}
-
 impl<'a> Plan<'a> {
     fn of(input: &'a Input<'a>) -> Result<Self, Unsupported> {
         let roles = codec_roles::classify(input.m, input.imports);
@@ -308,7 +354,49 @@ impl<'a> Plan<'a> {
             input,
             roles,
             trait_name: format!("{}Source", input.struct_name),
+            totality: codec_totality::analyse(
+                input.m,
+                &mut codec_totality::Resolved(input.imports),
+            ),
         })
+    }
+
+    /// Whether the encode can refuse a value (docs/adr/0065): it then returns
+    /// `CodecError`, which the sink's error joins, and otherwise the sink's
+    /// error alone.
+    fn may_fail(&self) -> bool {
+        !self.totality.is_total()
+    }
+
+    /// The error the encode returns where it refuses at `element` with `kind`,
+    /// which the totality analysis must name ([`codec_totality::Totality::require`]).
+    fn refuse(&self, kind: RefusalKind, element: &str) -> String {
+        self.totality.require(kind, element)
+    }
+
+    /// Whether the codec imported as `alias` can refuse a value.
+    fn child_may_fail(&self, alias: &str) -> bool {
+        self.input
+            .imports
+            .iter()
+            .any(|i| i.alias == alias && i.kind == "codec" && i.codec_source_can_refuse)
+    }
+
+    /// The `?` that passes on what a codec written at `element` (the import
+    /// `alias`) returns: its refusal, recorded as written, when it can refuse,
+    /// and its sink's error otherwise.
+    fn child_write(&self, alias: &str, element: &str) -> &'static str {
+        if self.child_may_fail(alias) {
+            self.refuse(RefusalKind::Child, element);
+        }
+        "?"
+    }
+
+    /// What a function that writes into the sink `sink` returns, with the bound
+    /// it needs: the sink's error alone for a total encode, and `CodecError`,
+    /// which the sink's error joins, for one that can refuse.
+    fn write_result(&self, sink: &str) -> String {
+        write_result(self.may_fail(), sink)
     }
 
     /// The imported codec a list or an embedded body holds, as the type it is
@@ -663,9 +751,10 @@ impl<'a> Plan<'a> {
                 continue;
             };
             lines.push(format!(
-                "if ({}) != src.{}().is_some() {{\n    return Err(CodecError::PresentIfMismatch);\n}}",
+                "if ({}) != src.{}().is_some() {{\n    return Err({});\n}}",
                 self.gate_test(gate, derived),
                 self.accessor(field),
+                self.refuse(RefusalKind::PresentIfMismatch, &field.id),
             ));
         }
     }
@@ -710,57 +799,22 @@ impl<'a> Plan<'a> {
         format!("_c_{}", self.l().codec_field_id(&field.id))
     }
 
-    /// Whether a source presents `field`: it is not derived whole.
+    /// Whether a source presents `field`: it is not derived whole
+    /// ([`codec_totality::presented`]).
     fn presented(&self, field: &CodecField) -> bool {
-        !matches!(
-            self.roles.role_of(&ElementId::Field(field.id.clone())),
-            Some(Role::Derived(_))
-        )
+        codec_totality::presented(&self.roles, field)
     }
 
     /// The fields whose size the element `id` is derived from, when it is a
-    /// length or a count.
+    /// length or a count ([`codec_totality::measured`]).
     fn measured(&self, id: &ElementId) -> Vec<&CodecField> {
-        let Some(Role::Derived(by)) = self.roles.role_of(id) else {
-            return Vec::new();
-        };
-        let names: Vec<&str> = by
-            .iter()
-            .flat_map(|d| match d {
-                Derivation::LengthOf { contents } => contents
-                    .iter()
-                    .map(|c| c.field.as_str())
-                    .collect::<Vec<_>>(),
-                Derivation::CountOf { lists } => lists.iter().map(String::as_str).collect(),
-                _ => Vec::new(),
-            })
-            .collect();
-        self.m()
-            .fields
-            .iter()
-            .filter(|f| names.contains(&f.id.as_str()))
-            .collect()
+        codec_totality::measured(self.m(), &self.roles, id)
     }
 
-    /// Whether the element `id` is derived only while the fields it measures are
-    /// there. A length or a count of content that is gated has nothing to be
-    /// derived from when the gate is off, and the wire still holds a number:
-    /// one the codec does not tie to anything it models (a total that bounds
-    /// more than the field, a number a sender keeps for its peer). The source
-    /// states that number, and the encode derives the rest.
-    fn stated_when_absent(&self, id: &ElementId) -> bool {
-        let measured = self.measured(id);
-        !measured.is_empty() && measured.iter().all(|f| f.present_if.is_some())
-    }
-
-    /// Whether a source states `field` when its content is absent
-    /// ([`Self::stated_when_absent`]): an element of the wire that is a
-    /// length or a count, not gated itself, which the content determines only
-    /// while there is content.
+    /// Whether a source states `field` when its content is absent: derived only
+    /// while the fields it measures are there ([`codec_totality::stated`]).
     fn stated(&self, field: &CodecField) -> bool {
-        !self.presented(field)
-            && field.present_if.is_none()
-            && self.stated_when_absent(&ElementId::Field(field.id.clone()))
+        codec_totality::stated(self.m(), &self.roles, field)
     }
 
     /// The condition, in a form that holds its fields as members, under which all
@@ -848,31 +902,7 @@ impl<'a> Plan<'a> {
     /// The type a tag takes: its carrier's, or the narrowest unsigned type that
     /// holds the bit-range it is read from.
     fn tag_type(&self) -> SceType {
-        let Some(variant) = &self.m().variant else {
-            return SceType::Uint8;
-        };
-        let flag_def = match (&variant.peek_byte, &variant.tag_flag) {
-            (Some(peek), Some(flag)) => peek.flags.iter().find(|f| &f.name == flag),
-            (None, Some(flag)) => variant
-                .tag_field
-                .as_ref()
-                .and_then(|id| self.m().fields.iter().find(|f| &f.id == id))
-                .and_then(|carrier| carrier.flags.iter().find(|f| &f.name == flag)),
-            _ => None,
-        };
-        match flag_def {
-            Some(def) => match def.width.max(1) {
-                0..=8 => SceType::Uint8,
-                9..=16 => SceType::Uint16,
-                17..=32 => SceType::Uint32,
-                _ => SceType::Uint64,
-            },
-            None => variant
-                .tag_field
-                .as_ref()
-                .and_then(|id| self.m().fields.iter().find(|f| &f.id == id))
-                .map_or(SceType::Uint8, |carrier| carrier.sce_type.clone()),
-        }
+        codec_totality::tag_type(self.m())
     }
 
     /// What the accessor of the variant returns: the enum, with the source of
@@ -1273,12 +1303,11 @@ impl<'a> Plan<'a> {
         let params = self.input_params();
         let args = self.input_args();
         let guard = if self.children_can_refuse() {
-            format!(
-                "\x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new(){args})?;\n"
-            )
+            format!("\x20       Self::count_source(src{args})?;\n")
         } else {
             String::new()
         };
+        let count = count_function(&self.trait_name, &params, &args, self.may_fail());
         let measure = if self.m().flag_inputs.is_empty() {
             format!(
                 "\n{}",
@@ -1286,11 +1315,19 @@ impl<'a> Plan<'a> {
                     self.name(),
                     self.lt(),
                     &self.trait_name,
-                    self.input.inline_encode
+                    self.input.inline_encode,
+                    self.may_fail(),
                 )
             )
         } else {
             String::new()
+        };
+        let refused = if self.may_fail() {
+            "\x20   /// `src` presents, and a value the encoding cannot carry is refused\n\
+             \x20   /// before the first byte is written.\n"
+        } else {
+            "\x20   /// `src` presents. Every value `src` can present has a frame, so the\n\
+             \x20   /// only error is the sink's (docs/adr/0065).\n"
         };
         format!(
             "#[allow(dead_code)]\n\
@@ -1298,18 +1335,19 @@ impl<'a> Plan<'a> {
              \x20   /// Encode what `src` says into the caller-owned sink: the bytes\n\
              \x20   /// [`Self::encode`] writes for the value it holds, read through\n\
              \x20   /// [`{trait_name}`]. A length, a count or a gate flag is computed from what\n\
-             \x20   /// `src` presents, and a value the encoding cannot carry is refused\n\
-             \x20   /// before the first byte is written.\n\
-             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
+             {refused}\
+             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> {result} {{\n\
              {guard}\
              \x20       Self::write_source(src, w{args})\n\
              \x20   }}\n\n\
-             {write}\
+             {write}\n\
+             {count}\
              }}\n\
              {measure}",
             lt = self.lt(),
             name = self.name(),
             trait_name = self.trait_name,
+            result = self.write_result("K"),
         )
     }
 
@@ -1321,12 +1359,13 @@ impl<'a> Plan<'a> {
         let params = self.input_params();
         let args = self.input_args();
         let inline = write_attribute(self.input.inline_encode);
+        let result = self.write_result("K");
         if self.overridable().is_empty() {
             return format!(
                 "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
                  \x20   #[doc(hidden)]\n\
                  {inline}\
-                 \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
+                 \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> {result} {{\n\
                  {body}\
                  \x20   }}\n"
             );
@@ -1336,14 +1375,14 @@ impl<'a> Plan<'a> {
             "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
              {inline}\
-             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
+             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> {result} {{\n\
              \x20       Self::write_source_in(src, w{args}, &{overrides}::default())\n\
              \x20   }}\n\n\
              \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
              \x20   /// ones `src` presents.\n\
              \x20   #[doc(hidden)]\n\
              {inline}\
-             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> Result<(), CodecError> {{\n\
+             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> {result} {{\n\
              {body}\
              \x20   }}\n"
         )
@@ -1391,9 +1430,10 @@ impl<'a> Plan<'a> {
                 format!("{enum_name}::Default {{ body: _b, .. }}")
             };
             lines.push(format!(
-                "    {pattern} => {}::write_source(_b, w{})?,",
+                "    {pattern} => {}::write_source(_b, w{}){},",
                 arm.child.type_name,
-                self.thread_args(&arm.alias, derived)
+                self.thread_args(&arm.alias, derived),
+                self.child_write(&arm.alias, &arm.alias),
             ));
         }
         lines.push("}".to_string());
@@ -1581,17 +1621,16 @@ impl<'a> Plan<'a> {
                 continue;
             };
             let number = format!("_n{local}_{index}");
-            // The wire holds `count - arith`: a number that cannot be negative or
-            // larger than usize.
+            // The wire holds `count - arith`: a number that cannot be negative.
+            // A length plus a constant cannot pass `usize`, since a slice is
+            // at most `isize::MAX` bytes.
             let measure = |count: &str| match content.arith {
                 0 => count.to_string(),
-                arith if arith > 0 => {
-                    format!("{count}.checked_sub({arith}).ok_or(CodecError::LengthOutOfRange)?")
-                }
-                arith => format!(
-                    "{count}.checked_add({}).ok_or(CodecError::LengthOutOfRange)?",
-                    -arith
+                arith if arith > 0 => format!(
+                    "{count}.checked_sub({arith}).ok_or({})?",
+                    self.refuse(RefusalKind::LengthOutOfRange, &content.field)
                 ),
+                arith => format!("{count} + {}", -arith),
             };
             // A field gated off has no content to measure, so its length is the
             // wire's zero and not the arithmetic of an empty field.
@@ -1641,15 +1680,15 @@ impl<'a> Plan<'a> {
             };
             let local = self.count_local(field);
             lines.push(format!("let {local}: usize = {count};"));
-            let (bound, refusal) = match &field.bit_size {
-                BitSize::TlvChain { max_depth, .. } => (*max_depth, "TlvChainOverflow"),
-                _ => (
-                    crate::forge::limits::resolve_max_count(field.max_count),
-                    "TooManyElements",
-                ),
+            let kind = if field.is_tlv_chain() {
+                RefusalKind::TlvChainOverflow
+            } else {
+                RefusalKind::TooManyElements
             };
             lines.push(format!(
-                "if {local} > {bound} {{\n    return Err(CodecError::{refusal});\n}}"
+                "if {local} > {bound} {{\n    return Err({refusal});\n}}",
+                bound = codec_totality::list_bound(field),
+                refusal = self.refuse(kind, &field.id),
             ));
         }
     }
@@ -1698,16 +1737,26 @@ impl<'a> Plan<'a> {
             let args = child_alias(field)
                 .map(|alias| self.thread_args(alias, derived))
                 .unwrap_or_default();
-            let write = format!("{}::write_source(_v, &mut _c{args})?;", child.type_name);
-            let body_write = if field.present_if.is_some() {
-                format!("if let Some(_v) = src.{accessor}() {{\n    {write}\n}}")
+            // The body's own count ([`count_function`]): with nothing to handle
+            // for a body that cannot refuse, and its refusal passed on for one
+            // that can.
+            let alias = child_alias(field).unwrap_or_default();
+            let count = format!(
+                "{}::count_source(_v{args}){}",
+                child.type_name,
+                if self.child_may_fail(alias) {
+                    self.child_write(alias, &field.id)
+                } else {
+                    ""
+                }
+            );
+            lines.push(if field.present_if.is_some() {
+                format!(
+                    "let {size}: usize = match src.{accessor}() {{\n    Some(_v) => {count},\n    None => 0,\n}};"
+                )
             } else {
-                format!("let _v = src.{accessor}();\n{write}")
-            };
-            lines.push(format!(
-                "let {size}: usize = {{\n    let mut _c = ::sce_forge_runtime::codec::CountSink::new();\n{}\n    _c.len()\n}};",
-                indent(&[body_write], 4).trim_end_matches('\n')
-            ));
+                format!("let {size}: usize = {{\n    let _v = src.{accessor}();\n    {count}\n}};")
+            });
             // The length of a body that is not there is the wire's zero.
             numbers.push(Measure {
                 number: size,
@@ -1717,13 +1766,35 @@ impl<'a> Plan<'a> {
         self.derive_number(id, &local, numbers, lines, derived);
     }
 
+    /// The derived number `n`, a `usize`, as the type `ty` of the field
+    /// `element` it is written into (docs/adr/0065 §5): checked where the
+    /// totality analysis names a refusal there, widened where the field is 64
+    /// bits, and converted with nothing to check where the number's bound (the
+    /// `max-count` its list was held to above) fits the field.
+    fn narrow_number(&self, element: &str, ty: &SceType, n: &str) -> String {
+        let rust = self.l().type_name(ty);
+        if self
+            .totality
+            .refuses(RefusalKind::LengthOutOfRange, element)
+        {
+            format!(
+                "{rust}::try_from({n}).map_err(|_| {})?",
+                self.refuse(RefusalKind::LengthOutOfRange, element)
+            )
+        } else if *ty == SceType::Uint64 {
+            format!("::sce_forge_runtime::codec::widen_usize({n})")
+        } else {
+            format!("{n} as {rust}")
+        }
+    }
+
     /// The element `id` holds the number the `measures` say.
     ///
     /// What is always there fixes the number, and anything that is there beside
     /// it says the same or there is no frame that says both. When all that is
     /// measured may be absent, the number is derived while some of it is there;
     /// when none is, the wire still holds a number, and the source states it
-    /// ([`Self::stated_when_absent`]).
+    /// ([`codec_totality::stated_when_absent`]).
     fn derive_number(
         &self,
         id: &ElementId,
@@ -1732,7 +1803,13 @@ impl<'a> Plan<'a> {
         lines: &mut Vec<String>,
         derived: &mut Derived,
     ) {
-        let disagree = "{\n    return Err(CodecError::InconsistentSource);\n}";
+        let element = id.to_string();
+        let disagree = || {
+            format!(
+                "{{\n    return Err({});\n}}",
+                self.refuse(RefusalKind::InconsistentSource, &element)
+            )
+        };
         let always: Vec<&Measure> = measures.iter().filter(|m| m.present.is_none()).collect();
         let gated: Vec<&Measure> = measures.iter().filter(|m| m.present.is_some()).collect();
         // The number, as an expression of a `usize`, or the local that holds an
@@ -1742,16 +1819,19 @@ impl<'a> Plan<'a> {
         if let Some(anchor) = always.first() {
             for other in &always[1..] {
                 lines.push(format!(
-                    "if {} != {} {disagree}",
-                    other.number, anchor.number
+                    "if {} != {} {}",
+                    other.number,
+                    anchor.number,
+                    disagree()
                 ));
             }
             for g in &gated {
                 lines.push(format!(
-                    "if {} && {} != {} {disagree}",
+                    "if {} && {} != {} {}",
                     g.present.as_deref().unwrap_or("false"),
                     g.number,
-                    anchor.number
+                    anchor.number,
+                    disagree()
                 ));
             }
             number = anchor.number.clone();
@@ -1768,9 +1848,10 @@ impl<'a> Plan<'a> {
             lines.push(format!("let {one}: Option<usize> = {chain}{{ None }};"));
             for g in &gated[1..] {
                 lines.push(format!(
-                    "if {} && Some({}) != {one} {disagree}",
+                    "if {} && Some({}) != {one} {}",
                     g.present.as_deref().unwrap_or("false"),
-                    g.number
+                    g.number,
+                    disagree()
                 ));
             }
             free = Some(one);
@@ -1784,14 +1865,14 @@ impl<'a> Plan<'a> {
                     .find(|f| &f.id == name)
                     .expect("a derived field is a field of the codec");
                 let ty = self.l().type_name(&field.sce_type);
+                let narrow = |n: &str| self.narrow_number(&element, &field.sce_type, n);
                 match &free {
-                    None => lines.push(format!(
-                        "let {local}: {ty} = {ty}::try_from({number}).map_err(|_| CodecError::LengthOutOfRange)?;"
-                    )),
+                    None => lines.push(format!("let {local}: {ty} = {};", narrow(&number))),
                     // Gated beside its content, it is written only where there
                     // is content, and then the content says it.
                     Some(one) if !self.stated(field) => lines.push(format!(
-                        "let {local}: {ty} = {ty}::try_from({one}.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;"
+                        "let {local}: {ty} = {};",
+                        narrow(&format!("{one}.unwrap_or(0)"))
                     )),
                     // Derived while there is content, and what the source states
                     // while there is not; a source that states a number beside
@@ -1799,7 +1880,9 @@ impl<'a> Plan<'a> {
                     Some(one) => {
                         let accessor = self.accessor(field);
                         lines.push(format!(
-                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {ty}::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;\n        if src.{accessor}().is_some_and(|_s| _s != _d) {{\n            return Err(CodecError::InconsistentSource);\n        }}\n        _d\n    }}\n    None => src.{accessor}().unwrap_or_default(),\n}};"
+                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {};\n        if src.{accessor}().is_some_and(|_s| _s != _d) {{\n            return Err({});\n        }}\n        _d\n    }}\n    None => src.{accessor}().unwrap_or_default(),\n}};",
+                            narrow("_n"),
+                            self.refuse(RefusalKind::InconsistentSource, &element),
                         ));
                     }
                 }
@@ -1858,8 +1941,10 @@ impl<'a> Plan<'a> {
         }
         for pair in presences.windows(2) {
             lines.push(format!(
-                "if {} != {} {{\n    return Err(CodecError::InconsistentSource);\n}}",
-                pair[0], pair[1]
+                "if {} != {} {{\n    return Err({});\n}}",
+                pair[0],
+                pair[1],
+                self.refuse(RefusalKind::InconsistentSource, &id.to_string()),
             ));
         }
         derived
@@ -2043,6 +2128,7 @@ impl<'a> Plan<'a> {
                 let args = child_alias(field)
                     .map(|alias| self.thread_args_supplying(alias, derived, &supplied))
                     .unwrap_or_default();
+                let pass = self.child_write(child_alias(field).unwrap_or_default(), &field.id);
                 let updates: Vec<String> = binds
                     .iter()
                     .map(|(_, local, previous)| {
@@ -2060,14 +2146,14 @@ impl<'a> Plan<'a> {
                         let count = self.count_local(field);
                         body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
                         body.push(format!(
-                            "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count}))?;",
+                            "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count})){pass};",
                             child.type_name, child.overrides_path
                         ));
                     }
                     None => {
                         body.push(format!("for _e in {value} {{"));
                         body.push(format!(
-                            "    {}::write_source(&_e, w{args})?;",
+                            "    {}::write_source(&_e, w{args}){pass};",
                             child.type_name
                         ));
                     }
@@ -2083,8 +2169,9 @@ impl<'a> Plan<'a> {
                     .map(|alias| self.thread_args(alias, derived))
                     .unwrap_or_default();
                 body.push(format!(
-                    "{}::write_source({value}, w{args})?;",
-                    child.type_name
+                    "{}::write_source({value}, w{args}){};",
+                    child.type_name,
+                    self.child_write(child_alias(field).unwrap_or_default(), &field.id)
                 ));
             }
         }
@@ -2200,6 +2287,7 @@ impl Derived {
                     (1u64 << def.width) - 1
                 };
                 let mask = width_mask << def.bit;
+                let element = format!("{carrier_id}.{}", derived.flag);
                 let bits = match derived.kind {
                     FlagValue::Optional => {
                         optional.push((derived, def));
@@ -2207,26 +2295,35 @@ impl Derived {
                     }
                     FlagValue::Bool => format!("{ty}::from({})", derived.value),
                     FlagValue::Number => {
-                        // A number the flag's bit-range cannot hold is not a frame.
-                        lines.push(format!(
-                            "if {} > 0x{width_mask:X} {{\n    return Err(CodecError::LengthOutOfRange);\n}}",
-                            derived.value
-                        ));
+                        // A number the flag's bit-range cannot hold is not a
+                        // frame. Where the grammar bounds it within the bits (a
+                        // known arm's tag, a parent's tag masked to them, a
+                        // count held to its list's bound), there is nothing to
+                        // check.
+                        if plan
+                            .totality
+                            .refuses(RefusalKind::LengthOutOfRange, &element)
+                        {
+                            lines.push(format!(
+                                "if {} > 0x{width_mask:X} {{\n    return Err({});\n}}",
+                                derived.value,
+                                plan.refuse(RefusalKind::LengthOutOfRange, &element)
+                            ));
+                        }
                         if derived.ty == ty {
                             // Already the carrier's type: a conversion to it
-                            // is the identity, and says nothing the range
-                            // check above has not.
+                            // is the identity.
                             derived.value.clone()
                         } else {
+                            // Within the bit-range, so within the carrier's
+                            // type: the conversion keeps the value.
                             let narrowed = format!(
                                 "_v_{}_{}",
                                 plan.l().codec_field_id(&carrier.id),
                                 filters::to_snake_case(derived.flag.clone())
                             );
-                            lines.push(format!(
-                                "let {narrowed}: {ty} = {ty}::try_from({}).map_err(|_| CodecError::LengthOutOfRange)?;",
-                                derived.value
-                            ));
+                            lines
+                                .push(format!("let {narrowed}: {ty} = {} as {ty};", derived.value));
                             narrowed
                         }
                     }
@@ -2265,12 +2362,22 @@ impl Derived {
                 } else {
                     (1u64 << def.width) - 1
                 };
-                let placed = shl(
-                    &format!("{ty}::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?"),
-                    def.bit,
-                );
+                let element = format!("{carrier_id}.{}", derived.flag);
+                // Within the bit-range, so within the carrier's type.
+                let placed = shl(&format!("(_n as {ty})"), def.bit);
+                let check = if plan
+                    .totality
+                    .refuses(RefusalKind::LengthOutOfRange, &element)
+                {
+                    format!(
+                        "    if _n > 0x{width_mask:X} {{\n        return Err({});\n    }}\n",
+                        plan.refuse(RefusalKind::LengthOutOfRange, &element)
+                    )
+                } else {
+                    String::new()
+                };
                 lines.push(format!(
-                    "if let Some(_n) = {} {{\n    if _n > 0x{width_mask:X} {{\n        return Err(CodecError::LengthOutOfRange);\n    }}\n    {local} = ({local} & !0x{mask:X}) | {placed};\n}}",
+                    "if let Some(_n) = {} {{\n{check}    {local} = ({local} & !0x{mask:X}) | {placed};\n}}",
                     derived.value,
                     mask = width_mask << def.bit,
                 ));

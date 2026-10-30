@@ -1299,12 +1299,14 @@ fn an_element_that_borrows_its_buffer_is_stored_as_its_owned_form() {
 }
 
 /// A codec `event_record` whose `encode` and `decode` take a flag input from the
-/// caller, which a log stores with the entry.
+/// caller, which a log stores with the entry. The encoder cannot derive the gate of
+/// `detail` from a flag its caller passes in, so the codec declares that its encode
+/// can refuse.
 fn flag_input_codec() -> String {
     r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="event_record" version="1.0">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="event_record" version="1.0">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
   </sce:flag-inputs>
@@ -1317,12 +1319,19 @@ fn flag_input_codec() -> String {
         .to_string()
 }
 
-/// A CBOR codec `event_record` whose one entry is `entry`.
-fn cbor_codec_with(entry: &str) -> String {
+/// A CBOR codec `event_record` whose one entry is `entry`. `encode_may_fail` is what
+/// the root states about its encode: true for an entry the encode can refuse (one
+/// with a `sce:max-size` or a `sce:length`), false for one it cannot.
+fn cbor_codec_with(entry: &str, encode_may_fail: bool) -> String {
+    let declared = if encode_may_fail {
+        r#" sce:encode-may-fail="true""#
+    } else {
+        ""
+    };
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="event_record" version="1.0">
+       sce:kind="codec"{declared} sce:encoding="cbor" sce:codec-format="2" name="event_record" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     {entry}
@@ -1484,6 +1493,7 @@ fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_he
     let xml = event_ring();
     let borrowing = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let located = compile_documents(
         Language::Rust,
@@ -1501,8 +1511,10 @@ fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_he
         other => panic!("expected InvalidConfig, got {other:?}"),
     }
 
-    let scalar =
-        cbor_codec_with(r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#);
+    let scalar = cbor_codec_with(
+        r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#,
+        false,
+    );
     let code = generated_log(
         compile_documents(
             Language::Rust,
@@ -2239,6 +2251,7 @@ fn a_cbor_element_with_a_string_entry_is_held_by_go_because_its_decode_copies_it
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let code = generated_go_log(
         compile_documents(
@@ -2639,6 +2652,7 @@ fn c11_holds_a_cbor_element_with_text_because_its_struct_owns_the_bytes() {
     let xml = event_ring();
     let borrowing = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let code = generated_c_log(
         compile_documents(
@@ -3234,6 +3248,7 @@ fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_t
     // from the codec and the log is generated where Rust refuses it.
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let code = generated_cpp_log(
         compile_documents(
@@ -3506,6 +3521,7 @@ fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes(
     let xml = blocking_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let code = generated_python_log(
         compile_documents(
@@ -3943,6 +3959,7 @@ fn kotlin_holds_the_cbor_element_that_rust_refuses_for_borrowing_its_buffer() {
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
     );
     let code = generated_kotlin_log(
         compile_documents(

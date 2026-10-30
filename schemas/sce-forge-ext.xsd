@@ -518,6 +518,14 @@
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 
+  <!-- Section 4.6, docs/adr/0065: a codec's statement that its encode can
+       refuse a value. Absent or `false`, the encode is total and returns its
+       bytes; `true`, it can refuse a value its encoding cannot carry. The
+       build holds the statement to the refusals it finds and refuses a codec
+       whose statement disagrees (`codec/undeclared-encode-refusal`,
+       `codec/encode-may-fail-without-refusal`). -->
+  <xs:attribute name="encode-may-fail" type="xs:boolean"/>
+
   <!-- Section 4.6: Codec wire layout. `positional` (the default) places each
        field at sce:byte / sce:bit-size; `cbor` writes one CBOR map (RFC 8949)
        whose entries are the <data sce:key> elements, and refuses every

@@ -2301,7 +2301,7 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
     })
 }
 
-/// `codec <name> encoding cbor`, then `entry <id>: <type> key <n>
+/// `codec <name> encoding cbor [encode-may-fail]`, then `entry <id>: <type> key <n>
 /// [length <n>] [max-size <n>]` lines, `<type>` being a bare type or
 /// `optional<T>` (docs/adr/0055, section 8).
 fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
@@ -2370,10 +2370,16 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
         encoding: CodecEncoding::Cbor,
         cbor_entries: entries,
         content_line: None,
+        encode_may_fail: states_encode_may_fail(&w),
     })
 }
 
-/// `codec <name> encoding content-line component <C>`, then `entry <id>:
+/// Whether a codec's head ends in `encode-may-fail` (docs/adr/0065 §1).
+fn states_encode_may_fail(head: &[&str]) -> bool {
+    head.last().copied() == Some("encode-may-fail")
+}
+
+/// `codec <name> encoding content-line component <C> [encode-may-fail]`, then `entry <id>:
 /// <type> property <P> [param <Q>] [text] [max-size <n>] [max-count <n>]`
 /// lines (docs/adr/0010), `<type>` being a bare type or `optional<T>`
 /// (docs/adr/0055, section 8).
@@ -2481,10 +2487,11 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
         encoding: CodecEncoding::ContentLine,
         cbor_entries: Vec::new(),
         content_line: Some(ContentLineModel { component, entries }),
+        encode_may_fail: states_encode_may_fail(&w),
     })
 }
 
-/// `codec <name> endian <e> [input-length <n>]`.
+/// `codec <name> endian <e> [input-length <n>] [encode-may-fail]`.
 fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     if w.get(2).copied() == Some("encoding") {
@@ -2512,6 +2519,7 @@ fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseE
         encoding: Default::default(),
         cbor_entries: Vec::new(),
         content_line: None,
+        encode_may_fail: states_encode_may_fail(&w),
     };
 
     for (line, kids) in group(body) {

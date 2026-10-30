@@ -1946,6 +1946,7 @@ fn parse_cbor_codec(
         encoding: CodecEncoding::Cbor,
         cbor_entries: entries,
         content_line: None,
+        encode_may_fail: parse_encode_may_fail(root, doc)?,
     })
 }
 
@@ -2256,6 +2257,7 @@ fn parse_content_line_codec(
         encoding: CodecEncoding::ContentLine,
         cbor_entries: Vec::new(),
         content_line: Some(ContentLineModel { component, entries }),
+        encode_may_fail: parse_encode_may_fail(root, doc)?,
     })
 }
 
@@ -2587,6 +2589,28 @@ fn judge_input_frame_type(data: &roxmltree::Node, doc: &str) -> Result<(), Locat
     }
 }
 
+/// `sce:encode-may-fail` on a codec's root (SCE_FORGE.md §4.6, docs/adr/0065
+/// §1): whether the codec states that its encode can refuse a value. The
+/// schema types it `xs:boolean`, whose two spellings of each value are all
+/// admitted; anything else is refused rather than read as `false`, so a build
+/// without the schema cannot drop the statement.
+fn parse_encode_may_fail(root: &roxmltree::Node, doc: &str) -> Result<bool, Located<ForgeError>> {
+    match sce_attr(root, "encode-may-fail").as_deref().map(str::trim) {
+        None | Some("false" | "0") => Ok(false),
+        Some("true" | "1") => Ok(true),
+        Some(other) => Err(located(
+            root,
+            doc,
+            ValidationError::InvalidAttribute {
+                element: "Codec".into(),
+                attr: "sce:encode-may-fail".into(),
+                value: other.to_string(),
+                allowed: vec!["true".into(), "false".into()],
+            },
+        )),
+    }
+}
+
 fn parse_codec(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -2799,6 +2823,7 @@ fn parse_codec(
         encoding: CodecEncoding::Positional,
         cbor_entries: Vec::new(),
         content_line: None,
+        encode_may_fail: parse_encode_may_fail(root, label.diagnostic_label)?,
     })
 }
 /// RFC flag inversion — parse the optional codec-level
@@ -12277,6 +12302,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "default-endian",
     "direction",
     "dma-burst-align",
+    // A codec's statement that its encode can refuse a value (SCE_FORGE.md
+    // §4.6, docs/adr/0065).
+    "encode-may-fail",
     // A codec's wire layout, and a CBOR entry's map key (SCE_FORGE.md §4.6).
     "encoding",
     "endian",

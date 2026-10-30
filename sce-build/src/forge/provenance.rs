@@ -570,6 +570,7 @@ mod tests {
                 encoding: Default::default(),
                 cbor_entries: Vec::new(),
                 content_line: None,
+                encode_may_fail: false,
             }),
             ForgeDocument::Validator(ValidatorModel {
                 name: "v".into(),

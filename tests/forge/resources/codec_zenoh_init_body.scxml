@@ -41,7 +41,7 @@
          (no sn_res/batch_size/cookie) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="little" name="codec_zenoh_init_body">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="little" name="codec_zenoh_init_body">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
     <sce:flag-input name="A" width="1"/>
