@@ -877,8 +877,8 @@ extension Engine where Policy == StaticHostClockPolicy {
 }
 
 
-/// `sce:result`: the record the host completes `<invoke id="now">` with
-/// (SCE Accepted Subset §2.12).
+/// `sce:result`: the record the host completes `<invoke id="now">`
+/// with (SCE Accepted Subset §2.12).
 public struct StaticHostClockNowResult: Equatable, Sendable {
     public var error: String
     public var utc_ms: Int64
@@ -896,8 +896,8 @@ public struct StaticHostClockNowResult: Equatable, Sendable {
     }
 }
 
-/// `sce:result`: the record the host completes `<invoke id="zone">` with
-/// (SCE Accepted Subset §2.12).
+/// `sce:result`: the record the host completes `<invoke id="zone">`
+/// with (SCE Accepted Subset §2.12).
 public struct StaticHostClockZoneResult: Equatable, Sendable {
     public var error: String
     public var zone_id: String
@@ -920,7 +920,7 @@ public struct StaticHostClockZoneResult: Equatable, Sendable {
 public protocol StaticHostClockSceHostClockNowInvoker: AnyObject {
     /// §scxml-6.4: begin `<invoke id="now">`. `token` names this start; a
     /// host that finishes later hands it back to `completeStaticHostClockNow`
-    /// (or `completeHostInvoke`). A record completes the invocation now.
+    /// (or `completeHostInvoke`). A non-nil answer completes the invocation now.
     func startNow(token: UInt64) -> StaticHostClockNowResult?
 
     /// §scxml-6.4: `<invoke id="now">`'s state exited while the start `token`
@@ -964,7 +964,7 @@ public func completeStaticHostClockNow(on engine: Engine<StaticHostClockPolicy>,
 public protocol StaticHostClockSceHostClockZoneInvoker: AnyObject {
     /// §scxml-6.4: begin `<invoke id="zone">`. `token` names this start; a
     /// host that finishes later hands it back to `completeStaticHostClockZone`
-    /// (or `completeHostInvoke`). A record completes the invocation now.
+    /// (or `completeHostInvoke`). A non-nil answer completes the invocation now.
     func startZone(token: UInt64) -> StaticHostClockZoneResult?
 
     /// §scxml-6.4: `<invoke id="zone">`'s state exited while the start `token`
