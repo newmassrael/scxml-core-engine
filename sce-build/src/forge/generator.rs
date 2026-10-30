@@ -2431,6 +2431,51 @@ fn transform_holder_context(
 
 // ── Lookup rendering (unified) ────────────────────────────────
 
+/// The pattern of the Rust `match` arm that answers one value of a
+/// string-output lookup for each of `keys`, which are in the document's
+/// spelling.
+///
+/// Three or more integer keys that together cover one unbroken run are the
+/// inclusive range from the least to the greatest, each bound spelled as the
+/// document spells that key (`0x00..=0x02` for `0x00`, `0x01` and `0x02`):
+/// the range matches exactly the values the alternation does, and clippy
+/// refuses the alternation (`manual_range_patterns`). Any other keys, a set
+/// with a gap in it or the variants of an enum, are their alternation in the
+/// document's order.
+fn rust_lookup_arm_pattern(keys: &[String]) -> String {
+    let alternation = keys.join(" | ");
+    if keys.len() < 3 {
+        return alternation;
+    }
+    let Some(values) = keys
+        .iter()
+        .map(String::as_str)
+        .map(crate::forge::model::parse_int_literal)
+        .collect::<Option<Vec<i128>>>()
+    else {
+        return alternation;
+    };
+    let indexed = || values.iter().copied().enumerate();
+    let (Some((least_at, least)), Some((greatest_at, greatest))) = (
+        indexed().min_by_key(|&(_, value)| value),
+        indexed().max_by_key(|&(_, value)| value),
+    ) else {
+        return alternation;
+    };
+    let distinct = values
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let width = greatest
+        .checked_sub(least)
+        .and_then(|span| span.checked_add(1));
+    if width.is_some() && width == i128::try_from(distinct).ok() {
+        format!("{}..={}", keys[least_at], keys[greatest_at])
+    } else {
+        alternation
+    }
+}
+
 fn render_lookup(
     env: &minijinja::Environment,
     m: &LookupModel,
@@ -2532,25 +2577,31 @@ fn render_lookup(
             Language::Swift => unreachable!("refused by swift_lookup_unlowered"),
             Language::Python => {
                 // Python template expects a `condition` expression per group.
-                raw_ebv.into_iter().map(|(value, keys)| {
-                    let condition = if keys.len() == 1 {
-                        format!("{input_id} == {}", keys[0])
-                    } else {
-                        format!("{input_id} in ({})", keys.join(", "))
-                    };
-                    serde_json::json!({"value": value, "condition": condition})
-                }).collect()
-            }
-            Language::Rust => {
-                raw_ebv.into_iter().map(|(value, keys)| {
-                    serde_json::json!({"value": to_rust_variant(&value), "keys": keys})
-                }).collect()
-            }
-            Language::Cpp | Language::Kotlin | Language::Go | Language::C11 => {
-                raw_ebv.into_iter()
-                    .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+                raw_ebv
+                    .into_iter()
+                    .map(|(value, keys)| {
+                        let condition = if keys.len() == 1 {
+                            format!("{input_id} == {}", keys[0])
+                        } else {
+                            format!("{input_id} in ({})", keys.join(", "))
+                        };
+                        serde_json::json!({"value": value, "condition": condition})
+                    })
                     .collect()
             }
+            Language::Rust => raw_ebv
+                .into_iter()
+                .map(|(value, keys)| {
+                    serde_json::json!({
+                        "value": to_rust_variant(&value),
+                        "pattern": rust_lookup_arm_pattern(&keys),
+                    })
+                })
+                .collect(),
+            Language::Cpp | Language::Kotlin | Language::Go | Language::C11 => raw_ebv
+                .into_iter()
+                .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+                .collect(),
         };
 
         let uv: Vec<String> = match lang {
@@ -37727,6 +37778,28 @@ mod tests {
         assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
         assert_eq!(spelled(Language::Swift).as_deref(), Some("T?"));
         assert_eq!(spelled(Language::C11), None);
+    }
+
+    /// A Rust lookup arm reads an unbroken run of three or more integer keys as
+    /// one range, its bounds in the document's spelling, and any other keys as
+    /// their alternation in the document's order.
+    #[test]
+    fn a_rust_lookup_arm_reads_an_unbroken_run_of_keys_as_a_range() {
+        let pattern = |keys: &[&str]| {
+            rust_lookup_arm_pattern(&keys.iter().map(|k| k.to_string()).collect::<Vec<_>>())
+        };
+        // The run, in any order the document lists it.
+        assert_eq!(pattern(&["0x00", "0x01", "0x02"]), "0x00..=0x02");
+        assert_eq!(pattern(&["0x02", "0x00", "0x01"]), "0x00..=0x02");
+        assert_eq!(pattern(&["-1", "0", "1", "2"]), "-1..=2");
+        // A gap, two keys, or keys that are no integers stay an alternation.
+        assert_eq!(pattern(&["0x00", "0x01", "0x03"]), "0x00 | 0x01 | 0x03");
+        assert_eq!(pattern(&["1", "2"]), "1 | 2");
+        assert_eq!(pattern(&["7"]), "7");
+        assert_eq!(
+            pattern(&["Mode::Low", "Mode::Mid", "Mode::High"]),
+            "Mode::Low | Mode::Mid | Mode::High"
+        );
     }
 
     /// A C11 codec holds an entry that may be absent in the struct

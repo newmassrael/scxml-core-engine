@@ -25,7 +25,7 @@ pub enum {{ enum_name }} {
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Option<{{ enum_name }}>{% else %}{{ enum_name }}{% endif %} {
     match {{ input_id }} {
 {% for group in entries_by_value %}
-        {{ group.keys | join(" | ") }} => {% if on_miss_error %}Some({{ enum_name }}::{{ group.value }}){% else %}{{ enum_name }}::{{ group.value }}{% endif %},
+        {{ group.pattern }} =>{% if on_miss_error %}Some({{ enum_name }}::{{ group.value }}){% else %}{{ enum_name }}::{{ group.value }}{% endif %},
 {% endfor %}
         _ => {% if on_miss_error %}None{% else %}{{ enum_name }}::{{ default_value }}{% endif %},
     }
