@@ -346,6 +346,79 @@ fn bound_to_a_said_input_in_xml(path: &Path) -> BTreeSet<ElementId> {
     bound
 }
 
+/// The flags of a disjunction that decides its fields together, read out of the
+/// XML (docs/adr/0065 §6 R4c): every clause of the gate reads a one-bit flag of a
+/// carrier of the document, a different one each, and no other gate of the
+/// document reads any of them. Each is derived from the arm the value holds.
+fn disjunction_flags_in_xml(path: &Path) -> BTreeSet<ElementId> {
+    let text = std::fs::read_to_string(path).expect("the document");
+    let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
+    let whole = fields_derived_whole(&doc);
+    let one_bit: BTreeSet<(String, String)> = doc
+        .descendants()
+        .filter(|n| is_sce(n, "flags"))
+        .flat_map(|carrier| {
+            let id = carrier.attribute("id").unwrap_or_default().to_string();
+            carrier
+                .children()
+                .filter(|f| is_sce(f, "flag"))
+                .filter(|f| f.attribute("width").is_none_or(|w| w == "1"))
+                .filter_map(move |f| Some((id.clone(), f.attribute("name")?.to_string())))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let gates: Vec<(&str, &str)> = doc
+        .descendants()
+        .filter(|n| n.is_element())
+        .filter_map(|n| Some((n.attribute("id")?, n.attribute((SCE_NS, "present-if"))?)))
+        .collect();
+    let clauses_of = |gate: &str| -> Vec<String> {
+        gate.split("||")
+            .map(|c| c.trim().trim_start_matches('!').trim().to_string())
+            .collect()
+    };
+    let reads = |flag: &str| {
+        gates
+            .iter()
+            .flat_map(|(_, g)| clauses_of(g))
+            .filter(|c| c == flag)
+            .count()
+    };
+    let mut derived = BTreeSet::new();
+    for (id, gate) in &gates {
+        let clauses = clauses_of(gate);
+        if clauses.len() < 2 || whole.contains(*id) {
+            continue;
+        }
+        let flags: Option<Vec<(String, String)>> = clauses
+            .iter()
+            .map(|c| {
+                let (carrier, flag) = c.split_once('.')?;
+                let pair = (carrier.to_string(), flag.to_string());
+                one_bit.contains(&pair).then_some(pair)
+            })
+            .collect();
+        let Some(flags) = flags else {
+            continue;
+        };
+        let distinct: BTreeSet<&(String, String)> = flags.iter().collect();
+        // Fields under the same gate read its flags once each among them.
+        let under_the_same_gate = gates
+            .iter()
+            .filter(|(_, g)| clauses_of(g) == clauses)
+            .count();
+        if distinct.len() == flags.len() && clauses.iter().all(|c| reads(c) == under_the_same_gate)
+        {
+            derived.extend(
+                flags
+                    .into_iter()
+                    .map(|(field, flag)| ElementId::Flag { field, flag }),
+            );
+        }
+    }
+    derived
+}
+
 #[test]
 fn the_classification_agrees_with_the_declarations_in_the_document() {
     for (path, roles) in codecs() {
@@ -353,6 +426,7 @@ fn the_classification_agrees_with_the_declarations_in_the_document() {
         let mut declared = declared_in_xml(&path);
         declared.extend(dispatched_in_xml(&path));
         declared.extend(bound_to_a_said_input_in_xml(&path));
+        declared.extend(disjunction_flags_in_xml(&path));
         assert_eq!(
             derived,
             declared,
@@ -387,8 +461,27 @@ fn a_negated_gate_is_derived_from_the_absence() {
 }
 
 #[test]
-fn a_gate_of_several_flags_is_a_check_and_derives_no_flag() {
+fn a_disjunction_of_the_codecs_own_flags_is_a_group_of_its_assignments() {
+    // Each assignment that satisfies the gate is an arm, and each flag is
+    // derived from the arm a value holds (docs/adr/0065 §6 R4c). The gate stays
+    // a check for an encode that holds no group, and a source is not held to it.
     let roles = roles_of("codec_present_if_disjunction");
+    assert!(!roles.checks.is_empty(), "{}", roles.table());
+    assert!(roles.source_checks().next().is_none(), "{}", roles.table());
+    assert_eq!(
+        roles.table(),
+        "codec codec_present_if_disjunction\n  \
+         flags          presented\n  \
+         flags.wants_a  derived  arm-of(flags.wants_a || flags.wants_b)\n  \
+         flags.wants_b  derived  arm-of(flags.wants_a || flags.wants_b)\n  \
+         seq            presented\n  \
+         group  flags.wants_a || flags.wants_b  10 (seq)  01 (seq)  11 (seq)  00 (none)\n"
+    );
+}
+
+#[test]
+fn a_disjunction_with_a_clause_that_is_no_flag_is_a_check() {
+    let roles = roles_of("codec_chain_has_tagged");
     assert!(!roles.checks.is_empty(), "{}", roles.table());
     assert!(
         roles.table().contains("is present exactly when") && roles.table().contains("||"),

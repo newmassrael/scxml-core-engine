@@ -682,6 +682,43 @@ mod groups {
         assert_eq!(encode(plain), [0x03, 1, 2, 3]);
     }
 
+    // A disjunction holds its fields in an arm for each assignment of its flags
+    // that satisfies it, and none under the one that does not; the flags are
+    // derived from the arm (docs/adr/0065 §6 R4c).
+    #[test]
+    fn a_disjunction_is_held_as_the_assignment_of_its_flags() {
+        use super::codecs::codec_present_if_disjunction::{
+            CodecPresentIfDisjunction, CodecPresentIfDisjunctionFlagsWantsAOrWantsB as Wants,
+            CodecPresentIfDisjunctionParts,
+        };
+        let encode = |held| {
+            let mut bytes = Vec::new();
+            let Ok(()) = CodecPresentIfDisjunction::encode_source(
+                &CodecPresentIfDisjunctionParts {
+                    flags: 0x00,
+                    flags_wants_a_or_wants_b: held,
+                },
+                &mut VecSink::new(&mut bytes),
+            );
+            bytes
+        };
+        let cases = [
+            (Some(Wants::WantsA { seq: 0x0102 }), vec![0x01, 0x01, 0x02]),
+            (Some(Wants::WantsB { seq: 0x0102 }), vec![0x02, 0x01, 0x02]),
+            (
+                Some(Wants::WantsAWantsB { seq: 0x0102 }),
+                vec![0x03, 0x01, 0x02],
+            ),
+            (None, vec![0x00]),
+        ];
+        for (held, frame) in cases {
+            assert_eq!(encode(held), frame);
+            let decoded =
+                CodecPresentIfDisjunction::decode(&mut SceCursor::new(&frame)).expect("a frame");
+            assert_eq!(decoded.flags_wants_a_or_wants_b, held);
+        }
+    }
+
     #[test]
     fn a_flag_of_the_codec_is_derived_from_the_side_the_value_holds() {
         let encode = |flags_has_payload| {

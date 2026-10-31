@@ -22,10 +22,11 @@
 
 use super::*;
 use crate::forge::codec_roles::{
-    self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, InputSource,
-    InputValue, Role,
+    self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, GroupArm,
+    InputSource, InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
+use std::collections::BTreeSet;
 
 pub(super) mod cbor;
 pub(super) mod content_line;
@@ -351,48 +352,119 @@ pub(crate) fn supported_with(
     check(m, &|alias| known.get(alias).copied().unwrap_or(false)).is_ok()
 }
 
-// ── groups (docs/adr/0065 §6 R4b) ────────────────────────────────────
+// ── groups (docs/adr/0065 §6 R4b, R4c) ───────────────────────────────
 // The names a group goes by, read by the source interface here and by the
 // forms the generator renders, so the two spell a group alike.
 
-/// The name of a group's gate as a type: the input, or the carrier and its
-/// flag.
-fn gate_pascal(gate: &GateVar) -> String {
-    match gate {
-        GateVar::Input(name) => filters::to_pascal_case(name.clone()),
-        GateVar::Flag { carrier, flag } => filters::to_pascal_case(format!("{carrier}_{flag}")),
+/// The gates of a group as words of a name: the input, or the carrier and
+/// its flag; several flags of one carrier as the carrier and the flags, each
+/// joined by `or`.
+fn gate_words(group: &GateGroup) -> String {
+    let flag_of = |gate: &GateVar| match gate {
+        GateVar::Input(name) => name.clone(),
+        GateVar::Flag { flag, .. } => flag.clone(),
+    };
+    let carriers: BTreeSet<&str> = group
+        .gates
+        .iter()
+        .filter_map(|g| match g {
+            GateVar::Flag { carrier, .. } => Some(carrier.as_str()),
+            GateVar::Input(_) => None,
+        })
+        .collect();
+    let one_carrier = carriers.len() == 1
+        && group
+            .gates
+            .iter()
+            .all(|g| matches!(g, GateVar::Flag { .. }));
+    if one_carrier {
+        let carrier = carriers.into_iter().next().expect("one carrier");
+        let flags: Vec<String> = group.gates.iter().map(flag_of).collect();
+        format!("{carrier}_{}", flags.join("_or_"))
+    } else {
+        group
+            .gates
+            .iter()
+            .map(|g| match g {
+                GateVar::Input(name) => name.clone(),
+                GateVar::Flag { carrier, flag } => format!("{carrier}_{flag}"),
+            })
+            .collect::<Vec<_>>()
+            .join("_or_")
     }
 }
 
 /// The accessor of a group, and the field each form holds it in.
 pub(crate) fn group_accessor(group: &GateGroup) -> String {
-    match &group.gate {
-        GateVar::Input(name) => filters::to_snake_case(name.clone()),
-        GateVar::Flag { carrier, flag } => filters::to_snake_case(format!("{carrier}_{flag}")),
-    }
+    filters::to_snake_case(gate_words(group))
 }
 
-/// The type a group of the codec `codec` is held as: an enum of its two
-/// sides for a sum, and a struct of its one side otherwise, which a value
-/// holds or does not.
+/// The type a group of the codec `codec` is held as: an enum of its arms, or a
+/// struct of its one arm, named after the gates; a struct of the arm present
+/// while one gate does not hold says so in its name.
 pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
-    let pascal = gate_pascal(&group.gate);
-    if group.is_sum() || !group.set.is_empty() {
-        format!("{codec}{pascal}")
-    } else {
-        format!("{codec}Not{pascal}")
+    let pascal = filters::to_pascal_case(gate_words(group));
+    match group.arms.as_slice() {
+        [arm] if arm.values == [false] => format!("{codec}Not{pascal}"),
+        _ => format!("{codec}{pascal}"),
     }
 }
 
-/// The names of the two sides of a sum: the one present while the gate
-/// holds, then the other. The type names the carrier already, so a side names
-/// the flag alone.
-pub(crate) fn group_arms(group: &GateGroup) -> (String, String) {
-    let pascal = match &group.gate {
+/// The name of an arm of a group: for one gate, the flag (`Not` before it for
+/// the arm present while it does not hold); for several, the flags the arm
+/// holds set, or `Neither` where it holds none. The type names the carrier
+/// already, so an arm names the flags alone.
+pub(crate) fn group_arm_name(group: &GateGroup, arm: &GroupArm) -> String {
+    let flag_of = |gate: &GateVar| match gate {
         GateVar::Input(name) => filters::to_pascal_case(name.clone()),
         GateVar::Flag { flag, .. } => filters::to_pascal_case(flag.clone()),
     };
-    (pascal.clone(), format!("Not{pascal}"))
+    if let ([gate], [value]) = (group.gates.as_slice(), arm.values.as_slice()) {
+        return if *value {
+            flag_of(gate)
+        } else {
+            format!("Not{}", flag_of(gate))
+        };
+    }
+    let set: String = group
+        .gates
+        .iter()
+        .zip(&arm.values)
+        .filter(|(_, v)| **v)
+        .map(|(g, _)| flag_of(g))
+        .collect();
+    if set.is_empty() {
+        "Neither".to_string()
+    } else {
+        set
+    }
+}
+
+/// The gates of a group as the document spells their disjunction.
+fn gates_label(group: &GateGroup) -> String {
+    group
+        .gates
+        .iter()
+        .map(GateVar::to_string)
+        .collect::<Vec<_>>()
+        .join(" || ")
+}
+
+/// When the value holds `arm`, in words: each gate and whether it holds.
+fn arm_condition(group: &GateGroup, values: &[bool]) -> String {
+    group
+        .gates
+        .iter()
+        .zip(values)
+        .map(|(gate, value)| {
+            if *value {
+                format!("`{gate}` holds")
+            } else {
+                format!("`{gate}` does not hold")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
 
 /// Whether `field`'s type differs between the forms of a value, so that a
@@ -737,17 +809,7 @@ impl<'a> Plan<'a> {
                     self.trait_name,
                     self.group_accessor(group)
                 );
-                if group.is_sum() {
-                    let (set, _) = Self::group_arms(group);
-                    format!(
-                        "matches!({held}, {}::{set} {{ .. }})",
-                        self.group_type(group)
-                    )
-                } else if group.set.is_empty() {
-                    format!("{held}.is_none()")
-                } else {
-                    format!("{held}.is_some()")
-                }
+                self.gate_value(group, 0, &held)
             }
         }
     }
@@ -1195,13 +1257,81 @@ impl<'a> Plan<'a> {
         group_type(self.name(), group)
     }
 
-    fn group_arms(group: &GateGroup) -> (String, String) {
-        group_arms(group)
+    /// The path an arm of a group is built and matched by: the enum's variant,
+    /// or the struct of a group of one arm.
+    fn arm_path(&self, group: &GateGroup, arm: &GroupArm) -> String {
+        let ty = self.group_type(group);
+        if group.is_sum() {
+            format!("{ty}::{}", group_arm_name(group, arm))
+        } else {
+            ty
+        }
+    }
+
+    /// `pattern` as what a form holds: inside `Some` for a group a value may
+    /// hold no arm of.
+    fn held(group: &GateGroup, pattern: &str) -> String {
+        if group.absent.is_some() {
+            format!("Some({pattern})")
+        } else {
+            pattern.to_string()
+        }
     }
 
     fn group_fields<'s>(&'s self, ids: &'s [String]) -> impl Iterator<Item = &'s CodecField> {
         ids.iter()
             .filter_map(|id| self.m().fields.iter().find(|f| &f.id == id))
+    }
+
+    /// The group's elements, each once.
+    fn group_members(&self, group: &GateGroup) -> Vec<&CodecField> {
+        group
+            .fields()
+            .into_iter()
+            .filter_map(|id| self.m().fields.iter().find(|f| f.id == id))
+            .collect()
+    }
+
+    /// The value of the gate `index` of `group` while the value holds what
+    /// `held` (an expression of what the source presents of the group) holds:
+    /// the value the arm gives it, or the one it has with no arm.
+    fn gate_value(&self, group: &GateGroup, index: usize, held: &str) -> String {
+        let absent = group.absent.as_ref().map(|a| a[index]);
+        let arms_with = |value: bool| -> Vec<&GroupArm> {
+            group
+                .arms
+                .iter()
+                .filter(|a| a.values[index] == value)
+                .collect()
+        };
+        let pattern = |arms: &[&GroupArm]| {
+            arms.iter()
+                .map(|a| format!("{} {{ .. }}", self.arm_path(group, a)))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        };
+        // Name the arms the gate holds in, or, where it holds with no arm too,
+        // the ones it does not.
+        let (arms, negate) = if absent == Some(true) {
+            (arms_with(false), true)
+        } else {
+            (arms_with(true), false)
+        };
+        if arms.is_empty() {
+            return negate.to_string();
+        }
+        let test = match (group.is_sum(), group.absent.is_some()) {
+            (true, true) => format!("matches!({held}, Some({}))", pattern(&arms)),
+            (true, false) => format!("matches!({held}, {})", pattern(&arms)),
+            // A group of one arm, which the value holds or not.
+            (false, _) if negate => return format!("{held}.is_none()"),
+            (false, _) => return format!("{held}.is_some()"),
+        };
+        if negate {
+            format!("!{test}")
+        } else {
+            test
+        }
     }
 
     fn member_varies(field: &CodecField) -> bool {
@@ -1217,8 +1347,8 @@ impl<'a> Plan<'a> {
     /// group held in one form.
     fn group_type_in(&self, group: &GateGroup, ty: &dyn Fn(&CodecField) -> String) -> String {
         let args: Vec<String> = self
-            .group_fields(&group.set)
-            .chain(self.group_fields(&group.clear))
+            .group_members(group)
+            .into_iter()
             .filter(|f| Self::member_varies(f))
             .map(ty)
             .collect();
@@ -1229,14 +1359,14 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// `group_type_in` wrapped as a form holds it: the sum as it is, a group
-    /// of one side as an `Option`.
+    /// `group_type_in` wrapped as a form holds it: as it is, or as an `Option`
+    /// for a group a value may hold no arm of.
     fn group_held_in(&self, group: &GateGroup, ty: &dyn Fn(&CodecField) -> String) -> String {
         let inner = self.group_type_in(group, ty);
-        if group.is_sum() {
-            inner
-        } else {
+        if group.absent.is_some() {
             format!("Option<{inner}>")
+        } else {
+            inner
         }
     }
 
@@ -1250,10 +1380,7 @@ impl<'a> Plan<'a> {
     fn group_definitions(&self) -> String {
         let mut out = String::new();
         for group in &self.roles.groups {
-            let members: Vec<&CodecField> = self
-                .group_fields(&group.set)
-                .chain(self.group_fields(&group.clear))
-                .collect();
+            let members: Vec<&CodecField> = self.group_members(group);
             let params: Vec<String> = members
                 .iter()
                 .filter(|f| Self::member_varies(f))
@@ -1285,62 +1412,82 @@ impl<'a> Plan<'a> {
                     .collect()
             };
             let name = self.group_type(group);
+            let gates = group
+                .gates
+                .iter()
+                .map(|g| format!("`{g}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let none = match &group.absent {
+                Some(values) => format!(
+                    " A value holds no arm while {}.",
+                    arm_condition(group, values)
+                ),
+                None => String::new(),
+            };
             if group.is_sum() {
-                let (set, clear) = Self::group_arms(group);
-                let default_params = params
-                    .iter()
-                    .map(|p| format!("{p}: Default"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let default_fields: String = self
-                    .group_fields(&group.clear)
-                    .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
-                    .collect();
+                let mut arms = String::new();
+                for arm in &group.arms {
+                    arms.push_str(&format!(
+                        "    /// While {}.\n    {} {{\n{}    }},\n",
+                        arm_condition(group, &arm.values),
+                        group_arm_name(group, arm),
+                        fields_of(&arm.fields, "        "),
+                    ));
+                }
                 out.push_str(&format!(
-                    "/// The fields `{gate}` decides (docs/adr/0065 §6 R4b): a value holds the\n\
-                     /// ones present while it holds, or the ones present while it does not,\n\
-                     /// and `{codec}` derives `{gate}` from which.\n\
+                    "/// The fields {gates} decide (docs/adr/0065 §6 R4b, R4c): a value holds the\n\
+                     /// ones of one arm, and `{codec}` derives the gates from which.{none}\n\
                      #[allow(dead_code)]\n\
                      #[derive(Debug, Clone, Copy, PartialEq)]\n\
-                     pub enum {name}{generics} {{\n\
-                     \x20   /// While `{gate}` holds.\n\
-                     \x20   {set} {{\n{set_fields}    }},\n\
-                     \x20   /// While `{gate}` does not hold.\n\
-                     \x20   {clear} {{\n{clear_fields}    }},\n\
-                     }}\n\n\
-                     impl{default_generics} Default for {name}{generics} {{\n\
-                     \x20   /// The side present while `{gate}` does not hold, each field at its\n\
-                     \x20   /// type's default.\n\
-                     \x20   fn default() -> Self {{\n\
-                     \x20       Self::{clear} {{ {default_fields}}}\n\
-                     \x20   }}\n\
-                     }}\n\n",
-                    gate = group.gate,
+                     pub enum {name}{generics} {{\n{arms}}}\n\n",
                     codec = self.name(),
-                    set_fields = fields_of(&group.set, "        "),
-                    clear_fields = fields_of(&group.clear, "        "),
-                    default_generics = if params.is_empty() {
-                        String::new()
-                    } else {
-                        format!("<{default_params}>")
-                    },
                 ));
+                // A form holds a group a value always holds an arm of as it is,
+                // and starts it at the arm where every gate is clear.
+                if group.absent.is_none() {
+                    let arm = group
+                        .arms
+                        .iter()
+                        .find(|a| a.values.iter().all(|v| !v))
+                        .unwrap_or(&group.arms[0]);
+                    let default_params = params
+                        .iter()
+                        .map(|p| format!("{p}: Default"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let default_fields: String = self
+                        .group_fields(&arm.fields)
+                        .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
+                        .collect();
+                    out.push_str(&format!(
+                        "impl{default_generics} Default for {name}{generics} {{\n\
+                         \x20   /// The arm held while {condition}, each field at its type's default.\n\
+                         \x20   fn default() -> Self {{\n\
+                         \x20       Self::{arm_name} {{ {default_fields}}}\n\
+                         \x20   }}\n\
+                         }}\n\n",
+                        default_generics = if params.is_empty() {
+                            String::new()
+                        } else {
+                            format!("<{default_params}>")
+                        },
+                        condition = arm_condition(group, &arm.values),
+                        arm_name = group_arm_name(group, arm),
+                    ));
+                }
             } else {
-                let (ids, when) = if group.set.is_empty() {
-                    (&group.clear, "does not hold")
-                } else {
-                    (&group.set, "holds")
-                };
+                let arm = &group.arms[0];
                 out.push_str(&format!(
-                    "/// The fields `{gate}` decides (docs/adr/0065 §6 R4b), present together\n\
-                     /// while it {when}: a value holds all of them or none, and `{codec}`\n\
-                     /// derives `{gate}` from which.\n\
+                    "/// The fields {gates} decide (docs/adr/0065 §6 R4b), present together\n\
+                     /// while {condition}: a value holds all of them or none, and `{codec}`\n\
+                     /// derives the gate from which.\n\
                      #[allow(dead_code)]\n\
                      #[derive(Debug, Clone, Copy, PartialEq)]\n\
                      pub struct {name}{generics} {{\n{fields}}}\n\n",
-                    gate = group.gate,
+                    condition = arm_condition(group, &arm.values),
                     codec = self.name(),
-                    fields = fields_of(ids, "    "),
+                    fields = fields_of(&arm.fields, "    "),
                 ));
             }
         }
@@ -1378,52 +1525,55 @@ impl<'a> Plan<'a> {
     /// the same in every form and is copied whole.
     fn group_read(&self, group: &GateGroup, form: Option<Form>) -> String {
         let accessor = self.group_accessor(group);
-        let ty = self.group_type(group);
-        let members: Vec<&CodecField> = self
-            .group_fields(&group.set)
-            .chain(self.group_fields(&group.clear))
-            .collect();
-        if !members.iter().any(|f| Self::member_varies(f)) {
+        if !self
+            .group_members(group)
+            .iter()
+            .any(|f| Self::member_varies(f))
+        {
             return format!("self.{accessor}");
         }
-        let side = |ids: &[String]| {
-            let fields: Vec<&CodecField> = self.group_fields(ids).collect();
-            let names = fields
-                .iter()
-                .map(|f| self.accessor(f))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let reads = fields
-                .iter()
-                .map(|f| {
-                    format!(
-                        "{}: {}",
-                        self.accessor(f),
-                        self.member_read(form, f, &self.accessor(f))
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            (names, reads)
-        };
-        if group.is_sum() {
-            let (set_arm, clear_arm) = Self::group_arms(group);
-            let (set_names, set_reads) = side(&group.set);
-            let (clear_names, clear_reads) = side(&group.clear);
-            format!(
-                "match &self.{accessor} {{\n            \
-                 {ty}::{set_arm} {{ {set_names} }} => {ty}::{set_arm} {{ {set_reads} }},\n            \
-                 {ty}::{clear_arm} {{ {clear_names} }} => {ty}::{clear_arm} {{ {clear_reads} }},\n        \
-                 }}"
-            )
+        // Each arm as the pattern that takes it apart and the arm built from
+        // its elements read.
+        let arms: Vec<(String, String)> = group
+            .arms
+            .iter()
+            .map(|arm| {
+                let fields: Vec<&CodecField> = self.group_fields(&arm.fields).collect();
+                let names = fields
+                    .iter()
+                    .map(|f| self.accessor(f))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let reads = fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{}: {}",
+                            self.accessor(f),
+                            self.member_read(form, f, &self.accessor(f))
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let path = self.arm_path(group, arm);
+                (
+                    format!("{path} {{ {names} }}"),
+                    format!("{path} {{ {reads} }}"),
+                )
+            })
+            .collect();
+        if !group.is_sum() {
+            let (pattern, value) = &arms[0];
+            return format!("self.{accessor}.as_ref().map(|{pattern}| {value})");
+        }
+        let arms: String = arms
+            .iter()
+            .map(|(pattern, value)| format!("            {pattern} => {value},\n"))
+            .collect();
+        if group.absent.is_some() {
+            format!("self.{accessor}.as_ref().map(|_g| match _g {{\n{arms}        }})")
         } else {
-            let ids = if group.set.is_empty() {
-                &group.clear
-            } else {
-                &group.set
-            };
-            let (names, reads) = side(ids);
-            format!("self.{accessor}.as_ref().map(|{ty} {{ {names} }}| {ty} {{ {reads} }})")
+            format!("match &self.{accessor} {{\n{arms}        }}")
         }
     }
 
@@ -1439,19 +1589,46 @@ impl<'a> Plan<'a> {
     fn group_bindings(&self, lines: &mut Vec<String>) {
         for group in &self.roles.groups {
             let accessor = self.group_accessor(group);
-            let ty = self.group_type(group);
-            let set: Vec<&CodecField> = self.group_fields(&group.set).collect();
-            let clear: Vec<&CodecField> = self.group_fields(&group.clear).collect();
-            let all: Vec<&CodecField> = set.iter().chain(clear.iter()).copied().collect();
+            let all: Vec<&CodecField> = self.group_members(group);
+            // A group whose every arm holds every element (a disjunction's)
+            // binds each element where any arm holds it.
+            let uniform = group
+                .arms
+                .iter()
+                .all(|arm| all.iter().all(|f| arm.fields.contains(&f.id)));
+            let names = |ids: &[String]| {
+                self.group_fields(ids)
+                    .map(|f| self.accessor(f))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            if uniform && all.len() == 1 {
+                let member = self.accessor(all[0]);
+                let patterns = group
+                    .arms
+                    .iter()
+                    .map(|arm| format!("{} {{ {member} }}", self.arm_path(group, arm)))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                let local = self.member_local(all[0]);
+                lines.push(if group.absent.is_some() {
+                    format!(
+                        "let {local} = src.{accessor}().map(|_g| match _g {{\n    {patterns} => {member},\n}});"
+                    )
+                } else {
+                    format!("let {local} = Some(match src.{accessor}() {{\n    {patterns} => {member},\n}});")
+                });
+                continue;
+            }
             let locals = all
                 .iter()
                 .map(|f| self.member_local(f))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let tuple = |on: &[&CodecField]| {
+            let tuple = |ids: &[String]| {
                 all.iter()
                     .map(|f| {
-                        if on.iter().any(|o| o.id == f.id) {
+                        if ids.contains(&f.id) {
                             format!("Some({})", self.accessor(f))
                         } else {
                             "None".to_string()
@@ -1460,34 +1637,71 @@ impl<'a> Plan<'a> {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            let names = |on: &[&CodecField]| {
-                on.iter()
-                    .map(|f| self.accessor(f))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            let nones = vec!["None"; all.len()].join(", ");
-            let arms = if group.is_sum() {
-                let (set_arm, clear_arm) = Self::group_arms(group);
-                format!(
-                    "    {ty}::{set_arm} {{ {} }} => ({}),\n    {ty}::{clear_arm} {{ {} }} => ({}),",
-                    names(&set),
-                    tuple(&set),
-                    names(&clear),
-                    tuple(&clear),
-                )
-            } else {
-                let on = if set.is_empty() { &clear } else { &set };
-                format!(
-                    "    Some({ty} {{ {} }}) => ({}),\n    None => ({nones}),",
-                    names(on),
-                    tuple(on),
-                )
-            };
+            let mut arms: Vec<String> = group
+                .arms
+                .iter()
+                .map(|arm| {
+                    let pattern =
+                        format!("{} {{ {} }}", self.arm_path(group, arm), names(&arm.fields));
+                    format!(
+                        "    {} => ({}),",
+                        Self::held(group, &pattern),
+                        tuple(&arm.fields)
+                    )
+                })
+                .collect();
+            if group.absent.is_some() {
+                arms.push(format!(
+                    "    None => ({}),",
+                    vec!["None"; all.len()].join(", ")
+                ));
+            }
             lines.push(format!(
-                "let ({locals}) = match src.{accessor}() {{\n{arms}\n}};"
+                "let ({locals}) = match src.{accessor}() {{\n{}\n}};",
+                arms.join("\n")
             ));
         }
+    }
+
+    /// A flag of a disjunction that decides a group (docs/adr/0065 §6 R4c): the
+    /// value the arm the value holds gives it, or the one it has with no arm.
+    fn derive_arm_flag(
+        &self,
+        id: &ElementId,
+        gates: &[GateVar],
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
+        let ElementId::Flag { field, flag } = id else {
+            unreachable!("a disjunction's gate is a flag of a carrier");
+        };
+        let group = self
+            .roles
+            .groups
+            .iter()
+            .find(|g| g.gates == gates)
+            .expect("a flag derived from an arm has its group");
+        let index = group
+            .gates
+            .iter()
+            .position(|g| matches!(g, GateVar::Flag { carrier, flag: f } if carrier == field && f == flag))
+            .expect("the flag is one of the group's gates");
+        let local = self.local("_d_", id);
+        let held = format!("src.{}()", self.group_accessor(group));
+        lines.push(format!(
+            "let {local}: bool = {};",
+            self.gate_value(group, index, &held)
+        ));
+        derived
+            .flags
+            .entry(field.clone())
+            .or_default()
+            .push(DerivedFlag {
+                flag: flag.clone(),
+                value: local,
+                ty: "bool".to_string(),
+                kind: FlagValue::Bool,
+            });
     }
 
     /// The local that holds the value of a derived element, named after it.
@@ -1874,8 +2088,8 @@ impl<'a> Plan<'a> {
         }
         for group in &self.roles.groups {
             members.push_str(&format!(
-                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4b).\n    pub {accessor}: {ty},\n",
-                gate = group.gate,
+                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    pub {accessor}: {ty},\n",
+                gate = gates_label(group),
                 accessor = self.group_accessor(group),
                 ty = self.group_held_in(group, &|f| self.parts_value_type(f)),
             ));
@@ -2023,8 +2237,8 @@ impl<'a> Plan<'a> {
         }
         for group in &self.roles.groups {
             items.push_str(&format!(
-                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4b).\n    fn {accessor}(&self) -> {ty};\n",
-                gate = group.gate,
+                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    fn {accessor}(&self) -> {ty};\n",
+                gate = gates_label(group),
                 accessor = self.group_accessor(group),
                 ty = self.group_accessor_type(group),
             ));
@@ -2519,6 +2733,9 @@ impl<'a> Plan<'a> {
                     }
                     Derivation::BoundInput { binders } => {
                         self.derive_bound_input(id, binders, lines, &mut derived)
+                    }
+                    Derivation::ArmOf { gates } => {
+                        self.derive_arm_flag(id, gates, lines, &mut derived)
                     }
                     // The end flag of a chain is the entries' to set, as each is
                     // written (`streamed`), and no value of this codec's own.

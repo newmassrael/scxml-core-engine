@@ -697,7 +697,10 @@ fn derived(
         }
         // A known arm's tag is declared inside the tag's bits, and a default
         // arm's is an [`UnknownTag`], which holds no other (docs/adr/0065 §6 R3).
-        Derivation::VariantTag { .. }
+        // A flag of a disjunction is the value its arm gives it, one bit
+        // (docs/adr/0065 §6 R4c).
+        Derivation::ArmOf { .. }
+        | Derivation::VariantTag { .. }
         | Derivation::ParentTag { .. }
         | Derivation::ChainContinuation { .. } => return,
     };

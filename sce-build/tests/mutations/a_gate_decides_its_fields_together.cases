@@ -14,6 +14,8 @@
 # one-bit flag of its own carrier that gates two presented fields, so the
 # refusal of fields that disagree about such a flag has no case here: removing
 # it would change no statement.
+# A disjunction of the codec's own one-bit flags makes a group of an arm for
+# each assignment that satisfies it (§6 R4c), and its case is held the same way.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -24,15 +26,21 @@ mutation_oracles sce-build/tests/codec_totality.rs
 
 mutation_case "no gate makes a group" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''    groups.retain(|g| g.set.len() + g.clear.len() >= 2);''',
-     r'''    groups.retain(|g| g.set.len() + g.clear.len() >= usize::MAX);''')
+     r'''        .filter(|(_, set, clear)| set.len() + clear.len() >= 2)''',
+     r'''        .filter(|(_, set, clear)| set.len() + clear.len() >= usize::MAX)''')
 PY
 
 mutation_case "a stated length stays beside its content" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''                .then(|| (f.id.clone(), group.gate.clone(), !side))''',
-     r'''                .then(|| (f.id.clone(), group.gate.clone(), !side))
+     r'''                .then(|| (f.id.clone(), index, !side))''',
+     r'''                .then(|| (f.id.clone(), index, !side))
                 .filter(|_| false)''')
+PY
+
+mutation_case "a disjunction of the codec's own flags makes no group" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''    groups.extend(disjunction_groups(model, roles, derived_whole));''',
+     r'''    let _ = disjunction_groups(model, roles, derived_whole);''')
 PY
 
 mutation_case "a stated length a group holds is said twice" <<'PY'

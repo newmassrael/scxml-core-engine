@@ -286,6 +286,17 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     `declaration` and `declare` that hold it, `chain_flag_entry`, `chain_prev_entry` and `value_zbuf`. The Zenoh
     `init_body` and `join` hold their group and keep the refusal of R1 for their `zid`.
   - **R4c, disjunctions**: the first bullet above, with each satisfying assignment of the flags as one arm.
+    *Landed 2026-11-01.* A group is now a sum of arms (`GateGroup::arms`), each the elements present under one
+    assignment of its gates, and possibly no arm (`absent`); R4b's two sides and one side are its cases. A gate
+    `a.X || b.Y` whose clauses each read a one-bit flag of the codec's own carrier, a different flag each, that no
+    other gate reads and nothing else derives, makes a group with an arm for each satisfying assignment, each arm
+    holding every field the gate gates, ordered by how many flags it holds set and then in the gate's order; the one
+    assignment that does not satisfy it is no arm. Each flag is derived from the arm (`Derivation::ArmOf`), and the
+    gate is no longer a check of the source. The arms are named after the flags they hold set (`WantsA`, `WantsB`,
+    `WantsAWantsB`, `Neither` for none), and the group after the carrier and its flags
+    (`flags_wants_a_or_wants_b`). A disjunction over an input or a chain's membership stays a check; the latter is
+    R6. Three documents became total: `present_if_disjunction`, the Zenoh `interest`, and the network envelope that
+    holds it.
 
   Other backends keep their checks until they take the source interface. Their encode is still handed every input.
 - **R5, a shared count.** Lists that share one count are presented as one list whose entries carry each list's item,

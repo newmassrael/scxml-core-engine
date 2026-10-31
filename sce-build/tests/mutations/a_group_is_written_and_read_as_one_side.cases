@@ -19,22 +19,28 @@ mutation_tests -p sce-forge-conformance --features alloc --test forge_source_rou
 mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/generator/rust_source.rs
 mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
 
-mutation_case "a decode builds a group of one side when its gate does not hold" <<'PY'
+mutation_case "a decode builds the arm of the other value of its gate" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''                format!("if {test} {{ {some} }} else {{ None }}")''',
-     r'''                format!("if {test} {{ None }} else {{ {some} }}")''')
+     r'''            format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))''',
+     r'''            format!("if {test} {{ {} }} else {{ {} }}", value(off), value(on))''')
 PY
 
-mutation_case "an input two sides decide is read from the other side" <<'PY'
+mutation_case "a gate is read from the arms it does not hold in" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                    let (set, _) = Self::group_arms(group);''',
-     r'''                    let (_, set) = Self::group_arms(group);''')
+     r'''            (arms_with(true), false)''',
+     r'''            (arms_with(false), false)''')
+PY
+
+mutation_case "a disjunction's arms are built under the wrong assignment" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                    let values = arm.0.values.iter().map(bool::to_string).collect::<Vec<_>>().join(", ");''',
+     r'''                    let values = arm.0.values.iter().rev().map(bool::to_string).collect::<Vec<_>>().join(", ");''')
 PY
 
 mutation_case "an encode writes the elements of the side the value does not hold" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                        if on.iter().any(|o| o.id == f.id) {
+     r'''                        if ids.contains(&f.id) {
                             format!("Some({})", self.accessor(f))''',
-     r'''                        if !on.iter().any(|o| o.id == f.id) {
+     r'''                        if !ids.contains(&f.id) {
                             format!("Some({})", self.accessor(f))''')
 PY

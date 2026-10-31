@@ -130,6 +130,10 @@ pub enum Derivation {
     /// the body or the arm says. Where none of them is there, the carrier
     /// keeps the bit the value presents.
     BoundInput { binders: Vec<Binder> },
+    /// A flag of the disjunction `gates`, which decides a group
+    /// (docs/adr/0065 §6 R4c): the value the arm the value holds gives it, or
+    /// the one it has while the value holds no arm.
+    ArmOf { gates: Vec<GateVar> },
 }
 
 /// A body or an arm whose codec says a flag-input the parent binds to one of
@@ -202,41 +206,82 @@ impl fmt::Display for GateVar {
     }
 }
 
-/// The elements a value presents together because one gate decides them
-/// (docs/adr/0065 §6 R4b): those present while the gate holds, and those
-/// present while it does not. A length stated while its content is absent is
-/// present on the side where the content is not. A gate with one element
-/// keeps the element as it is; a group has two elements or more.
+/// The elements a value presents together because the same gates decide them
+/// (docs/adr/0065 §6 R4b, R4c): a sum of arms, each the elements present under
+/// one assignment of the gates, and possibly no arm at all. A value holds one
+/// arm, or none where `absent` says the gates allow that, and the gates are
+/// derived from which.
+///
+/// One flag that gates elements on both of its values makes two arms, one for
+/// each value. One that gates elements on one value makes one arm, which the
+/// value holds or not. A disjunction makes an arm for each assignment that
+/// satisfies it, each holding every element it gates, and no arm under the one
+/// that does not. A length stated while its content is absent is in the arm
+/// where the content is not. A gate with one element keeps the element as it
+/// is; a group has two elements or more, or more than one arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateGroup {
-    pub gate: GateVar,
-    /// Present while the gate holds, in declaration order.
-    pub set: Vec<String>,
-    /// Present while it does not, in declaration order.
-    pub clear: Vec<String>,
+    /// The flags that decide the group, in the order its gate names them.
+    pub gates: Vec<GateVar>,
+    /// The arms, in the order a type of the group lists them.
+    pub arms: Vec<GroupArm>,
+    /// The values of the gates while the value holds no arm, when it may hold
+    /// none.
+    pub absent: Option<Vec<bool>>,
+}
+
+/// One arm of a [`GateGroup`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupArm {
+    /// The value of each gate while the value holds the arm, in the order of
+    /// [`GateGroup::gates`].
+    pub values: Vec<bool>,
+    /// The elements present in it, in declaration order.
+    pub fields: Vec<String>,
 }
 
 impl GateGroup {
-    /// Whether the group has elements on both sides, so that a value holds
-    /// one side or the other.
+    /// Whether the group has more than one arm, so that a value says which.
     pub fn is_sum(&self) -> bool {
-        !self.set.is_empty() && !self.clear.is_empty()
+        self.arms.len() > 1
     }
 
     /// Whether `field` is one of the group's elements.
     pub fn contains(&self, field: &str) -> bool {
-        self.set.iter().chain(self.clear.iter()).any(|f| f == field)
+        self.arms
+            .iter()
+            .any(|a| a.fields.iter().any(|f| f == field))
     }
 
-    /// The side `field` is on: `true` for the side present while the gate
-    /// holds.
-    pub fn side_of(&self, field: &str) -> Option<bool> {
-        if self.set.iter().any(|f| f == field) {
-            Some(true)
-        } else if self.clear.iter().any(|f| f == field) {
-            Some(false)
-        } else {
-            None
+    /// The group's elements, each once, in the order the arms first name them.
+    pub fn fields(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for arm in &self.arms {
+            for field in &arm.fields {
+                if !out.contains(&field.as_str()) {
+                    out.push(field);
+                }
+            }
+        }
+        out
+    }
+
+    /// The group of one gate made of the elements present while it holds and
+    /// those present while it does not.
+    fn of_one(gate: GateVar, set: Vec<String>, clear: Vec<String>) -> GateGroup {
+        let arm = |value: bool, fields: Vec<String>| GroupArm {
+            values: vec![value],
+            fields,
+        };
+        let (arms, absent) = match (set.is_empty(), clear.is_empty()) {
+            (false, false) => (vec![arm(true, set), arm(false, clear)], None),
+            (false, true) => (vec![arm(true, set)], Some(vec![false])),
+            _ => (vec![arm(false, clear)], Some(vec![true])),
+        };
+        GateGroup {
+            gates: vec![gate],
+            arms,
+            absent,
         }
     }
 }
@@ -336,7 +381,7 @@ impl Derivation {
             Derivation::ParentTag { embeds } => embeds.len(),
             Derivation::ChainContinuation { chains } => chains.len(),
             Derivation::PresenceOf { gated } => gated.len(),
-            Derivation::VariantTag { .. } => 1,
+            Derivation::VariantTag { .. } | Derivation::ArmOf { .. } => 1,
             // The arms of one variant are one source: one of them is there.
             Derivation::BoundInput { binders } => {
                 let embeds = binders
@@ -381,6 +426,8 @@ impl Derivation {
             }
             // One tag per codec: a second is the same declaration read twice.
             (Derivation::VariantTag { .. }, Derivation::VariantTag { .. }) => {}
+            // A flag is read by one disjunction.
+            (Derivation::ArmOf { .. }, Derivation::ArmOf { .. }) => {}
             _ => unreachable!("absorb is called for derivations of one kind"),
         }
     }
@@ -429,6 +476,10 @@ impl fmt::Display for Derivation {
                     .collect();
                 write!(f, "input-of({})", each.join(", "))
             }
+            Derivation::ArmOf { gates } => {
+                let each: Vec<String> = gates.iter().map(GateVar::to_string).collect();
+                write!(f, "arm-of({})", each.join(" || "))
+            }
         }?;
         if self.sources() > 1 {
             f.write_str(" [the sources agree in size]")?;
@@ -465,6 +516,8 @@ pub struct CodecRoles {
     pub rows: Vec<Row>,
     /// The gates the codec cannot derive a flag from (a disjunction, a
     /// flag-input, a chain's membership): the measure holds a source to them.
+    /// A gate a said input or a disjunction's group decides stays here for an
+    /// encode that holds neither; `source_checks` leaves it out.
     pub checks: Vec<Check>,
     /// The flag-inputs the value says, by name, and what says each
     /// (docs/adr/0065 §6 R4a). The encode of a source takes the others.
@@ -490,6 +543,11 @@ impl CodecRoles {
                 .input
                 .as_ref()
                 .is_none_or(|input| !self.inputs.contains_key(input))
+                // A field of a disjunction's group is held with the arm that
+                // says its flags (docs/adr/0065 §6 R4c).
+                && !self
+                    .group_of(&check.field)
+                    .is_some_and(|group| group.gates.len() > 1)
         })
     }
 
@@ -505,7 +563,9 @@ impl CodecRoles {
 
     /// The group the gate `gate` decides.
     pub fn group_of_gate(&self, gate: &GateVar) -> Option<&GateGroup> {
-        self.groups.iter().find(|g| &g.gate == gate)
+        self.groups
+            .iter()
+            .find(|g| g.gates.len() == 1 && &g.gates[0] == gate)
     }
 
     /// The role of an element, `None` when the codec has no such element.
@@ -584,11 +644,25 @@ impl CodecRoles {
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
         }
         for group in &self.groups {
+            let gates: Vec<String> = group.gates.iter().map(GateVar::to_string).collect();
+            let value = |values: &[bool]| {
+                values
+                    .iter()
+                    .map(|v| if *v { "1" } else { "0" })
+                    .collect::<String>()
+            };
+            let mut arms: Vec<String> = group
+                .arms
+                .iter()
+                .map(|arm| format!("{} ({})", value(&arm.values), arm.fields.join(", ")))
+                .collect();
+            if let Some(absent) = &group.absent {
+                arms.push(format!("{} (none)", value(absent)));
+            }
             out.push_str(&format!(
-                "  group  {}  set ({})  clear ({})\n",
-                group.gate,
-                group.set.join(", "),
-                group.clear.join(", ")
+                "  group  {}  {}\n",
+                gates.join(" || "),
+                arms.join("  ")
             ));
         }
         for check in &self.input_checks {
@@ -931,6 +1005,24 @@ pub fn classify_with(
         unresolved,
     };
     roles.groups = gate_groups(model, &roles, &derived_whole);
+    // The flags of a disjunction that decides a group are derived from the arm
+    // the value holds (docs/adr/0065 §6 R4c).
+    for group in roles.groups.iter().filter(|g| g.gates.len() > 1) {
+        for gate in &group.gates {
+            let GateVar::Flag { carrier, flag } = gate else {
+                continue;
+            };
+            let id = ElementId::Flag {
+                field: carrier.clone(),
+                flag: flag.clone(),
+            };
+            if let Some(row) = roles.rows.iter_mut().find(|row| row.id == id) {
+                row.role = Role::Derived(vec![Derivation::ArmOf {
+                    gates: group.gates.clone(),
+                }]);
+            }
+        }
+    }
     let inputs_said = said_inputs(model, &held, &derived_whole, &roles.groups);
     for held_codec in &held {
         // An input of this codec handed on: checked where the value says it
@@ -995,33 +1087,19 @@ pub fn classify_with(
     roles
 }
 
-/// The groups of `model` (docs/adr/0065 §6 R4b): the presented fields each
-/// gate of one flag decides, by side, and a stated length on the side where
-/// its content is absent. A gate that decides one element makes no group.
+/// The groups of `model` (docs/adr/0065 §6 R4b, R4c): the presented fields
+/// each gate of one flag decides, by its value, with a stated length where its
+/// content is absent; and the presented fields one disjunction of the codec's
+/// own flags decides, an arm for each assignment that satisfies it. A gate of
+/// one flag that decides one element makes no group.
 fn gate_groups(
     model: &CodecModel,
     roles: &CodecRoles,
     derived_whole: &BTreeSet<String>,
 ) -> Vec<GateGroup> {
-    let mut groups: Vec<GateGroup> = Vec::new();
-    let mut push = |gate: GateVar, field: &str, set: bool| {
-        let group = match groups.iter_mut().position(|g| g.gate == gate) {
-            Some(index) => &mut groups[index],
-            None => {
-                groups.push(GateGroup {
-                    gate,
-                    set: Vec::new(),
-                    clear: Vec::new(),
-                });
-                groups.last_mut().expect("just pushed")
-            }
-        };
-        if set {
-            group.set.push(field.to_string());
-        } else {
-            group.clear.push(field.to_string());
-        }
-    };
+    // The fields one flag decides, by its value: present while it holds, and
+    // while it does not.
+    let mut sides: Vec<(GateVar, Vec<String>, Vec<String>)> = Vec::new();
     for field in &model.fields {
         let Some(gate) = &field.present_if else {
             continue;
@@ -1029,13 +1107,39 @@ fn gate_groups(
         if derived_whole.contains(&field.id) {
             continue;
         }
-        if let Some(var) = gate_var(model, gate) {
-            push(var, &field.id, !gate.negate);
+        let Some(var) = gate_var(model, gate) else {
+            continue;
+        };
+        let index = match sides.iter().position(|(g, _, _)| *g == var) {
+            Some(index) => index,
+            None => {
+                sides.push((var, Vec::new(), Vec::new()));
+                sides.len() - 1
+            }
+        };
+        if gate.negate {
+            sides[index].2.push(field.id.clone());
+        } else {
+            sides[index].1.push(field.id.clone());
         }
     }
     // A length stated while its content is absent is on the other side from
     // all of its content.
-    let stated: Vec<(String, GateVar, bool)> = model
+    let side_of = |sides: &[(GateVar, Vec<String>, Vec<String>)], field: &str| {
+        sides
+            .iter()
+            .enumerate()
+            .find_map(|(index, (_, set, clear))| {
+                if set.iter().any(|f| f == field) {
+                    Some((index, true))
+                } else if clear.iter().any(|f| f == field) {
+                    Some((index, false))
+                } else {
+                    None
+                }
+            })
+    };
+    let stated: Vec<(String, usize, bool)> = model
         .fields
         .iter()
         .filter(|f| crate::forge::codec_totality::stated(model, roles, f))
@@ -1045,26 +1149,136 @@ fn gate_groups(
                 roles,
                 &ElementId::Field(f.id.clone()),
             );
-            let first = measured.first()?;
-            let group = groups.iter().find(|g| g.contains(&first.id))?;
-            let side = group.side_of(&first.id)?;
+            let (index, side) = side_of(&sides, &measured.first()?.id)?;
             measured
                 .iter()
-                .all(|m| group.side_of(&m.id) == Some(side))
-                .then(|| (f.id.clone(), group.gate.clone(), !side))
+                .all(|m| side_of(&sides, &m.id) == Some((index, side)))
+                .then(|| (f.id.clone(), index, !side))
         })
         .collect();
-    for (field, gate, side) in stated {
-        if let Some(group) = groups.iter_mut().find(|g| g.gate == gate) {
-            if side {
-                group.set.push(field);
-            } else {
-                group.clear.push(field);
-            }
+    for (field, index, side) in stated {
+        if side {
+            sides[index].1.push(field);
+        } else {
+            sides[index].2.push(field);
         }
     }
-    groups.retain(|g| g.set.len() + g.clear.len() >= 2);
+    let mut groups: Vec<GateGroup> = sides
+        .into_iter()
+        .filter(|(_, set, clear)| set.len() + clear.len() >= 2)
+        .map(|(gate, set, clear)| GateGroup::of_one(gate, set, clear))
+        .collect();
+    groups.extend(disjunction_groups(model, roles, derived_whole));
     groups
+}
+
+/// The groups of the disjunctions of `model` (docs/adr/0065 §6 R4c): a gate
+/// `a.X || b.Y` whose clauses each read a one-bit flag of the codec's own
+/// carrier, a different one each, that no other gate reads and nothing else
+/// derives. The fields under one such gate are present together, so they are
+/// one group with an arm for each assignment of the flags that satisfies it,
+/// and none under the one that does not. Any other disjunction stays a check.
+fn disjunction_groups(
+    model: &CodecModel,
+    roles: &CodecRoles,
+    derived_whole: &BTreeSet<String>,
+) -> Vec<GateGroup> {
+    // Each disjunction as the flags its clauses read and whether each is
+    // negated, with the fields it gates.
+    type Clauses = Vec<(GateVar, bool)>;
+    let mut gates: Vec<(Clauses, Vec<String>)> = Vec::new();
+    let mut flags_read: Vec<GateVar> = Vec::new();
+    for field in &model.fields {
+        let Some(gate) = &field.present_if else {
+            continue;
+        };
+        let mut clauses: Vec<(GateVar, bool)> = Vec::new();
+        let mut clause = Some(gate);
+        let mut every_clause_a_flag = true;
+        while let Some(p) = clause {
+            let single = PresentIfPredicate {
+                or_with: None,
+                ..p.clone()
+            };
+            match gate_var(model, &single) {
+                Some(var @ GateVar::Flag { .. }) => clauses.push((var, p.negate)),
+                Some(var) => {
+                    every_clause_a_flag = false;
+                    flags_read.push(var);
+                }
+                None => every_clause_a_flag = false,
+            }
+            clause = p.or_with.as_deref();
+        }
+        flags_read.extend(clauses.iter().map(|(v, _)| v.clone()));
+        if clauses.len() < 2 || !every_clause_a_flag || derived_whole.contains(&field.id) {
+            continue;
+        }
+        match gates.iter_mut().find(|(c, _)| *c == clauses) {
+            Some((_, fields)) => fields.push(field.id.clone()),
+            None => gates.push((clauses, vec![field.id.clone()])),
+        }
+    }
+    gates
+        .into_iter()
+        .filter(|(clauses, fields)| {
+            let distinct: BTreeSet<&GateVar> = clauses.iter().map(|(v, _)| v).collect();
+            distinct.len() == clauses.len()
+                && clauses.iter().all(|(var, _)| {
+                    // Read by the fields under this gate alone (once each), and
+                    // derived by nothing else.
+                    let GateVar::Flag { carrier, flag } = var else {
+                        return false;
+                    };
+                    flags_read.iter().filter(|r| *r == var).count() == fields.len()
+                        && matches!(
+                            roles.role_of(&ElementId::Flag {
+                                field: carrier.clone(),
+                                flag: flag.clone(),
+                            }),
+                            Some(Role::Presented)
+                        )
+                })
+        })
+        .map(|(clauses, fields)| {
+            let k = clauses.len();
+            let assignment = |mask: usize| {
+                (0..k)
+                    .map(|i| (mask >> (k - 1 - i)) & 1 == 1)
+                    .collect::<Vec<bool>>()
+            };
+            let holds = |values: &[bool]| {
+                clauses
+                    .iter()
+                    .zip(values)
+                    .any(|((_, negate), v)| v != negate)
+            };
+            // The arms by how many flags they hold set, then in the order the
+            // gate names its flags.
+            let mut assignments: Vec<Vec<bool>> = (0..1usize << k)
+                .map(assignment)
+                .filter(|values| holds(values))
+                .collect();
+            assignments.sort_by_key(|values| {
+                (
+                    values.iter().filter(|v| **v).count(),
+                    values.iter().map(|v| !v).collect::<Vec<bool>>(),
+                )
+            });
+            let arms = assignments
+                .into_iter()
+                .map(|values| GroupArm {
+                    values,
+                    fields: fields.clone(),
+                })
+                .collect();
+            GateGroup {
+                gates: clauses.iter().map(|(v, _)| v.clone()).collect(),
+                arms,
+                absent: Some(clauses.iter().map(|(_, negate)| *negate).collect()),
+            }
+        })
+        .collect()
 }
 
 /// The flag a gate of one clause reads: a flag-input one bit wide, or a
@@ -1203,7 +1417,7 @@ fn said_inputs(
             .collect();
         let group = groups
             .iter()
-            .find(|g| g.gate == GateVar::Input(input.name.clone()));
+            .find(|g| g.gates == [GateVar::Input(input.name.clone())]);
         let source = match (gates.as_slice(), forwards.as_slice(), in_other_gate) {
             (gated, [], false)
                 if group.is_some_and(|g| gated.iter().all(|(f, _)| g.contains(f))) =>

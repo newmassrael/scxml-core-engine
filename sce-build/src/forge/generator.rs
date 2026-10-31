@@ -7291,8 +7291,9 @@ fn rust_group_storage(
     mut wire: Vec<serde_json::Value>,
     emit_views: bool,
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
+    use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
-        group_accessor, group_arms, group_type, member_varies,
+        group_accessor, group_arm_name, group_type, member_varies,
     };
     let roles = crate::forge::codec_roles::classify(m, imports);
     if roles.groups.is_empty() {
@@ -7315,7 +7316,7 @@ fn rust_group_storage(
 
     // An element the decode builds in its field is built in its local.
     for group in &roles.groups {
-        for id in group.set.iter().chain(group.clear.iter()) {
+        for id in group.fields() {
             let (Some(f), Some(index)) = (field_of(id), index_of(id)) else {
                 continue;
             };
@@ -7365,71 +7366,103 @@ fn rust_group_storage(
             continue;
         };
         // The group stands where its first element stood.
-        let first = group
-            .set
-            .iter()
-            .chain(group.clear.iter())
-            .filter_map(|id| index_of(id))
-            .min();
+        let first = group.fields().into_iter().filter_map(index_of).min();
         if first != Some(index) {
             continue;
         }
         let accessor = group_accessor(group);
         let ty = group_type(&struct_name, group);
-        let sides: Vec<(bool, Vec<&CodecField>)> = [(true, &group.set), (false, &group.clear)]
-            .into_iter()
-            .map(|(side, ids)| (side, ids.iter().filter_map(|id| field_of(id)).collect()))
-            .collect();
-        let members: Vec<&CodecField> = sides
+        let optional = group.absent.is_some();
+        // Each arm with its elements, and the path it is built and matched by.
+        let arms: Vec<(&GroupArm, Vec<&CodecField>, String)> = group
+            .arms
             .iter()
-            .flat_map(|(_, fs)| fs.iter().copied())
+            .map(|arm| {
+                let path = if group.is_sum() {
+                    format!("{ty}::{}", group_arm_name(group, arm))
+                } else {
+                    ty.clone()
+                };
+                (
+                    arm,
+                    arm.fields.iter().filter_map(|id| field_of(id)).collect(),
+                    path,
+                )
+            })
             .collect();
+        let members: Vec<&CodecField> = group.fields().into_iter().filter_map(field_of).collect();
         let varies = members.iter().any(|f| member_varies(f));
         let obj_of = |f: &CodecField| &wire[index_of(&f.id).expect("an element is a field")];
         let acc = |f: &CodecField| l.codec_field_id(&f.id);
+        let held = |pattern: String| {
+            if optional {
+                format!("Some({pattern})")
+            } else {
+                pattern
+            }
+        };
         // The group's type in one form: each varying element as `ty_key` says.
-        let type_in = |ty_key: &str, lifetime: Option<(&str, &str)>| -> String {
+        let type_in = |ty_key: &str| -> String {
             let args: Vec<String> = members
                 .iter()
                 .filter(|f| member_varies(f))
-                .map(|f| {
-                    let t = present(&str_of(obj_of(f), ty_key).unwrap_or_default());
-                    match lifetime {
-                        Some((from, to)) => t.replace(from, to),
-                        None => t,
-                    }
-                })
+                .map(|f| present(&str_of(obj_of(f), ty_key).unwrap_or_default()))
                 .collect();
             let inner = if args.is_empty() {
                 ty.clone()
             } else {
                 format!("{ty}<{}>", args.join(", "))
             };
-            if group.is_sum() {
-                inner
-            } else {
+            if optional {
                 format!("Option<{inner}>")
+            } else {
+                inner
             }
         };
-        let (set_arm, clear_arm) = group_arms(group);
-        let arm_of = |side: bool| if side { &set_arm } else { &clear_arm };
         let names = |fs: &[&CodecField]| fs.iter().map(|f| acc(f)).collect::<Vec<_>>().join(", ");
-        let held_sides: Vec<&(bool, Vec<&CodecField>)> =
-            sides.iter().filter(|(_, fs)| !fs.is_empty()).collect();
 
         let mut entry = serde_json::Map::new();
         entry.insert("id".into(), accessor.clone().into());
-        entry.insert("rs_type".into(), type_in("rs_type", None).into());
+        entry.insert("rs_type".into(), type_in("rs_type").into());
 
-        // The decode: each element read into its local, then the group built
-        // from them under the gate, as the decode tested it.
-        let gate_member = members
+        // The decode: each element read into its local, then the arm the gates
+        // name built from them, each gate tested as the decode tested it.
+        let tests: Vec<String> = group
+            .gates
             .iter()
-            .find(|f| f.present_if.is_some())
-            .expect("a group has an element gated on it");
-        let mut holds = gate_member.present_if.clone().expect("checked above");
-        holds.negate = false;
-        let test = present_if_test_literal(&m.fields, &holds, l.lang);
+            .map(|gate| {
+                let clause = members
+                    .iter()
+                    .filter_map(|f| f.present_if.as_ref())
+                    .find_map(|p| {
+                        let mut clause = Some(p);
+                        while let Some(c) = clause {
+                            let reads = match gate {
+                                crate::forge::codec_roles::GateVar::Input(name) => {
+                                    c.scope == PresentIfScope::Input && &c.flag_name == name
+                                }
+                                crate::forge::codec_roles::GateVar::Flag { carrier, flag } => {
+                                    c.scope == PresentIfScope::Local
+                                        && &c.field_id == carrier
+                                        && &c.flag_name == flag
+                                }
+                            };
+                            if reads {
+                                return Some(c);
+                            }
+                            clause = c.or_with.as_deref();
+                        }
+                        None
+                    })
+                    .expect("a group's gate is read by a gate of its elements");
+                let holds = PresentIfPredicate {
+                    negate: false,
+                    or_with: None,
+                    ..clause.clone()
+                };
+                present_if_test_literal(&m.fields, &holds, l.lang)
+            })
+            .collect();
         let build = |fs: &[&CodecField]| -> String {
             fs.iter()
                 .map(|f| {
@@ -7443,20 +7476,35 @@ fn rust_group_storage(
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let assign = if group.is_sum() {
-            format!(
-                "if {test} {{ {ty}::{set_arm} {{ {} }} }} else {{ {ty}::{clear_arm} {{ {} }} }}",
-                build(&sides[0].1),
-                build(&sides[1].1)
-            )
+        let built = |arm: &(&GroupArm, Vec<&CodecField>, String)| {
+            held(format!("{} {{ {} }}", arm.2, build(&arm.1)))
+        };
+        let assign = if let [test] = tests.as_slice() {
+            // One gate: the arm it holds in, and the other arm or none.
+            let on = arms.iter().find(|a| a.0.values == [true]);
+            let off = arms.iter().find(|a| a.0.values == [false]);
+            let value = |arm: Option<&(&GroupArm, Vec<&CodecField>, String)>| {
+                arm.map_or_else(|| "None".to_string(), built)
+            };
+            format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))
         } else {
-            let (side, fs) = held_sides[0];
-            let some = format!("Some({ty} {{ {} }})", build(fs));
-            if *side {
-                format!("if {test} {{ {some} }} else {{ None }}")
-            } else {
-                format!("if {test} {{ None }} else {{ {some} }}")
-            }
+            // A disjunction: each arm under the values it names, and none
+            // under the one assignment that does not satisfy it.
+            let mut cases: Vec<String> = arms
+                .iter()
+                .map(|arm| {
+                    let values = arm
+                        .0
+                        .values
+                        .iter()
+                        .map(bool::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("({values}) => {},", built(arm))
+                })
+                .collect();
+            cases.push("_ => None,".to_string());
+            format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
         };
         entry.insert("assign_expr".into(), assign.into());
 
@@ -7465,11 +7513,11 @@ fn rust_group_storage(
             if !varies {
                 return Ok(format!("self.{accessor}"));
             }
-            // Each side as the pattern that takes it apart and the value built
+            // Each arm as the pattern that takes it apart and the value built
             // from its elements projected.
-            let mut arms: Vec<(String, String)> = Vec::new();
+            let mut cases: Vec<(String, String)> = Vec::new();
             let mut fallible = false;
-            for (side, fs) in &held_sides {
+            for (_, fs, path) in &arms {
                 let mut convs: Vec<String> = Vec::new();
                 for f in fs {
                     let mut value = (*f).clone();
@@ -7479,32 +7527,34 @@ fn rust_group_storage(
                     fallible |= expr.contains('?');
                     convs.push(shorthand(&acc(f), &expr));
                 }
-                let path = if group.is_sum() {
-                    format!("{ty}::{}", arm_of(*side))
-                } else {
-                    ty.clone()
-                };
-                arms.push((
+                cases.push((
                     format!("{path} {{ {} }}", names(fs)),
                     format!("{path} {{ {} }}", convs.join(", ")),
                 ));
             }
-            Ok(if group.is_sum() {
-                let arms: Vec<String> = arms
+            let listed = |wrap: &dyn Fn(&str) -> String| -> String {
+                cases
                     .iter()
-                    .map(|(pattern, value)| format!("{pattern} => {value},"))
-                    .collect();
-                format!("match self.{accessor} {{ {} }}", arms.join(" "))
-            } else if fallible {
+                    .map(|(pattern, value)| format!("{} => {},", wrap(pattern), wrap(value)))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            Ok(match (optional, fallible) {
+                (false, _) => format!("match self.{accessor} {{ {} }}", listed(&|s| s.to_string())),
                 // A projection that can fail passes its error out of the
                 // method, which a closure would keep.
-                let (pattern, value) = &arms[0];
-                format!(
-                    "match self.{accessor} {{ Some({pattern}) => Some({value}), None => None }}"
-                )
-            } else {
-                let (pattern, value) = &arms[0];
-                format!("self.{accessor}.map(|{pattern}| {value})")
+                (true, true) => format!(
+                    "match self.{accessor} {{ {} None => None }}",
+                    listed(&|s| format!("Some({s})"))
+                ),
+                (true, false) if cases.len() == 1 => {
+                    let (pattern, value) = &cases[0];
+                    format!("self.{accessor}.map(|{pattern}| {value})")
+                }
+                (true, false) => format!(
+                    "self.{accessor}.map(|_g| match _g {{ {} }})",
+                    listed(&|s| s.to_string())
+                ),
             })
         };
         entry.insert("rs_into_owned_expr".into(), owned_conv(false)?.into());
@@ -7524,10 +7574,10 @@ fn rust_group_storage(
             } else {
                 format!("{ty}<{}>", args.join(", "))
             };
-            if group.is_sum() {
-                inner
-            } else {
+            if optional {
                 format!("Option<{inner}>")
+            } else {
+                inner
             }
         };
         entry.insert("rs_owned_type".into(), owned_ty.into());
@@ -7540,8 +7590,8 @@ fn rust_group_storage(
             if !varies {
                 return Ok(format!("_out.{accessor} = self.{accessor};"));
             }
-            let mut arms: Vec<String> = Vec::new();
-            for (side, fs) in &held_sides {
+            let mut cases: Vec<String> = Vec::new();
+            for (_, fs, path) in &arms {
                 let mut body = String::new();
                 for f in fs {
                     let local = format!("_o_{}", acc(f));
@@ -7559,27 +7609,18 @@ fn rust_group_storage(
                     .map(|f| format!("{}: _o_{}", acc(f), acc(f)))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let (pattern, value) = if group.is_sum() {
-                    (
-                        format!("{ty}::{} {{ {} }}", arm_of(*side), names(fs)),
-                        format!("{ty}::{} {{ {built} }}", arm_of(*side)),
-                    )
-                } else {
-                    (
-                        format!("Some({ty} {{ {} }})", names(fs)),
-                        format!("Some({ty} {{ {built} }})"),
-                    )
-                };
-                arms.push(format!(
+                let pattern = held(format!("{path} {{ {} }}", names(fs)));
+                let value = held(format!("{path} {{ {built} }}"));
+                cases.push(format!(
                     "            {pattern} => {{\n{body}                _out.{accessor} = {value};\n            }}\n"
                 ));
             }
-            if !group.is_sum() {
-                arms.push(format!("            None => _out.{accessor} = None,\n"));
+            if optional {
+                cases.push(format!("            None => _out.{accessor} = None,\n"));
             }
             Ok(format!(
                 "match &self.{accessor} {{\n{}        }}",
-                arms.concat()
+                cases.concat()
             ))
         };
         let as_borrowed = into_dest(Some(("'a", "'o")), &|f, src, dest| {
@@ -7590,7 +7631,7 @@ fn rust_group_storage(
         entry.insert("rs_as_borrowed_into_stmt".into(), as_borrowed.into());
 
         if emit_views {
-            entry.insert("view_rs_type".into(), type_in("view_rs_type", None).into());
+            entry.insert("view_rs_type".into(), type_in("view_rs_type").into());
             let into_builder = into_dest(None, &|f, src, dest| {
                 let entry_type = match crate::forge::codec_totality::child_alias(f) {
                     Some(alias) if !f.is_embed() => {
