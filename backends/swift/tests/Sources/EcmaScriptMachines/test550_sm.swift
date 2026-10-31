@@ -316,6 +316,16 @@ public final class Test550Policy: InvocablePolicy {
     /// starts from the document's own values.
     private var lua: LuaState?
 
+    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this machine's variables
+    /// before it starts, by name, each as JSON text. A `<data>` of one of these names takes the value
+    /// in place of its own; a name this machine declares no variable for is never read.
+    private var invokeSeeds: [String: String] = [:]
+
+    /// Hands the machine the values its parent's `<invoke>` names. Called before the machine starts.
+    public func acceptSeeds(_ seeds: [String: String]) {
+        invokeSeeds = seeds
+    }
+
     /// The metadata of the event being handled, kept by `populateEventMetadata` until
     /// `bindCurrentEvent` hands it to the session (§scxml-5.10).
     private var pendingEventMetadata = EventMetadata()
@@ -351,7 +361,11 @@ public final class Test550Policy: InvocablePolicy {
     private func defineData(_ id: String, as expression: String?, engine: Engine<Test550Policy>) {
         do {
             let session = try ensureLua()
-            if let expression {
+            if let seed = invokeSeeds[id] {
+                // W3C SCXML 6.4.1: the value the parent handed this variable replaces its own.
+                try session.setGlobal("_scxml_seed", .string(seed))
+                try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
+            } else if let expression {
                 try session.defineGlobal(id, as: expression, chunkName: "=data")
             } else {
                 try session.setGlobal(id, .nilValue)
