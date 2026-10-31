@@ -19,7 +19,7 @@ use tempfile::tempdir;
 use sce_build::compile_scxml_with_imports;
 use sce_build::forge::codegen_matrix::{
     awaits_runtime, broadcast_log_progress_ceiling, check, emitting, language_wire_name, lookup,
-    template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS,
+    template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS, BROADCAST_LOG_CONTEXT_BACKENDS,
 };
 use sce_build::forge::diagnostic::{DiagnosticCode, Fix, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
@@ -1480,6 +1480,55 @@ fn a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags() {
 }
 
 #[test]
+fn rust_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
+    // 65 flags need two flag words of 64 bits, and the tag a third; the bytes then start at
+    // word 4. The first flag of the second word sits at bit 0 of word 1, and both the write
+    // and the read of each context word are held, because a single flag sits at bit 0 of
+    // word 0 and cannot tell a word or a shift that was swapped.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores as many flags as its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "pub const CONTEXT_WORDS: usize = 3;",
+            "entry[1 + 0] |= u64::from(flags.f63) << 63;",
+            "entry[1 + 1] |= u64::from(flags.f64) << 0;",
+            "entry[1 + 2] = u64::from(tag);",
+            "entry[4 + index / 8] |= u64::from(*byte)",
+            "f63: ((entry[1 + 0] >> 63) & 1) == 1,",
+            "f64: ((entry[1 + 1] >> 0) & 1) == 1,",
+            "let tag = entry[1 + 2] as u8;",
+            "*byte = (entry[4 + index / 8] >> (8 * (index % 8))) as u8;",
+        ],
+    );
+}
+
+#[test]
+fn the_languages_that_store_the_context_are_the_languages_that_have_a_log_template() {
+    // The registry test above reads one list on both sides. This one reads two: a language
+    // that stores the context has a template to store it in, and a language with a template
+    // stores it, so a language added to the context list without a template (Swift) or a
+    // template shipped without the context storage is seen here and nowhere else.
+    for language in BROADCAST_LOG_CONTEXT_BACKENDS {
+        assert!(
+            BROADCAST_LOG_BACKENDS.contains(language),
+            "{language:?} is listed as storing a log's context but has no broadcast-log template"
+        );
+    }
+    for language in BROADCAST_LOG_BACKENDS {
+        assert!(
+            stores_context(*language),
+            "{language:?} has a broadcast-log template that does not store the context"
+        );
+    }
+}
+
+#[test]
 fn the_narrow_row_stores_the_context_in_32_bit_words() {
     // The same entry over 32-bit words: 33 flags need two flag words, the tag a third.
     let facts = BroadcastLogElementFacts {
@@ -1505,6 +1554,10 @@ fn the_narrow_row_stores_the_context_in_32_bit_words() {
             "entry[1 + 1] |= u32::from(flags.f32) << 0;",
             "entry[1 + 2] = u32::from(tag);",
             "entry[4 + index / 4] |= u32::from(*byte)",
+            "f31: ((entry[1 + 0] >> 31) & 1) == 1,",
+            "f32: ((entry[1 + 1] >> 0) & 1) == 1,",
+            "let tag = entry[1 + 2] as u8;",
+            "*byte = (entry[4 + index / 4] >> (8 * (index % 4))) as u8;",
         ],
     );
 }
