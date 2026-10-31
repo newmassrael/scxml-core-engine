@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -109,6 +110,118 @@ class BroadcastLogContractTest {
         log.assertItem(reader, 1, entryOf(1))
         // A position past the head is clamped to it.
         assertEquals(2L, log.readerAt(99).cursor)
+    }
+
+    @Test
+    fun aDeferredReaderStartsAtTheOldestOfItsFirstReadAndIsToldOfNothing() {
+        val log = smallLog()
+        val publisher = assertNotNull(log.publisher())
+        // Both readers open on the empty log, one at the oldest of that moment and
+        // one deferred; then five entries (0 to 4) are published. Three slots retain
+        // two, so the oldest retained is entry 3.
+        val eager = log.readerOldest()
+        val deferred = log.readerDeferred()
+        assertTrue(eager.isBound)
+        assertFalse(deferred.isBound)
+        for (n in 0L until 5L) {
+            publisher.publish(entryOf(n))
+        }
+        // The eager reader holds 0, which is outside the window [3, 5): it is told it
+        // missed 3.
+        assertEquals(Read.Lagged(3), log.readOnce(eager).read)
+        // The deferred reader binds at this read, at the oldest retained entry, so its
+        // first answer is that entry and it has lost nothing.
+        log.assertItem(deferred, 3, entryOf(3))
+        assertTrue(deferred.isBound)
+        assertEquals(0L, deferred.lost)
+        assertEquals(4L, deferred.cursor)
+        log.assertItem(deferred, 4, entryOf(4))
+        assertEquals(Read.Empty, log.readOnce(deferred).read)
+    }
+
+    @Test
+    fun aDeferredReaderOnALogWithNothingPublishedIsEmptyAndThenReadsFromTheStart() {
+        val log = smallLog()
+        val publisher = assertNotNull(log.publisher())
+        val reader = log.readerDeferred()
+        assertEquals(Read.Empty, log.readOnce(reader).read)
+        assertTrue(reader.isBound)
+        assertEquals(0L, reader.cursor)
+        publisher.publish(entryOf(0))
+        log.assertItem(reader, 0, entryOf(0))
+        assertEquals(0L, reader.lost)
+    }
+
+    @Test
+    fun anUnboundReaderReportsCursorZeroAndNotBoundUntilItsFirstRead() {
+        val log = smallLog()
+        val publisher = assertNotNull(log.publisher())
+        for (n in 0L until 3L) {
+            publisher.publish(entryOf(n))
+        }
+        // Opening loads nothing: the head is 3 and the oldest retained is 1, and the
+        // reader holds neither.
+        val deferred = log.readerDeferred()
+        assertFalse(deferred.isBound)
+        assertEquals(0L, deferred.cursor)
+        assertEquals(0L, deferred.lost)
+        // The other three ways to open are bound at once.
+        assertTrue(log.readerOldest().isBound)
+        assertTrue(log.readerHead().isBound)
+        assertTrue(log.readerAt(0).isBound)
+        // The first read binds to the oldest retained entry, 1, and reads it.
+        log.assertItem(deferred, 1, entryOf(1))
+        assertTrue(deferred.isBound)
+        assertEquals(2L, deferred.cursor)
+    }
+
+    @Test
+    fun aDeferredReaderThatFallsBehindLaterIsToldAsAnyReaderIs() {
+        val log = smallLog()
+        val publisher = assertNotNull(log.publisher())
+        for (n in 0L until 10L) {
+            publisher.publish(entryOf(n))
+        }
+        val reader = log.readerDeferred()
+        // h = 10: the window is [8, 10), and the bind took 8 with no loss.
+        log.assertItem(reader, 8, entryOf(8))
+        assertEquals(0L, reader.lost)
+        for (n in 10L until 13L) {
+            publisher.publish(entryOf(n))
+        }
+        // h = 13: the window is [11, 13) and the reader holds 9, so it missed 2.
+        assertEquals(Read.Lagged(2), log.readOnce(reader).read)
+        assertEquals(2L, reader.lost)
+        assertEquals(11L, reader.cursor)
+        log.assertItem(reader, 11, entryOf(11))
+    }
+
+    @Test
+    fun aDeferredReaderIsTheRingsLateReaderWhichIsToldOfNothingHoweverMuchWasWritten() {
+        // A ring of four retained entries: three are published, a reader is opened
+        // deferred, ten more are published, and 13 have been published in all.
+        val log = BroadcastLog(words = 2, slots = 5)
+        assertEquals(4L, log.retention)
+        val publisher = assertNotNull(log.publisher())
+        for (n in 0L until 3L) {
+            publisher.publish(entryOf(n))
+        }
+        val late = log.readerDeferred()
+        for (n in 3L until 13L) {
+            publisher.publish(entryOf(n))
+        }
+        // The oldest retained is 9, and the reader is told of nothing.
+        val seen = ArrayList<Long>()
+        while (true) {
+            val answer = log.readOnce(late).read
+            if (answer !is Read.Item) {
+                assertEquals(Read.Empty, answer)
+                break
+            }
+            seen.add(answer.seq)
+        }
+        assertEquals(listOf(9L, 10L, 11L, 12L), seen)
+        assertEquals(0L, late.lost)
     }
 
     @Test
