@@ -1454,15 +1454,28 @@ fn rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own
             "pub s: bool,",
             "pub t: bool,",
             "flags: EventRingFlags,",
-            "tag: u8,",
             "element.encode(&mut sink, u8::from(flags.s), u8::from(flags.t))?;",
             "entry[1 + 0] |= u64::from(flags.s) << 0;",
             "entry[1 + 0] |= u64::from(flags.t) << 1;",
-            "entry[1 + 1] = u64::from(tag);",
+            "entry[1 + 1] = u64::from(EventRecord::tag_of(element));",
             "entry[3 + index / 8] |= u64::from(*byte)",
             "let tag = entry[1 + 1] as u8;",
             "EventRecord::decode(&mut cursor, u8::from(flags.s), u8::from(flags.t), tag)?",
         ],
+    );
+    // The tag is a function of the element: `publish` takes none, and an item carries
+    // none beside the element.
+    assert!(
+        !code.contains("tag: u8"),
+        "`publish` and `Item` take no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("                tag,\n"),
+        "`read` returns no tag beside the element:\n{code}"
+    );
+    assert!(
+        code.contains("                flags,\n            })"),
+        "the item still returns the flags:\n{code}"
     );
 }
 
@@ -1478,16 +1491,24 @@ fn a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags() {
         &code,
         &[
             "pub const CONTEXT_WORDS: usize = 1;",
-            "tag: u8,",
-            "entry[1 + 0] = u64::from(tag);",
+            "entry[1 + 0] = u64::from(EventRecord::tag_of(element));",
             "entry[2 + index / 8] |= u64::from(*byte)",
             "let tag = entry[1 + 0] as u8;",
             "EventRecord::decode(&mut cursor, tag)?",
+            // No parameter after the element, and an item of a sequence number and the
+            // element alone.
+            "    element: &EventRecord,\n) -> Result<u64, CodecError> {",
+            "    Item {\n        seq: u64,\n        element: EventRecord,\n    },",
+            "Ok(EventRingRead::Item {\n                seq,\n                element,\n            })",
         ],
     );
     assert!(
         !code.contains("Flags"),
         "the element has no flag input:\n{code}"
+    );
+    assert!(
+        !code.contains("tag: u8"),
+        "`publish` and `Item` take no tag:\n{code}"
     );
 }
 
@@ -1510,7 +1531,7 @@ fn rust_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
             "pub const CONTEXT_WORDS: usize = 3;",
             "entry[1 + 0] |= u64::from(flags.f63) << 63;",
             "entry[1 + 1] |= u64::from(flags.f64) << 0;",
-            "entry[1 + 2] = u64::from(tag);",
+            "entry[1 + 2] = u64::from(EventRecord::tag_of(element));",
             "entry[4 + index / 8] |= u64::from(*byte)",
             "f63: ((entry[1 + 0] >> 63) & 1) == 1,",
             "f64: ((entry[1 + 1] >> 0) & 1) == 1,",
@@ -1564,7 +1585,7 @@ fn the_narrow_row_stores_the_context_in_32_bit_words() {
             "entry[1 + 0] |= u32::from(flags.f0) << 0;",
             "entry[1 + 0] |= u32::from(flags.f31) << 31;",
             "entry[1 + 1] |= u32::from(flags.f32) << 0;",
-            "entry[1 + 2] = u32::from(tag);",
+            "entry[1 + 2] = u32::from(EventRecord::tag_of(element));",
             "entry[4 + index / 4] |= u32::from(*byte)",
             "f31: ((entry[1 + 0] >> 31) & 1) == 1,",
             "f32: ((entry[1 + 1] >> 0) & 1) == 1,",
@@ -4321,34 +4342,30 @@ fn python_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_o
             "WORDS: Final[int] = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8",
             "s: bool = False",
             "t: bool = False",
-            "flags: EventRingFlags\n    tag: int\n",
-            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags, tag: int) -> int:",
-            "if not 0 <= tag <= 0xFF:",
-            "raise ValueError(",
+            "    element: EventRecord\n    flags: EventRingFlags\n",
+            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags) -> int:",
             "element.encode(sink, int(flags.s), int(flags.t))",
             r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 3), b"\x00")"#,
             "entry[1 + 0] |= int(flags.s) << 0",
             "entry[1 + 0] |= int(flags.t) << 1",
-            "entry[1 + 1] = tag",
+            "entry[1 + 1] = element.tag()",
             "for word in entry[3:])",
             "s=bool((entry[1 + 0] >> 0) & 1),",
             "t=bool((entry[1 + 0] >> 1) & 1),",
             "tag = entry[1 + 1] & 0xFF",
             "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]), int(flags.s), int(flags.t), tag)",
-            "return EventRingItem(found.seq, element, flags, tag)",
+            "return EventRingItem(found.seq, element, flags)",
         ],
     );
-    // The tag is validated before the codec is asked anything, so a refused tag
-    // publishes nothing and writes no byte.
-    let checked_at = code
-        .find("if not 0 <= tag <= 0xFF:")
-        .expect("the tag is checked");
-    let encoded_at = code
-        .find("element.encode(")
-        .expect("the element is encoded");
+    // The tag comes from an arm value the generator fixes at one byte, so there is no
+    // parameter to check and no refusal: the entry's tag word is the element's own.
     assert!(
-        checked_at < encoded_at,
-        "the tag is checked before the encode:\n{code}"
+        !code.contains("tag: int"),
+        "`publish` and the item take no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("ValueError"),
+        "a tag from the element has no range to refuse:\n{code}"
     );
 }
 
@@ -4364,19 +4381,23 @@ fn python_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags
         &code,
         &[
             "CONTEXT_WORDS: Final[int] = 1",
-            "def publish(publisher: runtime.Publisher, element: EventRecord, tag: int) -> int:",
+            "def publish(publisher: runtime.Publisher, element: EventRecord) -> int:",
             "element.encode(sink)",
             r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 2), b"\x00")"#,
-            "entry[1 + 0] = tag",
+            "entry[1 + 0] = element.tag()",
             "for word in entry[2:])",
             "tag = entry[1 + 0] & 0xFF",
             "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]), tag)",
-            "return EventRingItem(found.seq, element, tag)",
+            "return EventRingItem(found.seq, element)",
         ],
     );
     assert!(
         !code.contains("Flags"),
         "the element has no flag input:\n{code}"
+    );
+    assert!(
+        !code.contains("tag: int"),
+        "`publish` and the item take no tag:\n{code}"
     );
 }
 
@@ -4767,20 +4788,28 @@ fn kotlin_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_o
             "const val WORDS: Int = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8",
             "    val S: Boolean,",
             "    val T: Boolean",
-            "        val flags: EventRingFlags,",
-            "        val tag: UByte",
-            "fun publish(publisher: EventRingPublisher, element: EventRecord, flags: EventRingFlags, tag: UByte): EventRingPublish {",
+            "    data class Item(\n        val seq: Long,\n        val element: EventRecord,\n        val flags: EventRingFlags\n    ) : EventRingRead",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord, flags: EventRingFlags): EventRingPublish {",
             "val refused = element.encode(sink, flagInput(flags.S), flagInput(flags.T))",
             "entry[1 + 0] = entry[1 + 0] or ((if (flags.S) 1L else 0L) shl 0)",
             "entry[1 + 0] = entry[1 + 0] or ((if (flags.T) 1L else 0L) shl 1)",
-            "entry[1 + 1] = tag.toLong()",
+            "entry[1 + 1] = element.tag.toLong()",
             "val word = 3 + index / 8",
             "bytes[index] = (entry[3 + index / 8] ushr (8 * (index % 8))).toByte()",
             "val tag = entry[1 + 1].toUByte()",
             "EventRecord.decode(SceCursor(bytes), flagInput(flags.S), flagInput(flags.T), tag)",
-            "        flags,",
-            "        tag,",
+            "    return EventRingRead.Item(\n        seq,\n        element,\n        flags\n    )",
         ],
+    );
+    // The tag is a function of the element: `publish` takes none, and an item carries
+    // none beside the element.
+    assert!(
+        !code.contains("tag: UByte"),
+        "`publish` and `Item` take no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("        tag,"),
+        "`read` returns no tag beside the element:\n{code}"
     );
 }
 
@@ -4796,14 +4825,19 @@ fn a_tag_alone_is_one_context_word_and_the_kotlin_signature_takes_no_flags() {
         &code,
         &[
             "const val CONTEXT_WORDS: Int = 1",
-            "fun publish(publisher: EventRingPublisher, element: EventRecord, tag: UByte): EventRingPublish {",
-            "        val tag: UByte",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord): EventRingPublish {",
+            "    data class Item(\n        val seq: Long,\n        val element: EventRecord\n    ) : EventRingRead",
             "val refused = element.encode(sink)",
-            "entry[1 + 0] = tag.toLong()",
+            "entry[1 + 0] = element.tag.toLong()",
             "val word = 2 + index / 8",
             "val tag = entry[1 + 0].toUByte()",
             "EventRecord.decode(SceCursor(bytes), tag)",
+            "    return EventRingRead.Item(\n        seq,\n        element\n    )",
         ],
+    );
+    assert!(
+        !code.contains("tag: UByte"),
+        "`publish` and `Item` take no tag:\n{code}"
     );
     assert!(
         !code.contains("Flags"),
@@ -4832,7 +4866,7 @@ fn kotlin_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
             "const val CONTEXT_WORDS: Int = 3",
             "entry[1 + 0] = entry[1 + 0] or ((if (flags.f63) 1L else 0L) shl 63)",
             "entry[1 + 1] = entry[1 + 1] or ((if (flags.f64) 1L else 0L) shl 0)",
-            "entry[1 + 2] = tag.toLong()",
+            "entry[1 + 2] = element.tag.toLong()",
             "val word = 4 + index / 8",
             "f63 = ((entry[1 + 0] ushr 63) and 1L) == 1L,",
             "f64 = ((entry[1 + 1] ushr 0) and 1L) == 1L",
