@@ -64,7 +64,7 @@ fn fixture() -> PathBuf {
   <sce:import src="tg_large.scxml" kind="codec" as="tg_large"/>
   <datamodel>
     <sce:variant>
-      <sce:arm value="0x01" type="tg_small"/>
+      <sce:arm value="0x01" type="tg_small" default="true"/>
       <sce:arm value="0x02" type="tg_large"{large_feature}/>{catch_all}
     </sce:variant>
   </datamodel>
@@ -362,7 +362,9 @@ fn a_variant_with_a_tag_field_has_no_tag_accessor() {
         .expect("sce-build is at the repository root")
         .join("tests/forge/resources");
     let absent = [
-        (Language::Kotlin, "val tag: UByte"),
+        // The catch-all arm's own `val tag: UByte` field is not the accessor; the accessor is a
+        // getter over the sealed variant.
+        (Language::Kotlin, "val tag: UByte\n        get() = when"),
         (Language::Python, "def tag(self)"),
         (Language::Go, ") Tag() byte"),
         (Language::C11, "codec_variant_dispatch_tag("),
