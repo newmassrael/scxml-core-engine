@@ -107,7 +107,7 @@ fi
 # A floor, not an equality: a construct Swift gains lowers more fixtures without touching this
 # number, but a document the generator stopped lowering must not read as a smaller suite that
 # passed. Raise it when a slice lands; measured 2026-10-31 at 62 of 157.
-FLOOR=106
+FLOOR=114
 if [ "${#LOWERED[@]}" -lt "$FLOOR" ]; then
     echo "error: the Swift backend lowers ${#LOWERED[@]} simple W3C fixture(s), under the floor of $FLOOR: a construct it lowered is refused again" >&2
     exit 1

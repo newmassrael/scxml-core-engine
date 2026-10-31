@@ -390,7 +390,7 @@ fn a_log_expression_is_lowered_to_lua_and_shown_as_a_string() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains(r#"if let logged = logText(""#),
+        machine.contains(r#"if let logged = evaluateText(""#),
         "the expression is run by the engine: {machine}"
     );
     assert!(
@@ -442,16 +442,51 @@ fn an_if_on_a_cond_the_build_decided_keeps_no_flag() {
     assert!(!machine.contains("evaluateIfCond(\""), "{machine}");
 }
 
+/// The event, the target and the delay of a `<send>` an expression computes are lowered to Lua and
+/// read by the engine when the send runs; an `idlocation` is written to its variable by the engine
+/// before any other argument is read. A name that cannot be computed is an `error.execution`, and
+/// a target that names nothing is an `error.communication`.
+#[test]
+fn a_send_whose_event_target_and_delay_an_expression_computes_is_lowered() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/><data id="id"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <send idlocation="id" eventexpr="'go'" targetexpr="'#_internal'" delayexpr="'10ms'"/>
+    </onentry>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.matches(r#"evaluateText(""#).count() >= 3,
+        "the event, the target and the delay are computed by the engine: {machine}"
+    );
+    assert!(
+        machine.contains("let sendID = generateSendID()"),
+        "{machine}"
+    );
+    assert!(
+        machine.contains(r#"assignData("id", "\"\(sendID)\"")"#),
+        "the id is written to the variable first: {machine}"
+    );
+    assert!(
+        machine.contains("<send> eventexpr could not be evaluated to an event name"),
+        "{machine}"
+    );
+    assert!(
+        machine.contains("<send> targetexpr could not be evaluated"),
+        "{machine}"
+    );
+    assert!(machine.contains("engine.sendToTarget("), "{machine}");
+}
+
 /// What a `<send>` computes with an expression is still refused by name.
 #[test]
 fn a_send_that_an_expression_computes_is_refused_by_name() {
     for (what, send) in [
-        ("an eventexpr", r#"<send eventexpr="'x'"/>"#),
-        (
-            "a targetexpr",
-            r#"<send event="x" targetexpr="'#_internal'"/>"#,
-        ),
-        ("a delayexpr", r#"<send event="x" delayexpr="'1s'"/>"#),
+        ("a typeexpr", r#"<send event="x" typeexpr="'scxml'"/>"#),
         ("a namelist", r#"<send event="x" namelist="n"/>"#),
         (
             "a param expression",

@@ -4456,6 +4456,25 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
     }
 }
 
+/// The attribute of a `<send>` an expression computes that the Swift templates do not lower, named.
+///
+/// For an `ecmascript` document the event, the target, the delay and the `idlocation` are lowered
+/// to Lua and run by the engine; the processor type and the `<content>` an expression computes
+/// are not. A `null` document has no expression language to write any of them in.
+fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<&'static str> {
+    [
+        ("<send typeexpr>", &send.typeexpr, false),
+        ("<send contentexpr>", &send.contentexpr, false),
+        ("<send eventexpr>", &send.eventexpr, true),
+        ("<send targetexpr>", &send.targetexpr, true),
+        ("<send delayexpr>", &send.delayexpr, true),
+        ("<send idlocation>", &send.idlocation, true),
+    ]
+    .into_iter()
+    .find(|(_, expr, lowered_for_ecma)| !expr.is_empty() && !(is_ecma && *lowered_for_ecma))
+    .map(|(what, _, _)| what)
+}
+
 /// Whether `actions` hold, at any depth, an executable element the Swift
 /// templates do not lower: the first one's type and position.
 fn first_unlowered_swift_action(
@@ -4463,6 +4482,11 @@ fn first_unlowered_swift_action(
     is_ecma: bool,
 ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
     for action in actions {
+        if action.action_type == "send" {
+            if let Some(what) = swift_send_unlowered(action, is_ecma) {
+                return Some((what.to_string(), action.source_location.clone()));
+            }
+        }
         if !swift_lowers_action_type(&action.action_type, is_ecma) {
             return Some((
                 format!("<{}>", action.action_type.replace('_', ":")),
@@ -4658,15 +4682,16 @@ fn swift_ecmascript_cause_unlowered(
         | Cause::ElseIfCondition { .. }
         | Cause::InlineScriptAction { .. }
         | Cause::LogExpr { .. }
+        // One cause for every attribute of a `<send>` an expression computes; the ones the
+        // templates do not lower are named where the actions are read
+        // ([`swift_send_unlowered`]), which can tell them apart.
+        | Cause::SendDynamicAttr { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
         }
         Cause::SendNamelist { state_id } => named("a <send namelist>", state_id),
         Cause::SendParamExpr { state_id, .. } => named("a <send> <param> expression", state_id),
-        Cause::SendDynamicAttr { state_id } => {
-            named("a <send> attribute computed by an expression", state_id)
-        }
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
         Cause::ForeachAction { state_id } => named("a <foreach>", state_id),
         Cause::HybridInvoke { invoke_id } => {

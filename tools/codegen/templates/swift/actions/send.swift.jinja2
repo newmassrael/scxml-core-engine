@@ -15,7 +15,18 @@
 {% endmacro %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
 {% set in_block = in_action_block is defined and in_action_block %}
-{% set send_id_swift = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_swift) ~ '"' %}
+{# Under `datamodel="ecmascript"` an event, a target and a delay an expression computes are
+   lowered to Lua and read by the engine (`evaluateText`, in `script_engine.swift.jinja2`), and an
+   `idlocation` is written to the variable it names by the engine too. The values enter the same
+   places the `sce-static` lowering's do (`native_event`, `native_target`, `native_delay`). #}
+{% set ecma_event = ecmascript_datamodel and action.eventexpr %}
+{% set ecma_target = ecmascript_datamodel and action.targetexpr %}
+{% set ecma_delay = ecmascript_datamodel and action.delayexpr %}
+{% set ecma_idlocation = ecmascript_datamodel and action.idlocation and not action.native_idlocation %}
+{% set event_value = action.native_event or ('(evaluateText("' ~ (action.eventexpr | to_lua_expr | escape_swift) ~ '") ?? "")' if ecma_event else '') %}
+{% set delay_value = action.native_delay or ('(evaluateText("' ~ (action.delayexpr | to_lua_expr | escape_swift) ~ '") ?? "")' if ecma_delay else '') %}
+{% set computed_target = action.native_target or ecma_target %}
+{% set send_id_swift = 'sendID' if (action.native_idlocation or ecma_idlocation) else '"' ~ (send_id | default('') | escape_swift) ~ '"' %}
 {% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
 {# A literal target that names neither this session's own queues (none, `#_internal`,
    `#_scxml_<sessionid>`) nor its parent (`#_parent`) is `#_<invokeid>`, which addresses an
@@ -23,18 +34,18 @@
    the last arm below does for the targets that name this session, would hand a child's event to
    its parent, so it is routed by the same table a computed target is. #}
 {% set routed_target = static_target and static_target is startingwith('#_') and static_target != '#_internal' and static_target != '#_parent' and not (static_target is startingwith('#_scxml_')) %}
-{% set route_target = 'sendTarget' if action.native_target else '"' ~ (static_target | escape_swift) ~ '"' %}
+{% set route_target = 'sendTarget' if computed_target else '"' ~ (static_target | escape_swift) ~ '"' %}
 {# A BasicHTTP send (W3C SCXML C.2): posted at once to the URL the document writes, with the
    `<param>`s as the form. Its other axes are refused by name before this template runs. #}
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
-{% set computed_event = action.native_event %}
+{% set computed_event = event_value %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
-{% set send_prologue = action.native_delay or action.native_event or action.native_target %}
+{% set send_prologue = delay_value or event_value or computed_target %}
 {# W3C SCXML 6.2: the wait, as a Duration, or none for an immediate send. A delay
    postpones a send and does not change where it goes, so each delivery below takes
    it. The build read a static delay once, by the grammar every engine shares
    (ARCHITECTURE.md, "Durations"). #}
-{% if action.native_delay %}
+{% if delay_value %}
 {% set delay_swift = 'Duration.milliseconds(Int64(sendDelayMs))' %}
 {% elif action.delay %}
 {% set delay_swift = 'Duration.milliseconds(' ~ action.delay_ms ~ ')' %}
@@ -52,6 +63,18 @@
                     // variable is then the id the send is known by (`Action::native_sendid`).
                     {{ action.native_idlocation }}
                     let sendID = {{ action.native_sendid }}
+{% elif ecma_idlocation %}
+                    // W3C SCXML 6.2.4: the machine generates the id and writes it to the variable
+                    // `idlocation` names before it reads or refuses any other argument, so an error
+                    // the send raises names an id the document can read back. That variable is then
+                    // the id the send is known by.
+                    let sendID = generateSendID()
+                    if !assignData("{{ action.idlocation | to_lua_location | escape_swift }}", "\"\(sendID)\"") {
+{{ send_error('error.execution', '"<send> idlocation could not be written"', 'sendID') }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
 {% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
                     // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
@@ -88,7 +111,7 @@
 {% if send_prologue %}
                     var sendArgError = ""
 {% endif %}
-{% if action.native_event %}
+{% if event_value %}
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
                     // fails cannot be evaluated: either is the argument error.
@@ -97,7 +120,7 @@
 {% if action.native_event_fails %}
                         let sceFailure = Failure()
 {% endif %}
-                        sendEventName = {{ action.native_event }}
+                        sendEventName = {{ event_value }}
 {% if action.native_event_fails %}
                         if sceFailure.failed {
                             sendEventName = ""
@@ -144,8 +167,23 @@
                         }
 {% endif %}
                     }
+{% elif ecma_target %}
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
+                    // engine now and routed as the same value written in `target` is, below; an
+                    // expression that cannot be evaluated is the argument error, and a value that
+                    // names nothing is not reachable.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+                        if let routed = evaluateText("{{ action.targetexpr | to_lua_expr | escape_swift }}") {
+                            sendTarget = routed
+                            sendTargetKnown = true
+                        } else {
+                            sendArgError = "<send> targetexpr could not be evaluated"
+                        }
+                    }
 {% endif %}
-{% if action.native_delay %}
+{% if delay_value %}
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -155,7 +193,7 @@
 {% if action.native_delay_fails %}
                         let sceFailure = Failure()
 {% endif %}
-                        let sceDelay = {{ action.native_delay }}
+                        let sceDelay = {{ delay_value }}
 {% if action.native_delay_fails %}
                         if sceFailure.failed {
                             sendArgError = "<send> delayexpr could not be evaluated"
@@ -181,7 +219,7 @@
 {% endif %}
                     }
 {% endif %}
-{% if action.native_target %}
+{% if computed_target %}
                     if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
                         // W3C SCXML C.1: a target that evaluates to no route, or to text that
                         // names nothing (empty or "undefined"), is not reachable —
@@ -297,7 +335,7 @@
 {% else %}
                     let sendEventData = ""
 {% endif %}
-{% if action.native_target or routed_target %}
+{% if computed_target or routed_target %}
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
                     // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
@@ -313,13 +351,13 @@
                         origin: self.sessionID
                     )
                     if sendRouted == .notSupported {
-{{ send_error('error.execution', '"<send> ' ~ ('targetexpr produced a value that is' if action.native_target else 'target is') ~ ' not a target"', send_id_swift) }}
+{{ send_error('error.execution', '"<send> ' ~ ('targetexpr produced a value that is' if computed_target else 'target is') ~ ' not a target"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
                     if sendRouted == .notReachable {
-{{ send_error('error.communication', '"<send> ' ~ ('targetexpr' if action.native_target else 'target') ~ ' names a session this processor cannot reach"', send_id_swift) }}
+{{ send_error('error.communication', '"<send> ' ~ ('targetexpr' if computed_target else 'target') ~ ' names a session this processor cannot reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}

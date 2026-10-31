@@ -5,7 +5,7 @@
    the template writes it (`generator::register_template`), and a value is shown
    as Swift shows it, never as a format. Under `datamodel="ecmascript"` the expression
    is lowered to Lua and its value is shown as ECMAScript converts it to a string
-   (`logText`, in `script_engine.swift.jinja2`); one that fails has raised
+   (`evaluateText`, in `script_engine.swift.jinja2`); one that fails has raised
    error.execution, and the error ends the block. #}
 {%- set label = action.label | default('') -%}
 {% if action.native_code %}
@@ -14,7 +14,7 @@
 {% elif action.expr and model.needs_script_engine %}
 {% set in_block = in_action_block is defined and in_action_block %}
                 // W3C SCXML 4.7: <log expr>
-                if let logged = logText("{{ action.expr | to_lua_expr | escape_swift }}") {
+                if let logged = evaluateText("{{ action.expr | to_lua_expr | escape_swift }}") {
                     print({% if label %}"{{ label | escape_swift }}: " + {% endif %}logged)
                 } else {
                     raiseExecutionError("<log> expr failed to evaluate", engine: engine)
