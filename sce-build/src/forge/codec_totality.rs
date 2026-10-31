@@ -964,7 +964,9 @@ mod tests {
     }
 
     #[test]
-    fn a_disjunction_gate_is_a_check_the_encode_refuses_at() {
+    fn a_disjunction_of_flags_its_fields_alone_read_does_not_refuse() {
+        // The flags are derived from the arm the value holds (docs/adr/0065
+        // §6 R4c).
         let m = model(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                        sce:kind="codec" name="t"><datamodel>
@@ -972,6 +974,23 @@ mod tests {
                    <sce:flag name="a" bit="0"/><sce:flag name="b" bit="1"/>
                  </sce:flags>
                  <sce:field id="seq" sce:type="uint16" sce:byte="1" sce:bit-size="16"
+                            sce:present-if="flags.a || flags.b"/>
+               </datamodel></scxml>"#,
+        );
+        assert!(analyse(&m, &mut NoImports).is_total());
+    }
+
+    #[test]
+    fn a_disjunction_of_a_flag_another_gate_reads_is_a_check_the_encode_refuses_at() {
+        let m = model(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                       sce:kind="codec" name="t"><datamodel>
+                 <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+                   <sce:flag name="a" bit="0"/><sce:flag name="b" bit="1"/>
+                 </sce:flags>
+                 <sce:field id="extra" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+                            sce:present-if="flags.a"/>
+                 <sce:field id="seq" sce:type="uint16" sce:byte="2" sce:bit-size="16"
                             sce:present-if="flags.a || flags.b"/>
                </datamodel></scxml>"#,
         );

@@ -1547,11 +1547,8 @@ impl<'a> Plan<'a> {
                 let reads = fields
                     .iter()
                     .map(|f| {
-                        format!(
-                            "{}: {}",
-                            self.accessor(f),
-                            self.member_read(form, f, &self.accessor(f))
-                        )
+                        let accessor = self.accessor(f);
+                        shorthand(&accessor, &self.member_read(form, f, &accessor))
                     })
                     .collect::<Vec<_>>()
                     .join(", ");

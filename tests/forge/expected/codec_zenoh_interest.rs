@@ -319,9 +319,9 @@ impl<'a> CodecZenohInterestSource for CodecZenohInterestParts<'a> {
 impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
     fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body },
         })
     }
     fn header(&self) -> u8 {
@@ -338,9 +338,9 @@ impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestSource for CodecZenohInterestOwned<S> {
     fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body },
+            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body },
         })
     }
     fn header(&self) -> u8 {

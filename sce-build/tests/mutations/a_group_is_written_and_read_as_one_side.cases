@@ -33,8 +33,9 @@ PY
 
 mutation_case "a disjunction's arms are built under the wrong assignment" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''                    let values = arm.0.values.iter().map(bool::to_string).collect::<Vec<_>>().join(", ");''',
-     r'''                    let values = arm.0.values.iter().rev().map(bool::to_string).collect::<Vec<_>>().join(", ");''')
+     r'''                        .map(bool::to_string)''',
+     r'''                        .rev()
+                        .map(bool::to_string)''')
 PY
 
 mutation_case "an encode writes the elements of the side the value does not hold" <<'PY'
