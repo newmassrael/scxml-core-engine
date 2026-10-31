@@ -478,6 +478,23 @@ target_compile_options(broadcast_log_runtime_test_c PRIVATE -Wall -Wextra -Wpeda
 target_link_libraries(broadcast_log_runtime_test_c PRIVATE sce_queue_host_intrinsics)
 add_test(NAME broadcast_log_runtime_c COMMAND broadcast_log_runtime_test_c)
 
+# The narrow row's runtime (sce/forge/broadcast_log_narrow.h), for a target whose atomics are
+# 32 bits wide or only loads and stores, under the same bar and the same hosted atomics. Two
+# programs because the stamp's width is a compile-time parameter of one translation unit: the
+# first sets a stamp of 3 bits, so that the wrap is a few publishes away, and the second keeps
+# the 32 bits a row has, with the constructor's refusals and real threads.
+add_executable(broadcast_log_narrow_runtime_test_c
+    "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_narrow_runtime_test.c")
+target_compile_options(broadcast_log_narrow_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_narrow_runtime_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_narrow_runtime_c COMMAND broadcast_log_narrow_runtime_test_c)
+
+add_executable(broadcast_log_narrow_runtime_32_test_c
+    "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_narrow_runtime_32_test.c")
+target_compile_options(broadcast_log_narrow_runtime_32_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_narrow_runtime_32_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_narrow_runtime_32_c COMMAND broadcast_log_narrow_runtime_32_test_c)
+
 # Layer 3: the stress runs written as histories, judged by the command every
 # backend's broadcast-log histories are judged by. 5 shapes recorded 20 times.
 add_executable(broadcast_log_history_recorder_c "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_history_recorder.c")
@@ -820,6 +837,122 @@ target_include_directories(broadcast_log_generated_test_c PRIVATE "${BLOG_C_GENE
 target_compile_options(broadcast_log_generated_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(broadcast_log_generated_test_c PRIVATE sce_queue_host_intrinsics)
 add_test(NAME broadcast_log_generated_c COMMAND broadcast_log_generated_test_c)
+
+# The narrow row (ADR 0062, "Stamp width"): the headers the generator writes for a log whose
+# deploy names a target without 64-bit atomics. The generator chooses the row from the
+# target of the machine's device, and judges the log against the stamp the row keeps, so the
+# deploy also states the longest pause in publishes the design relies on. Two sets, one for
+# each way the row hands out its one publisher: a target with a 32-bit compare-and-swap
+# (thumbv7em), whose header has the publisher taken by it beside the ownership forms, and a
+# target with loads and stores only (thumbv6m), whose header has the ownership forms alone.
+# Each log is derived from the literal document, as the CBOR one above is, and generated
+# beside a copy of its element document, because `orchestrate` reads a set from one directory.
+set(BLOGN_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_headers")
+file(MAKE_DIRECTORY "${BLOGN_C_GENERATED_DIR}")
+file(READ "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml" _blogn_literal)
+
+set(BLOGN_C_NARROW_DOCS_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_documents")
+file(MAKE_DIRECTORY "${BLOGN_C_NARROW_DOCS_DIR}")
+configure_file("${RESOURCE_DIR}/broadcast_log_conformance_record.scxml"
+               "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml" COPYONLY)
+string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_narrow\"" _blogn_text "${_blogn_literal}")
+string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
+       "<sce:element-type>broadcast_log_conformance_record</sce:element-type>" _blogn_text "${_blogn_text}")
+file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml" "${_blogn_text}")
+file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" [=[
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv7em-none-eabihf
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        queues:
+          broadcast_log_c_narrow:
+            min_wrap_ops: 1000000
+]=])
+# The same deploy without the pause: the target says the stamp wraps, and the generator
+# refuses the log rather than guess a bound.
+file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/deploy_unstated.yaml" [=[
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv7em-none-eabihf
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+]=])
+
+set(BLOGN_C_OWNERSHIP_DOCS_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_ownership_documents")
+file(MAKE_DIRECTORY "${BLOGN_C_OWNERSHIP_DOCS_DIR}")
+configure_file("${RESOURCE_DIR}/broadcast_log_conformance_event.scxml"
+               "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml" COPYONLY)
+string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_ownership\"" _blogn_text "${_blogn_literal}")
+file(WRITE "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml" "${_blogn_text}")
+file(WRITE "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" [=[
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv6m-none-eabi
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        queues:
+          broadcast_log_c_ownership:
+            min_wrap_ops: 1000000
+]=])
+
+set(BLOGN_C_NARROW_HEADERS
+    "${BLOGN_C_GENERATED_DIR}/broadcast_log_conformance_record.h"
+    "${BLOGN_C_GENERATED_DIR}/broadcast_log_c_narrow.h")
+add_custom_command(
+    OUTPUT ${BLOGN_C_NARROW_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate
+            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
+            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
+            --language c11 --output-dir "${BLOGN_C_GENERATED_DIR}"
+            --deploy "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" --target-machine mcu_node
+    DEPENDS "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
+            "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
+            "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" "${SCE_CODEGEN}"
+    COMMENT "Generating the C11 broadcast log of a target with a 32-bit compare-and-swap"
+    VERBATIM)
+set(BLOGN_C_OWNERSHIP_HEADERS
+    "${BLOGN_C_GENERATED_DIR}/broadcast_log_conformance_event.h"
+    "${BLOGN_C_GENERATED_DIR}/broadcast_log_c_ownership.h")
+add_custom_command(
+    OUTPUT ${BLOGN_C_OWNERSHIP_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate
+            --forge "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml"
+            --forge "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml"
+            --language c11 --output-dir "${BLOGN_C_GENERATED_DIR}"
+            --deploy "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" --target-machine mcu_node
+    DEPENDS "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml"
+            "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml"
+            "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" "${SCE_CODEGEN}"
+    COMMENT "Generating the C11 broadcast log of a target with loads and stores only"
+    VERBATIM)
+add_custom_target(generate_broadcast_log_narrow_headers_c
+    DEPENDS ${BLOGN_C_NARROW_HEADERS} ${BLOGN_C_OWNERSHIP_HEADERS})
+
+add_executable(broadcast_log_narrow_generated_test_c
+    "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_narrow_generated_test.c")
+add_dependencies(broadcast_log_narrow_generated_test_c generate_broadcast_log_narrow_headers_c)
+target_include_directories(broadcast_log_narrow_generated_test_c PRIVATE "${BLOGN_C_GENERATED_DIR}")
+target_compile_options(broadcast_log_narrow_generated_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_narrow_generated_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_narrow_generated_c COMMAND broadcast_log_narrow_generated_test_c)
+
+# What the generator refuses of a narrow log is as much its contract as what it writes: the
+# same set with no pause stated is refused, naming the key the deploy would state it under.
+add_test(NAME broadcast_log_narrow_unstated_pause_c
+    COMMAND "${SCE_CODEGEN}" orchestrate
+            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_conformance_record.scxml"
+            --forge "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml"
+            --language c11 --output-dir "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_refused"
+            --deploy "${BLOGN_C_NARROW_DOCS_DIR}/deploy_unstated.yaml" --target-machine mcu_node)
+set_tests_properties(broadcast_log_narrow_unstated_pause_c PROPERTIES
+    PASS_REGULAR_EXPRESSION "queues.broadcast_log_c_narrow.min_wrap_ops")
 
 # The logs over an element whose codec asks its caller for what its wire form does
 # not carry (ADR 0062 section 4, "Caller inputs are part of the element"): one over a
