@@ -291,9 +291,10 @@ Properties, each of which is checked (§6):
     `decode` takes the tag from the caller, and a reader decodes under the one stored. A flag is different: a flag input
     is not a function of the value, so the publisher still gives it, and the codec refuses a value that contradicts it
     (section "The codecs refuse a flag their element contradicts").
-  - **What stays refused.** A CBOR map entry of text or bytes in Rust, because the decoded form borrows the slot's copy
-    (below, "Element forms the Rust template refuses"): the remedy is an owned form bounded by `sce:max-size`, a change to
-    that codec's generator.
+  - **What stays refused.** Nothing by shape. A CBOR map entry of text or bytes decodes in Rust to a view of the slot's copy,
+    and the log hands the element back as the codec's owned mirror (below, "What the Rust CBOR owned form landed"); a map
+    whose text or bytes entry states neither `sce:max-size` nor `sce:length` is refused for every language as
+    `broadcast-log/element-size-unbounded`, because no entry of that element has a bound.
 
 ### 5. The correctness criterion
 
@@ -594,8 +595,9 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
   repair is machine-readable. A retention that resolves to 0 (one slot, which the protocol cannot represent), and an element
   the template cannot hold, are each `generate/invalid-config` placed on the row that wrote it. An element
   is refused when its `encode` or `decode` takes an input from the caller that a log has none to give (the flag inputs of
-  a codec, the tag of a caller-tag variant), or when it is a CBOR map with a string or byte-string entry, whose decoded
-  form borrows its buffer and has no owned mirror to copy it into.
+  a codec, the tag of a caller-tag variant), or, as first written, when it is a CBOR map with a string or byte-string
+  entry, whose decoded form borrows its buffer and had no owned mirror to copy it into (that refusal is gone: see "What the
+  Rust CBOR owned form landed").
 - **`judge_broadcast_log_stamp` is not called.** The Rust row's stamp is 64 bits, which the function answers `Ok` for
   without reading the retention or the deploy: calling it would assert nothing. The row that keeps a narrower stamp calls it.
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the renderer (the constants with their computed values, the
@@ -1519,6 +1521,46 @@ directory and the C++ forge runtime is a separate project built in a throwaway o
 is invented. A GenMC scenario of the narrow C++ row is not written; `broadcast_log_narrow.h` includes `broadcast_log.h` by a
 quoted relative path, so a mutated copy placed in the `-I` directory would not be the one compiled.
 
+### What the Rust CBOR owned form landed (2026-11-01)
+
+A Rust CBOR codec whose text or bytes entries all state a capacity now has `{Name}Owned<S: CodecStorage = DefaultStorage>`,
+the owned mirror a positional codec has: text in `S::Str<N>`, bytes in `S::Bytes<N>`, an exact byte string in `S::Bytes<L>`,
+the other entries as the view holds them, and an optional entry as an `Option`. `try_into_owned_in::<S>()` copies each entry
+through `SceStr::from_view` or `SceByteBuf::from_slice` (the `Inline` profile refuses past the capacity with
+`CodecError::TooManyElements`), `try_into_owned()` is the default profile, `as_borrowed()` and `transcode_in::<D>()` move
+between forms and profiles, and `encode` writes the owned value through the codec's source interface, which the mirror
+implements, so the owned form is written by the same code as the view. `generate --owned-origin` adds
+`try_into_owned_in_origin` to it as to every other Rust owned mirror, built through the profile's `OriginStorage::str_from`
+and `bytes_from`; the block is a template of its own appended after the source interface, so that the output with the
+option starts with the output without it, the property `the_origin_option_only_appends_the_origin_projection` holds for every
+document.
+
+One predicate says which map has a mirror (`cbor_codec::rust_owned_mirror`: some text or bytes entry, and every one of them
+bounded), and three things read it: the template context that emits the mirror, `codec_is_borrowed_recursive`, which feeds the
+type a queue, a bounded collection or a log names for its element, and the log's facts. Until now the last answered `false` for
+every CBOR codec, because the borrow test reads only fields and a variant, so those containers named the plain
+`{Name}<'a>`, a type with a lifetime they cannot spell (read from the code, not compiled before the change); a bounded
+collection over a bounded CBOR element is now pinned
+(`c6_bounded_collection_rust_emit`). A queue was not tested, and a map with an unbounded entry still names the plain type in a
+queue or a bounded collection, which this change does not alter.
+
+The log needed no template change: `rust_stored_element` routes a borrowed element to `{Pascal}Owned<Inline>`, and the
+log's `read` already builds it with `try_into_owned_in::<Inline>()` from the decode that borrowed its stack buffer. The Rust
+arm of `BroadcastLogElementFacts::refusal_for` refuses a CBOR map only when an entry is unbounded, which
+`validate_broadcast_log_cross_refs` has already refused for its size, so the arm is reached only from a hand-supplied
+resolution.
+
+Results on build machines: the five text-pin tests of the mirror and the five of the origin projection pass (10);
+`broadcast_log_kind` runs 158; the Rust conformance crate runs 25 tests of the generated log, six of them over a new fixture
+(`tests/forge/conformance/broadcast_log_text`, a map with a text entry and a bytes entry of at most eight bytes: entries come
+back whole as the owned form, an entry past its bound is refused by the codec and not published, a stored length above the bound
+is a codec error, a stored string past its bound is refused and not handed back); `forge_conformance` runs 1268 with the CBOR
+exemption of the origin option removed; the bounded-collection emit tests run 19; clippy over the workspace, including the
+mesh crate whose generated envelope gained the mirror (`Str<262144>`, `Bytes<16777216>`), is clean; the Rust lane runs 40
+targets; the regeneration moved one file, the envelope, and a second one moved nothing; 472 casefiles apply and the ledger gate
+passes. The 14 mutation cases of the mirror and its projection (nine on the mirror's template, five on the origin block) have
+the text-pin tests as oracle and no run has judged them.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1540,10 +1582,11 @@ What is left:
   the package's tools version and carries an availability annotation on Apple platforms.
 - **Narrow rows for Kotlin, Go and Python** do not exist: the targets they run on offer 64-bit atomics, and a target that did
   not would take the row of Rust, C11 and C++.
-- **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry, whose decoded form borrows
-  its input. The remedy is an owned form bounded by `sce:max-size`, in the Rust CBOR generator; not started. (A codec that takes flag
-  inputs or a variant tag from its caller is stored with the entry by every template that ships, section 4; a typed diagnostic
-  for an unresolved deploy limit is `broadcast-log/deploy-limit-unresolved`.)
+- **Queues over a CBOR element that borrows.** The Rust CBOR owned form made the type a queue or a bounded collection names
+  exist for a bounded map; a queue over one was not tested, and an unbounded map in either still names the plain type with
+  a lifetime. Neither belongs to the log. (A codec that takes flag inputs or a variant tag from its caller is stored with the
+  entry by every template that ships, section 4; a typed diagnostic for an unresolved deploy limit is
+  `broadcast-log/deploy-limit-unresolved`.)
 - **Mutation cases that need a test first** (listed at the foot of the casefiles of the Rust template and renderer): the refusal
   of a stated width that is not 0, 32 or 64; the line numbers of the two refusals of `rust_broadcast_log_row`; the `Copy` derive
   of the flags struct. Checked and closed: the size check of the Kotlin renderer does not need to count the context words, since
