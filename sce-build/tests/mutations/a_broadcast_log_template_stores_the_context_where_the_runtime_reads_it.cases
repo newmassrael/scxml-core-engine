@@ -39,8 +39,9 @@
 # wrong word, or a payload that starts on a context word is a line that is not in the
 # text. Each language has four mutants: the bit a flag is written at, the word the tag is
 # written at, the word the bytes start at (Python, which packs the bytes before it writes
-# them, is mutated where it unpacks them), and the bit a flag is read back from (for Rust,
-# whose tests do not hold the read-back of a flag, the word the tag is read back from).
+# them, is mutated where it unpacks them), and the bit a flag is read back from (for Rust the
+# fourth is the word the tag is read back from; its flag read-back is held by the 65-flag test
+# and mutated in `a_rust_broadcast_log_template_prints_the_slot_the_runtime_has.cases`).
 #
 # Mutants that are not cases, each with its reason, are at the end of the file.
 #
@@ -252,17 +253,13 @@ PY
 # --- Mutants that are not cases ---
 #
 # The read-back of a flag in the Rust template (`((entry[1 + {{ flag.word }}] >> {{ flag.shift }})
-# & 1) == 1`), in its shift and in its word. The Rust tests hold what `publish` writes and not
-# what `read` reads back of a flag: the one flag of
-# `rust_stores_the_flag_inputs_an_element_asks_its_caller_for` is at bit 0 of word 0, which the
-# mutant prints as it is, and `the_narrow_row_stores_the_context_in_32_bit_words` holds the
-# writes alone. It needs a test
-# first: a Rust test with two flags and a tag that holds `t: ((entry[1 + 0] >> 1) & 1) == 1,`,
-# and one with 65 flags that holds the read-back of the 64th and 65th as the other languages' do.
-#
-# The offset the Rust template reads the bytes from (`entry[{{ context.payload_start }} + index
-# / {{ word_bytes }}] >> ...`). No Rust test holds the line that unpacks the bytes, only the one
-# that packs them, so a mutant of the read is printed in no needle. It needs a test first.
+# & 1) == 1`), in its shift and in its word, and the offset the Rust template reads the bytes
+# from (`entry[{{ context.payload_start }} + index / {{ word_bytes }}] >> ...`). Held by
+# `rust_carries_flags_past_a_64_bit_word_into_the_next_context_word` (`f63: ((entry[1 + 0] >> 63)
+# & 1) == 1,`, `f64: ((entry[1 + 1] >> 0) & 1) == 1,` and the byte read `entry[4 + index / 8]`) and
+# by `the_narrow_row_stores_the_context_in_32_bit_words` at 32 bits. Their mutants are cases of
+# `a_rust_broadcast_log_template_prints_the_slot_the_runtime_has.cases`, which holds the same
+# lines, so they are not repeated here.
 #
 # The offset the bytes are read from in the Kotlin, Go, C11 and C++ templates
 # (`entry[{{ context.payload_start }} ... index / 8] >> ...`). Each is held by its language's

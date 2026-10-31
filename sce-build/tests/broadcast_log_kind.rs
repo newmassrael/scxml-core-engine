@@ -1259,15 +1259,21 @@ fn rust_generates_a_log_over_the_runtime_sized_from_its_element() {
     let length_check = code
         .find("if stored > MAX_ENCODED_BYTES as u64 {")
         .expect("the stored length is checked against the bound");
-    let refusal = code[length_check..]
-        .find("return Err(CodecError::LengthOutOfRange);")
-        .expect("a length above the bound is a codec error");
-    let slice = code[length_check..]
-        .find("bytes[..length]")
-        .expect("the entry's bytes are cut by the length");
+    let refusal = length_check
+        + code[length_check..]
+            .find("return Err(CodecError::LengthOutOfRange);")
+            .expect("a length above the bound is a codec error");
+    // The first slice the length cuts in `read`, not the first one after the check: a check
+    // placed after the slice would otherwise find a later one and pass. `publish` cuts its own
+    // bytes by a length too, so the search starts at `read`.
+    let read_at = code.find("pub fn read(").expect("the module has a read");
+    let slice = read_at
+        + code[read_at..]
+            .find("bytes[..length]")
+            .expect("the entry's bytes are cut by the length");
     assert!(
-        refusal < slice,
-        "the refusal comes before the slice the length cuts:\n{code}"
+        read_at < length_check && refusal < slice,
+        "the refusal comes before the first slice the length cuts in read:\n{code}"
     );
     assert!(
         !code.contains("EventRecordOwned"),
