@@ -514,12 +514,13 @@ same numbers and whose typed `publish` and `read` call the element codec's
 `<element>_encode_to_buf` and `<element>_decode`; it refuses a retention above
 4294967294 and an element of more than 4294967295 words, which the runtime cannot
 count. The C++ backend lowers it to a header `<name>.h` over `sce/forge/broadcast_log.h`
-with the same constants and typed `publish` and `read` (the answers are a `Published`
-struct and a `std::variant`). Swift has no forge runtime, so generating a log there is
+(or `sce/forge/broadcast_log_narrow.h` for a narrow target, below) with the same
+constants and typed `publish` and `read` (the answers are a `Published` struct and a
+`std::variant`). Swift has no forge runtime, so generating a log there is
 refused by name (`broadcast-log/runtime-missing`). An element whose codec takes flag
 inputs or a variant's tag from its caller is held on every language that lowers the
 kind: the entry stores them in context words between its length word and its bytes
-(one bit a flag input, 64 to a word, and one word for the tag), `publish` takes the
+(one bit a flag input, 64 to a word or 32 in a narrow row, and one word for the tag), `publish` takes the
 flags and reads the tag off the element, and `read` returns the flags with the item
 (the element reports its own tag), so each reader decodes an entry under what it was
 published under; an element that asks for neither has the entry and the
@@ -545,15 +546,26 @@ deploy for `queues.<log>.min_wrap_ops`, the longest pause in publishes the desig
 relies on (`broadcast-log/wrap-bound-unstated`,
 `broadcast-log/wrap-bound-below-deploy-minimum`, whose bound is half the stamp space
 less the log's slots) and a retention one less than a power of two
-(`broadcast-log/slots-not-a-divisor-of-the-stamp-space`). Rust judges them where the
-deploy gives a target without 64-bit atomics: a device whose `target` triple, or a
-machine whose `platform.atomic_rmw_width`, is 32 or 0 is generated over
-`sce_forge_runtime::broadcast_log_narrow` (a 32-bit stamp, 32-bit words), and the
-Rust renderer asks the three of it; a deploy that states no target, or a width of 64,
-keeps the 64-bit row and asks nothing. A triple the generator does not know with no
-width beside it, and a width that contradicts the triple, are refused
-(`generate/invalid-config`). The other languages keep one row each and judge none of
-them.
+(`broadcast-log/slots-not-a-divisor-of-the-stamp-space`). Rust, C11 and C++ judge them
+where the deploy gives a target without 64-bit atomics: a device whose `target`
+triple, or a machine whose `platform.atomic_rmw_width`, is 32 or 0 is generated over
+a narrow row (a 32-bit stamp, 32-bit words, and context words of 32 bits, so flag `i`
+is bit `i % 32` of context word `i / 32`): `sce_forge_runtime::broadcast_log_narrow`
+for Rust, `sce/forge/broadcast_log_narrow.h` for C11 (a separate header from the
+64-bit one) and for C++ (the one `BroadcastLog` class template of
+`sce/forge/broadcast_log.h` over the lane `Narrow<32>`, as `NarrowBroadcastLog`, so
+that the 64-bit and the narrow row are one text). The three renderers choose the row
+through one function and ask the three refusals of it with one set of messages; a
+deploy that states no target, or a width of 64, keeps the 64-bit row and asks
+nothing, and its text is what it was. A sequence number of a narrow row is a count
+modulo 2^32, a narrow log has no horizon, and a reader's `reader_at` reads its
+argument modulo 2^32. Where a target has no read-modify-write instruction (a width of
+0) the publisher is taken by ownership (`split`, or `publisher_unchecked` for a log in
+static storage) and not by the swap or compare-and-swap of `publisher`. A triple the
+generator does not know with no width beside it, and a width that contradicts the
+triple, are refused (`generate/invalid-config`), and so is an element whose largest
+encoding does not fit the narrow row's 32-bit length word. The other languages keep
+one row each and judge none of them.
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and
