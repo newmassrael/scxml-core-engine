@@ -6871,22 +6871,22 @@ pub fn resolve_queue_deploy_limits(
 /// `limits:`. A key that does not have that shape, or whose machine segment is
 /// another machine, resolves to `None`: the document was written for another
 /// machine and its own compile resolves it. A key that names this machine and a
-/// limit it does not declare is refused, naming the declared limits. A limit
-/// that is not a number is refused where the deploy file is read (`limits:` maps
-/// a name to a `u32`), so it never reaches here, as it never reaches the queue's
-/// resolution.
+/// limit it does not declare is `broadcast-log/deploy-limit-unresolved`, with
+/// the declared limits as candidates, as the queue's is
+/// `queue/deploy-limit-unresolved` and a bounded collection's is
+/// `collection/capacity-unresolved`. A limit that is not a number is refused
+/// where the deploy file is read (`limits:` maps a name to a `u32`), so it
+/// never reaches here, as it never reaches the queue's resolution.
 ///
-/// The refusal is a [`forge::error::GenerateError::InvalidConfig`] placed on the
-/// retention row: it is the one refusal of this resolution, and a typed code for
-/// it (the queue has `queue/deploy-limit-unresolved`) is not added for one
-/// caller.
+/// The refusal is a [`forge::error::ValidationError`] placed on the retention
+/// row.
 pub fn resolve_broadcast_log_retention(
     log: &forge::model::BroadcastLogModel,
     cfg: &mesh::deploy::DeployConfig,
     machine_name: &str,
     diagnostic_label: &str,
 ) -> Result<Option<u32>, forge::error::Located<forge::error::ForgeError>> {
-    use forge::error::{ForgeError, GenerateError, Located};
+    use forge::error::{Located, ValidationError};
     use forge::model::CapacitySource;
 
     let key = match &log.retention {
@@ -6911,18 +6911,14 @@ pub fn resolve_broadcast_log_retention(
             let mut candidates: Vec<String> = machine.limits.keys().cloned().collect();
             candidates.sort();
             Err(Located::new(
-                ForgeError::from(GenerateError::InvalidConfig(format!(
-                    "broadcast-log '{name}': <sce:retention source=\"deploy\" key=\"{key}\"/> \
-                     references limit '{limit}' on machine '{machine_name}', but deploy.yaml \
-                     does not declare `machines.{machine_name}.limits.{limit}`. ADR 0062 §3: a \
-                     retention written as a deploy key resolves at codegen time to a constant \
-                     from `machines.<machine>.limits.<limit>:`, as a queue's capacity does; an \
-                     unresolved limit blocks emission. Repair: declare `{limit}: <count>` under \
-                     `machines.{machine_name}.limits:` in deploy.yaml (declared limits today: \
-                     {declared}), or write the retention with `entries=\"N\"`.",
-                    name = log.name,
-                    declared = forge::error::joined_or_none(&candidates),
-                ))),
+                ValidationError::BroadcastLogDeployLimitUnresolved {
+                    log_name: log.name.clone(),
+                    key: key.clone(),
+                    machine: machine_name.to_string(),
+                    limit: limit.to_string(),
+                    candidates,
+                }
+                .into(),
                 diagnostic_label,
                 log.retention_line,
                 None,

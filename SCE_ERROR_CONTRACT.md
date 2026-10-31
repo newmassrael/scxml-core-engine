@@ -738,6 +738,7 @@ references against a real document and drift silently.
 | `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `algorithm/undeclared-integer-failure` | `validation` | no | SCE Forge §3.4.1 |
+| `broadcast-log/deploy-limit-unresolved` | `validation` | `replace_one_of` |  |
 | `broadcast-log/element-size-unbounded` | `validation` | no |  |
 | `broadcast-log/element-type-not-a-kind` | `validation` | `replace_one_of` |  |
 | `broadcast-log/producers-many-unsupported` | `validation` | no |  |

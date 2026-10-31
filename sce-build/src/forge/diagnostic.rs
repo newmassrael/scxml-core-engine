@@ -1462,11 +1462,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "queue/segmented-needs-alloc")]
     QueueSegmentedNeedsAlloc,
 
-    // ── ADR 0062 broadcast-log kind. Nine codes: the first four are judged
-    //    where the document (and the build's other documents) are in hand, the
-    //    rest at generation, where the target and the deploy are. Only
-    //    `broadcast-log/element-type-not-a-kind` carries a `Fix`: its repair is
-    //    a choice among documents that exist. ──
+    // ── ADR 0062 broadcast-log kind. Ten codes: the first four are judged
+    //    where the document (and the build's other documents) are in hand,
+    //    `broadcast-log/deploy-limit-unresolved` where the deploy and the target
+    //    machine are, and the rest at generation, where the target is. Two carry
+    //    a `Fix`: `broadcast-log/element-type-not-a-kind`, whose repair is a
+    //    choice among documents that exist, and
+    //    `broadcast-log/deploy-limit-unresolved`, whose repair is a choice among
+    //    the limits the machine declares. ──
     /// `<sce:element-type>` names no codec or procedure document in the build.
     /// Carries a `Fix::ReplaceOneOf` over the documents that exist.
     #[serde(rename = "broadcast-log/element-type-not-a-kind")]
@@ -1483,6 +1486,11 @@ pub enum DiagnosticCode {
     /// table gives the log. `expected` carries the strongest it gives.
     #[serde(rename = "broadcast-log/progress-unreachable")]
     BroadcastLogProgressUnreachable,
+    /// A `source="deploy"` retention key names a limit the deploy file does not
+    /// declare. Like `queue/deploy-limit-unresolved` it carries a
+    /// `Fix::ReplaceOneOf` over the limits the machine does declare.
+    #[serde(rename = "broadcast-log/deploy-limit-unresolved")]
+    BroadcastLogDeployLimitUnresolved,
     /// The document is valid and declares a progress stronger than the target
     /// language can give any log (Python, one ring under one lock, gives
     /// `blocking`). `expected` carries what the backend gives, `actual` what
@@ -3935,6 +3943,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         BroadcastLogElementSizeUnbounded,
         BroadcastLogProducersManyUnsupported,
         BroadcastLogProgressUnreachable,
+        BroadcastLogDeployLimitUnresolved,
         BroadcastLogProgressUnreachableOnBackend,
         BroadcastLogWrapBoundUnstated,
         BroadcastLogWrapBoundBelowDeployMinimum,
@@ -5297,6 +5306,7 @@ impl DiagnosticCode {
             | BroadcastLogElementSizeUnbounded
             | BroadcastLogProducersManyUnsupported
             | BroadcastLogProgressUnreachable
+            | BroadcastLogDeployLimitUnresolved
             | BroadcastLogProgressUnreachableOnBackend
             | BroadcastLogWrapBoundUnstated
             | BroadcastLogWrapBoundBelowDeployMinimum
@@ -5528,6 +5538,7 @@ impl DiagnosticCode {
             | BroadcastLogElementSizeUnbounded
             | BroadcastLogProducersManyUnsupported
             | BroadcastLogProgressUnreachable
+            | BroadcastLogDeployLimitUnresolved
             | BroadcastLogProgressUnreachableOnBackend
             | BroadcastLogWrapBoundUnstated
             | BroadcastLogWrapBoundBelowDeployMinimum
@@ -6152,6 +6163,7 @@ impl DiagnosticCode {
             BroadcastLogElementSizeUnbounded => "broadcast-log/element-size-unbounded",
             BroadcastLogProducersManyUnsupported => "broadcast-log/producers-many-unsupported",
             BroadcastLogProgressUnreachable => "broadcast-log/progress-unreachable",
+            BroadcastLogDeployLimitUnresolved => "broadcast-log/deploy-limit-unresolved",
             BroadcastLogProgressUnreachableOnBackend => {
                 "broadcast-log/progress-unreachable-on-backend"
             }
@@ -10281,6 +10293,26 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(declared.clone()),
             fix: None,
             key_fragments: vec![log_name.clone(), declared.clone()],
+        },
+        ValidationError::BroadcastLogDeployLimitUnresolved {
+            log_name,
+            key,
+            machine,
+            limit,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogDeployLimitUnresolved,
+            stage: Stage::Validation,
+            // As `queue/deploy-limit-unresolved`: `actual` carries the key as
+            // authored, the machine and limit segments ride `key_fragments`,
+            // and the candidates are the sorted limit names the machine
+            // declares.
+            expected: None,
+            actual: Some(key.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![log_name.clone(), machine.clone(), limit.clone()],
         },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
@@ -15402,6 +15434,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:de5ecfc761ef0a00","code":"broadcast-log/progress-unreachable","stage":"validation","message":"broadcast-log 'event_ring': <sce:progress>wait-free</sce:progress> cannot be met: the log's selection row gives lock-free. ADR 0062 §3: progress is declared, checked, and never silently weakened. Repair: declare lock-free.","expected":["lock-free"],"actual":"wait-free"}"#,
             ),
             (
+                "forge/broadcast-log-deploy-limit-unresolved",
+                ValidationError::BroadcastLogDeployLimitUnresolved {
+                    log_name: "event_ring".into(),
+                    key: "machines.mcu_node.limits.event_retention".into(),
+                    machine: "mcu_node".into(),
+                    limit: "event_retention".into(),
+                    candidates: vec!["alpha".into(), "other_limit".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0000000000000000","code":"broadcast-log/deploy-limit-unresolved","stage":"validation","message":"broadcast-log 'event_ring': <sce:retention source=\"deploy\" key=\"machines.mcu_node.limits.event_retention\"/> references limit 'event_retention' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.event_retention`. SCE Protocol-Synthesis RFC §5.S: a retention written as a deploy key takes the §5.L capacity forms and resolves at codegen time to a constant from `machines.<machine>.limits.<limit>:`, as a queue's capacity does; an unresolved limit blocks emission. Repair: declare `event_retention: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: alpha, other_limit), or write the retention with `entries=\"N\"`.","actual":"machines.mcu_node.limits.event_retention","fix":{"kind":"replace_one_of","candidates":["alpha","other_limit"]}}"#,
+            ),
+            (
                 "forge/broadcast-log-progress-unreachable-on-backend",
                 GenerateError::BroadcastLogProgressUnreachableOnBackend {
                     log_name: "event_ring".into(),
@@ -18909,6 +18953,10 @@ mod tests {
             // Broadcast-log cross-document resolution (ADR 0062): the sorted
             // codec + procedure names for the element type.
             | BroadcastLogElementTypeNotAKind
+            // Broadcast-log deploy-time retention: the same sorted
+            // declared-limit candidate set as the queue's, on the log's own
+            // code.
+            | BroadcastLogDeployLimitUnresolved
             // C7-lowering algorithm-over-BC dispatch (RFC §synth-5-A line 311
             // + §synth-5-L line 2611-2618 + 2642-2647). Two of the six
             // codes carry a closed candidate set:
@@ -20369,6 +20417,7 @@ mod tests {
                 | BroadcastLogElementSizeUnbounded
                 | BroadcastLogProducersManyUnsupported
                 | BroadcastLogProgressUnreachable
+                | BroadcastLogDeployLimitUnresolved
                 | BroadcastLogProgressUnreachableOnBackend
                 | BroadcastLogWrapBoundUnstated
                 | BroadcastLogWrapBoundBelowDeployMinimum
@@ -20598,9 +20647,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            491,
+            492,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 491 distinct variants to match the DiagnosticCode \
+             expected 492 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21408,6 +21457,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | BroadcastLogElementSizeUnbounded
             | BroadcastLogProducersManyUnsupported
             | BroadcastLogProgressUnreachable
+            | BroadcastLogDeployLimitUnresolved
             | BroadcastLogProgressUnreachableOnBackend
             | BroadcastLogWrapBoundUnstated
             | BroadcastLogWrapBoundBelowDeployMinimum

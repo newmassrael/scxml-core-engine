@@ -3452,6 +3452,38 @@ pub enum ValidationError {
         reachable: String,
     },
 
+    /// ADR 0062 §3 (`broadcast-log/deploy-limit-unresolved`) —
+    /// `<sce:retention source="deploy" key="...">` names a
+    /// `machines.<machine>.limits.<limit>` whose `<limit>` is not declared in
+    /// deploy.yaml. The retention takes the §synth-5-L `CapacitySource` forms and
+    /// lowers to a compile-time constant (the ring is sized from it), so an
+    /// unresolved key blocks emission, as a queue's does.
+    ///
+    /// Fires only on the path that holds a deploy and a target machine
+    /// ([`crate::resolve_broadcast_log_retention`]), and a key whose machine
+    /// segment is not the target machine is left to that machine's own compile,
+    /// as for `queue/deploy-limit-unresolved`. The closed candidate list rides
+    /// `Fix::ReplaceOneOf` with the sorted limit names declared under
+    /// `machines.<machine>.limits:`.
+    #[error(
+        "broadcast-log '{log_name}': <sce:retention source=\"deploy\" key=\"{key}\"/> references limit '{limit}' on machine '{machine}', but deploy.yaml does not declare `machines.{machine}.limits.{limit}`. \
+         SCE Protocol-Synthesis RFC §5.S: a retention written as a deploy key takes the §5.L capacity forms and resolves at codegen time to a constant from `machines.<machine>.limits.<limit>:`, as a queue's capacity does; an unresolved limit blocks emission. \
+         Repair: declare `{limit}: <count>` under `machines.{machine}.limits:` in deploy.yaml (declared limits today: {}), or write the retention with `entries=\"N\"`.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    BroadcastLogDeployLimitUnresolved {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The key as authored (`machines.<machine>.limits.<limit>`).
+        key: String,
+        /// Target machine (the key's middle segment).
+        machine: String,
+        /// Limit name (the key's final segment).
+        limit: String,
+        /// Sorted limit names declared under `machines.<machine>.limits:`.
+        candidates: Vec<String>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared

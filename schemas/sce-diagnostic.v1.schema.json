@@ -220,6 +220,7 @@
         "broadcast-log/element-size-unbounded",
         "broadcast-log/producers-many-unsupported",
         "broadcast-log/progress-unreachable",
+        "broadcast-log/deploy-limit-unresolved",
         "broadcast-log/progress-unreachable-on-backend",
         "broadcast-log/wrap-bound-unstated",
         "broadcast-log/wrap-bound-below-deploy-minimum",

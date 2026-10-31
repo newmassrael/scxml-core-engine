@@ -503,7 +503,9 @@ wire bytes the log stores. It is generated from a document set that holds the
 element's codec (`orchestrate`, or `check` with `--forge`), because the size is
 read from that document; a single-document compile has none to read and is refused,
 naming what is missing, as is a deploy-key retention given no deploy or no
-`--target-machine`. The Go backend lowers it the same way over
+`--target-machine`. A deploy-key retention whose limit the target machine does not
+declare is refused on the retention row (`broadcast-log/deploy-limit-unresolved`),
+with the declared limits as the candidates of its fix. The Go backend lowers it the same way over
 `sce-forge-runtime/broadcastlog`, as a package whose typed `Publish` and `Read` take
 and return the element package's struct, from the same document set and with the same
 refusals, and needs `--go-module-prefix` to import the element's package. The C11
@@ -8780,7 +8782,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (491 codes)
+## Appendix — `DiagnosticCode` index (492 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9020,6 +9022,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `broadcast-log/element-size-unbounded` | Validation |
 | `broadcast-log/producers-many-unsupported` | Validation |
 | `broadcast-log/progress-unreachable` | Validation |
+| `broadcast-log/deploy-limit-unresolved` | Validation |
 | `broadcast-log/progress-unreachable-on-backend` | Generate |
 | `broadcast-log/wrap-bound-unstated` | Generate |
 | `broadcast-log/wrap-bound-below-deploy-minimum` | Generate |

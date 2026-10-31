@@ -559,10 +559,10 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
   compile has none of this and is refused, naming the log and what is missing, never given a guessed number (so the
   single-document `check` sweep reports Rust as rejecting a valid log, and `check --forge <element> --forge <log>`
   generates it).
-- **What is refused, and why.** A key naming this machine and an undeclared limit, a retention that resolves to 0 (one slot,
-  which the protocol cannot represent), and an element the template cannot hold, each as `generate/invalid-config` placed
-  on the row that wrote it. No new diagnostic code was added: the queue's `queue/deploy-limit-unresolved` carries a
-  candidates fix, and a typed code for the log is the follow-up if a consumer wants the repair machine-readable. An element
+- **What is refused, and why.** A key naming this machine and an undeclared limit is `broadcast-log/deploy-limit-unresolved`,
+  which carries the declared limits as the candidates of its fix as the queue's `queue/deploy-limit-unresolved` does, so the
+  repair is machine-readable. A retention that resolves to 0 (one slot, which the protocol cannot represent), and an element
+  the template cannot hold, are each `generate/invalid-config` placed on the row that wrote it. An element
   is refused when its `encode` or `decode` takes an input from the caller that a log has none to give (the flag inputs of
   a codec, the tag of a caller-tag variant), or when it is a CBOR map with a string or byte-string entry, whose decoded
   form borrows its buffer and has no owned mirror to copy it into.
