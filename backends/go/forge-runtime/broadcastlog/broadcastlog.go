@@ -114,10 +114,18 @@ type Read struct {
 type Reader struct {
 	cursor uint64
 	lost   uint64
+	// unbound is set on a reader opened by Log.ReaderDeferred: it has no cursor
+	// until its first read binds one.
+	unbound bool
 }
 
-// Cursor is the sequence number this reader reads next.
+// Cursor is the sequence number this reader reads next. A deferred reader that
+// has not read yet has none: this is 0 and IsBound is false.
 func (r Reader) Cursor() uint64 { return r.cursor }
+
+// IsBound says whether the reader has a cursor: false only for a deferred
+// reader that has not read yet.
+func (r Reader) IsBound() bool { return !r.unbound }
 
 // Lost is the entries this reader has been told it missed, summed over its
 // reads.
@@ -218,6 +226,21 @@ func (l *Log) ReaderOldest() Reader {
 	return Reader{cursor: saturatingSub(l.Head(), l.Retention())}
 }
 
+// ReaderDeferred is a reader whose start is the oldest retained entry at its
+// first read, and not at this call: it has no cursor until that read binds one,
+// from the head that read loads, so a reader that waited is told of nothing the
+// publisher did meanwhile, where ReaderOldest would tell it of the lag. Opening
+// it loads nothing and costs the log nothing.
+//
+// The first read binds as ReaderOldest does, its load of the head being the
+// read's own, and then goes on as any read does: the answer is an item,
+// ReadEmpty for a log with nothing published, or ReadLagged if the publisher
+// overtook the cursor inside that read, which takes the slot beyond the
+// retention (ADR 0062 section 2).
+func (l *Log) ReaderDeferred() Reader {
+	return Reader{unbound: true}
+}
+
 // ReaderHead is a reader at the head: it sees only what is published after
 // this call.
 func (l *Log) ReaderHead() Reader {
@@ -238,9 +261,16 @@ func (l *Log) Read(reader *Reader, out []uint64) Read {
 	if len(out) != l.words {
 		panic("broadcastlog: the buffer is not as long as an entry")
 	}
-	r := reader.cursor
-	// Rust: an acquire load.
+	// Rust: an acquire load. The first read of a deferred reader binds its
+	// cursor at this head, the one load of the read, and then goes on as every
+	// read does: a 64-bit count does not wrap, so the oldest retained entry is
+	// at most Retention behind it and the slot is inside the window.
 	h := l.head.v.Load()
+	if reader.unbound {
+		reader.cursor = saturatingSub(h, l.Retention())
+		reader.unbound = false
+	}
+	r := reader.cursor
 	// A reader's cursor never passes the head of the log it was opened on.
 	if r >= h {
 		return Read{Kind: ReadEmpty}
