@@ -99,6 +99,20 @@ public class BroadcastLog(public val words: Int, public val slots: Int) {
     /** A reader at the oldest retained entry. */
     public fun readerOldest(): Reader = Reader(maxOf(head() - retention, 0L))
 
+    /**
+     * A reader whose start is the oldest retained entry **at its first read**,
+     * and not at this call: it has no cursor until that read binds one, from
+     * the head that read loads, so a reader that waited is told of nothing the
+     * publisher did meanwhile, where [readerOldest] would tell it of the lag.
+     * Opening it loads nothing and costs the log nothing.
+     *
+     * The first read binds as [readerOldest] does and then goes on as any read
+     * does: the answer is an item, [Read.Empty] for a log with nothing
+     * published, or [Read.Lagged] if the publisher overtook the cursor inside
+     * that read (ADR 0062 section 2).
+     */
+    public fun readerDeferred(): Reader = Reader(0L, bound = false)
+
     /** A reader at the head: it sees only what is published after this call. */
     public fun readerHead(): Reader = Reader(head())
 
@@ -124,9 +138,11 @@ public class BroadcastLog(public val words: Int, public val slots: Int) {
      */
     public fun read(reader: Reader, out: LongArray): Read {
         require(out.size == words) { "the buffer holds ${out.size} words and an entry is $words" }
-        val r = reader.cursor
+        // The first read of a deferred reader binds its cursor at the head it
+        // loads here, and then goes on as every read does with that same head.
         // Acquire, in the Rust row.
-        val h = head.load()
+        val h = if (reader.isBound) head.load() else bind(reader)
+        val r = reader.cursor
         assert(r <= h) { "a reader's cursor never passes the head" }
         if (r >= h) {
             return Read.Empty
@@ -159,6 +175,22 @@ public class BroadcastLog(public val words: Int, public val slots: Int) {
         // published through `r + retention` and `head` shows it. Acquire, in
         // the Rust row.
         return lagged(reader, head.load())
+    }
+
+    /**
+     * Binds a deferred [reader]'s cursor to the oldest retained entry, as
+     * [readerOldest] does, and returns the head the cursor was taken from,
+     * which is the load the read goes on with. The stamp is 64-bit and a
+     * 64-bit count does not wrap, so the one load of the head is all the bind
+     * needs: the Rust row's narrow rows ask the last slot first, and this row
+     * has no narrow count.
+     */
+    private fun bind(reader: Reader): Long {
+        // Acquire, in the Rust row.
+        val h = head.load()
+        reader.cursor = maxOf(h - retention, 0L)
+        reader.isBound = true
+        return h
     }
 
     /**

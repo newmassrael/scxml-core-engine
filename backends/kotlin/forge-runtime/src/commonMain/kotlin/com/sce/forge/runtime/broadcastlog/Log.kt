@@ -81,9 +81,20 @@ public sealed interface Read {
  * is for one thread at a time: its cursor is plain state, moved by
  * [BroadcastLog.read].
  */
-public class Reader internal constructor(cursor: Long) {
-    /** The sequence number this reader reads next. */
+public class Reader internal constructor(cursor: Long, bound: Boolean = true) {
+    /**
+     * The sequence number this reader reads next. A reader opened by
+     * [BroadcastLog.readerDeferred] has none until its first read binds one:
+     * this is 0 and [isBound] is false until then.
+     */
     public var cursor: Long = cursor
+        internal set
+
+    /**
+     * Whether the reader has a cursor: false only for a deferred reader that has
+     * not read yet.
+     */
+    public var isBound: Boolean = bound
         internal set
 
     /** The entries this reader has been told it missed, summed over its reads. */
