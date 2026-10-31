@@ -85,6 +85,18 @@ edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
         };''')
 PY
 
+# A deferred reader's first read loads the head in `bind`, not in `read`, and it is
+# the only acquire that orders that read after the entries the head counts. The
+# models of the deferred reader (`a_deferred_reader_binds_at_its_first_read_while_
+# the_publisher_laps`) bind while the second slot is reused.
+mutation_case "a deferred reader binds on a head it loaded without acquiring" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        let head = L::load(&self.head.0, Ordering::Acquire);
+        reader.cursor = if L::BITS >= 64 {''',
+     r'''        let head = L::load(&self.head.0, Ordering::Relaxed);
+        reader.cursor = if L::BITS >= 64 {''')
+PY
+
 mutation_case "a reader loads the first stamp without acquiring" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
      r'''let first = L::load(&slot.stamp, Ordering::Acquire);''',

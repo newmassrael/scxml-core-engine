@@ -125,6 +125,15 @@ edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
      r'''    const UNWRITTEN: u64 = 0;''')
 PY
 
+# The deferred reader tells a young log from one that has wrapped by the last slot's
+# stamp too, loaded in `bind` before the head. Loaded without acquiring, it may be
+# read after the head it was meant to precede.
+mutation_case "a deferred reader reads the last slot's stamp without acquiring" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''            && L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) == L::UNWRITTEN;''',
+     r'''            && L::load(&self.slots[SLOTS - 1].stamp, Ordering::Relaxed) == L::UNWRITTEN;''')
+PY
+
 # A reader opened at the oldest of a log that has wrapped is RETENTION behind the head,
 # modulo the stamp space.
 mutation_case "the oldest reader of a log that has wrapped is placed at the head" <<'PY'
