@@ -243,6 +243,186 @@ static void publishing_past_the_window_keeps_the_newest_entries(void) {
     sce_blog_publisher_release(&f.publisher);
 }
 
+/* ---- The deferred reader: the unit tests of the Rust row ---- */
+
+/* Publishes the entries `from` to `to - 1`. */
+static void publish_range(sce_blog_publisher_t *publisher, uint64_t from, uint64_t to) {
+    uint64_t n;
+    for (n = from; n < to; n++) {
+        const entry_t e = entry_of(n);
+        CHECK(sce_blog_publish(publisher, e.words) == n, "publish %llu takes sequence number %llu",
+              (unsigned long long)n, (unsigned long long)n);
+    }
+}
+
+/* Both readers are opened on the empty log, one at the oldest now and one deferred;
+ * then three entries (0, 1, 2) are published. Retention is 2, so the oldest retained
+ * is entry 1. */
+static void a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing(void) {
+    fixture_t f;
+    entry_t out;
+    sce_blog_reader_t eager;
+    sce_blog_reader_t deferred;
+    sce_blog_read_t result;
+    fixture_open(&f);
+    CHECK(sce_blog_publisher_acquire(&f.log, &f.publisher), "the publisher");
+    eager = sce_blog_reader_oldest(&f.log);
+    deferred = sce_blog_reader_deferred(&f.log);
+    CHECK(sce_blog_reader_is_bound(&eager), "a reader opened at the oldest is bound");
+    CHECK(!sce_blog_reader_is_bound(&deferred), "a deferred reader is not bound before its first read");
+    CHECK(deferred.cursor == 0u, "no cursor yet reads as 0");
+    CHECK(deferred.lost == 0u, "and no loss");
+    publish_range(&f.publisher, 0u, 3u);
+    /* The eager reader holds 0, which is 3 behind a window of 2: it is told it missed 1. */
+    result = read_into(&f, &eager, &out);
+    CHECK(result.status == SCE_BLOG_LAGGED && result.skipped == 1u, "the eager reader is told of the lag");
+    /* The deferred reader binds at this read, at the oldest retained entry, so its first
+     * answer is that entry and it has lost nothing. */
+    result = read_into(&f, &deferred, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 1u && is_whole_entry(out.words, 1u),
+          "the first read of a deferred reader is the oldest retained entry");
+    CHECK(sce_blog_reader_is_bound(&deferred), "the first read binds it");
+    CHECK(deferred.lost == 0u, "a reader that waited is told of nothing");
+    CHECK(deferred.cursor == 2u, "and holds the entry after the one it read");
+    result = read_into(&f, &deferred, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 2u && is_whole_entry(out.words, 2u), "then the next");
+    result = read_into(&f, &deferred, &out);
+    CHECK(result.status == SCE_BLOG_EMPTY, "then the head");
+    sce_blog_publisher_release(&f.publisher);
+}
+
+/* Every other constructor gives a bound reader, so a read never rebinds one. */
+static void the_other_constructors_give_bound_readers(void) {
+    fixture_t f;
+    sce_blog_reader_t reader;
+    fixture_open(&f);
+    reader = sce_blog_reader_oldest(&f.log);
+    CHECK(sce_blog_reader_is_bound(&reader), "oldest is bound");
+    reader = sce_blog_reader_head(&f.log);
+    CHECK(sce_blog_reader_is_bound(&reader), "head is bound");
+    reader = sce_blog_reader_at(&f.log, 0u);
+    CHECK(sce_blog_reader_is_bound(&reader), "at is bound");
+}
+
+static void a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start(void) {
+    fixture_t f;
+    entry_t out;
+    sce_blog_reader_t reader;
+    sce_blog_read_t result;
+    fixture_open(&f);
+    CHECK(sce_blog_publisher_acquire(&f.log, &f.publisher), "the publisher");
+    reader = sce_blog_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_EMPTY, "nothing published is empty");
+    CHECK(sce_blog_reader_is_bound(&reader), "the empty read bound it");
+    CHECK(reader.cursor == 0u, "at the start of the log");
+    publish_range(&f.publisher, 0u, 1u);
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 0u && is_whole_entry(out.words, 0u),
+          "the first entry is read from the start");
+    CHECK(reader.lost == 0u, "with nothing lost");
+    sce_blog_publisher_release(&f.publisher);
+}
+
+/* Fewer entries than the retention: the oldest retained entry is 0 though the head is 2. */
+static void a_deferred_reader_on_a_young_log_binds_to_entry_zero(void) {
+    fixture_t f;
+    entry_t out;
+    sce_blog_reader_t reader;
+    sce_blog_read_t result;
+    fixture_open(&f);
+    CHECK(sce_blog_publisher_acquire(&f.log, &f.publisher), "the publisher");
+    publish_range(&f.publisher, 0u, 2u);
+    reader = sce_blog_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 0u && is_whole_entry(out.words, 0u), "entry 0");
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 1u && is_whole_entry(out.words, 1u), "entry 1");
+    CHECK(reader.lost == 0u, "nothing lost");
+    sce_blog_publisher_release(&f.publisher);
+}
+
+/* A deferred reader that falls behind after its first read is told as any reader is. */
+static void a_deferred_reader_that_falls_behind_later_is_told_as_any_reader_is(void) {
+    fixture_t f;
+    entry_t out;
+    sce_blog_reader_t reader;
+    sce_blog_read_t result;
+    fixture_open(&f);
+    CHECK(sce_blog_publisher_acquire(&f.log, &f.publisher), "the publisher");
+    publish_range(&f.publisher, 0u, 3u);
+    reader = sce_blog_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 1u, "bound at entry 1");
+    CHECK(reader.cursor == 2u && reader.lost == 0u, "holding 2, nothing lost");
+    /* h = 8: the window is [6, 8), and the reader holds 2. */
+    publish_range(&f.publisher, 3u, 8u);
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_LAGGED && result.skipped == 4u, "the later lag is told: 6 - 2");
+    CHECK(reader.lost == 4u && reader.cursor == 6u, "and counted");
+    result = read_into(&f, &reader, &out);
+    CHECK(result.status == SCE_BLOG_ITEM && result.seq == 6u && is_whole_entry(out.words, 6u),
+          "after it the reader reads the oldest retained entry");
+    sce_blog_publisher_release(&f.publisher);
+}
+
+/* A downstream consumer's vector: retention 4, three entries published, a deferred
+ * reader opened, ten more published. It reads the four retained entries and has lost
+ * nothing, where a reader opened at the oldest before the ten is told it missed nine. */
+static void a_deferred_reader_opened_before_ten_more_publishes_reads_the_last_four(void) {
+    uint64_t storage[SCE_BLOG_STORAGE_WORDS(5u, WORDS)];
+    sce_blog_t log;
+    sce_blog_publisher_t publisher;
+    sce_blog_reader_t deferred;
+    sce_blog_reader_t eager;
+    sce_blog_read_t result;
+    uint64_t out[WORDS];
+    uint64_t seq;
+    CHECK(sce_blog_init(&log, storage, 5u, WORDS), "five slots retain four");
+    CHECK(sce_blog_publisher_acquire(&log, &publisher), "the publisher");
+    publish_range(&publisher, 0u, 3u);
+    deferred = sce_blog_reader_deferred(&log);
+    eager = sce_blog_reader_oldest(&log);
+    publish_range(&publisher, 3u, 13u);
+    for (seq = 9u; seq <= 12u; seq++) {
+        result = sce_blog_read(&log, &deferred, out);
+        CHECK(result.status == SCE_BLOG_ITEM && result.seq == seq && is_whole_entry(out, seq),
+              "the deferred reader reads %llu", (unsigned long long)seq);
+    }
+    result = sce_blog_read(&log, &deferred, out);
+    CHECK(result.status == SCE_BLOG_EMPTY, "then the head");
+    CHECK(deferred.lost == 0u, "and has lost nothing");
+    /* The reader opened at the oldest, 0, is 13 behind a window of 4 and is told 9 were
+     * missed. */
+    result = sce_blog_read(&log, &eager, out);
+    CHECK(result.status == SCE_BLOG_LAGGED && result.skipped == 9u, "the eager reader is told it missed 9");
+    sce_blog_publisher_release(&publisher);
+}
+
+/* The bind and sce_blog_reader_oldest give one cursor, whatever the log has published. */
+static void a_deferred_reader_binds_where_the_oldest_reader_opens(void) {
+    fixture_t f;
+    entry_t out;
+    uint64_t count;
+    fixture_open(&f);
+    CHECK(sce_blog_publisher_acquire(&f.log, &f.publisher), "the publisher");
+    for (count = 0; count < 12u; count++) {
+        sce_blog_reader_t deferred = sce_blog_reader_deferred(&f.log);
+        const sce_blog_reader_t oldest = sce_blog_reader_oldest(&f.log);
+        const sce_blog_read_t result = read_into(&f, &deferred, &out);
+        if (count == 0u) {
+            CHECK(result.status == SCE_BLOG_EMPTY, "an empty log is empty to a deferred reader");
+        } else {
+            CHECK(result.status == SCE_BLOG_ITEM && result.seq == oldest.cursor, "after %llu publishes",
+                  (unsigned long long)count);
+        }
+        CHECK(deferred.lost == 0u && sce_blog_reader_is_bound(&deferred), "bound and lost nothing after %llu",
+              (unsigned long long)count);
+        publish_range(&f.publisher, count, count + 1u);
+    }
+    sce_blog_publisher_release(&f.publisher);
+}
+
 /* ---- What the C row adds to the Rust row's tests ---- */
 
 /* The loss of one reader is the sum of its lags, not the last one. */
@@ -478,6 +658,13 @@ int main(void) {
     a_reader_at_the_head_sees_only_what_comes_after();
     there_is_one_publisher_and_its_successor_continues_the_sequence();
     publishing_past_the_window_keeps_the_newest_entries();
+    a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing();
+    the_other_constructors_give_bound_readers();
+    a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start();
+    a_deferred_reader_on_a_young_log_binds_to_entry_zero();
+    a_deferred_reader_that_falls_behind_later_is_told_as_any_reader_is();
+    a_deferred_reader_opened_before_ten_more_publishes_reads_the_last_four();
+    a_deferred_reader_binds_where_the_oldest_reader_opens();
     a_readers_loss_is_the_sum_of_its_lags();
     the_constructor_refuses_a_shape_it_cannot_run();
     a_log_of_two_slots_retains_one_entry();
