@@ -47,7 +47,7 @@ fn resource_dir() -> PathBuf {
 const GATED_REQUEST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_request">
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_request">
   <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr">
     <sce:flag-bind input="N" source="header.N"/>
   </sce:import>
