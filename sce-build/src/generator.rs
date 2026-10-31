@@ -4438,10 +4438,14 @@ fn swift_hybrid_invoke_unlowered(
 /// An `<assign>` too, for an `ecmascript` document: its location and its expression are lowered to
 /// Lua and run by the engine. A `null` document has no location language to name a variable in, so
 /// the assign it could not write is not one the template is asked to drop.
+///
+/// An `<if>` too, for the same documents: each `cond` of the chain is lowered to Lua and run by the
+/// engine, and a branch it cannot run is false and ends the block. A `null` document has no
+/// condition language, so a cond the build could not decide is not one the template can print.
 fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
     match action_type {
         "raise" | "send" | "cancel" => true,
-        "assign" => is_ecma,
+        "assign" | "if" => is_ecma,
         _ => false,
     }
 }
@@ -4643,7 +4647,9 @@ fn swift_ecmascript_cause_unlowered(
     match kind {
         Cause::DatamodelVariableInit { .. }
         | Cause::TransitionGuard { .. }
-        | Cause::AssignAction { .. } => None,
+        | Cause::AssignAction { .. }
+        | Cause::IfCondition { .. }
+        | Cause::ElseIfCondition { .. } => None,
         Cause::GlobalScript | Cause::UnresolvedExternalScript => {
             Some("a top-level <script>".to_string())
         }
@@ -4652,8 +4658,6 @@ fn swift_ecmascript_cause_unlowered(
         Cause::SendDynamicAttr { state_id } => {
             named("a <send> attribute computed by an expression", state_id)
         }
-        Cause::IfCondition { state_id } => named("an <if> cond", state_id),
-        Cause::ElseIfCondition { state_id } => named("an <elseif> cond", state_id),
         Cause::LogExpr { state_id } => named("a <log> expression", state_id),
         Cause::InlineScriptAction { state_id } => named("a <script>", state_id),
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),

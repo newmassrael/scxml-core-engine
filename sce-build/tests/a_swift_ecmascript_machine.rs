@@ -310,6 +310,60 @@ fn an_assign_to_a_system_variable_is_an_error_and_reaches_no_engine() {
     );
 }
 
+/// Each cond of an `<if>` chain of an `ecmascript` document is lowered to Lua and run by the
+/// engine, which says whether it failed: a cond that cannot be run is false and ends the block.
+#[test]
+fn an_if_chain_is_lowered_to_lua_and_a_failed_cond_ends_the_block() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <if cond="n == 1"><raise event="one"/>
+      <elseif cond="n == 2"/><raise event="two"/>
+      <else/><raise event="other"/>
+      </if>
+    </onentry>
+    <transition event="one" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"if evaluateIfCond(""#)
+            && machine.contains("failed: &ifCondFailed1, engine: engine) {"),
+        "the cond is run by the engine, with the flag it sets: {machine}"
+    );
+    assert!(
+        machine.contains(r#"} else if evaluateIfCond(""#),
+        "an <elseif> is run by the engine too, under the chain's flag: {machine}"
+    );
+    assert_eq!(
+        machine.matches("failed: &ifCondFailed1").count(),
+        2,
+        "the <if> and its <elseif> share one flag: {machine}"
+    );
+    assert!(
+        machine.contains("if ifCondFailed1 {"),
+        "a chain that failed ends its block: {machine}"
+    );
+}
+
+/// A cond the build decided is not sent to the engine, so an `<if>` on one has no flag to keep.
+#[test]
+fn an_if_on_a_cond_the_build_decided_keeps_no_flag() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry><if cond="true"><raise event="e"/></if></onentry>
+    <transition event="e" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(!machine.contains("ifCondFailed"), "{machine}");
+    assert!(!machine.contains("evaluateIfCond(\""), "{machine}");
+}
+
 /// What a `<send>` computes with an expression is still refused by name.
 #[test]
 fn a_send_that_an_expression_computes_is_refused_by_name() {
@@ -361,12 +415,12 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
     }
     let refusals = [
         Refusal {
-            what: "an <if>",
+            what: "a <foreach>",
             attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="n" expr="1"/></datamodel>
-  <state id="s0"><onentry><if cond="n == 1"><raise event="e"/></if></onentry></state>"#,
+            body: r#"<datamodel><data id="l" expr="[1]"/><data id="i"/></datamodel>
+  <state id="s0"><onentry><foreach array="l" item="i"><raise event="e"/></foreach></onentry></state>"#,
             extra: &[],
-            named: "<if>",
+            named: "<foreach>",
         },
         Refusal {
             what: "a <log expr>",

@@ -2,37 +2,52 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# W3C SCXML 4.3: Conditional execution (if/elseif/else). #}
-{# W3C SCXML 5.9.1 + 4.9: a native cond that can fail (`native_cond_fails`) sets a
-   flag itself: the cond is false, the chain goes on, and the <if> ends its block
-   when it has run. The flag is named by the <if>'s ordinal so a nested <if>
-   cannot reuse its parent's. Outside an action block there is no block to end.
+{# W3C SCXML 5.9.1 + 4.9: a cond that can fail sets a flag itself: the cond is
+   false, the chain goes on, and the <if> ends its block when it has run. Two
+   kinds of cond can fail: a native one (`native_cond_fails`, a `sce-static`
+   document's) and one run by the script engine (`evaluateIfCond`, in
+   `script_engine.swift.jinja2`, which takes the flag as an inout argument). The
+   flag is named by the <if>'s ordinal so a nested <if> cannot reuse its
+   parent's. Outside an action block there is no block to end.
 
    The conds are parenthesised so a closure at the head of one is not read as the
    block the `if` opens. #}
+{# The cond of one branch, in the one form this machine can evaluate it: native,
+   a pure In() predicate, a condition lowered to Lua and run by the script engine,
+   or a value decided at build time. A cond the frontend could not decide has no
+   `cond_constant`, and printing it as `false` would leave its branch dead and
+   say nothing. Mirrors `guard_expr` of `process_transition.swift.jinja2`. #}
+{% macro runs_script(branch) -%}
+{%- if model.needs_script_engine and not branch.native_cond and not branch.is_pure_in_predicate and branch.cond_constant is none -%}1{%- endif -%}
+{%- endmacro %}
+{% macro cond_expr(branch, ordinal) -%}
+{%- if branch.native_cond -%}({{ branch.native_cond }})
+{%- elif branch.is_pure_in_predicate -%}({{ branch.cond_cpp | to_in_predicate_swift }})
+{%- elif runs_script(branch) -%}evaluateIfCond("{{ branch.cond | to_lua_guard | escape_swift }}", failed: &ifCondFailed{{ ordinal }}, engine: engine)
+{%- else -%}{{ 'true' if branch.cond_constant else 'false' }}
+{%- endif -%}
+{%- endmacro %}
+{% set if_script =namespace(can_fail=runs_script(action) | trim != '') %}
+{% for elseif in action.elseif_branches %}
+{% if runs_script(elseif) | trim != '' %}
+{% set if_script.can_fail = true %}
+{% endif %}
+{% endfor %}
 {% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
-{% if if_native_can_fail %}
+{% set if_can_fail = if_script.can_fail or if_native_can_fail %}
+{% if if_can_fail %}
                 var ifCondFailed{{ action.if_ordinal }} = false
 {% endif %}
-{% if action.native_cond %}
-                if ({{ action.native_cond }}) {
-{% elif action.is_pure_in_predicate %}
-                if ({{ action.cond_cpp | to_in_predicate_swift }}) {
-{% else %}
+{% if not action.native_cond and not action.is_pure_in_predicate and runs_script(action) | trim == '' %}
                 // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
-                if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
+                if {{ cond_expr(action, action.if_ordinal) }} {
 {% for then_action in action.then_actions %}
                     {% with action=then_action %}{% include 'actions/' ~ then_action.type ~ '.swift.jinja2' %}{% endwith %}
 
 {% endfor %}
 {% for elseif in action.elseif_branches %}
-{% if elseif.native_cond %}
-                } else if ({{ elseif.native_cond }}) {
-{% elif elseif.is_pure_in_predicate %}
-                } else if ({{ elseif.cond_cpp | to_in_predicate_swift }}) {
-{% else %}
-                } else if {{ 'true' if elseif.cond_constant else 'false' }} {
-{% endif %}
+                } else if {{ cond_expr(elseif, action.if_ordinal) }} {
 {% for elseif_action in elseif.actions %}
                     {% with action=elseif_action %}{% include 'actions/' ~ elseif_action.type ~ '.swift.jinja2' %}{% endwith %}
 
@@ -46,7 +61,7 @@
 {% endfor %}
 {% endif %}
                 }
-{% if if_native_can_fail %}
+{% if if_can_fail %}
 {% if in_action_block is defined and in_action_block %}
                 if ifCondFailed{{ action.if_ordinal }} {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
