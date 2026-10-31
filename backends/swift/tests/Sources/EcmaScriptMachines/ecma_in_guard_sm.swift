@@ -572,7 +572,10 @@ public final class EcmaInGuardPolicy: InvocablePolicy {
                     name: name,
                     type: metadata.eventType.description,
                     sendID: metadata.sendID,
-                    origin: metadata.origin,
+                    // W3C SCXML C.1: the origin a document reads is the location the sender
+                    // published, an address its receiver can send back to (test 336), and the
+                    // engine's bare session id becomes that address here, where it becomes visible.
+                    origin: publishedOrigin(originSessionID: metadata.origin),
                     originType: metadata.originType,
                     invokeID: metadata.invokeID,
                     data: metadata.data
