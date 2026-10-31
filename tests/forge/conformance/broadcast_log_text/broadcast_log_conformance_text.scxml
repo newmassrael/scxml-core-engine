@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): a log over an element that is a CBOR map with a
+  string and a byte string (`broadcast_log_conformance_text_event`). One
+  producer, wait-free, a retention of three. The element is at most 27 bytes, so
+  an entry is one length word and four words of bytes. The Rust conformance
+  crate compiles what the generator emits for it and reads the log: each entry
+  comes back as the map's owned form, a value past a bound is refused by the
+  codec and not published, and a stored length or text past a bound is refused.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_text"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_text_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>

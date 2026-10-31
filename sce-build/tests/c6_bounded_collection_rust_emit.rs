@@ -699,6 +699,38 @@ fn bounded_string_element_is_stored_at_the_inline_profile() {
     );
 }
 
+/// A CBOR map with a bounded string decodes it to a view of the buffer, so it
+/// borrows, and its codec generates an owned mirror (`{Name}Owned<S>`) for exactly
+/// that case. The collection stores the mirror at the non-allocating profile, as it
+/// does a positional codec's: the type it names is the type the codec generated.
+#[test]
+fn cbor_element_with_a_bounded_string_is_stored_as_the_inline_owned_mirror() {
+    let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" sce:codec-format="2" name="note_entry" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="note" sce:type="string" sce:key="1" sce:max-size="32" sce:direction="out"/>
+  </datamodel>
+</scxml>"##;
+    let code = compile_pair(
+        &bc_doc("note_table", "note_entry", 8, ""),
+        codec,
+        "note_entry.scxml",
+        "note_table.scxml",
+    );
+    assert_parses("CBOR string element BC", &code);
+    assert!(
+        code.contains("use super::note_entry::NoteEntryOwned;"),
+        "the mirror the codec generates must be imported by bare name; got:\n{code}"
+    );
+    assert!(
+        code.contains("NoteEntryOwned<::sce_forge_runtime::codec::Inline>"),
+        "a bounded collection must not hold heap-backed elements; got:\n{code}"
+    );
+}
+
 /// The consumer claim, on a real compiler: a bounded collection of *composite*
 /// elements builds with no allocator in reach.
 ///

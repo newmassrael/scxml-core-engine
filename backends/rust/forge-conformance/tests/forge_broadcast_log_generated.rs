@@ -117,6 +117,23 @@ mod log_modules {
             "/broadcast_log_conformance_chosen.rs"
         ));
     }
+    // The log over an element that is a CBOR map with a string and a byte string, each
+    // stating its bound: the element decodes them to views of the log's stack buffer,
+    // so the log hands back the map's owned form, copied out of it.
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_text_event {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_text_event.rs"
+        ));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod broadcast_log_conformance_text {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/broadcast_log_conformance_text.rs"
+        ));
+    }
 }
 
 use log_modules::broadcast_log_conformance_deployed as deployed;
@@ -712,4 +729,201 @@ fn an_entry_stores_in_its_context_word_the_tag_its_element_says() {
         assert_eq!(entry, words);
         assert_eq!(entry[1], u64::from(Choice::tag_of(&element)));
     }
+}
+
+// ─── An element that is a CBOR map with a string and a byte string ───
+//
+// The element decodes its string and its byte string to views of the buffer a read
+// decodes from, which is on the stack of the read, so the log cannot hand the
+// decoded map back. It hands back the map's owned form instead, copied out of the
+// buffer into containers of the bounds the document declares.
+
+use log_modules::broadcast_log_conformance_text as text;
+use log_modules::broadcast_log_conformance_text::BroadcastLogConformanceTextRead as TextRead;
+use log_modules::broadcast_log_conformance_text_event::BroadcastLogConformanceTextEvent as TextEvent;
+use log_modules::broadcast_log_conformance_text_event::BroadcastLogConformanceTextEventOwned as TextEventOwned;
+use sce_forge_runtime::codec::{Heap, Inline};
+
+fn text_event<'a>(label: &'a str, blob: &'a [u8], note: Option<&'a str>) -> TextEvent<'a> {
+    TextEvent { label, blob, note }
+}
+
+#[test]
+fn the_text_log_is_sized_from_the_bounds_of_the_strings_its_element_holds() {
+    assert_eq!(text::RETENTION, 3, "<sce:retention entries=\"3\"/>");
+    // The map head, then each entry's key and the head and bytes of its longest
+    // value: a text of at most 8 (1 + 1 + 8), a byte string of at most 8
+    // (1 + 1 + 8) and an optional text of at most 4 (1 + 1 + 4), so
+    // 1 + 10 + 10 + 6 = 27 bytes.
+    assert_eq!(text::MAX_ENCODED_BYTES, 27);
+    // One length word, then ceil(27 / 8) = 4 words of bytes.
+    assert_eq!(text::WORDS, 5);
+}
+
+#[test]
+fn entries_of_a_cbor_element_with_text_come_back_whole_as_its_owned_form() {
+    let log = text::BroadcastLogConformanceText::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut reader = log.reader_oldest();
+    assert!(matches!(text::read(&log, &mut reader), Ok(TextRead::Empty)));
+
+    // An optional entry absent and present, every entry at its bound, and every
+    // entry empty.
+    let sent = [
+        text_event("alpha", &[1, 2, 3], None),
+        text_event("12345678", &[0xFF; 8], Some("abcd")),
+        text_event("", &[], Some("")),
+    ];
+    for (n, element) in sent.iter().enumerate() {
+        assert_eq!(
+            text::publish(&mut publisher, element),
+            Ok(n as u64),
+            "an entry takes the next sequence number"
+        );
+    }
+    for (n, element) in sent.iter().enumerate() {
+        let Ok(TextRead::Item { seq, element: got }) = text::read(&log, &mut reader) else {
+            panic!("entry {n} is an item");
+        };
+        assert_eq!(seq, n as u64);
+        // The stored form is the map's owned form on the inline profile, and it
+        // holds what was published, entry by entry.
+        let got: TextEventOwned<Inline> = got;
+        assert_eq!(got.label.as_str(), element.label, "entry {n}: the text");
+        assert_eq!(
+            got.blob.as_slice(),
+            element.blob,
+            "entry {n}: the byte string"
+        );
+        assert_eq!(
+            got.note.as_ref().map(|note| note.as_str()),
+            element.note,
+            "entry {n}: the optional text"
+        );
+        // It re-borrows as the view that was published, and writes the bytes the
+        // view does.
+        assert_eq!(got.as_borrowed(), *element, "entry {n}: re-borrowed");
+        assert_eq!(
+            got.encode_to_vec(),
+            element.encode_to_vec(),
+            "entry {n}: re-encoded"
+        );
+    }
+    assert!(matches!(text::read(&log, &mut reader), Ok(TextRead::Empty)));
+    assert_eq!(reader.lost(), 0, "a reader that kept up lost nothing");
+}
+
+#[test]
+fn an_entry_past_its_bound_is_refused_by_the_codec_and_not_published() {
+    let log = text::BroadcastLogConformanceText::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+
+    // Each entry one byte past its bound: the text of 8, the byte string of 8 and the
+    // optional text of 4.
+    let past = [
+        text_event("123456789", &[], None),
+        text_event("", &[0u8; 9], None),
+        text_event("", &[], Some("12345")),
+    ];
+    for element in &past {
+        assert_eq!(
+            text::publish(&mut publisher, element),
+            Err(CodecError::CborOutOfRange),
+            "{element:?}"
+        );
+    }
+    assert_eq!(log.head(), 0, "a refused element publishes nothing");
+
+    // The bounds themselves are held.
+    text::publish(
+        &mut publisher,
+        &text_event("12345678", &[0u8; 8], Some("1234")),
+    )
+    .expect("an entry at its bounds");
+    assert_eq!(log.head(), 1);
+}
+
+#[test]
+fn a_stored_length_above_the_bound_is_a_codec_error_in_the_text_log_too() {
+    // An entry whose length word is not one this log wrote: the nearest length past
+    // the bound, and the largest `u64`, which a cast to `usize` would wrap.
+    for stored in [text::MAX_ENCODED_BYTES as u64 + 1, u64::MAX] {
+        let log = text::BroadcastLogConformanceText::new();
+        let mut publisher = log.publisher().expect("the first publisher");
+        let mut entry = [0u64; text::WORDS];
+        entry[0] = stored;
+        publisher.publish(&entry);
+
+        let mut reader = log.reader_oldest();
+        assert!(
+            matches!(
+                text::read(&log, &mut reader),
+                Err(CodecError::LengthOutOfRange)
+            ),
+            "stored length {stored}"
+        );
+        assert_eq!(reader.cursor(), 1, "the reader moved past the entry");
+    }
+}
+
+#[test]
+fn a_stored_string_past_its_bound_is_refused_by_the_codec_and_not_handed_back() {
+    // A frame this log did not write: a map of two entries whose text is nine bytes.
+    // It is 14 bytes, which fits the slot, so the length check passes and the decode
+    // of the element is what refuses it.
+    let frame: [u8; 14] = [
+        0xA2, 0x01, 0x69, b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', 0x02, 0x40,
+    ];
+    let log = text::BroadcastLogConformanceText::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut entry = [0u64; text::WORDS];
+    entry[0] = frame.len() as u64;
+    for (index, byte) in frame.iter().enumerate() {
+        entry[1 + index / 8] |= u64::from(*byte) << (8 * (index % 8));
+    }
+    publisher.publish(&entry);
+
+    let mut reader = log.reader_oldest();
+    assert!(
+        matches!(
+            text::read(&log, &mut reader),
+            Err(CodecError::CborOutOfRange)
+        ),
+        "the text is past its bound of 8"
+    );
+    assert_eq!(reader.cursor(), 1, "the reader moved past the entry");
+}
+
+#[test]
+fn the_owned_form_keeps_its_bound_inline_and_its_encode_refuses_a_value_past_it() {
+    // A view can hold a text of any length; the owned form on the inline profile holds
+    // at most the declared 8, and the growable profile holds what it is given.
+    let past = text_event("123456789", &[], None);
+    assert_eq!(
+        past.clone().try_into_owned_in::<Inline>(),
+        Err(CodecError::TooManyElements)
+    );
+    let heap: TextEventOwned<Heap> = past
+        .try_into_owned_in::<Heap>()
+        .expect("the growable profile holds it");
+    // The encode is the codec's: it refuses what the document does not admit, from the
+    // owned form as from the view, and the move to the inline profile is refused too.
+    assert_eq!(heap.encode_to_vec(), Err(CodecError::CborOutOfRange));
+    assert_eq!(
+        heap.transcode_in::<Inline>(),
+        Err(CodecError::TooManyElements)
+    );
+
+    // Within its bounds the profiles agree on the value and on its bytes.
+    let within = text_event("12345678", &[7u8; 8], Some("abcd"));
+    let heap = within
+        .clone()
+        .try_into_owned_in::<Heap>()
+        .expect("a value within its bounds");
+    let inline = heap
+        .transcode_in::<Inline>()
+        .expect("a value within its bounds fits the inline profile");
+    assert_eq!(inline.as_borrowed(), within);
+    assert_eq!(heap.encode_to_vec(), within.encode_to_vec());
+    assert_eq!(inline.encode_to_vec(), within.encode_to_vec());
 }

@@ -381,6 +381,26 @@ fn main() {
         BROADCAST_LOG_DEPLOY,
         &out_dir,
     );
+    // A log over an element that is a CBOR map with a string and a byte string, each
+    // stating its bound (ADR 0062). The map decodes them to views of the buffer a
+    // read decodes from, so the log stores the bytes and hands back the map's owned
+    // form, which this compiles and uses. The documents are in
+    // `tests/forge/conformance/broadcast_log_text/` and not in the resources, whose
+    // documents the generated trees' source hash reads.
+    let text_fixtures = Path::new(&manifest_dir)
+        .join("../../../tests/forge/conformance/broadcast_log_text")
+        .canonicalize()
+        .expect("canonicalize tests/forge/conformance/broadcast_log_text");
+    println!("cargo:rerun-if-changed={}", text_fixtures.display());
+    generate_broadcast_log_set(
+        &[
+            "broadcast_log_conformance_text_event",
+            "broadcast_log_conformance_text",
+        ]
+        .map(|name| text_fixtures.join(format!("{name}.scxml"))),
+        BROADCAST_LOG_DEPLOY,
+        &out_dir,
+    );
 }
 
 /// Frames a codec's document gives as its wire oracle in a comment, for a codec

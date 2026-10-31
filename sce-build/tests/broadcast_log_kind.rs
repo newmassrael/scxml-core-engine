@@ -1615,28 +1615,72 @@ fn an_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_ha
 }
 
 #[test]
-fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_held() {
+fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
+    // A string or byte-string entry decodes to a view of the buffer the log decodes
+    // from, which does not outlive the call, so the log hands back the map's owned
+    // form: the entries that state a bound (`sce:max-size`, or the `sce:length` of
+    // an exact byte string) are copied into a container of that bound, and the
+    // codec's file holds the type the log names. Each case is one entry kind and the
+    // field the owned form holds it in.
     let xml = event_ring();
-    let borrowing = cbor_codec_with(
-        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
-    );
-    let located = compile_documents(
-        Language::Rust,
-        &[
-            ("event_ring.scxml", &xml),
-            ("event_record.scxml", &borrowing),
-        ],
-    )
-    .err()
-    .unwrap_or_else(|| panic!("a string entry borrows the buffer, so the set is refused"));
-    match generate_error(located) {
-        GenerateError::InvalidConfig(detail) => {
-            assert!(detail.contains("a CBOR map with a string"), "{detail}");
-        }
-        other => panic!("expected InvalidConfig, got {other:?}"),
+    let cases = [
+        (
+            r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+            "    pub note: S::Str<16>,",
+        ),
+        (
+            r#"<data id="note" sce:type="bytes" sce:key="1" sce:max-size="32" sce:direction="out"/>"#,
+            "    pub note: S::Bytes<32>,",
+        ),
+        (
+            r#"<data id="note" sce:type="bytes" sce:key="1" sce:length="8" sce:direction="out"/>"#,
+            "    pub note: S::Bytes<8>,",
+        ),
+        (
+            r#"<data id="note" sce:type="optional&lt;string&gt;" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+            "    pub note: Option<S::Str<16>>,",
+        ),
+    ];
+    for (entry, field) in cases {
+        let codec = cbor_codec_with(entry, true);
+        let code = generated_log(
+            compile_documents(
+                Language::Rust,
+                &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            )
+            .unwrap_or_else(|located| panic!("{entry}: rust holds the element: {located:?}")),
+        );
+        assert_holds(
+            &code,
+            &[
+                "use super::event_record::EventRecord;",
+                "use super::event_record::EventRecordOwned;",
+                "Item { seq: u64, element: EventRecordOwned<::sce_forge_runtime::codec::Inline> },",
+                "element: &EventRecord,",
+                "let element = EventRecord::decode(&mut cursor)?",
+                ".try_into_owned_in::<::sce_forge_runtime::codec::Inline>()?;",
+            ],
+        );
+        let module = generated_file(
+            compile_documents(
+                Language::Rust,
+                &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            )
+            .expect("the same set generates"),
+            "event_record.rs",
+        );
+        assert_holds(
+            &module,
+            &[
+                "pub struct EventRecordOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
+                field,
+                "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<EventRecordOwned<S>, CodecError> {",
+            ],
+        );
     }
 
+    // A map of scalars borrows nothing and is its own owned form: the log names the
+    // map itself, and no mirror is generated for it.
     let scalar = cbor_codec_with(
         r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#,
         false,
@@ -1649,6 +1693,32 @@ fn a_cbor_element_that_borrows_its_buffer_is_refused_and_one_that_does_not_is_he
         .expect("a map of scalars borrows nothing, so rust generates the log"),
     );
     assert_holds(&code, &["use super::event_record::EventRecord;"]);
+    assert!(!code.contains("EventRecordOwned"), "{code}");
+}
+
+#[test]
+fn a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size() {
+    // A string with no `sce:max-size` has no capacity to declare an owned container
+    // at, and no largest encoded size to size a slot from: the set is refused on the
+    // element-type row before the template is read, as a positional codec's payload
+    // with no bound is, and in every language.
+    let xml = event_ring();
+    let codec = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:direction="out"/>"#,
+        false,
+    );
+    for language in set_languages() {
+        let wire = language_wire_name(language);
+        let located = compile_documents(
+            language,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{wire}: the string has no bound, so the set is refused"));
+        let reason = unbounded_reason(located, &xml, "event_record", "codec");
+        assert!(reason.contains("'note'"), "{wire}: {reason}");
+        assert!(reason.contains("sce:max-size"), "{wire}: {reason}");
+    }
 }
 
 // --- The numbers a render reads, supplied by hand ---
@@ -1798,9 +1868,11 @@ fn a_retention_that_resolves_to_nothing_is_refused() {
 #[test]
 fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
     let xml = event_ring();
-    let why = "a CBOR map with a string or byte string entry decodes to a value that borrows";
+    let why = "a CBOR map with a string or byte string entry that states neither sce:max-size \
+               nor sce:length decodes to a value that borrows";
     let facts = BroadcastLogElementFacts {
         cbor_text_or_bytes_entry: true,
+        cbor_entry_unbounded: true,
         ..BroadcastLogElementFacts::default()
     };
     let located = compile_single(&xml, &resolution_options(None, 4, facts))
@@ -1816,6 +1888,18 @@ fn an_element_the_template_cannot_hold_is_refused_on_the_element_type_row() {
         "{detail}"
     );
     assert!(detail.contains(why), "{detail}");
+}
+
+#[test]
+fn an_element_with_a_string_entry_that_states_its_bound_is_not_refused_by_the_template() {
+    // The same shape as above with every entry bounded: the map has an owned form to
+    // copy a decoded string into, so the render is not refused and writes the module.
+    let facts = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    compile_single(&event_ring(), &resolution_options(None, 4, facts))
+        .unwrap_or_else(|located| panic!("a bounded text entry is held: {located:?}"));
 }
 
 // --- The facts of an element are the codec's; the verdict on them is a language's ---
@@ -1892,29 +1976,48 @@ fn an_element_with_nothing_unusual_is_refused_by_no_language() {
 }
 
 #[test]
-fn a_cbor_entry_that_borrows_is_refused_only_where_the_decoded_form_borrows() {
-    let facts = BroadcastLogElementFacts {
+fn a_cbor_entry_with_no_bound_is_refused_only_where_the_decoded_form_borrows() {
+    // A map whose every string and byte string states its bound is held by every
+    // language: Rust copies each into the container of its declared bound
+    // (`{Name}Owned<S>`), and the others' decoded values own their bytes (their arms
+    // of `refusal_for` say why: each decode copies a text or byte-string entry out
+    // of the buffer it reads).
+    let bounded = BroadcastLogElementFacts {
         cbor_text_or_bytes_entry: true,
         ..BroadcastLogElementFacts::default()
     };
-    let why = facts
+    for language in Language::ALL.iter().copied() {
+        assert_eq!(bounded.refusal_for(language), None, "{language:?}");
+    }
+    // An entry with no bound has no container to be copied into, which only Rust's
+    // decoded form needs: it is refused there, and held by the languages whose
+    // decoded value owns its bytes. A language with no template yet has not decided
+    // that its decoded form borrows; the change that gives one its template says
+    // which it is in its arm of `refusal_for`.
+    let unbounded = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        cbor_entry_unbounded: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let why = unbounded
         .refusal_for(Language::Rust)
-        .expect("Rust decodes a CBOR string to a borrowed view");
+        .expect("Rust has no owned form for a string with no bound");
     assert!(why.contains("a CBOR map with a string"), "{why}");
-    // Python's, Kotlin's and Go's decoded values own their bytes (their arms of
-    // `refusal_for` say why: each decode copies a text or byte-string entry out of
-    // the buffer it reads), so each holds the element, and a test of its own
-    // generates one. The other languages have no template yet, so none has
-    // decided that its decoded form borrows; the change that gives one its
-    // template says which it is in its arm of `refusal_for`.
-    assert_eq!(facts.refusal_for(Language::Go), None);
+    assert!(why.contains("sce:max-size"), "{why}");
     for language in Language::ALL
         .iter()
         .copied()
-        .filter(|language| *language != Language::Rust && *language != Language::Go)
+        .filter(|language| *language != Language::Rust)
     {
-        assert_eq!(facts.refusal_for(language), None, "{language:?}");
+        assert_eq!(unbounded.refusal_for(language), None, "{language:?}");
     }
+    // The fact is read with the shape it qualifies: an unbounded flag on a map with
+    // no text or byte string says nothing.
+    let alone = BroadcastLogElementFacts {
+        cbor_entry_unbounded: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    assert_eq!(alone.refusal_for(Language::Rust), None);
 }
 
 // --- Go generates the log over its runtime row ---
@@ -2392,9 +2495,9 @@ fn a_go_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_
 
 #[test]
 fn a_cbor_element_with_a_string_entry_is_held_by_go_because_its_decode_copies_it() {
-    // The same document Rust refuses: a text entry. Go's runtime copies the entry
-    // out of the cursor's buffer, so the element owns it and the log may hand it
-    // back.
+    // The same document Rust holds through its owned form: a text entry. Go's
+    // runtime copies the entry out of the cursor's buffer, so the element owns it
+    // and the log may hand it back.
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
@@ -2799,9 +2902,11 @@ fn c11_counts_the_context_words_in_the_words_it_refuses_past_32_bits() {
 fn c11_holds_a_cbor_element_with_text_because_its_struct_owns_the_bytes() {
     // The C codec copies a CBOR text entry into a `char name[N]` of the struct, so
     // the decoded value outlives the buffer it was read from: the log holds an
-    // element the Rust template refuses (its decoded form borrows the buffer).
+    // element whose text states no bound as well, which the Rust template does not
+    // (its decoded form borrows the buffer, and its owned form needs a bound).
     let facts = BroadcastLogElementFacts {
         cbor_text_or_bytes_entry: true,
+        cbor_entry_unbounded: true,
         ..BroadcastLogElementFacts::default()
     };
     assert_eq!(facts.refusal_for(Language::C11), None);
@@ -4622,9 +4727,10 @@ fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_t
         None,
         "the C++ CBOR reader returns a std::string and a std::vector, which own their bytes"
     );
-    assert!(
-        facts.refusal_for(Language::Rust).is_some(),
-        "Rust's decoded form borrows, so the same element is refused there"
+    assert_eq!(
+        facts.refusal_for(Language::Rust),
+        None,
+        "Rust's decoded form borrows, and its owned form holds the bounded entry"
     );
     // What a caller must give is stored with the entry, so a tag adds no refusal.
     let tag = BroadcastLogElementFacts {
@@ -4634,7 +4740,7 @@ fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_t
     assert_eq!(tag.refusal_for(Language::Cpp), None);
 
     // The same element, as the document set sees it: the string entry is read
-    // from the codec and the log is generated where Rust refuses it.
+    // from the codec and the log is generated, as it is for Rust.
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
         true,
@@ -4925,8 +5031,8 @@ fn a_progress_python_cannot_give_is_refused_for_a_document_set_on_the_progress_r
 
 #[test]
 fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes() {
-    // The element Rust refuses (a string entry decodes to a view of the buffer):
-    // Python's decode copies, so the log holds it.
+    // A string entry decodes to a view of the buffer in Rust, which holds it through
+    // an owned form; Python's decode copies, so the log holds it as it decoded it.
     let xml = blocking_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
@@ -5210,13 +5316,14 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_an
     assert_eq!(details[0], details[2], "Rust and Python");
     assert_eq!(details[0], details[3], "Rust and C++");
     // What an element a language cannot hold is refused with differs by the fact
-    // that language refuses (Rust borrows a CBOR string, a language whose template
-    // does not store the context refuses a tag), and the sentence that names it is
-    // the same one.
+    // that language refuses (Rust has no owned form for a CBOR string that states no
+    // bound, a language whose template does not store the context refuses a tag), and
+    // the sentence that names it is the same one.
     for (language, name) in languages {
         let element = if stores_context(language) {
             BroadcastLogElementFacts {
                 cbor_text_or_bytes_entry: true,
+                cbor_entry_unbounded: true,
                 ..BroadcastLogElementFacts::default()
             }
         } else {
@@ -5360,11 +5467,12 @@ fn kotlin_generates_a_log_over_the_runtime_sized_from_its_element() {
 }
 
 #[test]
-fn kotlin_holds_the_cbor_element_that_rust_refuses_for_borrowing_its_buffer() {
+fn kotlin_holds_the_cbor_element_as_it_decoded_it_where_rust_holds_its_owned_form() {
     // A Kotlin text or byte-string entry is a `String` or a `ByteArray` of its own
     // (`Cbor.readText` decodes into a new string, `Cbor.readBytes` copies out of the
     // cursor), so the element outlives the buffer a read decodes it from and the
-    // log holds it; Rust's decodes to a view of that buffer and refuses it.
+    // log holds it as it decoded it; Rust's decodes to a view of that buffer and its
+    // log holds the map's owned form.
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
@@ -5384,15 +5492,16 @@ fn kotlin_holds_the_cbor_element_that_rust_refuses_for_borrowing_its_buffer() {
             "const val MAX_ENCODED_BYTES: Int = ",
         ],
     );
-    let located = compile_documents(
-        Language::Rust,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
-    )
-    .err()
-    .unwrap_or_else(|| panic!("the same map borrows its buffer in Rust, so rust refuses it"));
-    assert!(
-        invalid_config(located).contains("a CBOR map with a string"),
-        "rust names the borrow"
+    let rust = generated_log(
+        compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("the same map is held by rust through its owned form"),
+    );
+    assert_holds(
+        &rust,
+        &["Item { seq: u64, element: EventRecordOwned<::sce_forge_runtime::codec::Inline> },"],
     );
 }
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the element of `broadcast_log_conformance_text`,
+  a CBOR map (SCE_FORGE.md §4.6.1) with a text of at most eight bytes, a byte
+  string of at most eight and an optional text of at most four. The Rust form of
+  the map decodes each of them to a view of the buffer it was read from, so a log
+  over it stores the bytes and hands the map back as its owned mirror, whose
+  containers are of these bounds. The largest it encodes to is the map head and
+  the three entries: 1 + (1 + 1 + 8) + (1 + 1 + 8) + (1 + 1 + 4) = 27 bytes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" sce:codec-format="2" name="broadcast_log_conformance_text_event" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="label" sce:type="string" sce:key="1" sce:max-size="8" sce:direction="out"/>
+    <data id="blob" sce:type="bytes" sce:key="2" sce:max-size="8" sce:direction="out"/>
+    <data id="note" sce:type="optional&lt;string&gt;" sce:key="3" sce:max-size="4" sce:direction="out"/>
+  </datamodel>
+</scxml>

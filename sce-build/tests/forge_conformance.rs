@@ -2837,7 +2837,11 @@ fn the_origin_option_only_appends_the_origin_projection() {
         let (_, off) = &default.files[0];
         let (_, on) = &origin.files[0];
         checked += 1;
-        if off.contains("try_into_owned_in") {
+        // A CBOR codec's owned mirror has no origin projection: the CBOR generator
+        // does not take the option, so its output is the same with it on, whatever
+        // the mirror holds (`a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror`).
+        let cbor = src.contains(r#"sce:encoding="cbor""#);
+        if off.contains("try_into_owned_in") && !cbor {
             with_mirror += 1;
             assert!(
                 on.trim().starts_with(off.trim_end()) || on.starts_with(off.trim_end()),
