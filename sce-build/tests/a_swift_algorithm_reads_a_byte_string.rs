@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
-// A byte string (`bytes`, SCE_FORGE.md §3.4), written for Swift as a read-only
-// parameter: the `[UInt8]` whose length is `data.count` and whose bytes are read by
-// their index, as the parameter of an algorithm that hashes it or counts the code
-// points of it, and as the argument one algorithm hands another. A byte string a
-// body builds, holds in a local or returns has no spelling yet and is refused by
-// name, as every construct the Swift backend does not write is.
+// A byte string (`bytes`, SCE_FORGE.md §3.4), written for Swift as the `[UInt8]` whose
+// length is `data.count` and whose bytes are read by their index: the parameter of an
+// algorithm that hashes it or counts the code points of it, the argument one algorithm
+// hands another, and (SCE_FORGE.md §4.12, byte-buffer-build) the one buffer a body fills
+// by appending and returns by name.
 
 use std::path::{Path, PathBuf};
 
@@ -74,12 +73,80 @@ fn a_byte_string_is_handed_on_to_the_algorithm_that_measures_it() {
     );
 }
 
+/// A body that builds a byte string holds it in an `Array` of bytes pre-sized for the
+/// capacity its author declared, appends a byte or a byte string to it, reads its length
+/// and bytes back, and returns it by name.
 #[test]
-fn a_byte_string_a_body_returns_is_refused_by_name() {
-    let refusal = swift_of("stdlib/merge/hlc_text.scxml")
-        .expect_err("a byte string a body returns is not written yet");
+fn a_byte_string_a_body_builds_is_an_array_it_appends_to_and_returns() {
+    let code = swift_of("tests/forge/resources/algorithm_bytes_squeeze.scxml")
+        .expect("a byte string a body builds is written");
+    for needle in [
+        "var out: [UInt8] = []",
+        "out.reserveCapacity(16)",
+        "out.append(b)",
+        "-> [UInt8]",
+        "out.count",
+    ] {
+        assert!(
+            code.contains(needle),
+            "the generated Swift holds `{needle}`: {code}"
+        );
+    }
+}
+
+/// The text a standard algorithm builds its output with: a byte at a time, into the buffer
+/// its `capacity` sizes, returned as the bytes it is.
+#[test]
+fn a_standard_algorithm_builds_its_bytes_a_byte_at_a_time() {
+    let code =
+        swift_of("stdlib/merge/hlc_text.scxml").expect("a byte string a body returns is written");
+    for needle in [
+        "var out: [UInt8] = []",
+        "out.reserveCapacity(46)",
+        "out.append(digit)",
+        "-> [UInt8]",
+    ] {
+        assert!(
+            code.contains(needle),
+            "the generated Swift holds `{needle}`: {code}"
+        );
+    }
+}
+
+/// A byte string appended whole extends the buffer by its bytes.
+#[test]
+fn a_byte_string_appended_whole_extends_the_buffer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("algorithm_bytes_copy.scxml");
+    std::fs::write(
+        &path,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_bytes_copy" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="bytes" returns-max-size="16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="bytes" capacity="16"/>
+    <sce:append target="out" expr="data"/>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#,
+    )
+    .expect("write the document");
+    let output = compile_forge_file(&path, Language::Swift, &[], &ForgeCompileOptions::default())
+        .map_err(|e| format!("{e:?}"))
+        .expect("an append of a byte string is written");
+    let code = output
+        .files
+        .into_iter()
+        .next()
+        .expect("a document that is written writes a file")
+        .1;
     assert!(
-        refusal.contains("a <sce:return> of bytes"),
-        "the refusal names the return: {refusal}"
+        code.contains("out.append(contentsOf: data)"),
+        "the whole byte string extends the buffer: {code}"
     );
 }

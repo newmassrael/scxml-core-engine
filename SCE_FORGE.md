@@ -1957,6 +1957,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 | Go | `make([]byte, 0, N)` | grows | `[]byte` |
 | Python | `bytearray` | grows | `bytes` |
 | Kotlin | `SceByteBuf(N)` (`ByteArray`-backed, `sce_forge_runtime`) | grows | `ByteArray` |
+| Swift | `var out: [UInt8] = []`, `reserveCapacity(N)` | grows | `[UInt8]` |
 
 **`capacity` reaches every backend**, as the container's fixed size on the bounded ones and as the initial allocation on the growable ones. The author declared a byte count; spending it is what keeps a buffer whose contents stay within the declared bound to a single allocation, and the codec kind pre-sizes for the same reason. Pre-sizing is an allocation hint only — a growable backend still grows past `capacity` rather than failing, exactly as the table says.
 
@@ -1999,6 +2000,7 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 | Go | `make([]T, 0, N)` | grows | `[]T` |
 | Python | `list` | grows | `list[T]` |
 | Kotlin | `SceListBuf(N)` (`sce_forge_runtime`, `Long` slots) | grows | the element's primitive array — `LongArray`, `IntArray`, …, `UIntArray`, `DoubleArray`, `BooleanArray` |
+| Swift | `var out: [T] = []`, `reserveCapacity(N)` | grows | `[T]` |
 
 `SceBytes<N>` is `SceOwnedList<u8, N>` under another name — one bounded-buffer type in the Rust runtime, not two. Kotlin's `SceListBuf` holds every element in a 64-bit slot and converts once at the return, so one buffer class serves every `T` without boxing.
 

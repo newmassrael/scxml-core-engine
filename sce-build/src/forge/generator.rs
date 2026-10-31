@@ -25127,8 +25127,8 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 /// is lowered: the function `throws`, and each integer operation is checked.
 fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Option<String> {
     // A number, a `bool`, a string or a value of an enum; a byte string is held in
-    // `[UInt8]`, which a parameter reads (`lowered_param`) and whose view, buffer and
-    // owned forms are not spelled yet. A record is
+    // `[UInt8]`, which a parameter reads (`lowered_param`) and which a buffer local
+    // fills and a body returns (`lowered_buffer`). A record is
     // the struct of its schema's unit, which the check of the imports below has
     // already held to fields Swift writes, and an enum is the unit of its document,
     // which that check has held to one Swift writes.
@@ -25151,9 +25151,16 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
         })
     }
     // A byte string is a read-only parameter, the `[UInt8]` its length and bytes are
-    // read from; it is no local, element or return here.
+    // read from.
     fn lowered_param(ty: &AlgorithmValueType) -> bool {
         lowered(ty) || ty.scalar().is_some_and(|ty| matches!(ty, SceType::Bytes))
+    }
+    // A byte string is also the one buffer local a body appends to and returns by name
+    // (SCE_FORGE.md §4.12, byte-buffer-build): an `Array` of bytes pre-sized for the
+    // capacity the author declared, which grows past it as the other growable backends
+    // do. It is no element and no optional value.
+    fn lowered_buffer(ty: &AlgorithmValueType) -> bool {
+        ty.scalar().is_some_and(|ty| matches!(ty, SceType::Bytes))
     }
     // A parameter and a local are named as the author wrote them, so one Swift
     // reserves cannot be either.
@@ -25166,7 +25173,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     fn unlowered(stmts: &[AlgorithmStmt], reserved: &dyn Fn(&str) -> bool) -> Option<String> {
         stmts.iter().find_map(|s| match s {
             AlgorithmStmt::Var { name, sce_type, .. }
-                if !lowered(sce_type) && !lowered_list(sce_type) =>
+                if !lowered(sce_type) && !lowered_list(sce_type) && !lowered_buffer(sce_type) =>
             {
                 Some(format!(
                     "the <sce:var name=\"{name}\"> of {}",
@@ -25284,7 +25291,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
         .signature
         .return_type
         .as_ref()
-        .filter(|t| !lowered(t) && !lowered_list(t))
+        .filter(|t| !lowered(t) && !lowered_list(t) && !lowered_buffer(t))
     {
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
@@ -32200,7 +32207,12 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => {
                         format!("{pad}val {local} = SceByteBuf({cap})\n")
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    // An `Array` of bytes, pre-sized for the capacity the author declared
+                    // and grown past it rather than failing, as the other growable
+                    // backends do (SCE_FORGE.md §4.12).
+                    Language::Swift => format!(
+                        "{pad}var {local}: [UInt8] = []\n{pad}{local}.reserveCapacity({cap})\n"
+                    ),
                 };
                 out.push_str(&line);
                 return Ok(());
@@ -32914,7 +32926,7 @@ fn lower_algorithm_stmt(
                              {pad}}}\n"
                         )
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    Language::Swift => format!("{pad}{local}.append(contentsOf: {e})\n"),
                 }
             } else {
                 let e = expr::transpile_typed(
@@ -32943,7 +32955,8 @@ fn lower_algorithm_stmt(
                             channel.c11_capacity_exceeded(&local)
                         )
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    // The expression was typed as an unsigned byte, so it is a `UInt8`.
+                    Language::Swift => format!("{pad}{local}.append({e})\n"),
                 }
             };
             out.push_str(&line);
@@ -33576,8 +33589,12 @@ fn lower_algorithm_stmt(
                     let value = match lang {
                         Language::Python => format!("bytes({buffer})"),
                         Language::Kotlin => format!("{buffer}.toByteArray()"),
-                        Language::Rust | Language::Cpp | Language::C11 | Language::Go => buffer,
-                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                        // The buffer is already the `[UInt8]` the function returns.
+                        Language::Rust
+                        | Language::Cpp
+                        | Language::C11
+                        | Language::Go
+                        | Language::Swift => buffer,
                     };
                     channel.value(pad, &value, true)
                 }
@@ -36343,9 +36360,9 @@ fn render_algorithm(
                 Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
-        // Swift: a byte string is refused before this ([`swift_algorithm_unlowered`]);
-        // a list, a record and an optional value are the arms above, so a value it
-        // returns here is a number, a `bool`, a string or a value of an enum.
+        // Swift: a list, a record and an optional value are the arms above, so a value it
+        // returns here is a number, a `bool`, a string, a value of an enum or a byte
+        // string, which is its `[UInt8]` as a parameter is.
         (
             Some(t),
             Language::Rust
