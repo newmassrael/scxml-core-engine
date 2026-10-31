@@ -341,11 +341,12 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
     """A log over an element whose codec asks its caller for what its wire form does
     not carry (ADR 0062 section 4, "Caller inputs are part of the element").
 
-    The log stores each in the entry beside the bytes, ``publish`` takes it and the
-    item returns it, so a reader decodes an entry under what it was published under
-    and not under whatever it happens to hold. Two sets: a codec with one flag input
-    that gates a field, and a variant whose wire form has no tag, so the caller gives
-    the tag that selects the arm on decode.
+    The log stores each in the entry beside the bytes, so a reader decodes an entry
+    under what it was published under and not under whatever it happens to hold. A
+    flag is taken by ``publish`` and returned by the item; a tag is read off the
+    element. Two sets: a codec with one flag input that gates a field, and a variant
+    whose wire form has no tag, so the tag that selects the arm on decode is the
+    element's own.
     """
 
     @classmethod
@@ -407,8 +408,8 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         )
         return self.choice.BroadcastLogConformanceChoice(body=body)
 
-    def chosen_item(self, seq: int, element: Any, tag: int) -> Any:
-        return self.chosen.BroadcastLogConformanceChosenItem(seq, element, tag)
+    def chosen_item(self, seq: int, element: Any) -> Any:
+        return self.chosen.BroadcastLogConformanceChosenItem(seq, element)
 
     # The slot.
 
@@ -451,8 +452,8 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         module = self.chosen
         log = module.new_broadcast_log_conformance_chosen()
         publisher = log.publisher()
-        module.publish(publisher, self.small(9), 1)
-        module.publish(publisher, self.large(0x0102), 0)
+        module.publish(publisher, self.small(9))
+        module.publish(publisher, self.large(0x0102))
         reader = log.reader_oldest()
         log.read(reader, words)
         # The tag is the context word, and the arm's own byte is all the bytes hold.
@@ -538,7 +539,7 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
 
     # The tag of a variant that has none of its own.
 
-    def test_a_reader_gets_back_the_tag_an_entry_was_published_under(self) -> None:
+    def test_a_reader_gets_back_the_element_as_the_arm_it_was_published_as(self) -> None:
         module = self.chosen
         log = module.new_broadcast_log_conformance_chosen()
         publisher = log.publisher()
@@ -546,31 +547,36 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
         self.assertEqual(Empty(), module.read(log, reader))
 
         # The wire form of an arm carries no tag, so the two arms' bytes are the arm's
-        # own and which arm a frame is comes from the tag stored beside it.
+        # own and which arm a frame is comes from the tag stored beside it, which
+        # ``publish`` takes from the element. The item holds no tag beside the element:
+        # the element's own is the one it was decoded under.
         sent = [(self.small(9), 1), (self.large(0x0102), 0), (self.small(255), 1)]
+        for n, (element, _) in enumerate(sent):
+            self.assertEqual(n, module.publish(publisher, element))
         for n, (element, tag) in enumerate(sent):
-            self.assertEqual(n, module.publish(publisher, element, tag))
-        for n, (element, tag) in enumerate(sent):
+            self.assertEqual(tag, element.tag(), f"entry {n} is an arm with this tag")
+            found = module.read(log, reader)
             self.assertEqual(
-                self.chosen_item(n, element, tag),
-                module.read(log, reader),
+                self.chosen_item(n, element),
+                found,
                 f"entry {n} comes back as the arm it was published as",
             )
+            self.assertEqual(tag, found.element.tag(), f"entry {n} is read under the tag it was stored with")
         self.assertEqual(Empty(), module.read(log, reader))
 
-    def test_a_tag_that_is_not_one_byte_is_refused_and_nothing_is_published(self) -> None:
+    def test_an_entry_stores_in_its_context_word_the_tag_its_element_says(self) -> None:
         module = self.chosen
         log = module.new_broadcast_log_conformance_chosen()
         publisher = log.publisher()
-        for tag in (256, -1):
-            with self.subTest(tag=tag):
-                with self.assertRaises(ValueError):
-                    module.publish(publisher, self.small(1), tag)
-                self.assertEqual(0, log.head(), "a refused tag publishes nothing")
-        # The refusals took no sequence number: the next entry is the first.
-        self.assertEqual(0, module.publish(publisher, self.small(1), 1))
         reader = log.reader_oldest()
-        self.assertEqual(self.chosen_item(0, self.small(1), 1), module.read(log, reader))
+        # ``publish`` takes no tag, so the context word cannot disagree with the arm: it
+        # is ``element.tag()`` for each arm, and the arm's own bytes follow it.
+        words = [0] * module.WORDS
+        for element, expected in ((self.small(9), [1, 1, 9]), (self.large(0x0102), [2, 0, 0x0102])):
+            module.publish(publisher, element)
+            log.read(reader, words)
+            self.assertEqual(expected, words)
+            self.assertEqual(element.tag(), words[1])
 
 
 if __name__ == "__main__":
