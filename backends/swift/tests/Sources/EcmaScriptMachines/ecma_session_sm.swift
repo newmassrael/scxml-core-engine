@@ -348,6 +348,18 @@ public final class EcmaSessionPolicy: InvocablePolicy {
         }
     }
 
+    /// W3C SCXML 5.4: gives the location the value, both already lowered to Lua, and answers whether
+    /// the assignment ran. A location that cannot be written, or a value that cannot be computed, is
+    /// the caller's `error.execution`.
+    private func assignData(_ location: String, _ value: String) -> Bool {
+        do {
+            try ensureLua().execute("\(location) = \(value)", name: "=assign")
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited.
     public func initializeDataModel(engine: Engine<EcmaSessionPolicy>) {
