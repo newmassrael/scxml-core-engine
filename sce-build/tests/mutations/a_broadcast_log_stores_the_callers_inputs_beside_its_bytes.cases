@@ -85,8 +85,8 @@ PY
 # the first word of flags, so a reader that takes its flags from that word reads the tag's
 # bits. Killed by
 # `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`: two
-# flags and a tag hold `entry[1 + 1] = u64::from(tag);` and `let tag = entry[1 + 1] as u8;`,
-# and the mutant prints `entry[1 + 0]` for both.
+# flags and a tag hold `entry[1 + 1] = u64::from(EventRecord::tag_of(element));` and
+# `let tag = entry[1 + 1] as u8;`, and the mutant prints `entry[1 + 0]` for both.
 mutation_case "the tag is stored at the first context word, over the flags" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''        tag_word => flag_words,''',
@@ -96,7 +96,8 @@ PY
 # A tag one word late is stored beyond the context, in the first word of the payload, which
 # the bytes then overwrite or share. Killed by
 # `a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags`
-# (`entry[1 + 0] = u64::from(tag);`, which the mutant prints as `entry[1 + 1]`).
+# (`entry[1 + 0] = u64::from(EventRecord::tag_of(element));`, which the mutant prints as
+# `entry[1 + 1]`).
 mutation_case "the tag is stored one word after the context words" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''        tag_word => flag_words,''',

@@ -64,11 +64,12 @@ edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
 PY
 
 # The tag is written at the first context word, over the first word of flags. Killed by
-# the Rust test: `entry[1 + 1] = u64::from(tag);` is printed `entry[1 + 0]`.
+# the Rust test: `entry[1 + 1] = u64::from(EventRecord::tag_of(element));` is printed
+# `entry[1 + 0]`.
 mutation_case "rust writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
-     r'''entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(tag);''',
-     r'''entry[1 + 0] = {{ word_type }}::from(tag);''')
+     r'''entry[1 + {{ context.tag_word }}] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));''',
+     r'''entry[1 + 0] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));''')
 PY
 
 # The bytes are written from the first context word, over the flags. Killed by the Rust
@@ -96,11 +97,11 @@ edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
      r'''((if (flags.{{ flag.camel }}) 1L else 0L) shl 0)''')
 PY
 
-# Killed by the Kotlin test: `entry[1 + 1] = tag.toLong()` is printed `entry[1 + 0]`.
+# Killed by the Kotlin test: `entry[1 + 1] = element.tag.toLong()` is printed `entry[1 + 0]`.
 mutation_case "kotlin writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
-     r'''entry[1 + {{ context.tag_word }}] = tag.toLong()''',
-     r'''entry[1 + 0] = tag.toLong()''')
+     r'''entry[1 + {{ context.tag_word }}] = element.tag.toLong()''',
+     r'''entry[1 + 0] = element.tag.toLong()''')
 PY
 
 # Killed by the Kotlin test: `val word = 3 + index / 8` is printed `val word = 1 + index / 8`.
@@ -128,11 +129,12 @@ edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
      r'''|= int(flags.{{ flag.snake }}) << 0''')
 PY
 
-# Killed by the Python test: `entry[1 + 1] = tag` is printed `entry[1 + 0] = tag`.
+# Killed by the Python test: `entry[1 + 1] = element.tag()` is printed
+# `entry[1 + 0] = element.tag()`.
 mutation_case "python writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
-     r'''entry[1 + {{ context.tag_word }}] = tag''',
-     r'''entry[1 + 0] = tag''')
+     r'''entry[1 + {{ context.tag_word }}] = element.tag()''',
+     r'''entry[1 + 0] = element.tag()''')
 PY
 
 # Python packs the bytes into words before it puts them in the entry, so the offset that
