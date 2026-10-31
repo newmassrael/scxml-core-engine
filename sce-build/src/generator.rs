@@ -4655,8 +4655,10 @@ fn swift_ecmascript_unlowered(
     for (state, var) in globals.chain(locals) {
         let what = if !var.src.is_empty() {
             Some("a <data src>")
-        } else if !var.content.is_empty() {
-            Some("an inline <data> content")
+        } else if var.content.trim_start().starts_with('<') {
+            // XML content becomes a DOM, which the Swift engine does not have; any other inline
+            // text is an expression or the string it spells.
+            Some("an XML <data> content (it needs a DOM)")
         } else if var.expr.trim_start().starts_with("function") {
             Some("a <data> whose initialiser is a function expression")
         } else {

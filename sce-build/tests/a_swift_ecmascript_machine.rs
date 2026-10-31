@@ -550,6 +550,33 @@ fn the_donedata_of_a_final_is_read_by_the_engine_and_keeps_its_type() {
     );
 }
 
+/// The inline text of a `<data>` takes the ordered readings of W3C SCXML B.2: it is lowered to Lua as
+/// an expression when it is one, and the string it spells, whitespace-normalized, is the last reading,
+/// which the engine falls back to when the expression cannot be run. The name of the variable crosses
+/// as a string, and XML content (a DOM) is refused by name instead.
+#[test]
+fn the_inline_text_of_a_data_is_an_expression_or_the_string_it_spells() {
+    let body = r#"
+  <datamodel><data id="n">42</data><data id="words">  two   words  </data></datamodel>
+  <state id="s0"><transition cond="n == 42" target="done"/></state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"defineData("n", as: ""#)
+            && machine.contains(r#", orText: "42", engine"#),
+        "the text is lowered as an expression with its own text as the last reading: {machine}"
+    );
+    assert!(
+        machine.contains(r#"orText: "two words""#),
+        "the string is whitespace-normalized: {machine}"
+    );
+    assert!(
+        machine.contains("orText fallback: String? = nil"),
+        "the engine knows its fallback: {machine}"
+    );
+}
+
 /// A top-level `<script>` runs once, at document load, after the data is declared.
 #[test]
 fn a_top_level_script_runs_at_load_after_the_data() {
@@ -751,11 +778,11 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
             named: "a <data src>",
         },
         Refusal {
-            what: "an inline <data> content",
+            what: "an XML <data> content",
             attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="x">42</data></datamodel><state id="s0"/>"#,
+            body: r#"<datamodel><data id="x"><item/></data></datamodel><state id="s0"/>"#,
             extra: &[],
-            named: "an inline <data> content",
+            named: "an XML <data> content",
         },
         Refusal {
             what: "a function expression as an initialiser",
