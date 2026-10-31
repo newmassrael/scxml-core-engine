@@ -35,13 +35,18 @@
  * (the entries of an SCQ ring on a 64-bit one). The exchange and the relaxed
  * pair belong to the intrusive queue (Vyukov), whose links are u32 node
  * indices: a producer exchanges its node onto the tail, and a link is read
- * and written relaxed because the exchange and the acquire load order it.
+ * and written relaxed because the exchange and the acquire load order it. The
+ * relaxed pair moves the words of an entry of the narrow broadcast log as well
+ * (below).
  *
  * The broadcast log (sce/forge/broadcast_log.h, ADR 0062) adds, for u64 only,
  * a relaxed load and a relaxed store, which move the words of an entry, and
  * the acquire and the release fence that order those words against the stamp
  * of their slot. A target that has no 64-bit atomic loads and stores has no
- * broadcast log, as it has no SCQ over 64-bit entries.
+ * 64-bit broadcast log, as it has no SCQ over 64-bit entries; it has the narrow
+ * row (sce/forge/broadcast_log_narrow.h), which keeps a 32-bit stamp and 32-bit
+ * words and moves them with the u32 relaxed pair and the same two fences, and
+ * needs no 64-bit atomic.
  */
 
 #ifndef SCE_FORGE_ATOMICS_H
