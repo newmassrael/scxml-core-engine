@@ -366,6 +366,19 @@ public final class EcmaSessionPolicy: InvocablePolicy {
         }
     }
 
+    /// W3C SCXML 4.7: the text of an expression, already lowered to Lua, as ECMAScript converts a value
+    /// to a string, or nil when the expression cannot be run (the caller's `error.execution`).
+    private func logText(_ expression: String) -> String? {
+        do {
+            if case .string(let text) = try ensureLua().evaluate("_scxml_tostring(\(expression))", name: "=log") {
+                return text
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited.
     public func initializeDataModel(engine: Engine<EcmaSessionPolicy>) {
