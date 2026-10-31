@@ -303,6 +303,219 @@ impl<'a> Envelope<'a> {
         Ok(out)
     }
 }
+
+// ── Owned projection (storage-parameterised native form) ─────────────
+// `Envelope<'a>` above decodes a string or a byte string to a view of
+// the buffer it was read from. A consumer that keeps a decoded map past that
+// buffer, as a broadcast log does when it hands a read back, calls
+// `try_into_owned_in` for this lifetime-free `EnvelopeOwned`, which copies
+// each string and byte string into the storage profile's container for it.
+//
+// The profile is the one a positional codec's owned form takes:
+// `EnvelopeOwned<Heap>` grows its containers and treats each declared
+// `sce:max-size` as advisory, `EnvelopeOwned<Inline>` holds every entry
+// inline at its declared capacity and never allocates, and
+// `EnvelopeOwned` alone is the build's default profile. This form exists
+// because every string and byte string of the map states a bound (`sce:max-size`,
+// or the `sce:length` of an exact byte string): a container needs a capacity to be
+// declared at, and an entry with none has no owned form.
+//
+// `try_into_owned_in` enforces each declared bound on the inline profile
+// (`CodecError::TooManyElements`); `as_borrowed` re-borrows any profile back into
+// the view; `transcode_in` moves a value between profiles as a checked
+// projection; and `encode` writes the owned value through the source interface,
+// without the view.
+//
+// Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
+// Hand-assembling a value names the profile on the value or its binding, because
+// the fields reach it through its associated container types.
+// Same pub-API policy as the view above: the owned form and its projections are
+// cross-crate surface, and which of them a given in-repo fixture calls says
+// nothing about their value.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvelopeOwned<
+    S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage,
+> {
+    /// Map key 0, required.
+    pub id: S::Bytes<16>,
+    /// Map key 1, required.
+    pub source: S::Str<262144>,
+    /// Map key 2, required.
+    pub event_type: S::Str<262144>,
+    /// Map key 3, required.
+    pub pattern: pattern_kind::PatternKind,
+    /// Map key 4, required.
+    pub datacontenttype: payload_codec::PayloadCodec,
+    /// Map key 5, required.
+    pub data: S::Bytes<16777216>,
+    /// Map key 6.
+    pub subject: Option<S::Str<262144>>,
+    /// Map key 7.
+    pub correlation_id: Option<S::Bytes<16>>,
+    /// Map key 8.
+    pub reply_to: Option<S::Str<262144>>,
+    /// Map key 9.
+    pub invoke_id: Option<S::Bytes<16>>,
+    /// Map key 10.
+    pub rpc_status: Option<rpc_status::RpcStatus>,
+    /// Map key 11.
+    pub rpc_error_message: Option<S::Str<262144>>,
+    /// Map key 12.
+    pub deadline_unix_ms: Option<u64>,
+    /// Map key 14.
+    pub sequence_no: Option<u64>,
+    /// Map key 15.
+    pub routing_id: Option<S::Bytes<16>>,
+    /// Map key 16.
+    pub parallel_id: Option<S::Str<262144>>,
+    /// Map key 17.
+    pub region_id: Option<S::Str<262144>>,
+    /// Map key 18.
+    pub child_session_id: Option<S::Str<262144>>,
+}
+
+#[allow(dead_code)]
+impl<'a> Envelope<'a> {
+    /// Deep-copy this view into an owned, lifetime-free [`EnvelopeOwned`]
+    /// held in the given storage profile. Call at a decode boundary when the
+    /// decoded value must outlive the input buffer.
+    ///
+    /// Fallible for profile uniformity: on the inline profile a string or byte
+    /// string longer than its declared capacity raises
+    /// `CodecError::TooManyElements`, on the growable profile the copy cannot
+    /// fail. Decode has already held each entry to its bound, so a value that
+    /// was decoded fits.
+    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(
+        self,
+    ) -> Result<EnvelopeOwned<S>, CodecError> {
+        Ok(EnvelopeOwned {
+            id: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.id)?,
+            source: <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view(self.source)?,
+            event_type: <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view(
+                self.event_type,
+            )?,
+            pattern: self.pattern,
+            datacontenttype: self.datacontenttype,
+            data: <S::Bytes<16777216> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(
+                self.data,
+            )?,
+            subject: self
+                .subject
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+            correlation_id: self
+                .correlation_id
+                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .transpose()?,
+            reply_to: self
+                .reply_to
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+            invoke_id: self
+                .invoke_id
+                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .transpose()?,
+            rpc_status: self.rpc_status,
+            rpc_error_message: self
+                .rpc_error_message
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+            deadline_unix_ms: self.deadline_unix_ms,
+            sequence_no: self.sequence_no,
+            routing_id: self
+                .routing_id
+                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .transpose()?,
+            parallel_id: self
+                .parallel_id
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+            region_id: self
+                .region_id
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+            child_session_id: self
+                .child_session_id
+                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .transpose()?,
+        })
+    }
+
+    /// The same projection at the build's default storage profile: growable
+    /// where an allocator exists, inline on the heap-free tier.
+    pub fn try_into_owned(self) -> Result<EnvelopeOwned, CodecError> {
+        self.try_into_owned_in()
+    }
+}
+
+#[allow(dead_code)]
+impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeOwned<S> {
+    /// Re-borrow this owned value back into the view: the inverse of
+    /// `try_into_owned_in`. Each entry is read through
+    /// [`EnvelopeSource`], so a string or a byte string is a re-borrow of
+    /// the container that holds it and not a copy.
+    pub fn as_borrowed(&self) -> Envelope<'_> {
+        Envelope {
+            id: <Self as EnvelopeSource>::id(self),
+            source: <Self as EnvelopeSource>::source(self),
+            event_type: <Self as EnvelopeSource>::event_type(self),
+            pattern: <Self as EnvelopeSource>::pattern(self),
+            datacontenttype: <Self as EnvelopeSource>::datacontenttype(self),
+            data: <Self as EnvelopeSource>::data(self),
+            subject: <Self as EnvelopeSource>::subject(self),
+            correlation_id: <Self as EnvelopeSource>::correlation_id(self),
+            reply_to: <Self as EnvelopeSource>::reply_to(self),
+            invoke_id: <Self as EnvelopeSource>::invoke_id(self),
+            rpc_status: <Self as EnvelopeSource>::rpc_status(self),
+            rpc_error_message: <Self as EnvelopeSource>::rpc_error_message(self),
+            deadline_unix_ms: <Self as EnvelopeSource>::deadline_unix_ms(self),
+            sequence_no: <Self as EnvelopeSource>::sequence_no(self),
+            routing_id: <Self as EnvelopeSource>::routing_id(self),
+            parallel_id: <Self as EnvelopeSource>::parallel_id(self),
+            region_id: <Self as EnvelopeSource>::region_id(self),
+            child_session_id: <Self as EnvelopeSource>::child_session_id(self),
+        }
+    }
+
+    /// Move this value to a different storage profile: growable to inline when
+    /// handing it to a path that must not allocate, or inline to growable when it
+    /// is leaving that path.
+    ///
+    /// A checked projection through the view, not a re-decode: the bytes are
+    /// copied once and every destination capacity is enforced, so a value that
+    /// cannot fit the target profile is rejected here rather than truncated.
+    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(
+        &self,
+    ) -> Result<EnvelopeOwned<D>, CodecError> {
+        self.as_borrowed().try_into_owned_in::<D>()
+    }
+
+    // Every string and byte string of an owned form has a declared bound, so the
+    // encode can refuse a value (`CodecError::CborOutOfRange`, or
+    // `CodecError::CborWrongLength` for an exact byte string): the growable
+    // profile holds a value past a bound, which the encode then refuses.
+
+    /// Encode `self` into the caller-owned sink, straight from the owned fields:
+    /// the bytes [`Envelope::encode`] writes for the value
+    /// [`Self::as_borrowed`] gives, without the projection. An entry past its
+    /// declared bound is refused, not written.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError>
+    where
+        CodecError: From<K::Error>,
+    {
+        Envelope::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut out: Vec<u8> = Vec::new();
+        self.encode(&mut VecSink::new(&mut out))?;
+        Ok(out)
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `Envelope` says: its entries. The count the map head holds
 /// is not among them; `Envelope` counts the entries present
@@ -457,6 +670,81 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     }
     fn child_session_id(&self) -> Option<&str> {
         self.child_session_id
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwned<S> {
+    fn id(&self) -> &[u8] {
+        <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.id)
+    }
+    fn source(&self) -> &str {
+        <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str(&self.source)
+    }
+    fn event_type(&self) -> &str {
+        <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str(&self.event_type)
+    }
+    fn pattern(&self) -> pattern_kind::PatternKind {
+        self.pattern
+    }
+    fn datacontenttype(&self) -> payload_codec::PayloadCodec {
+        self.datacontenttype
+    }
+    fn data(&self) -> &[u8] {
+        <S::Bytes<16777216> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.data)
+    }
+    fn subject(&self) -> Option<&str> {
+        self.subject
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+    }
+    fn correlation_id(&self) -> Option<&[u8]> {
+        self.correlation_id
+            .as_ref()
+            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+    }
+    fn reply_to(&self) -> Option<&str> {
+        self.reply_to
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+    }
+    fn invoke_id(&self) -> Option<&[u8]> {
+        self.invoke_id
+            .as_ref()
+            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+    }
+    fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
+        self.rpc_status
+    }
+    fn rpc_error_message(&self) -> Option<&str> {
+        self.rpc_error_message
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+    }
+    fn deadline_unix_ms(&self) -> Option<u64> {
+        self.deadline_unix_ms
+    }
+    fn sequence_no(&self) -> Option<u64> {
+        self.sequence_no
+    }
+    fn routing_id(&self) -> Option<&[u8]> {
+        self.routing_id
+            .as_ref()
+            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+    }
+    fn parallel_id(&self) -> Option<&str> {
+        self.parallel_id
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+    }
+    fn region_id(&self) -> Option<&str> {
+        self.region_id
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+    }
+    fn child_session_id(&self) -> Option<&str> {
+        self.child_session_id
+            .as_ref()
+            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
     }
 }
 
