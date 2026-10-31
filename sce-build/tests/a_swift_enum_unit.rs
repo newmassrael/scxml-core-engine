@@ -6,7 +6,8 @@
 // (which is not the variant's position), named lowerCamelCase, with the name the
 // document gives it and the two conversions every backend's enum answers. An open
 // enum (`sce:strict-variants="false"`) holds a value no variant declares, which a
-// Swift enum cannot, so it is refused by name.
+// Swift enum cannot, so it is a struct over the carrier; what holds a value of one
+// (a record, an algorithm, a machine) is refused by name.
 
 use std::path::{Path, PathBuf};
 
@@ -114,12 +115,25 @@ fn a_schema_whose_field_holds_an_enum_swift_does_not_write_is_refused_by_name() 
     );
 }
 
+/// An open enum is a struct over the carrier: it holds any number, names the declared ones
+/// as constants, and answers a total conversion from a number and an optional name.
 #[test]
-fn an_open_enum_is_refused_by_name() {
-    let refusal = swift_of("sce-build/tests/fixtures/event_schema/uds_nrc_open.scxml")
-        .expect_err("an open enum is not lowered for Swift");
-    assert!(
-        refusal.contains("open set of variants") && refusal.contains("Swift"),
-        "{refusal}"
-    );
+fn an_open_enum_is_a_struct_that_holds_any_number() {
+    let code = swift_of("sce-build/tests/fixtures/event_schema/uds_nrc_open.scxml")
+        .expect("an open enum is written for Swift");
+    for needle in [
+        "public struct UdsNrcOpen: RawRepresentable, Hashable, Sendable {",
+        "public let rawValue: UInt8",
+        "public init(rawValue: UInt8) {",
+        "public static let generalReject = UdsNrcOpen(rawValue: 16)",
+        "public var declaredName: String? {",
+        "public static func fromUnderlying(_ raw: UInt8) -> UdsNrcOpen {",
+    ] {
+        assert!(
+            code.contains(needle),
+            "the generated Swift holds `{needle}`: {code}"
+        );
+    }
+    // The declared variants are not the whole of the set.
+    assert!(!code.contains("CaseIterable"), "{code}");
 }

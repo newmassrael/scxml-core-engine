@@ -8,10 +8,18 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
+{% if is_open %}
+// An open enum over the document's own carrier (`sce:underlying-type="{{ sce_underlying_name }}"`,
+// `sce:strict-variants="false"`), a file of the module that names it: a struct that holds
+// any number the carrier holds, declared by a variant or not, and names each declared
+// variant as a constant of the number the document declares for it. A record, an
+// algorithm and a machine do not hold a value of it yet.
+{% else %}
 // A closed enum over the document's own carrier (`sce:underlying-type="{{ sce_underlying_name }}"`),
 // a file of the module that names it: each case holds the number the document
 // declares for it, which is not the variant's position. An algorithm and an event
 // schema of the module hold a value of it by this type, and a `sce-static` machine
 // holds the same enum under a name of its own, written by the same function.
+{% endif %}
 
 {{ swift_declaration }}

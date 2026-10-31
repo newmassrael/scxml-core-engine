@@ -4,8 +4,8 @@
 // A lookup (`sce:kind="lookup"`, a table read by exact match), written for Swift: a static
 // function of the caseless enum the document's `<Pascal>` names, over two arrays the enum
 // holds, read by the runtime's `Lookup.find`. A table that errors on a miss answers `nil` and
-// one with a default answers it. A table that answers a name is refused by name until its
-// enum is spelled.
+// one with a default answers it. A table that answers a name answers a case of an enum the
+// unit declares, and a validator that imports one is refused by name.
 
 use std::path::{Path, PathBuf};
 
@@ -86,12 +86,28 @@ fn a_table_of_enum_variants_names_the_variants_the_units_declare() {
     );
 }
 
+/// A table that answers a name declares an enum of the names, nested in the unit's own,
+/// each case holding the name the document spells; a key it does not list answers its
+/// default.
 #[test]
-fn a_table_that_answers_a_name_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/lookup_engine_status.scxml")
-        .expect_err("a table of names is not written yet");
-    assert!(
-        refusal.contains("an output that answers a name"),
-        "the refusal names the construct: {refusal}"
-    );
+fn a_table_that_answers_a_name_answers_a_case_of_a_nested_enum() {
+    let code = swift_of("tests/forge/resources/lookup_engine_status.scxml")
+        .expect("a table of names is written");
+    for needle in [
+        "public enum Status: String, Sendable {",
+        // A case is spelled as the enum units spell theirs (`enum_naming::variant_ident`),
+        // which leaves a name the document writes in capitals as it is.
+        "case STOP = \"STOP\"",
+        "case RUNNING = \"RUNNING\"",
+        "public static func lookupStatus(_ engSta: UInt8) -> Status {",
+        "return .RUNNING",
+        "default:",
+    ] {
+        assert!(
+            code.contains(needle),
+            "the generated Swift holds `{needle}`: {code}"
+        );
+    }
+    // A table of names needs no runtime of the forge.
+    assert!(!code.contains("SceForgeRuntime.Lookup"), "{code}");
 }

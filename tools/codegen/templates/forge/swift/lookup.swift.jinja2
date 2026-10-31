@@ -14,6 +14,30 @@
 // it would hide a free function of the same name.{% if on_miss_error %} A key the table
 // does not list answers no value: the call is an error, and the function answers `nil`.{% endif %}
 
+{% if output_is_string %}
+{# A table that answers a name: the names are the cases of an enum the unit declares, nested in
+   the unit's own enum so it takes no name of the module's, each with the name as its raw value.
+   A key the table does not list answers its default. #}
+public enum {{ struct_name }} {
+    /// The names the table answers, each case holding the name the document spells.
+    public enum {{ enum_name }}: String, Sendable {
+{% for variant in swift_variants %}
+        case {{ variant.ident }} = "{{ variant.raw | escape_swift }}"
+{% endfor %}
+    }
+
+    public static func {{ func_name }}(_ {{ input_id }}: {{ input_type }}) -> {{ enum_name }} {
+        switch {{ input_id }} {
+{% for group in entries_by_value %}
+        case {{ group.keys | join(", ") }}:
+            return .{{ group.value }}
+{% endfor %}
+        default:
+            return .{{ default_value }}
+        }
+    }
+}
+{% else %}
 import SceForgeRuntime
 
 public enum {{ struct_name }} {
@@ -28,3 +52,4 @@ public enum {{ struct_name }} {
 {% endif %}
     }
 }
+{% endif %}

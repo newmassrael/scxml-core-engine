@@ -6173,21 +6173,24 @@ fn validate_and_enrich_imports(
             }
             // A Swift validator calls the unit a transform or a lookup is written as,
             // which exists only when Swift writes that document: a value a transform
-            // reads through `previous()` and a table that answers a name have no unit,
-            // and a table that answers an optional on a miss has one a comparison cannot
-            // read.
+            // reads through `previous()` has no unit, and a table that answers an
+            // optional on a miss, or a name, has one a comparison cannot read.
             if *language == generator::Language::Swift {
                 match &doc {
                     forge::model::ForgeDocument::Transform(tm) => {
                         ctx.swift_unlowered = forge::generator::swift_transform_unlowered(tm);
                     }
                     forge::model::ForgeDocument::Lookup(lm) => {
-                        ctx.swift_unlowered =
-                            forge::generator::swift_lookup_unlowered(lm).or_else(|| {
-                                lm.miss_policy
-                                    .is_error()
-                                    .then(|| "an optional answer on a miss".to_string())
-                            });
+                        // The unit of a table of names is written (it answers a case of
+                        // a nested enum), but a validator's expression compares numbers
+                        // and truth values, not the cases of an enum a table declares.
+                        ctx.swift_unlowered = if lm.output_is_string() {
+                            Some("an output that answers a name".to_string())
+                        } else if lm.miss_policy.is_error() {
+                            Some("an optional answer on a miss".to_string())
+                        } else {
+                            None
+                        };
                     }
                     _ => {}
                 }

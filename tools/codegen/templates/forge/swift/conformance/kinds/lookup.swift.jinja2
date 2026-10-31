@@ -2,9 +2,9 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# Lookup kind: a finite key-to-value table, a static function of its unit. A table that
-   answers a text is refused by the generator (`swift_lookup_unlowered`), so no fixture of
-   it reaches this fragment. `on_miss="error"` answers an optional, whose miss is a hard
-   failure here, since every case of the oracle is a key the table holds; `on_miss="default"`
+   answers a name answers a case of the enum its unit declares, whose raw value is the name
+   the oracle holds. `on_miss="error"` answers an optional, whose miss is a hard failure
+   here, since every case of the oracle is a key the table holds; `on_miss="default"`
    answers the value itself. #}
     for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
         let args = try oracleArray(testCase.member("args"))
@@ -20,7 +20,9 @@
 {% else %}
         let actual = {{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% endif %}
-{% if f.output.compare == "tolerance" %}
+{% if f.output.type == "string" %}
+        #expect(actual.rawValue == expected, "{{ f.name }}")
+{% elif f.output.compare == "tolerance" %}
         expectClose(Double(actual), Double(expected), "{{ f.name }}")
 {% else %}
         #expect(actual == expected, "{{ f.name }}")
