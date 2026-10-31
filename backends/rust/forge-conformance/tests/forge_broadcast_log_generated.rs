@@ -537,6 +537,7 @@ use log_modules::broadcast_log_conformance_flagged as flagged;
 use log_modules::broadcast_log_conformance_flagged::BroadcastLogConformanceFlaggedFlags as Flags;
 use log_modules::broadcast_log_conformance_flagged::BroadcastLogConformanceFlaggedRead as FlaggedRead;
 use log_modules::broadcast_log_conformance_flagged_event::BroadcastLogConformanceFlaggedEvent as FlaggedEvent;
+use sce_forge_runtime::broadcast_log::Read as RuntimeRead;
 
 fn flagged_event(sensor_id: u8, value: Option<u16>) -> FlaggedEvent {
     FlaggedEvent { sensor_id, value }
@@ -652,27 +653,63 @@ fn an_entry_is_stored_under_the_flag_its_element_says() {
 }
 
 #[test]
-fn a_reader_gets_back_the_tag_an_entry_was_published_under() {
+fn a_reader_gets_back_the_element_as_the_arm_it_was_published_as() {
     let log = chosen::BroadcastLogConformanceChosen::new();
     let mut publisher = log.publisher().expect("the first publisher");
     let mut reader = log.reader_oldest();
 
     // The wire form of an arm carries no tag, so the two arms' bytes are the
     // arm's own and which arm a frame is comes from the tag stored beside it.
+    // `publish` takes no tag: the element says it, and the item's element says
+    // the tag it was decoded under.
     let sent = [(small(9), 1u8), (large(0x0102), 0u8), (small(255), 1u8)];
-    for (element, tag) in &sent {
-        chosen::publish(&mut publisher, element, *tag).expect("an entry within the bound");
+    for (element, _) in &sent {
+        chosen::publish(&mut publisher, element).expect("an entry within the bound");
     }
     for (seq, (element, tag)) in sent.into_iter().enumerate() {
         assert_eq!(
-            chosen::read(&log, &mut reader),
-            Ok(ChosenRead::Item {
-                seq: seq as u64,
-                element,
-                tag
-            }),
+            Choice::tag_of(&element),
+            tag,
+            "entry {seq} is an arm with this tag"
+        );
+        let Ok(ChosenRead::Item {
+            seq: got_seq,
+            element: got,
+        }) = chosen::read(&log, &mut reader)
+        else {
+            panic!("entry {seq} is an item");
+        };
+        assert_eq!(got_seq, seq as u64);
+        assert_eq!(
+            Choice::tag_of(&got),
+            tag,
             "entry {seq} comes back as the arm it was published as"
         );
+        assert_eq!(got, element, "entry {seq} comes back whole");
     }
     assert_eq!(chosen::read(&log, &mut reader), Ok(ChosenRead::Empty));
+}
+
+#[test]
+fn an_entry_stores_in_its_context_word_the_tag_its_element_says() {
+    let log = chosen::BroadcastLogConformanceChosen::new();
+    let mut publisher = log.publisher().expect("the first publisher");
+    let mut reader = log.reader_oldest();
+
+    // The entry is `[length, tag, bytes]`: the tag word is `Choice::tag_of(element)`
+    // for each arm, and the arm's own bytes follow it (the large arm's `uint16` is
+    // little-endian, so 0x0102 is the word of its two bytes).
+    for (element, words) in [
+        (small(9), [1u64, 1, 0x09]),
+        (large(0x0102), [2u64, 0, 0x0102]),
+    ] {
+        chosen::publish(&mut publisher, &element).expect("an entry within the bound");
+        let mut entry = [0u64; chosen::WORDS];
+        assert!(
+            matches!(log.read(&mut reader, &mut entry), RuntimeRead::Item { .. }),
+            "the entry is whole"
+        );
+        assert_eq!(entry, words);
+        assert_eq!(entry[1], u64::from(Choice::tag_of(&element)));
+    }
 }
