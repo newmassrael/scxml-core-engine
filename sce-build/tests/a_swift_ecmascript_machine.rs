@@ -445,6 +445,43 @@ fn a_foreach_walks_an_array_the_engine_read_once() {
     assert!(machine.contains("break sceBlock"), "{machine}");
 }
 
+/// The data of a final state's done event is read by the engine as the state is entered and keeps its
+/// type: a `<param>` and a `<content expr>` are lowered to Lua and written as JSON, a value that cannot
+/// be read is an `error.execution` (a param then leaves its pair out), and an empty location names
+/// nothing.
+#[test]
+fn the_donedata_of_a_final_is_read_by_the_engine_and_keeps_its_type() {
+    let params = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0" initial="c"><state id="c"><transition target="d"/></state><final id="d"><donedata><param name="p" expr="n + 1"/><param name="q" location="n"/></donedata></final></state>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, params), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"PayloadPair.json("p", rawJSON: paramValue)"#)
+            && machine.contains(r#"PayloadPair.json("q", rawJSON: paramValue)"#),
+        "each param keeps its type: {machine}"
+    );
+    assert!(
+        machine.contains("<donedata> <param name=p> failed to evaluate"),
+        "a param that cannot be read is an error.execution: {machine}"
+    );
+
+    let content = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0"><transition target="d"/></state>
+  <final id="d"><donedata><content expr="n"/></donedata></final>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, content), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"if let doneValue = evaluateJSON(""#),
+        "the content keeps its type: {machine}"
+    );
+    assert!(
+        machine.contains("<donedata> <content expr> failed to evaluate"),
+        "a content that cannot be read is an error.execution: {machine}"
+    );
+}
+
 /// A top-level `<script>` runs once, at document load, after the data is declared.
 #[test]
 fn a_top_level_script_runs_at_load_after_the_data() {
@@ -665,15 +702,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
             body: r#"<state id="s0"><datamodel><data id="x" expr="1"/></datamodel></state>"#,
             extra: &[],
             named: r#"binding="late""#,
-        },
-        Refusal {
-            what: "a <donedata> of a final state",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="n" expr="1"/></datamodel>
-  <state id="s0"><transition target="done"/></state>
-  <final id="done"><donedata><content expr="n"/></donedata></final>"#,
-            extra: &[],
-            named: "donedata",
         },
     ];
     for refusal in refusals {

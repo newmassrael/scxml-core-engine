@@ -90,7 +90,8 @@
 {# `datamodel="sce-static"`: each value is native code (`DoneData::native_content`,
    `native_content_value`, `DoneDataParam::native_value`), read from the machine's own
    fields as the final is entered, so no script engine is asked for any of them (SCE
-   Accepted Subset §2.15). A document under another data model is refused for a
+   Accepted Subset §2.15). `datamodel="ecmascript"`: each value is a Lua expression the
+   engine reads as the final is entered (`evaluateJSON`). A `null` document is refused for a
    <donedata> before it reaches here. #}
             // W3C SCXML 5.5: the data of the final's done event, from its <donedata>.
             var doneEventData = ""
@@ -119,11 +120,36 @@
                 doneEventData = doneValue.json
 {% endif %}
             }
+{% elif ecmascript_datamodel and (state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text") %}
+{# `datamodel="ecmascript"`: the value is a Lua expression the engine reads as the final is
+   entered, and it is the done event's whole data, as the JSON it is (`evaluateJSON`, in
+   `script_engine.swift.jinja2`). Inline text takes the readings of inline `<data>`, so the
+   same filter decides whether it is an expression or a string. #}
+{% if state.donedata.content.kind == "expression" %}
+{% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}
+{% else %}
+{% set donedata_content_lua = state.donedata.content.text | to_lua_data_content %}
+{% endif %}
+            // W3C SCXML 5.5: the value of <content> is the done event's whole data. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place error.execution in the internal
+            // event queue and use the empty string as the value of the <content> element."
+            if let doneValue = evaluateJSON("{{ donedata_content_lua | escape_swift }}") {
+                doneEventData = doneValue
+            } else {
+                raiseExecutionError("<donedata> <content expr> failed to evaluate", engine: engine)
+                doneEventData = WireValue.text("").json
+            }
+{% elif ecmascript_datamodel and state.donedata.content.kind == "literal" %}
+            // W3C SCXML 5.5: inline text children are used as the content value: no evaluation.
+            doneEventData = "{{ state.donedata.content.text | escape_swift }}"
 {% elif state.donedata.params %}
             // W3C SCXML 5.7.1: a <param> that cannot be read is reported and its pair left
             // out; the pairs that survived are the data, `{}` when none did.
             var doneParts: [PayloadPair] = []
 {% for param in state.donedata.params %}
+{# W3C SCXML 5.7: the parser admits exactly one of `expr` and `location`, so the one that is
+   PRESENT is the value, tested for presence and not for truth. #}
+{% set param_expr = param.expr if param.expr is not none else param.location %}
 {% if param.native_value %}
             do {
 {% if param.native_fails %}
@@ -141,6 +167,17 @@
 {% else %}
                 doneParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
+            }
+{% elif ecmascript_datamodel and not param_expr %}
+            // W3C SCXML 5.7: an empty location names no location: error.execution, and this pair is ignored.
+            raiseExecutionError("<donedata> <param name={{ param.name | escape_swift }}> has an empty location", engine: engine)
+{% elif ecmascript_datamodel %}
+            // W3C SCXML 5.7.1 + B.2: donedata rides an event, so the value leaves the data model and
+            // travels as JSON, the same wire `<send>`'s params take (`evaluateJSON`).
+            if let paramValue = evaluateJSON("{{ param_expr | to_lua_expr | escape_swift }}") {
+                doneParts.append(PayloadPair.json("{{ param.name | escape_swift }}", rawJSON: paramValue))
+            } else {
+                raiseExecutionError("<donedata> <param name={{ param.name | escape_swift }}> failed to evaluate", engine: engine)
             }
 {% endif %}
 {% endfor %}

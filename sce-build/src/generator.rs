@@ -4541,8 +4541,9 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
             }
         }
         // A `sce-static` document's <donedata> is native code the lowering has finished
-        // (SCE Accepted Subset §2.15); any other data model would need a script engine.
-        if !is_static && state.is_final && state.donedata.is_some() {
+        // (SCE Accepted Subset §2.15), and an `ecmascript` one is read by the engine; a `null`
+        // document would need a script engine it does not have.
+        if !is_static && !is_ecma && state.is_final && state.donedata.is_some() {
             return Err(swift_unsupported(
                 format!("the <donedata> of final state '{}'", state.id),
                 state.source_location.clone(),
@@ -4699,6 +4700,10 @@ fn swift_ecmascript_cause_unlowered(
         | Cause::SendNamelist { .. }
         | Cause::SendParamExpr { .. }
         | Cause::ForeachAction { .. }
+        // The data of a final state's done event: each `<param>` and the `<content>` are values
+        // the engine reads as the state is entered (`evaluateJSON`).
+        | Cause::DonedataParam { .. }
+        | Cause::DonedataContent { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
@@ -4714,8 +4719,6 @@ fn swift_ecmascript_cause_unlowered(
         Cause::HostInvokeExpr { invoke_id } => {
             named("a host <invoke> whose request is evaluated", invoke_id)
         }
-        Cause::DonedataParam { state_id } => named("a <donedata> <param>", state_id),
-        Cause::DonedataContent { state_id } => named("a <donedata> <content>", state_id),
         Cause::ChildInvokeNeedsScriptEngine { invoke_id } => named(
             "an <invoke> of a child that runs a script engine",
             invoke_id,
