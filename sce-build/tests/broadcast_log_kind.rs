@@ -2629,27 +2629,34 @@ fn c11_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own(
             "((uint32_t)(1u + EVENT_RING_CONTEXT_WORDS + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
              (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
             "typedef struct {\n    bool s;\n    bool t;\n} event_ring_flags_t;",
-            "    event_ring_flags_t flags;\n",
-            "    uint8_t tag;\n} event_ring_read_result_t;",
+            "    event_ring_flags_t flags;\n} event_ring_read_result_t;",
             "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
-             *publisher, const event_record_t *element, const event_ring_flags_t *flags, \
-             uint8_t tag)",
+             *publisher, const event_record_t *element, const event_ring_flags_t *flags)",
             "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
              event_ring_flag_input(flags->s), event_ring_flag_input(flags->t))",
             "if (flags->s) {\n        entry[1u + 0u] |= UINT64_C(1) << 0u;\n    }",
             "if (flags->t) {\n        entry[1u + 0u] |= UINT64_C(1) << 1u;\n    }",
-            "entry[1u + 1u] = (uint64_t)tag;",
+            "entry[1u + 1u] = (uint64_t)event_record_tag(element);",
             "entry[3u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
             "result.flags.s = false;",
             "result.flags.t = false;",
-            "result.tag = 0u;",
             "bytes[index] = (uint8_t)(entry[3u + index / 8u] >> (8u * (index % 8u)));",
             "result.flags.s = ((entry[1u + 0u] >> 0u) & UINT64_C(1)) != 0u;",
             "result.flags.t = ((entry[1u + 0u] >> 1u) & UINT64_C(1)) != 0u;",
-            "result.tag = (uint8_t)(entry[1u + 1u] & UINT64_C(0xFF));",
+            "tag = (uint8_t)(entry[1u + 1u] & UINT64_C(0xFF));",
             "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s), \
-             event_ring_flag_input(result.flags.t), result.tag)",
+             event_ring_flag_input(result.flags.t), tag)",
         ],
+    );
+    // The tag is the element's own: neither a parameter of publish nor a field of the result,
+    // only a local of read that the decode is given.
+    assert!(
+        !code.contains("uint8_t tag)") && !code.contains("result.tag"),
+        "publish takes no tag and the result carries none:\n{code}"
+    );
+    assert!(
+        !code.contains("    uint8_t tag;\n} event_ring_read_result_t;"),
+        "the result type has no tag field:\n{code}"
     );
 }
 
@@ -2665,15 +2672,19 @@ fn c11_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() 
         &code,
         &[
             "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)1u)",
-            "    uint8_t tag;\n} event_ring_read_result_t;",
+            "    sce_forge_codec_status_t codec_status;\n} event_ring_read_result_t;",
             "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
-             *publisher, const event_record_t *element, uint8_t tag)",
+             *publisher, const event_record_t *element)",
             "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
-            "entry[1u + 0u] = (uint64_t)tag;",
+            "entry[1u + 0u] = (uint64_t)event_record_tag(element);",
             "entry[2u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
-            "result.tag = (uint8_t)(entry[1u + 0u] & UINT64_C(0xFF));",
-            "event_record_decode(&cursor, out, result.tag)",
+            "tag = (uint8_t)(entry[1u + 0u] & UINT64_C(0xFF));",
+            "event_record_decode(&cursor, out, tag)",
         ],
+    );
+    assert!(
+        !code.contains("uint8_t tag)") && !code.contains("result.tag"),
+        "publish takes no tag and the result carries none:\n{code}"
     );
     assert!(
         !code.contains("flags") && !code.contains("stdbool"),
@@ -3191,18 +3202,21 @@ fn c11_the_narrow_row_stores_the_context_in_32_bit_words() {
             "    bool f0;\n",
             "    bool f32;\n} event_ring_flags_t;",
             "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
-             *publisher, const event_record_t *element, const event_ring_flags_t *flags, \
-             uint8_t tag)",
+             *publisher, const event_record_t *element, const event_ring_flags_t *flags)",
             "if (flags->f0) {\n        entry[1u + 0u] |= UINT32_C(1) << 0u;\n    }",
             "if (flags->f31) {\n        entry[1u + 0u] |= UINT32_C(1) << 31u;\n    }",
             "if (flags->f32) {\n        entry[1u + 1u] |= UINT32_C(1) << 0u;\n    }",
-            "entry[1u + 2u] = (uint32_t)tag;",
+            "entry[1u + 2u] = (uint32_t)event_record_tag(element);",
             "entry[4u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
             "result.flags.f31 = ((entry[1u + 0u] >> 31u) & UINT32_C(1)) != 0u;",
             "result.flags.f32 = ((entry[1u + 1u] >> 0u) & UINT32_C(1)) != 0u;",
-            "result.tag = (uint8_t)(entry[1u + 2u] & UINT32_C(0xFF));",
+            "tag = (uint8_t)(entry[1u + 2u] & UINT32_C(0xFF));",
             "bytes[index] = (uint8_t)(entry[4u + index / 4u] >> (8u * (index % 4u)));",
         ],
+    );
+    assert!(
+        !code.contains("uint8_t tag)") && !code.contains("result.tag"),
+        "publish takes no tag and the result carries none:\n{code}"
     );
     assert!(
         !code.contains("UINT64_C"),

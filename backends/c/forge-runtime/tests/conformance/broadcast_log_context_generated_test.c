@@ -6,9 +6,11 @@
  * its wire form does not carry (ADR 0062 section 4, "Caller inputs are part of the
  * element"), compiled and used.
  *
- * The log stores each of those in the entry beside the bytes, `publish` takes it
- * and the read result returns it, so that a reader decodes an entry under what it
- * was published under and not under whatever it happens to hold. Two logs, each
+ * The log stores each of those in the entry beside the bytes, so that a reader
+ * decodes an entry under what it was published under and not under whatever it
+ * happens to hold: `publish` takes the flags and the read result returns them, and the
+ * tag is taken from the element (`<codec>_tag`), which the element read back reports
+ * again. Two logs, each
  * generated from the documents of tests/forge/conformance/broadcast_log_context/ by
  * `sce-codegen orchestrate` (every backend's conformance lane reads the same
  * files):
@@ -17,8 +19,9 @@
  *                                      its 16-bit value: one byte, or three
  *   broadcast_log_conformance_chosen   a variant whose wire form carries no tag:
  *                                      the caller gives the tag that selects the
- *                                      arm (tag 1 the one-byte arm, any other tag
- *                                      the two-byte default arm)
+ *                                      arm on decode (tag 1 the one-byte arm, tag
+ *                                      0 the two-byte arm), and the log takes it
+ *                                      back from the element's own tag
  *
  * What the header adds is the context word between the length and the bytes, so
  * the words of an entry are read through the runtime and not through the typed
@@ -73,7 +76,7 @@ static void the_headers_state_the_context_words_of_an_entry(void) {
 
     /* The choice is the larger of its arms, two bytes; the tag is one context word. */
     CHECK(CHS_U(MAX_ENCODED_BYTES) == 2u, "the choice encodes to at most the larger arm: 2 bytes");
-    CHECK(CHS_U(CONTEXT_WORDS) == 1u, "a tag the caller gives is one context word");
+    CHECK(CHS_U(CONTEXT_WORDS) == 1u, "a tag the entry stores is one context word");
     CHECK(CHS_U(WORDS) == 3u, "a length word, a context word and one word of bytes");
     CHECK(CHS_U(RETENTION) == 3u && CHS_U(SLOTS) == 4u, "the document's retention of three, and one more slot");
 }
@@ -299,15 +302,15 @@ static size_t choice_bytes(const choice_element_t *element, uint8_t *buffer, siz
     return length;
 }
 
-static uint64_t publish_chosen(CHS(publisher_t) * publisher, const choice_element_t *element, uint8_t tag) {
-    const CHS(publish_result_t) result = CHS(publish)(publisher, element, tag);
-    CHECK(result.status == CHS_U(PUBLISH_OK), "an element within its bound is published under its tag");
+static uint64_t publish_chosen(CHS(publisher_t) * publisher, const choice_element_t *element) {
+    const CHS(publish_result_t) result = CHS(publish)(publisher, element);
+    CHECK(result.status == CHS_U(PUBLISH_OK), "an element within its bound is published under the tag of its arm");
     return result.seq;
 }
 
 /* The next read of `reader` is the entry `seq`: an element that encodes to the same
- * `length` bytes as `want`, which for these arms is the same arm, with the tag it was
- * published with. */
+ * `length` bytes as `want`, which for these arms is the same arm, and that reports
+ * `tag` as its own. */
 static void expect_chosen(const CHS(t) * ring, CHS(reader_t) * reader, uint64_t seq, const uint8_t *want_bytes,
                           size_t want_length, uint8_t tag) {
     choice_element_t got;
@@ -318,8 +321,8 @@ static void expect_chosen(const CHS(t) * ring, CHS(reader_t) * reader, uint64_t 
     result = CHS(read)(ring, reader, &got);
     CHECK(result.status == CHS_U(READ_ITEM), "entry %u: an item", (unsigned)seq);
     CHECK(result.seq == seq, "entry %u: it carries sequence number %u", (unsigned)seq, (unsigned)result.seq);
-    CHECK(result.tag == tag, "entry %u: the tag it was published with, %u, not %u", (unsigned)seq, (unsigned)tag,
-          (unsigned)result.tag);
+    CHECK(broadcast_log_conformance_choice_tag(&got) == tag, "entry %u: the element reports tag %u, not %u",
+          (unsigned)seq, (unsigned)broadcast_log_conformance_choice_tag(&got), (unsigned)tag);
     memset(buffer, 0, sizeof buffer);
     length = choice_bytes(&got, buffer, sizeof buffer);
     CHECK(length == want_length && memcmp(buffer, want_bytes, want_length) == 0,
@@ -337,8 +340,8 @@ static void the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_by
     const choice_element_t small = choice_from(small_bytes, sizeof small_bytes, 1u);
     const choice_element_t large = choice_from(large_bytes, sizeof large_bytes, 0u);
     CHECK(CHS(init)(&ring) && CHS(publisher_acquire)(&ring, &publisher), "a log and its publisher");
-    (void)publish_chosen(&publisher, &small, 1u);
-    (void)publish_chosen(&publisher, &large, 0u);
+    (void)publish_chosen(&publisher, &small);
+    (void)publish_chosen(&publisher, &large);
 
     reader = sce_blog_reader_oldest(&ring.core);
     memset(words, 0xEE, sizeof words);
@@ -361,7 +364,8 @@ static void a_reader_gets_back_the_tag_an_entry_was_published_under(void) {
     CHS(read_result_t) empty;
     choice_element_t got;
     /* The wire form of an arm carries no tag, so the two arms' bytes are the arm's own
-     * and which arm a frame is comes from the tag stored beside it. */
+     * and which arm a frame is comes from the tag stored beside it, which publish took
+     * from the element. */
     const uint8_t small_nine[1] = {9u};
     const uint8_t large_bytes[2] = {0x02u, 0x01u};
     const uint8_t small_max[1] = {255u};
@@ -374,15 +378,56 @@ static void a_reader_gets_back_the_tag_an_entry_was_published_under(void) {
     empty = CHS(read)(&ring, &reader, &got);
     CHECK(empty.status == CHS_U(READ_EMPTY), "a new log has nothing to read");
 
-    CHECK(publish_chosen(&publisher, &sent_small_nine, 1u) == 0u, "publish 0 takes sequence number 0");
-    CHECK(publish_chosen(&publisher, &sent_large, 0u) == 1u, "publish 1 takes sequence number 1");
-    CHECK(publish_chosen(&publisher, &sent_small_max, 1u) == 2u, "publish 2 takes sequence number 2");
+    CHECK(publish_chosen(&publisher, &sent_small_nine) == 0u, "publish 0 takes sequence number 0");
+    CHECK(publish_chosen(&publisher, &sent_large) == 1u, "publish 1 takes sequence number 1");
+    CHECK(publish_chosen(&publisher, &sent_small_max) == 2u, "publish 2 takes sequence number 2");
     expect_chosen(&ring, &reader, 0u, small_nine, sizeof small_nine, 1u);
     expect_chosen(&ring, &reader, 1u, large_bytes, sizeof large_bytes, 0u);
     expect_chosen(&ring, &reader, 2u, small_max, sizeof small_max, 1u);
     memset(&got, 0, sizeof got);
     empty = CHS(read)(&ring, &reader, &got);
     CHECK(empty.status == CHS_U(READ_EMPTY), "all three were read");
+    CHS(publisher_release)(&publisher);
+}
+
+static void the_stored_tag_is_the_tag_of_the_arm_the_element_holds(void) {
+    /* publish takes no tag: the context word it stores is the element's own tag, so a
+     * publisher cannot give a tag that disagrees with the element (a tag that selects no
+     * arm cannot be provoked through publish). The element read back reports the same tag. */
+    static CHS(t) ring;
+    CHS(publisher_t) publisher = {0};
+    sce_blog_reader_t raw;
+    CHS(reader_t) reader;
+    uint64_t words[CHS_U(WORDS)];
+    const uint8_t small_bytes[1] = {9u};
+    const uint8_t large_bytes[2] = {0x02u, 0x01u};
+    const choice_element_t sent[2] = {choice_from(small_bytes, sizeof small_bytes, 1u),
+                                      choice_from(large_bytes, sizeof large_bytes, 0u)};
+    unsigned n;
+    CHECK(broadcast_log_conformance_choice_tag(&sent[0]) == 1u && broadcast_log_conformance_choice_tag(&sent[1]) == 0u,
+          "the arms' tags are 1 and 0");
+    CHECK(CHS(init)(&ring) && CHS(publisher_acquire)(&ring, &publisher), "a log and its publisher");
+    (void)publish_chosen(&publisher, &sent[0]);
+    (void)publish_chosen(&publisher, &sent[1]);
+
+    raw = sce_blog_reader_oldest(&ring.core);
+    for (n = 0u; n < 2u; n++) {
+        memset(words, 0xEE, sizeof words);
+        read_words(&ring.core, &raw, words);
+        CHECK(words[1] == (uint64_t)broadcast_log_conformance_choice_tag(&sent[n]),
+              "entry %u: the context word is the element's tag, not %u", n, (unsigned)words[1]);
+    }
+
+    reader = CHS(reader_oldest)(&ring);
+    for (n = 0u; n < 2u; n++) {
+        choice_element_t got;
+        CHS(read_result_t) result;
+        memset(&got, 0, sizeof got);
+        result = CHS(read)(&ring, &reader, &got);
+        CHECK(result.status == CHS_U(READ_ITEM), "entry %u: an item", n);
+        CHECK(broadcast_log_conformance_choice_tag(&got) == broadcast_log_conformance_choice_tag(&sent[n]),
+              "entry %u: the element read back reports the tag it was published under", n);
+    }
     CHS(publisher_release)(&publisher);
 }
 
@@ -395,6 +440,7 @@ int main(void) {
     a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
+    the_stored_tag_is_the_tag_of_the_arm_the_element_holds();
     (void)printf("generated broadcast logs with caller inputs (C11): %u check(s), %u failure(s)\n", g_checks,
                  g_failures);
     return g_failures == 0u ? 0 : 1;
