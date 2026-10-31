@@ -22,7 +22,7 @@
 // Operations (from `sce_forge_runtime::{{ runtime_module }}`, typed here over the
 // element):
 {% if context.present %}
-//   publish(&mut publisher, &element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) -> Result<u64, CodecError>   wait-free; the entry's sequence number
+//   publish(&mut publisher, &element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given{% else %}flags{% endif %}{% endif %}{% if context.has_tag %}, tag{% endif %}) -> Result<u64, CodecError>   wait-free; the entry's sequence number
 {% else %}
 //   publish(&mut publisher, &element) -> Result<u64, CodecError>   wait-free; the entry's sequence number
 {% endif %}
@@ -33,6 +33,10 @@
 // part of the entry: `publish` takes them, the log stores them in the entry's context
 // words beside the bytes, and an `Item` returns them, so every reader decodes an entry
 // under what it was published under (ADR 0062 section 4).
+{% if context.said_flags %}
+// A flag input the element's value says is not taken: `publish` reads it off the
+// element, as its encode does (ADR 0065 section 6, R4a).
+{% endif %}
 {% endif %}
 {% if narrow %}
 // A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
@@ -154,6 +158,19 @@ pub struct {{ pascal }}Flags {
 {% endfor %}
 }
 
+{% if context.said_flags and context.given_flags %}
+/// The flag inputs `publish` takes from its caller: those the element's value does not
+/// say. The log reads the others off the element (ADR 0065 section 6, R4a).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct {{ pascal }}GivenFlags {
+{% for flag in context.flags %}
+{% if not flag.said %}
+    pub {{ flag.snake }}: bool,
+{% endif %}
+{% endfor %}
+}
+
+{% endif %}
 {% endif %}
 /// What a typed read found: the runtime's three answers, with the entry decoded.
 #[derive(Debug, Clone, PartialEq)]
@@ -195,24 +212,41 @@ pub enum {{ pascal }}Read {
 /// published: an entry is never a truncated element.
 {% if context.present %}
 ///
-/// {% if context.flags %}`flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+/// {% if context.flags %}`{% if context.said_flags %}given{% else %}flags{% endif %}` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
 /// they are encoded under here and stored in the entry's context words, so that every reader
-/// decodes the entry under what it was published under. The log does not check that
-/// {% if context.has_tag %}`tag` is the tag of the arm `element` holds{% else %}the flags agree with `element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+/// decodes the entry under what it was published under.{% if context.said_flags %} A flag the element says is
+/// read off `element` and stored as it says it, so no entry is stored under a flag its bytes
+/// disagree with.{% endif %} The log does not check that
+/// {% if context.has_tag %}`tag` is the tag of the arm `element` holds{% else %}the flags it is given agree with `element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
 {% endif %}
 pub fn publish(
     publisher: &mut {{ pascal }}Publisher<'_>,
     element: &{{ element_pascal }},
-{% if context.flags %}
+{% if context.flags and context.given_flags %}
+{% if context.said_flags %}
+    given: {{ pascal }}GivenFlags,
+{% else %}
     flags: {{ pascal }}Flags,
+{% endif %}
 {% endif %}
 {% if context.has_tag %}
     tag: u8,
 {% endif %}
 ) -> Result<u64, CodecError> {
+{% if context.said_flags %}
+    let flags = {{ pascal }}Flags {
+{% for flag in context.flags %}
+{% if flag.said %}
+        {{ flag.snake }}: {{ element_pascal }}::input_{{ flag.snake }}(element),
+{% else %}
+        {{ flag.snake }}: given.{{ flag.snake }},
+{% endif %}
+{% endfor %}
+    };
+{% endif %}
     let mut bytes = [0u8; MAX_ENCODED_BYTES];
     let mut sink = SliceSink::new(&mut bytes);
-    element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %})?;
+    element.encode(&mut sink{% for flag in context.flags %}{% if not flag.said %}, u8::from(flags.{{ flag.snake }}){% endif %}{% endfor %})?;
     let length = sink.position();
     let mut entry = [0{{ word_type }}; WORDS];
     entry[0] = length as {{ word_type }};

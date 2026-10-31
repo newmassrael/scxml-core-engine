@@ -44,10 +44,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::forge::codec_totality::child_alias;
 use crate::forge::generator::{collect_parent_tag_derivations, ImportContext};
 use crate::forge::model::{
-    BitSize, CodecEncoding, CodecModel, CountRef, PresentIfPredicate, PresentIfScope,
-    TlvTerminateStrategy,
+    BitSize, CodecEncoding, CodecModel, CountRef, FlagBind, FlagBindSource, PresentIfPredicate,
+    PresentIfScope, TlvTerminateStrategy,
 };
 
 /// One element of a codec, as the table names it.
@@ -124,6 +125,124 @@ pub enum Derivation {
     /// by the encoding in the flag. Only a gate of the one-flag form is
     /// derived; any other is a [`Check`].
     PresenceOf { gated: Vec<Gated> },
+    /// The flag a parent binds to a flag-input of the codecs `binders` hold,
+    /// each of which says the input itself (docs/adr/0065 §6 R4a): the input
+    /// the body or the arm says. Where none of them is there, the carrier
+    /// keeps the bit the value presents.
+    BoundInput { binders: Vec<Binder> },
+}
+
+/// A body or an arm whose codec says a flag-input the parent binds to one of
+/// its flags.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binder {
+    /// The import alias of the codec.
+    pub alias: String,
+    /// The codec's input the flag is bound to.
+    pub input: String,
+    pub site: BindSite,
+}
+
+/// Where the parent holds a codec it binds an input of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindSite {
+    /// An embedded body, the field `field`.
+    Embed { field: String },
+    /// A list or a chain, the field `field`: one bound value for every entry.
+    List { field: String },
+    /// The arms of the variant whose body is the codec.
+    Arm,
+}
+
+impl BindSite {
+    /// The element a refusal at this site names: the field, or the alias of
+    /// the arm's codec.
+    pub fn element<'a>(&'a self, alias: &'a str) -> &'a str {
+        match self {
+            BindSite::Embed { field } | BindSite::List { field } => field,
+            BindSite::Arm => alias,
+        }
+    }
+}
+
+/// How the encode of a codec knows one of its flag-inputs, when the value says
+/// it (docs/adr/0065 §6 R4a). The decode is handed every input by the parent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputSource {
+    /// The one presented field gated on the input alone: the input is set
+    /// exactly when the field is present (absent, for a field gated on
+    /// `!input`).
+    Gate { field: String, when_clear: bool },
+    /// The one embedded body, always there, that the codec hands the input on
+    /// to as the input `input` of the codec imported as `alias`, which says it.
+    Forward {
+        embed: String,
+        alias: String,
+        input: String,
+    },
+}
+
+/// A flag-input of a held codec that the codec says itself, while the parent
+/// hands it a value from elsewhere: a flag bound to every entry of a list, an
+/// input the parent is given, an input a chain supplies from the entry before.
+/// The encode holds each to the input the codec says (docs/adr/0065 §6 R4a).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputCheck {
+    pub binder: Binder,
+    pub against: InputValue,
+}
+
+/// The value a parent hands a held codec's flag-input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputValue {
+    /// A flag of the parent's own carrier, as the value presents it.
+    Carrier { carrier: String, flag: String },
+    /// The parent's own flag-input.
+    Input { name: String },
+    /// 1 for an entry whose entry before has the identifier `id`, 0 for every
+    /// other entry and the first (`<sce:entry-flag-bind>`).
+    PreviousEntry { id: u64 },
+}
+
+impl fmt::Display for InputValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InputValue::Carrier { carrier, flag } => write!(f, "`{carrier}.{flag}`"),
+            InputValue::Input { name } => write!(f, "the input `{name}`"),
+            InputValue::PreviousEntry { id } => {
+                write!(f, "whether the entry before has the identifier 0x{id:X}")
+            }
+        }
+    }
+}
+
+/// What the inputs of a codec depend on in the codecs it imports.
+pub trait InputImports {
+    /// The binds the import `alias` declares (`<sce:flag-bind>`).
+    fn flag_binds(&mut self, alias: &str) -> Vec<FlagBind>;
+    /// Whether the codec imported as `alias` says its input `input` itself
+    /// ([`CodecRoles::inputs`]).
+    fn says_input(&mut self, alias: &str, input: &str) -> bool;
+}
+
+/// The imports a codec's generation resolved, each with the inputs it says
+/// ([`ImportContext::codec_says_inputs`]).
+pub struct Contexts<'a>(pub &'a [ImportContext]);
+
+impl InputImports for Contexts<'_> {
+    fn flag_binds(&mut self, alias: &str) -> Vec<FlagBind> {
+        self.0
+            .iter()
+            .find(|i| i.alias == alias)
+            .map(|i| i.flag_binds.clone())
+            .unwrap_or_default()
+    }
+
+    fn says_input(&mut self, alias: &str, input: &str) -> bool {
+        self.0
+            .iter()
+            .any(|i| i.alias == alias && i.codec_says_inputs.iter().any(|s| s == input))
+    }
 }
 
 /// A field a flag gates, and whether the gate is `!flag`.
@@ -143,6 +262,8 @@ pub struct Check {
     /// The gate as the codec states it (`a.X || b.Y`, `ext.has(0x1)`, a bare
     /// flag-input name): the field is present exactly when it holds.
     pub gate: String,
+    /// The flag-input the gate is, when it is one input alone (`I` or `!I`).
+    pub input: Option<String>,
 }
 
 impl Derivation {
@@ -157,6 +278,14 @@ impl Derivation {
             Derivation::ChainContinuation { chains } => chains.len(),
             Derivation::PresenceOf { gated } => gated.len(),
             Derivation::VariantTag { .. } => 1,
+            // The arms of one variant are one source: one of them is there.
+            Derivation::BoundInput { binders } => {
+                let embeds = binders
+                    .iter()
+                    .filter(|b| !matches!(b.site, BindSite::Arm))
+                    .count();
+                embeds + usize::from(binders.iter().any(|b| matches!(b.site, BindSite::Arm)))
+            }
         }
     }
 
@@ -187,6 +316,9 @@ impl Derivation {
             ) => chains.extend(more),
             (Derivation::PresenceOf { gated }, Derivation::PresenceOf { gated: more }) => {
                 gated.extend(more)
+            }
+            (Derivation::BoundInput { binders }, Derivation::BoundInput { binders: more }) => {
+                binders.extend(more)
             }
             // One tag per codec: a second is the same declaration read twice.
             (Derivation::VariantTag { .. }, Derivation::VariantTag { .. }) => {}
@@ -231,6 +363,13 @@ impl fmt::Display for Derivation {
                     .collect();
                 f.write_str(&each.join(", "))
             }
+            Derivation::BoundInput { binders } => {
+                let each: Vec<String> = binders
+                    .iter()
+                    .map(|b| format!("{}.{}", b.site.element(&b.alias), b.input))
+                    .collect();
+                write!(f, "input-of({})", each.join(", "))
+            }
         }?;
         if self.sources() > 1 {
             f.write_str(" [the sources agree in size]")?;
@@ -268,12 +407,35 @@ pub struct CodecRoles {
     /// The gates the codec cannot derive a flag from (a disjunction, a
     /// flag-input, a chain's membership): the measure holds a source to them.
     pub checks: Vec<Check>,
+    /// The flag-inputs the value says, by name, and what says each
+    /// (docs/adr/0065 §6 R4a). The encode of a source takes the others.
+    pub inputs: BTreeMap<String, InputSource>,
+    /// The inputs of held codecs that a codec says while the parent hands it a
+    /// value from elsewhere: each a relation the encode holds a source to.
+    pub input_checks: Vec<InputCheck>,
     /// A derivation that names an element the codec does not have. A codec the
     /// parser accepted has none; a non-empty list is a defect of the model.
     pub unresolved: Vec<String>,
 }
 
 impl CodecRoles {
+    /// The gates a source is held to: the checks, less those on an input the
+    /// value says, which the encode derives instead. Every check holds for an
+    /// encode that is handed its inputs, as another backend's is.
+    pub fn source_checks(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter().filter(|check| {
+            check
+                .input
+                .as_ref()
+                .is_none_or(|input| !self.inputs.contains_key(input))
+        })
+    }
+
+    /// Whether the value says the flag-input `name`.
+    pub fn says_input(&self, name: &str) -> bool {
+        self.inputs.contains_key(name)
+    }
+
     /// The role of an element, `None` when the codec has no such element.
     pub fn role_of(&self, id: &ElementId) -> Option<&Role> {
         self.rows.iter().find(|r| &r.id == id).map(|r| &r.role)
@@ -328,10 +490,32 @@ impl CodecRoles {
                 }
             }
         }
-        for check in &self.checks {
+        for check in self.source_checks() {
             out.push_str(&format!(
                 "  check  `{}` is present exactly when {}\n",
                 check.field, check.gate
+            ));
+        }
+        for (name, source) in &self.inputs {
+            let by = match source {
+                InputSource::Gate {
+                    field,
+                    when_clear: false,
+                } => format!("presence-of({field})"),
+                InputSource::Gate {
+                    field,
+                    when_clear: true,
+                } => format!("absence-of({field})"),
+                InputSource::Forward { embed, input, .. } => format!("input-of({embed}.{input})"),
+            };
+            out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
+        }
+        for check in &self.input_checks {
+            out.push_str(&format!(
+                "  check  `{}` says its input `{}` as {} does\n",
+                check.binder.site.element(&check.binder.alias),
+                check.binder.input,
+                check.against
             ));
         }
         for reference in &self.unresolved {
@@ -368,9 +552,20 @@ fn describe_gate(predicate: &PresentIfPredicate) -> String {
 }
 
 /// Classify the elements of `model`. `imports` is the codec's resolved import
-/// list ([`ImportContext`]), which the parent-tag carriers are read from; a codec
-/// that imports nothing takes `&[]`.
+/// list ([`ImportContext`]), which the parent-tag carriers and the inputs of
+/// held codecs are read from; a codec that imports nothing takes `&[]`.
 pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
+    classify_with(model, imports, &mut Contexts(imports))
+}
+
+/// [`classify`], with the inputs of held codecs read from `inputs`: an
+/// analysis that has no resolved imports still knows which inputs the codecs
+/// it holds say.
+pub fn classify_with(
+    model: &CodecModel,
+    imports: &[ImportContext],
+    inputs: &mut dyn InputImports,
+) -> CodecRoles {
     let mut rows: Vec<Row> = Vec::new();
     let mut checks: Vec<Check> = Vec::new();
     let mut derivations: BTreeMap<ElementId, Vec<Derivation>> = BTreeMap::new();
@@ -441,6 +636,8 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
                 checks.push(Check {
                     field: field.id.clone(),
                     gate: describe_gate(gate),
+                    input: (gate.scope == PresentIfScope::Input && gate.or_with.is_none())
+                        .then(|| gate.flag_name.clone()),
                 });
             }
         }
@@ -540,6 +737,47 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
         );
     }
 
+    // A flag of this codec bound to an input that the codec of a body or an
+    // arm says is derived from it, as a parent tag is. A list hands its one
+    // bound value to every entry, and is checked instead.
+    let held = held_codecs(model, inputs);
+    let mut input_checks: Vec<InputCheck> = Vec::new();
+    for held_codec in &held {
+        for bind in &held_codec.binds {
+            let FlagBindSource::Carrier { carrier, flag } = &bind.source else {
+                continue;
+            };
+            if !held_codec.says(&bind.input) {
+                continue;
+            }
+            for site in &held_codec.sites {
+                let binder = Binder {
+                    alias: held_codec.alias.clone(),
+                    input: bind.input.clone(),
+                    site: site.clone(),
+                };
+                match site {
+                    BindSite::Embed { .. } | BindSite::Arm => derive(
+                        ElementId::Flag {
+                            field: carrier.clone(),
+                            flag: flag.clone(),
+                        },
+                        Derivation::BoundInput {
+                            binders: vec![binder],
+                        },
+                    ),
+                    BindSite::List { .. } => input_checks.push(InputCheck {
+                        binder,
+                        against: InputValue::Carrier {
+                            carrier: carrier.clone(),
+                            flag: flag.clone(),
+                        },
+                    }),
+                }
+            }
+        }
+    }
+
     // A field derived whole is announced by the flag it is gated on, and says
     // nothing back: its presence follows the flag, so it cannot be what the flag
     // is derived from. The flag is derived from the gated fields that are
@@ -562,6 +800,89 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
         !by.is_empty()
     });
 
+    // A flag a declaration of another kind derives is not also the input a
+    // held codec says: the codec is held to the flag instead.
+    for (id, by) in derivations.iter_mut() {
+        if by.len() < 2 {
+            continue;
+        }
+        let ElementId::Flag { field, flag } = id else {
+            continue;
+        };
+        by.retain(|d| match d {
+            Derivation::BoundInput { binders } => {
+                input_checks.extend(binders.iter().map(|binder| InputCheck {
+                    binder: binder.clone(),
+                    against: InputValue::Carrier {
+                        carrier: field.clone(),
+                        flag: flag.clone(),
+                    },
+                }));
+                false
+            }
+            _ => true,
+        });
+    }
+
+    let inputs_said = said_inputs(model, &held, &derived_whole);
+    for held_codec in &held {
+        // An input of this codec handed on: checked where the value says it
+        // otherwise than the body it is handed to.
+        for bind in &held_codec.binds {
+            let FlagBindSource::Input { name } = &bind.source else {
+                continue;
+            };
+            if !held_codec.says(&bind.input) {
+                continue;
+            }
+            for site in &held_codec.sites {
+                let derived_from_it = matches!(
+                    (inputs_said.get(name), site),
+                    (Some(InputSource::Forward { embed, .. }), BindSite::Embed { field })
+                        if embed == field
+                );
+                if !derived_from_it {
+                    input_checks.push(InputCheck {
+                        binder: Binder {
+                            alias: held_codec.alias.clone(),
+                            input: bind.input.clone(),
+                            site: site.clone(),
+                        },
+                        against: InputValue::Input { name: name.clone() },
+                    });
+                }
+            }
+        }
+    }
+    // An input a chain supplies from the entry before, which the entry says.
+    for field in &model.fields {
+        let BitSize::TlvChain { entry_binds, .. } = &field.bit_size else {
+            continue;
+        };
+        let Some(held_codec) = held
+            .iter()
+            .find(|h| Some(h.alias.as_str()) == child_alias(field))
+        else {
+            continue;
+        };
+        for bind in entry_binds {
+            if held_codec.says(&bind.input) {
+                input_checks.push(InputCheck {
+                    binder: Binder {
+                        alias: held_codec.alias.clone(),
+                        input: bind.input.clone(),
+                        site: BindSite::List {
+                            field: field.id.clone(),
+                        },
+                    },
+                    against: InputValue::PreviousEntry {
+                        id: bind.previous_entry_id,
+                    },
+                });
+            }
+        }
+    }
+
     let mut unresolved = Vec::new();
     for (id, by) in derivations {
         match rows.iter_mut().find(|row| row.id == id) {
@@ -580,8 +901,157 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
         encoding: model.encoding,
         rows,
         checks,
+        inputs: inputs_said,
+        input_checks,
         unresolved,
     }
+}
+
+/// A codec this one holds, with what its binds need.
+struct HeldCodec {
+    alias: String,
+    /// Where this codec holds it: once for each field, and once for all the
+    /// arms of the variant.
+    sites: Vec<BindSite>,
+    binds: Vec<FlagBind>,
+    /// The inputs it says, among those it is bound or supplied.
+    said: Vec<String>,
+}
+
+impl HeldCodec {
+    fn says(&self, input: &str) -> bool {
+        self.said.iter().any(|s| s == input)
+    }
+}
+
+/// The codecs `model` holds in a field or an arm, in declaration order.
+fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCodec> {
+    let mut held: Vec<HeldCodec> = Vec::new();
+    let mut add = |alias: &str, site: BindSite| match held.iter_mut().find(|h| h.alias == alias) {
+        Some(h) => {
+            if !(site == BindSite::Arm && h.sites.contains(&BindSite::Arm)) {
+                h.sites.push(site);
+            }
+        }
+        None => held.push(HeldCodec {
+            alias: alias.to_string(),
+            sites: vec![site],
+            binds: Vec::new(),
+            said: Vec::new(),
+        }),
+    };
+    for field in &model.fields {
+        let Some(alias) = child_alias(field) else {
+            continue;
+        };
+        let site = if field.is_embed() {
+            BindSite::Embed {
+                field: field.id.clone(),
+            }
+        } else {
+            BindSite::List {
+                field: field.id.clone(),
+            }
+        };
+        add(alias, site);
+    }
+    if let Some(variant) = &model.variant {
+        for arm in variant.arms.iter().chain(variant.default_arm.iter()) {
+            add(&arm.body_alias, BindSite::Arm);
+        }
+    }
+    for h in &mut held {
+        h.binds = inputs.flag_binds(&h.alias);
+        let mut asked: Vec<String> = h.binds.iter().map(|b| b.input.clone()).collect();
+        for field in &model.fields {
+            if let BitSize::TlvChain { entry_binds, .. } = &field.bit_size {
+                if child_alias(field) == Some(h.alias.as_str()) {
+                    asked.extend(entry_binds.iter().map(|b| b.input.clone()));
+                }
+            }
+        }
+        h.said = asked
+            .into_iter()
+            .filter(|input| inputs.says_input(&h.alias, input))
+            .collect();
+    }
+    held
+}
+
+/// The flag-inputs of `model` its value says (docs/adr/0065 §6 R4a): those
+/// exactly one thing says, a presented field gated on the input alone, or the
+/// one body, always there, it is handed on to, whose codec says it. A length
+/// or a count gated with its content is derived whole and says nothing.
+fn said_inputs(
+    model: &CodecModel,
+    held: &[HeldCodec],
+    derived_whole: &BTreeSet<String>,
+) -> BTreeMap<String, InputSource> {
+    let mut said = BTreeMap::new();
+    for input in model.flag_inputs.iter().filter(|i| i.width == 1) {
+        let mut gates: Vec<(&str, bool)> = Vec::new();
+        let mut in_other_gate = false;
+        for field in &model.fields {
+            let Some(gate) = &field.present_if else {
+                continue;
+            };
+            if !gate_names_input(gate, &input.name) {
+                continue;
+            }
+            if gate.scope == PresentIfScope::Input && gate.or_with.is_none() {
+                if !derived_whole.contains(&field.id) {
+                    gates.push((&field.id, gate.negate));
+                }
+            } else {
+                in_other_gate = true;
+            }
+        }
+        let forwards: Vec<(&HeldCodec, &FlagBind)> = held
+            .iter()
+            .flat_map(|h| h.binds.iter().map(move |b| (h, b)))
+            .filter(
+                |(_, b)| matches!(&b.source, FlagBindSource::Input { name } if name == &input.name),
+            )
+            .collect();
+        let source = match (gates.as_slice(), forwards.as_slice(), in_other_gate) {
+            ([(field, when_clear)], [], false) => Some(InputSource::Gate {
+                field: field.to_string(),
+                when_clear: *when_clear,
+            }),
+            ([], [(h, bind)], false) if h.says(&bind.input) => match h.sites.as_slice() {
+                [BindSite::Embed { field }]
+                    if model
+                        .fields
+                        .iter()
+                        .any(|f| &f.id == field && f.present_if.is_none()) =>
+                {
+                    Some(InputSource::Forward {
+                        embed: field.clone(),
+                        alias: h.alias.clone(),
+                        input: bind.input.clone(),
+                    })
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(source) = source {
+            said.insert(input.name.clone(), source);
+        }
+    }
+    said
+}
+
+/// Whether a clause of `gate` reads the flag-input `name`.
+fn gate_names_input(gate: &PresentIfPredicate, name: &str) -> bool {
+    let mut clause = Some(gate);
+    while let Some(p) = clause {
+        if p.scope == PresentIfScope::Input && p.flag_name == name {
+            return true;
+        }
+        clause = p.or_with.as_deref();
+    }
+    false
 }
 
 /// The roles of a codec whose every entry is presented.
@@ -596,6 +1066,8 @@ fn flat<'a>(model: &CodecModel, ids: impl Iterator<Item = &'a str>) -> CodecRole
             })
             .collect(),
         checks: Vec::new(),
+        inputs: BTreeMap::new(),
+        input_checks: Vec::new(),
         unresolved: Vec::new(),
     }
 }

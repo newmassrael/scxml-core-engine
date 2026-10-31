@@ -1,0 +1,42 @@
+# Mutation cases for "a flag input one thing says is said by the value".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_flag_input_one_thing_says_is_said_by_the_value.cases`.
+#
+# A codec's value says one of its flag inputs when exactly one thing in it does:
+# one presented field gated on the input alone, or one body, always there, it
+# hands the input on to (docs/adr/0065 §6 R4a). A length gated with its content
+# follows the content and says nothing. The encode then takes no argument for
+# the input and refuses no value at its gate, and the codecs that became total
+# that way state it. Each case below makes the analysis miss an input the value
+# says, so a codec that states it is total refuses somewhere, and the test that
+# holds every codec document to its statement fails.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test codec_totality
+mutation_targets sce-build/src/forge/codec_roles.rs
+mutation_oracles sce-build/tests/codec_totality.rs
+
+mutation_case "no input is said by the value" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''        if let Some(source) = source {
+            said.insert(input.name.clone(), source);''',
+     r'''        if let Some(source) = source.filter(|_| false) {
+            said.insert(input.name.clone(), source);''')
+PY
+
+mutation_case "a length gated with its content says the input too" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''                if !derived_whole.contains(&field.id) {
+                    gates.push((&field.id, gate.negate));''',
+     r'''                if derived_whole.len() < usize::MAX {
+                    gates.push((&field.id, gate.negate));''')
+PY
+
+mutation_case "an input handed on to a body is not said by it" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''            ([], [(h, bind)], false) if h.says(&bind.input) => match h.sites.as_slice() {''',
+     r'''            ([], [(h, bind)], false) if h.says(&bind.input) && h.alias.is_empty() => match h.sites.as_slice() {''')
+PY

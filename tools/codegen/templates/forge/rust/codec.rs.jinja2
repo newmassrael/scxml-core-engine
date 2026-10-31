@@ -331,8 +331,8 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ encode_params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        Self::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -349,10 +349,10 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        self.encode(&mut _sce_sink{{ encode_args_with_comma }})?;
         Ok(_sce_v)
     }
 {% else %}
@@ -361,8 +361,8 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), S::Error> {
-        Self::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ encode_params_after_first_arg }}) -> Result<(), S::Error> {
+        Self::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -378,9 +378,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ params_first_arg_with_comma }});
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ encode_args_with_comma }});
         _sce_v
     }
 {% endif %}
@@ -584,30 +584,30 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// from, so a frame `decode` accepted in a form that is not canonical is
     /// not passed on as it came.
 {% if encode_may_fail %}
-    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ encode_params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade over [`Self::encode`], which refuses a
     /// value it cannot carry.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        self.encode(&mut _sce_sink{{ encode_args_with_comma }})?;
         Ok(_sce_v)
     }
 {% else %}
-    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), S::Error> {
-        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ encode_params_after_first_arg }}) -> Result<(), S::Error> {
+        {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade over [`Self::encode`], which refuses no
     /// value (docs/adr/0065).
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ params_first_arg_with_comma }});
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ encode_args_with_comma }});
         _sce_v
     }
 {% endif %}
@@ -887,33 +887,33 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     /// view declares raises `CodecError::TooManyElements`, so an owned value the
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K{{ params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<K: SceSink>(&self, w: &mut K{{ encode_params_after_first_arg }}) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
     /// past the bound the borrowed view declares is refused, as is any value
     /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        self.encode(&mut _sce_sink{{ encode_args_with_comma }})?;
         Ok(_sce_v)
     }
 {% else %}
     /// Every value has a frame (docs/adr/0065), so the only error is the
     /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K{{ params_after_first_arg }}) -> Result<(), K::Error> {
-        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
+    pub fn encode<K: SceSink>(&self, w: &mut K{{ encode_params_after_first_arg }}) -> Result<(), K::Error> {
+        {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
     /// Heap-backed convenience facade over [`Self::encode`], which refuses no
     /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+    pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ params_first_arg_with_comma }});
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ encode_args_with_comma }});
         _sce_v
     }
 {% endif %}

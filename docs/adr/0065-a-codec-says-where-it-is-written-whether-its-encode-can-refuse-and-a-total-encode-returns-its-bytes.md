@@ -235,6 +235,44 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   - a flag a parent passes in that gates fields here is derived in the other direction, so the parent's bit is
     computed from the arm the child presents, as ADR 0058 §1 derives a one-flag gate;
   - a stated length of absent content and the content become one sum, which replaces two `Option`s.
+
+  *Designed 2026-10-31, in three steps, the first landing alone.* A flag-input is an attribute of the codec that
+  holds it, in the sense of an attribute grammar: the decode inherits it, since the parent reads the bit before the
+  child is reached, and the encode can synthesize it, since the child's value already says it. What follows decides
+  where it is synthesized and where a refusal stays.
+  - **R4a, an input the child says.** A child synthesizes an input when exactly one thing in it says the input: one
+    presented element gated on the input alone (`I` or `!I`), or one embedded body, always there, that the child
+    hands the input on to and whose codec synthesizes it. A length or count gated with its content follows the
+    content and says nothing. The encode then takes no argument for that input, and `{Codec}::input_{i}(src)`
+    returns it. The decode still takes it. In the parent, a carrier flag bound to a child that synthesizes the input
+    is derived from the child, as a parent tag is (ADR 0058 §1): from the embedded body, or from the arm of the
+    variant that binds it. Where no body says it (a gated body that is absent, an arm that binds nothing), the
+    carrier keeps the bit the value presents, as it does for a length with no content to measure. The refusal moves
+    to the one place where two things can disagree. A flag bound to a list or a chain is one value handed to every
+    entry, so the parent checks each entry's input against it. An input that a chain supplies from the entry before
+    is checked by the chain. Neither is a refusal of the entry's codec. A flag that a child says and that something
+    else in the parent also says is derived from two sources, and the parent refuses a value whose sources
+    disagree (`InconsistentSource`).
+    *Landed 2026-10-31.* `codec_roles` records the inputs a value says and the checks that move to the parent;
+    `classify_with` reads the held codecs' inputs from either a generation's resolved imports or a document's own,
+    so the analysis and the generation agree. Ten documents became total and lost their declaration: the Zenoh
+    `wireexpr`, the three declarations that hand `N` on to it (`decl_kexpr`, `decl_subscriber`, `decl_token`),
+    `interest_body`, `request`, `open_body` and the three undeclarations. A parent that held one of them no longer
+    passes the bit, and a carrier flag bound to one is derived: the transport envelope's `A` from the `init` or
+    `open` arm, a request's `N` from its key expression. The parents of `chain_prev_entry` gained a refusal, since
+    every entry now says `tagged`, which the chain hands each of them from one bit, and the entry codec still
+    refuses at `after_marker` until R4b. A Rust broadcast log of an element that says a flag input stores the flag as
+    the element says it, and its `publish` no longer takes it. A flag that was overridable lost its override where it
+    became derived (`header_a` of the transport envelope, `header_n` of `interest_body`).
+  - **R4b, gate groups.** The elements gated on one input or one one-bit flag form one group for each polarity. A
+    group of one element is that element, as it is now. A larger group becomes a struct, and a gate with elements
+    under both polarities becomes a sum with one arm for each, named after the flag (`{Flag}` when it is set,
+    `Not{Flag}` when it is clear). A stated length of absent content joins the arm in which its content is absent:
+    that is the third bullet above. The source presents the group or the sum, each form holds it, and the flag is
+    derived from it. An input gated on several elements is then said by one group, and R4a applies to it.
+  - **R4c, disjunctions**: the first bullet above, with each satisfying assignment of the flags as one arm.
+
+  Other backends keep their checks until they take the source interface. Their encode is still handed every input.
 - **R5, a shared count.** Lists that share one count are presented as one list whose entries carry each list's item,
   the second one optional when its list is gated.
 - **R6, a gate on a chain's content** (`chain.has(id)`, SCE_FORGE.md §4.6.2). Where the entry the gate names carries

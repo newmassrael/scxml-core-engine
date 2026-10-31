@@ -360,6 +360,13 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_source_can_refuse: bool,
 
+    /// ADR 0065 §6 R4a: the flag-inputs of the imported codec its value says
+    /// ([`crate::forge::codec_roles::CodecRoles::inputs`]). Its encode takes no
+    /// argument for them, and a parent derives a flag bound to one from the
+    /// body or the arm. Empty for non-codec imports.
+    #[serde(skip)]
+    pub codec_says_inputs: Vec<String>,
+
     /// ADR 0058: `true` when the borrowed source of the imported codec
     /// (`{Codec}Parts`) carries a lifetime, which a parent that names it must
     /// name too. `false` for non-codec imports.
@@ -1215,6 +1222,7 @@ fn resolve_single_import(
         codec_view_is_borrowed: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
+        codec_says_inputs: Vec::new(),
         codec_parts_lifetime: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
@@ -9135,6 +9143,30 @@ fn render_codec(
     ctx.insert(
         "params_first_arg_with_comma".into(),
         flag_input_call_args_with_comma.into(),
+    );
+    // The Rust encode is handed only the inputs its value does not say
+    // (docs/adr/0065 §6 R4a); the decode is handed every input. Another
+    // backend's encode is handed every input until it takes the source
+    // interface.
+    let encode_inputs: Vec<FlagInput> = if matches!(lang, crate::generator::Language::Rust) {
+        let roles = crate::forge::codec_roles::classify(m, imports);
+        m.flag_inputs
+            .iter()
+            .filter(|input| !roles.says_input(&input.name))
+            .cloned()
+            .collect()
+    } else {
+        m.flag_inputs.clone()
+    };
+    ctx.insert(
+        "encode_params_after_first_arg".into(),
+        compute_flag_input_param_fragments(&encode_inputs, lang)
+            .0
+            .into(),
+    );
+    ctx.insert(
+        "encode_args_with_comma".into(),
+        compute_flag_input_call_args(&encode_inputs, lang).into(),
     );
     // Per-language unused-input suppression block emitted at the top of
     // decode + encode bodies. Codecs that declare a `<sce:flag-input>`
@@ -21894,9 +21926,13 @@ struct BroadcastLogRenderInputs {
 /// one more context word, after the flag words, that holds the tag. The value
 /// has, for a template:
 ///
-/// * `flags`: one `{name, snake, camel, pascal, bit, word, shift}` per flag
-///   input, in the order of the codec's signature (`word` is relative to the
-///   first context word, so the slot index is `1 + word`);
+/// * `flags`: one `{name, snake, camel, pascal, bit, word, shift, said}` per
+///   flag input, in the order of the codec's signature (`word` is relative to
+///   the first context word, so the slot index is `1 + word`; `said` is whether
+///   the element's value says it, ADR 0065 §6 R4a, which only a language whose
+///   encode reads the input off the value acts on);
+/// * `said_flags` and `given_flags`: whether some flag input is said, and
+///   whether some is not;
 /// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
 ///   `1 + tag_word`), `context_words`, and `payload_start`, the slot index of
 ///   the first payload word.
@@ -21922,13 +21958,21 @@ fn broadcast_log_context_value(
                 bit => index,
                 word => index / word_bits,
                 shift => index % word_bits,
+                said => element.said_flag_inputs.contains(name),
             }
         })
         .collect();
     let flag_words = element.flag_words(word_bits);
     let context_words = element.context_words(word_bits);
+    let said = element
+        .caller_flag_inputs
+        .iter()
+        .filter(|name| element.said_flag_inputs.contains(name))
+        .count();
     minijinja::context! {
         flags => flags,
+        said_flags => said > 0,
+        given_flags => said < element.caller_flag_inputs.len(),
         flag_words => flag_words,
         has_tag => element.caller_variant_tag,
         tag_word => flag_words,
@@ -38596,6 +38640,7 @@ mod tests {
             codec_view_is_borrowed: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
+            codec_says_inputs: Vec::new(),
             codec_parts_lifetime: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
@@ -39481,6 +39526,7 @@ mod tests {
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
+                codec_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
@@ -39534,6 +39580,7 @@ mod tests {
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
+                codec_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,

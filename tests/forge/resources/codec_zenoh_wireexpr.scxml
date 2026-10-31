@@ -52,7 +52,7 @@
                suffix` (`value.data`, `value.len`; wire presence is parent.N) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_wireexpr">
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_wireexpr">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>

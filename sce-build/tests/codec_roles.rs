@@ -250,12 +250,106 @@ fn dispatched_in_xml(path: &Path) -> BTreeSet<ElementId> {
         .collect()
 }
 
+/// Whether the document at `path` says its flag input `input`, read out of the XML
+/// (docs/adr/0065 §6 R4a): exactly one field it presents is gated on the input
+/// alone and nothing else names it, or no field is gated on it and it is handed on
+/// once, to an import held by one embed that is always there, which says it.
+fn says_input_in_xml(path: &Path, input: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
+    let whole = fields_derived_whole(&doc);
+    let names_input = |gate: &str| {
+        gate.split("||")
+            .any(|clause| clause.trim().trim_start_matches('!').trim() == input)
+    };
+    let mut alone = 0;
+    let mut elsewhere = false;
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        let (Some(id), Some(gate)) = (node.attribute("id"), node.attribute((SCE_NS, "present-if")))
+        else {
+            continue;
+        };
+        if !names_input(gate) {
+            continue;
+        }
+        if gate.contains("||") {
+            elsewhere = true;
+        } else if !whole.contains(id) {
+            alone += 1;
+        }
+    }
+    let forwards: Vec<(roxmltree::Node, &str)> = doc
+        .descendants()
+        .filter(|n| is_sce(n, "flag-bind") && n.attribute("source") == Some(input))
+        .filter_map(|n| Some((n.parent()?, n.attribute("input")?)))
+        .collect();
+    match (alone, forwards.as_slice(), elsewhere) {
+        (1, [], false) => true,
+        (0, [(import, bound)], false) => {
+            let Some(alias) = import.attribute("as") else {
+                return false;
+            };
+            let holders: Vec<roxmltree::Node> = doc
+                .descendants()
+                .filter(|n| n.is_element() && n.attribute("type") == Some(alias))
+                .collect();
+            matches!(holders.as_slice(), [embed] if is_sce(embed, "embed")
+                && embed.attribute((SCE_NS, "present-if")).is_none())
+                && import.attribute("src").is_some_and(|src| {
+                    says_input_in_xml(&path.parent().expect("a directory").join(src), bound)
+                })
+        }
+        _ => false,
+    }
+}
+
+/// The carrier flags bound to an input that a body or an arm says, read out of the
+/// XML: derived from it, as a parent tag is (docs/adr/0065 §6 R4a). A flag bound to
+/// a list's entries is checked and not derived.
+fn bound_to_a_said_input_in_xml(path: &Path) -> BTreeSet<ElementId> {
+    let text = std::fs::read_to_string(path).expect("the document");
+    let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
+    let mut bound = BTreeSet::new();
+    for bind in doc.descendants().filter(|n| is_sce(n, "flag-bind")) {
+        let (Some(source), Some(input)) = (bind.attribute("source"), bind.attribute("input"))
+        else {
+            continue;
+        };
+        let Some((carrier, flag)) = source.split_once('.') else {
+            continue;
+        };
+        let Some(import) = bind.parent() else {
+            continue;
+        };
+        let (Some(alias), Some(src)) = (import.attribute("as"), import.attribute("src")) else {
+            continue;
+        };
+        let held_by_a_body_or_an_arm = doc.descendants().any(|n| {
+            n.is_element()
+                && n.attribute("type") == Some(alias)
+                && (is_sce(&n, "embed") || is_sce(&n, "arm") || is_sce(&n, "default"))
+        });
+        if held_by_a_body_or_an_arm
+            && says_input_in_xml(&path.parent().expect("a directory").join(src), input)
+        {
+            bound.insert(ElementId::Flag {
+                field: carrier.trim().to_string(),
+                flag: flag.trim().to_string(),
+            });
+        }
+    }
+    bound
+}
+
 #[test]
 fn the_classification_agrees_with_the_declarations_in_the_document() {
     for (path, roles) in codecs() {
         let derived: BTreeSet<ElementId> = roles.derived().map(|(id, _)| id.clone()).collect();
         let mut declared = declared_in_xml(&path);
         declared.extend(dispatched_in_xml(&path));
+        declared.extend(bound_to_a_said_input_in_xml(&path));
         assert_eq!(
             derived,
             declared,

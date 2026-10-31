@@ -1338,15 +1338,16 @@ fn an_element_that_borrows_its_buffer_is_stored_as_its_owned_form() {
     );
 }
 
-/// A codec `event_record` whose `encode` and `decode` take a flag input from the
-/// caller, which a log stores with the entry. The encoder cannot derive the gate of
-/// `detail` from a flag its caller passes in, so the codec declares that its encode
-/// can refuse.
+/// A codec `event_record` whose `decode` takes a flag input from the caller, which a
+/// log stores with the entry. `detail` is the one field the input gates, so the value
+/// says the input (ADR 0065 §6 R4a): its encode is total, a Rust encode takes no
+/// argument for it, and a backend that has not taken the source interface still
+/// takes it on `encode`.
 fn flag_input_codec() -> String {
     r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="event_record" version="1.0">
+       sce:kind="codec" sce:default-endian="big" name="event_record" version="1.0">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
   </sce:flag-inputs>
@@ -1389,11 +1390,12 @@ fn stores_context(language: Language) -> bool {
 
 #[test]
 fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
-    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
-    // `decode`. The log stores it in a context word of the entry, takes it on `publish`
-    // as a bool, and gives it back with the item, so that every reader decodes the entry
-    // under what it was published under. The element is a `uint8` and an optional
-    // `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word of bytes.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, and
+    // its value says it (ADR 0065 §6 R4a). The log stores it in a context word of the
+    // entry, reads it off the element on `publish` instead of taking it, and gives it back
+    // with the item, so that every reader decodes the entry under what it was published
+    // under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry of 1
+    // length word, 1 context word and 1 word of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
     let code = generated_log(
@@ -1411,8 +1413,8 @@ fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
             "pub const WORDS: usize = 1 + CONTEXT_WORDS + MAX_ENCODED_BYTES.div_ceil(8);",
             "pub struct EventRingFlags {",
             "pub s: bool,",
-            "flags: EventRingFlags,",
-            "element.encode(&mut sink, u8::from(flags.s))?;",
+            "s: EventRecord::input_s(element),",
+            "element.encode(&mut sink)?;",
             "entry[1 + 0] |= u64::from(flags.s) << 0;",
             "entry[2 + index / 8] |= u64::from(*byte)",
             "s: ((entry[1 + 0] >> 0) & 1) == 1,",
@@ -1421,6 +1423,10 @@ fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
         ],
     );
     assert!(!code.contains("tag: u8"), "the element has no tag:\n{code}");
+    assert!(
+        !code.contains("flags: EventRingFlags,\n) -> Result<u64, CodecError>"),
+        "`publish` takes no flag the element says:\n{code}"
+    );
 }
 
 #[test]

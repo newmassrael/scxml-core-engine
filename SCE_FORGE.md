@@ -968,7 +968,8 @@ Codegen generates bounds checking for all variable-length fields: frame length i
 **Whether the encode can refuse a value — `sce:encode-may-fail`** (docs/adr/0065). An encode is total when every value a source can present (docs/adr/0058 §1) has a frame. It refuses a value at these places:
 
 - a byte or text length past a length field narrower than 64 bits, or empty where the wire holds the length less one (`sce:length-arith`);
-- a gated field whose presence disagrees with a gate the encoder cannot derive (a flag a parent passes in, `a.X || b.Y`, `<chain>.has(..)`);
+- a gated field whose presence disagrees with a gate the encoder cannot derive (a flag a parent passes in that the value does not say, `a.X || b.Y`, `<chain>.has(..)`);
+- a held codec that says one of its flag inputs, and is handed it from elsewhere: a flag bound to every entry of a list or a chain, the parent's own input, or an input a chain supplies from the entry before;
 - two lists that share one count with different lengths;
 - a CBOR entry past its `sce:max-size` or other than its `sce:length`;
 - a content-line value its line cannot carry;
@@ -978,6 +979,8 @@ A codec states which kind it is on its root:
 
 - absent or `false`, the encode is total;
 - `sce:encode-may-fail="true"`, it can refuse.
+
+**A flag input the value says** (docs/adr/0065 §6 R4a). A codec's value says one of its flag inputs when exactly one thing in it does: one field it presents gated on the input alone (`I` or `!I`), or one embedded body, always there, that it hands the input on to and whose codec says it. A length or a count gated with its content follows the content. The decode still takes such an input from the parent, which reads the bit before it reaches the codec. The Rust encode takes no argument for it, `{Codec}::input_{i}(src)` returns it, and the gate is not a refusal. A parent derives a carrier flag it binds to such an input from the body, or from the arm of its variant that binds it; where no body or arm that binds it is there, the carrier keeps the bit the value presents. A Rust broadcast log stores such a flag as its element says it, and `publish` does not take it. The other backends hand every input to the encode until each takes the source interface.
 
 The build holds the statement to the places it finds, once, before any backend renders. A codec that states it is total and refuses somewhere is `codec/undeclared-encode-refusal`, at the first such place, with what the value can say there. A codec that states `true` and refuses nowhere is `codec/encode-may-fail-without-refusal`. A conversion that cannot fail is not a refusal: a length into a 64-bit field, a count bounded by its list's `sce:max-count` into a field that holds the bound, a known arm's tag, and a default arm's tag, which the arm holds as a value inside the bits the tag is read from and outside every arm's tag (docs/adr/0065 §6 R3).
 

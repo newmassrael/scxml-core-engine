@@ -27,12 +27,12 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, Role};
+use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, InputImports, Role};
 use crate::forge::error::{ForgeError, ValidationError};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
     BitSize, CborEntry, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel,
-    SceType,
+    FlagBind, SceType,
 };
 
 /// What an encode refuses a value with: the `CodecError` it returns, or a codec
@@ -172,7 +172,7 @@ impl Totality {
 }
 
 /// What the analysis asks of the codecs and enums a codec imports.
-pub trait Imports {
+pub trait Imports: InputImports {
     /// Whether the encode of the codec imported as `alias` can refuse.
     fn codec_may_fail(&mut self, alias: &str) -> bool;
     /// The carrier type of the enum imported as `alias`.
@@ -182,6 +182,16 @@ pub trait Imports {
 /// The imports a codec's generation resolved: each codec import says whether
 /// its encode can refuse, and each enum import its carrier.
 pub struct Resolved<'a>(pub &'a [ImportContext]);
+
+impl InputImports for Resolved<'_> {
+    fn flag_binds(&mut self, alias: &str) -> Vec<FlagBind> {
+        codec_roles::Contexts(self.0).flag_binds(alias)
+    }
+
+    fn says_input(&mut self, alias: &str, input: &str) -> bool {
+        codec_roles::Contexts(self.0).says_input(alias, input)
+    }
+}
 
 impl Imports for Resolved<'_> {
     fn codec_may_fail(&mut self, alias: &str) -> bool {
@@ -281,6 +291,8 @@ fn number_bound(m: &CodecModel, by: &Derivation) -> Option<u64> {
                     .unwrap_or(u64::MAX)
             })
             .max(),
+        // An input is one bit (docs/adr/0065 §6 R4a).
+        Derivation::BoundInput { .. } => Some(1),
         _ => None,
     }
 }
@@ -511,8 +523,8 @@ pub fn child_alias(field: &CodecField) -> Option<&str> {
 fn positional(m: &CodecModel, imports: &mut dyn Imports, out: &mut Vec<Refusal>) {
     // A parent-tag derivation fills its bits with the arm's value masked to
     // them, so it never refuses; the analysis does not need the imports it is
-    // read from.
-    let roles = codec_roles::classify(m, &[]);
+    // read from. The inputs the held codecs say it does need.
+    let roles = codec_roles::classify_with(m, &[], &mut *imports);
     let push = |out: &mut Vec<Refusal>, kind, element: &str, reason: String| {
         out.push(Refusal {
             kind,
@@ -529,8 +541,9 @@ fn positional(m: &CodecModel, imports: &mut dyn Imports, out: &mut Vec<Refusal>)
         }
     }
 
-    // The gates the encoder cannot derive a flag from.
-    for check in &roles.checks {
+    // The gates the encoder cannot derive a flag from. A gate on an input the
+    // value says is derived (docs/adr/0065 §6 R4a).
+    for check in roles.source_checks() {
         if m.fields
             .iter()
             .any(|f| f.id == check.field && f.present_if.is_some())
@@ -546,6 +559,20 @@ fn positional(m: &CodecModel, imports: &mut dyn Imports, out: &mut Vec<Refusal>)
                 ),
             );
         }
+    }
+
+    // A held codec says an input that this one hands it a value of from
+    // elsewhere: the two may disagree.
+    for check in &roles.input_checks {
+        push(
+            out,
+            RefusalKind::PresentIfMismatch,
+            check.binder.site.element(&check.binder.alias),
+            format!(
+                "`{}` says its input `{}` itself, and may say it otherwise than {}",
+                check.binder.alias, check.binder.input, check.against
+            ),
+        );
     }
 
     // A codec it holds refuses, and then so does this one.
@@ -642,6 +669,25 @@ fn derived(
                 );
             }
             return;
+        }
+        // The input each body or arm says. The arms of one variant are one
+        // source, which is there when one of them is.
+        Derivation::BoundInput { binders } => {
+            let mut sources: Vec<(String, bool)> = Vec::new();
+            for binder in binders {
+                match &binder.site {
+                    codec_roles::BindSite::Embed { field } => {
+                        sources.push((field.clone(), gated(field)));
+                    }
+                    codec_roles::BindSite::Arm => {
+                        if !sources.iter().any(|(s, _)| s == "<variant>") {
+                            sources.push(("<variant>".to_string(), true));
+                        }
+                    }
+                    codec_roles::BindSite::List { .. } => {}
+                }
+            }
+            sources
         }
         // A known arm's tag is declared inside the tag's bits, and a default
         // arm's is an [`UnknownTag`], which holds no other (docs/adr/0065 §6 R3).
@@ -831,6 +877,15 @@ mod tests {
 
     struct NoImports;
 
+    impl InputImports for NoImports {
+        fn flag_binds(&mut self, _alias: &str) -> Vec<FlagBind> {
+            Vec::new()
+        }
+        fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
+            false
+        }
+    }
+
     impl Imports for NoImports {
         fn codec_may_fail(&mut self, _alias: &str) -> bool {
             false
@@ -987,6 +1042,14 @@ mod tests {
     #[test]
     fn a_codec_that_holds_a_refusing_codec_refuses() {
         struct Refusing;
+        impl InputImports for Refusing {
+            fn flag_binds(&mut self, _alias: &str) -> Vec<FlagBind> {
+                Vec::new()
+            }
+            fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
+                false
+            }
+        }
         impl Imports for Refusing {
             fn codec_may_fail(&mut self, alias: &str) -> bool {
                 alias == "inner"

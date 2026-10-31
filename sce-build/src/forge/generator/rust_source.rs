@@ -21,7 +21,9 @@
 //! refuses a value refuses it with the sink untouched.
 
 use super::*;
-use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, Role};
+use crate::forge::codec_roles::{
+    self, BindSite, Binder, CodecRoles, Derivation, ElementId, InputSource, InputValue, Role,
+};
 use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
 
 pub(super) mod cbor;
@@ -602,24 +604,265 @@ impl<'a> Plan<'a> {
         filters::to_snake_case(input.name.clone())
     }
 
-    /// `, n: u8` for each flag-input the codec takes from its parent: a bit of
-    /// the parent's own header that gates a field here, so it is a fact the
-    /// source cannot present.
-    fn input_params(&self) -> String {
+    /// The flag-inputs the encode is handed: those the value does not say
+    /// (docs/adr/0065 §6 R4a).
+    fn given_inputs(&self) -> impl Iterator<Item = &FlagInput> {
         self.m()
             .flag_inputs
             .iter()
+            .filter(|input| !self.roles.says_input(&input.name))
+    }
+
+    /// `, n: u8` for each flag-input the encode takes from its parent: a bit of
+    /// the parent's own header that gates a field here, which the value does
+    /// not say.
+    fn input_params(&self) -> String {
+        self.given_inputs()
             .map(|input| format!(", {}: u8", Self::input_name(input)))
             .collect()
     }
 
-    /// `, n` for each flag-input, passed on.
+    /// `, n` for each flag-input the encode takes, passed on.
     fn input_args(&self) -> String {
-        self.m()
-            .flag_inputs
-            .iter()
+        self.given_inputs()
             .map(|input| format!(", {}", Self::input_name(input)))
             .collect()
+    }
+
+    /// The truth of the flag-input `name` the value says, as an expression
+    /// over `value` (a reference to a source of this codec).
+    fn said_input(&self, name: &str, value: &str) -> String {
+        match &self.roles.inputs[name] {
+            InputSource::Gate { field, when_clear } => {
+                let field = self
+                    .m()
+                    .fields
+                    .iter()
+                    .find(|f| &f.id == field)
+                    .expect("an input is said by a field of the codec");
+                let present = format!(
+                    "{}::{}({value}).is_some()",
+                    self.trait_name,
+                    self.accessor(field)
+                );
+                if *when_clear {
+                    format!("!{present}")
+                } else {
+                    present
+                }
+            }
+            InputSource::Forward {
+                embed,
+                alias,
+                input,
+            } => {
+                let field = self
+                    .m()
+                    .fields
+                    .iter()
+                    .find(|f| &f.id == embed)
+                    .expect("an input is said by a body of the codec");
+                let child = self
+                    .child_of(alias)
+                    .expect("`check` found the codec a body holds");
+                format!(
+                    "{}::input_{}({}::{}({value}))",
+                    child.type_name,
+                    filters::to_snake_case(input.clone()),
+                    self.trait_name,
+                    self.accessor(field)
+                )
+            }
+        }
+    }
+
+    /// `input_{i}`: each flag-input the value says, read off a source
+    /// (docs/adr/0065 §6 R4a). A parent derives a flag it binds to the input
+    /// from it, and holds a value it hands the input from elsewhere to it.
+    fn input_functions(&self) -> String {
+        let mut out = String::new();
+        for input in &self.m().flag_inputs {
+            if !self.roles.says_input(&input.name) {
+                continue;
+            }
+            let by = match &self.roles.inputs[&input.name] {
+                InputSource::Gate {
+                    field,
+                    when_clear: false,
+                } => format!("set exactly when `{field}` is present"),
+                InputSource::Gate {
+                    field,
+                    when_clear: true,
+                } => format!("set exactly when `{field}` is absent"),
+                InputSource::Forward { embed, input, .. } => {
+                    format!("the input `{input}` that the body `{embed}` says")
+                }
+            };
+            out.push_str(&format!(
+                "\x20   /// The flag-input `{name}` that `src` says: {by}.\n\
+                 \x20   /// A parent hands the decode this bit and derives it from here for the\n\
+                 \x20   /// encode.\n\
+                 \x20   pub fn input_{snake}<S: {trait_name} + ?Sized>(src: &S) -> bool {{\n\
+                 \x20       {expr}\n\
+                 \x20   }}\n\n",
+                name = input.name,
+                snake = Self::input_name(input),
+                trait_name = self.trait_name,
+                expr = self.said_input(&input.name, "src"),
+            ));
+        }
+        out
+    }
+
+    /// Whether the wire reads the flag-input `name` by name: a field gated on it
+    /// that the value does not present is written where the gate holds, and a
+    /// held codec handed the input is held to it.
+    fn gates_read_input(&self, name: &str) -> bool {
+        let gated = self.m().fields.iter().any(|f| {
+            !self.presented(f)
+                && f.present_if.as_ref().is_some_and(|gate| {
+                    let mut clause = Some(gate);
+                    while let Some(p) = clause {
+                        if p.scope == PresentIfScope::Input && p.flag_name == name {
+                            return true;
+                        }
+                        clause = p.or_with.as_deref();
+                    }
+                    false
+                })
+        });
+        gated
+            || self
+                .roles
+                .input_checks
+                .iter()
+                .any(|c| matches!(&c.against, InputValue::Input { name: n } if n == name))
+    }
+
+    /// Hold the input a held codec says to the value the parent hands it from
+    /// elsewhere ([`codec_roles::InputCheck`]), in the prologue, so a refusal
+    /// leaves the sink untouched.
+    fn input_check(
+        &self,
+        binder: &Binder,
+        against: &InputValue,
+        derived: &Derived,
+        lines: &mut Vec<String>,
+    ) {
+        let child = self
+            .child_of(&binder.alias)
+            .expect("`check` found the codec a bind names");
+        let says = |entry: &str| {
+            format!(
+                "{}::input_{}({entry})",
+                child.type_name,
+                filters::to_snake_case(binder.input.clone())
+            )
+        };
+        let element = binder.site.element(&binder.alias);
+        let refuse = self.refuse(RefusalKind::PresentIfMismatch, element);
+        let field_of = |id: &str| {
+            self.m()
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a bind site is a field of the codec")
+        };
+        let handed = match against {
+            InputValue::Carrier { carrier, flag } => {
+                let carrier = field_of(carrier);
+                let def = carrier
+                    .flags
+                    .iter()
+                    .find(|d| &d.name == flag)
+                    .expect("the parser found the flag a bind names");
+                format!(
+                    "({} & 0x{:X}) != 0",
+                    self.read(carrier, derived),
+                    1u64 << def.bit
+                )
+            }
+            InputValue::Input { name } => format!("{} != 0", filters::to_snake_case(name.clone())),
+            InputValue::PreviousEntry { id } => {
+                let BindSite::List { field } = &binder.site else {
+                    unreachable!("a chain supplies an input from the entry before");
+                };
+                let chain = field_of(field);
+                let accessor = self.accessor(chain);
+                let walk = [
+                    format!("    if {} != _prev {{", says("&_e")),
+                    format!("        return Err({refuse});"),
+                    "    }".to_string(),
+                    format!(
+                        "    _prev = {} == {id}u64;",
+                        self.entry_identifier(chain, "&_e")
+                    ),
+                    "}".to_string(),
+                ];
+                lines.push("{".to_string());
+                lines.push("    let mut _prev: bool = false;".to_string());
+                let entries = if chain.present_if.is_some() {
+                    format!("src.{accessor}().into_iter().flatten()")
+                } else {
+                    format!("src.{accessor}()")
+                };
+                lines.push(format!("    for _e in {entries} {{"));
+                lines.extend(walk.iter().map(|line| format!("    {line}")));
+                lines.push("}".to_string());
+                return;
+            }
+        };
+        let differs = match &binder.site {
+            BindSite::List { field } => {
+                let list = field_of(field);
+                let accessor = self.accessor(list);
+                let differs = format!("{} != _h", says("&_e"));
+                if list.present_if.is_some() {
+                    format!("src.{accessor}().is_some_and(|mut _l| _l.any(|_e| {differs}))")
+                } else {
+                    format!("src.{accessor}().any(|_e| {differs})")
+                }
+            }
+            BindSite::Embed { field } => {
+                let body = field_of(field);
+                let accessor = self.accessor(body);
+                if body.present_if.is_some() {
+                    format!("src.{accessor}().is_some_and(|_b| {} != _h)", says("_b"))
+                } else {
+                    format!("{} != _h", says(&format!("src.{accessor}()")))
+                }
+            }
+            BindSite::Arm => {
+                let enum_name = self.body_enum();
+                let mut arms: Vec<String> = self
+                    .arms()
+                    .iter()
+                    .filter(|arm| arm.alias == binder.alias)
+                    .map(|arm| {
+                        let pattern = if arm.value.is_some() {
+                            format!("{enum_name}::{}(_b)", arm.variant_name)
+                        } else {
+                            format!("{enum_name}::Default {{ body: _b, .. }}")
+                        };
+                        format!("{}{pattern} => {} != _h,", arm.cfg_prefix(), says("_b"))
+                    })
+                    .collect();
+                arms.push("_ => false,".to_string());
+                format!("match src.body() {{ {} }}", arms.join(" "))
+            }
+        };
+        lines.push(format!(
+            "{{\n    let _h: bool = {handed};\n    if {differs} {{\n        return Err({refuse});\n    }}\n}}"
+        ));
+    }
+
+    /// Whether the import `alias` says its input `input`, so that it is not
+    /// handed one.
+    fn child_says_input(&self, alias: &str, input: &str) -> bool {
+        self.input
+            .imports
+            .iter()
+            .any(|i| i.alias == alias && i.codec_says_inputs.iter().any(|s| s == input))
     }
 
     /// The arguments a parent passes the codec `alias`, one for each flag-input
@@ -643,6 +886,10 @@ impl<'a> Plan<'a> {
         };
         let mut out = String::new();
         for input in &import.codec_flag_inputs {
+            // An input the codec says is not handed to it.
+            if self.child_says_input(alias, &input.name) {
+                continue;
+            }
             if let Some(arg) = supplied(&input.name) {
                 out.push_str(&format!(", {arg}"));
                 continue;
@@ -795,7 +1042,10 @@ impl<'a> Plan<'a> {
     /// the field is present exactly when the gate says, or the value is not one
     /// frame can carry. Made in the prologue, so nothing is written first.
     fn gate_checks(&self, derived: &Derived, lines: &mut Vec<String>) {
-        for check in &self.roles.checks {
+        for check in &self.roles.input_checks {
+            self.input_check(&check.binder, &check.against, derived, lines);
+        }
+        for check in self.roles.source_checks() {
             let Some(field) = self.m().fields.iter().find(|f| f.id == check.field) else {
                 continue;
             };
@@ -1456,7 +1706,7 @@ impl<'a> Plan<'a> {
             String::new()
         };
         let count = count_function(&self.trait_name, &params, &args, self.may_fail());
-        let measure = if self.m().flag_inputs.is_empty() {
+        let measure = if self.given_inputs().next().is_none() {
             format!(
                 "\n{}",
                 measure_impl(
@@ -1488,6 +1738,7 @@ impl<'a> Plan<'a> {
              {guard}\
              \x20       Self::write_source(src, w{args})\n\
              \x20   }}\n\n\
+             {inputs}\
              {write}\n\
              {count}\
              }}\n\
@@ -1496,6 +1747,7 @@ impl<'a> Plan<'a> {
             name = self.name(),
             trait_name = self.trait_name,
             result = self.write_result("K"),
+            inputs = self.input_functions(),
         )
     }
 
@@ -1539,9 +1791,21 @@ impl<'a> Plan<'a> {
     /// The statements of `write_source`: the derived values, then the wire.
     fn write_body(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
+        // An input the value says is read off it, under the name a gate reads
+        // it by; a codec that does not test it has nothing to read
+        // (docs/adr/0065 §6 R4a).
+        for input in &self.m().flag_inputs {
+            if self.roles.says_input(&input.name) && self.gates_read_input(&input.name) {
+                lines.push(format!(
+                    "let {}: u8 = u8::from({});",
+                    Self::input_name(input),
+                    self.said_input(&input.name, "src")
+                ));
+            }
+        }
         let derived = self.derivations(&mut lines);
         self.gate_checks(&derived, &mut lines);
-        for input in &self.m().flag_inputs {
+        for input in self.given_inputs() {
             // A codec that does not test its input still takes it.
             lines.push(format!("let _ = {};", Self::input_name(input)));
         }
@@ -1749,6 +2013,9 @@ impl<'a> Plan<'a> {
                     Derivation::ParentTag { .. } => self.derive_parent_tag(id, lines, &mut derived),
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
+                    }
+                    Derivation::BoundInput { binders } => {
+                        self.derive_bound_input(id, binders, lines, &mut derived)
                     }
                     // The end flag of a chain is the entries' to set, as each is
                     // written (`streamed`), and no value of this codec's own.
@@ -2067,6 +2334,115 @@ impl<'a> Plan<'a> {
         }
     }
 
+    /// A flag bound to an input the held codecs say (docs/adr/0065 §6 R4a): the
+    /// input of the body, or of the arm the value holds. Where no body or arm
+    /// that binds it is there, the carrier keeps the bit the value presents.
+    fn derive_bound_input(
+        &self,
+        id: &ElementId,
+        binders: &[Binder],
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
+        let local = self.local("_d_", id);
+        let mut measures: Vec<Measure> = Vec::new();
+        // Each arm that binds it: its pattern, with its `#[cfg]`, and what it says.
+        let mut arms: Vec<(String, String)> = Vec::new();
+        let says = |binder: &Binder, body: &str| {
+            let child = self
+                .child_of(&binder.alias)
+                .expect("`check` found the codec a bind names");
+            format!(
+                "usize::from({}::input_{}({body}))",
+                child.type_name,
+                filters::to_snake_case(binder.input.clone())
+            )
+        };
+        for (index, binder) in binders.iter().enumerate() {
+            let number = format!("_n{local}_{index}");
+            match &binder.site {
+                BindSite::Embed { field } => {
+                    let body = self
+                        .m()
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == field)
+                        .expect("a bind site is a field of the codec");
+                    let accessor = self.accessor(body);
+                    if body.present_if.is_some() {
+                        lines.push(format!(
+                            "let {number}: usize = src.{accessor}().map_or(0, |_b| {});",
+                            says(binder, "_b")
+                        ));
+                        measures.push(Measure {
+                            number,
+                            present: Some(format!("src.{accessor}().is_some()")),
+                        });
+                    } else {
+                        lines.push(format!(
+                            "let {number}: usize = {};",
+                            says(binder, &format!("src.{accessor}()"))
+                        ));
+                        measures.push(Measure {
+                            number,
+                            present: None,
+                        });
+                    }
+                }
+                BindSite::Arm => {
+                    let enum_name = self.body_enum();
+                    for arm in self.arms().iter().filter(|a| a.alias == binder.alias) {
+                        let pattern = if arm.value.is_some() {
+                            format!("{enum_name}::{}(_b)", arm.variant_name)
+                        } else {
+                            format!("{enum_name}::Default {{ body: _b, .. }}")
+                        };
+                        arms.push((format!("{}{pattern}", arm.cfg_prefix()), says(binder, "_b")));
+                    }
+                }
+                BindSite::List { .. } => {
+                    unreachable!("a list's bound flag is checked, not derived")
+                }
+            }
+        }
+        // The arms of the variant are one source, there when the value holds
+        // one of them.
+        if !arms.is_empty() && arms.len() == self.arms().len() {
+            // Every arm binds it: the value always says it.
+            let number = format!("_n{local}_arm");
+            let arms: Vec<String> = arms
+                .iter()
+                .map(|(pattern, value)| format!("    {pattern} => {value},"))
+                .collect();
+            lines.push(format!(
+                "let {number}: usize = match src.body() {{\n{}\n}};",
+                arms.join("\n")
+            ));
+            measures.push(Measure {
+                number,
+                present: None,
+            });
+        } else if !arms.is_empty() {
+            // One match says both whether an arm that binds it is there and what
+            // it says. An arm under a build feature carries its `#[cfg]`, which
+            // an alternative of `matches!` cannot.
+            let said = format!("_o{local}_arm");
+            let arms: Vec<String> = arms
+                .iter()
+                .map(|(pattern, value)| format!("    {pattern} => Some({value}),"))
+                .collect();
+            lines.push(format!(
+                "let {said}: Option<usize> = match src.body() {{\n{}\n    _ => None,\n}};",
+                arms.join("\n")
+            ));
+            measures.push(Measure {
+                number: format!("{said}.unwrap_or(0)"),
+                present: Some(format!("{said}.is_some()")),
+            });
+        }
+        self.derive_number(id, &local, measures, lines, derived);
+    }
+
     fn derive_presence(
         &self,
         id: &ElementId,
@@ -2260,9 +2636,13 @@ impl<'a> Plan<'a> {
                 // The inputs of the entry codec that the chain supplies: one
                 // value for each entry, 1 when the entry just written has the
                 // identifier the bind waits for, and 0 for the first.
+                // An input the entry says is checked in the prologue and not
+                // handed to it (docs/adr/0065 §6 R4a).
+                let alias = child_alias(field).unwrap_or_default();
                 let binds: Vec<(String, String, u64)> = match &field.bit_size {
                     BitSize::TlvChain { entry_binds, .. } => entry_binds
                         .iter()
+                        .filter(|bind| !self.child_says_input(alias, &bind.input))
                         .map(|bind| {
                             (
                                 bind.input.clone(),

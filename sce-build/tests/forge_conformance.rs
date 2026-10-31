@@ -13430,7 +13430,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -13488,12 +13488,16 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
         !disp_rust.contains("B5nuChainArmA::decode_into(cursor, _b, header)"),
         "dispatcher decode must NOT pass bare `header`;\n{disp_rust}"
     );
-    // Encode site: arm body's encode invocation reads `n` from the
-    // dispatcher's encode parameter, NOT `self.header` (no such field
-    // on the chain-forwarder dispatcher).
+    // Encode site: arm_a says `N` itself (its one gated field), so it is
+    // handed nothing; the dispatcher, which is handed `n`, holds the arm
+    // to it before writing (docs/adr/0065 §6 R4a).
     assert!(
-        disp_rust.contains("B5nuChainArmA::write_source(_b, w, n)?"),
-        "dispatcher encode must thread sink and pass `n` to arm body; got:\n{disp_rust}"
+        disp_rust.contains("B5nuChainArmA::write_source(_b, w)?"),
+        "dispatcher encode must thread the sink alone to arm_a; got:\n{disp_rust}"
+    );
+    assert!(
+        disp_rust.contains("B5nuChainArmA::input_n(_b) != _h"),
+        "dispatcher encode must hold arm_a's `N` to its own `n`; got:\n{disp_rust}"
     );
     assert!(
         !disp_rust.contains("b.encode(w, self.header)"),
@@ -13569,7 +13573,7 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -20438,7 +20442,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_b_leaf.scxml" kind="codec" as="codec_axis1_b_leaf">
     <sce:flag-bind input="has_suffix" source="header.N"/>
   </sce:import>
@@ -20454,7 +20458,7 @@ fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::P
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="has_suffix" width="1"/>
   </sce:flag-inputs>
@@ -20532,9 +20536,17 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
         leaf_rust.contains("pub fn decode(cursor: &mut SceCursor<'_>, has_suffix: u8)"),
         "leaf decode must take positional `has_suffix: u8`\n{leaf_rust}"
     );
+    // The encode reads the input off the value: `suffix` is its one gated
+    // field (docs/adr/0065 §6 R4a).
     assert!(
-        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S, has_suffix: u8)"),
-        "leaf encode must take positional `has_suffix: u8` after sink param\n{leaf_rust}"
+        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error>"),
+        "leaf encode must take no input, and be total\n{leaf_rust}"
+    );
+    assert!(
+        leaf_rust.contains(
+            "pub fn input_has_suffix<S: CodecAxis1BLeafSource + ?Sized>(src: &S) -> bool"
+        ),
+        "leaf must say the input it is no longer handed\n{leaf_rust}"
     );
     assert!(
         leaf_rust.contains("(has_suffix & 0x01u8) != 0"),
@@ -20552,8 +20564,12 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
         "parent decode embed-site must extract `(header >> 5) & 0x1`\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("(_c_header >> 5) & 0x1"),
-        "parent encode embed-site must extract from the carrier it writes\n{parent_rust}"
+        parent_rust.contains("CodecAxis1BLeaf::input_has_suffix(src.body())"),
+        "parent encode must derive `header.N` from the body\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("CodecAxis1BLeaf::write_source(src.body(), w)?"),
+        "parent encode must hand the body no input\n{parent_rust}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -20591,7 +20607,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_d1_with_input.scxml" kind="codec" as="codec_axis1_d1_with_input">
     <sce:flag-bind input="S" source="header.S"/>
   </sce:import>
@@ -20612,7 +20628,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     let with_input = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="S" width="1"/>
   </sce:flag-inputs>
@@ -20683,10 +20699,15 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
         parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)?"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
-    // Encode site reads the carrier it writes and threads through the sink.
+    // Encode site: the arm says `S` itself, so it is handed the sink alone,
+    // and `header.S` is derived from the arm (docs/adr/0065 §6 R4a).
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::write_source(_b, w, (_c_header >> 6) & 0x1)?"),
-        "variant arm encode must thread sink and extract from the carrier it writes:\n{parent_rust}"
+        parent_rust.contains("CodecAxis1D1WithInput::write_source(_b, w)?"),
+        "variant arm encode must hand the arm the sink alone:\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("CodecAxis1D1WithInput::input_s(_b)"),
+        "variant arm encode must derive `header.S` from the arm:\n{parent_rust}"
     );
 
     // End-to-end rustc-compile gate — substring assertions check shape;
@@ -20804,7 +20825,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
@@ -21411,7 +21432,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
     <sce:flag-input name="M" width="1"/>
@@ -21747,7 +21768,7 @@ fn axis1_present_if_camelcase_field_compiles() {
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:flag-inputs>
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>

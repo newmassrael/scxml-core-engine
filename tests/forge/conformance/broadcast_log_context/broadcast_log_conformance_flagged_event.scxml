@@ -8,10 +8,15 @@
   published under, so it stores the flag in the entry beside them. The sensor id
   is always there (byte 0); the value is two bytes and is there only under the
   flag, so the element encodes to one byte or to three.
+
+  The value is the one field the flag gates, so the value says the flag (ADR 0065
+  section 6, R4a): an encode through the source interface reads it off the value
+  and refuses nothing, and a log in such a language stores the flag the element
+  says. The decode still takes it from the caller.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="little"
+       sce:kind="codec" sce:default-endian="little"
        name="broadcast_log_conformance_flagged_event" version="1.0">
   <sce:flag-inputs>
     <sce:flag-input name="has_value" width="1"/>

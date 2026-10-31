@@ -579,11 +579,12 @@ fn a_reader_gets_back_the_flag_an_entry_was_published_under() {
 
     // The same element shape, published under each answer of the flag: the value is
     // on the wire under `true` and absent under `false`, so the two frames are three
-    // bytes and one, and neither can be decoded under the other's flag.
+    // bytes and one, and neither can be decoded under the other's flag. The value
+    // says the flag, so `publish` takes none (ADR 0065 section 6, R4a).
     let with = (flagged_event(1, Some(0x0203)), Flags { has_value: true });
     let without = (flagged_event(2, None), Flags { has_value: false });
-    for (element, flags) in [&with, &without] {
-        flagged::publish(&mut publisher, element, *flags).expect("an entry within the bound");
+    for (element, _) in [&with, &without] {
+        flagged::publish(&mut publisher, element).expect("an entry within the bound");
     }
     for (seq, (element, flags)) in [with, without].into_iter().enumerate() {
         assert_eq!(
@@ -605,18 +606,9 @@ fn every_reader_of_an_entry_decodes_it_under_the_same_flag() {
     let mut publisher = log.publisher().expect("the first publisher");
     let mut early = log.reader_oldest();
     let mut late = log.reader_oldest();
-    flagged::publish(
-        &mut publisher,
-        &flagged_event(5, Some(500)),
-        Flags { has_value: true },
-    )
-    .expect("an entry within the bound");
-    flagged::publish(
-        &mut publisher,
-        &flagged_event(6, None),
-        Flags { has_value: false },
-    )
-    .expect("an entry within the bound");
+    flagged::publish(&mut publisher, &flagged_event(5, Some(500)))
+        .expect("an entry within the bound");
+    flagged::publish(&mut publisher, &flagged_event(6, None)).expect("an entry within the bound");
     for reader in [&mut early, &mut late] {
         assert_eq!(
             flagged::read(&log, reader),
@@ -638,29 +630,25 @@ fn every_reader_of_an_entry_decodes_it_under_the_same_flag() {
 }
 
 #[test]
-fn a_flag_that_disagrees_with_the_element_is_refused_and_nothing_is_published() {
+fn an_entry_is_stored_under_the_flag_its_element_says() {
     let log = flagged::BroadcastLogConformanceFlagged::new();
     let mut publisher = log.publisher().expect("the first publisher");
-    // The value is there and the flag says it is not, and the other way about: the
-    // codec's gate refuses each, so the log never holds an entry whose bytes and flag
-    // disagree.
-    assert_eq!(
-        flagged::publish(
-            &mut publisher,
-            &flagged_event(7, Some(1)),
-            Flags { has_value: false }
-        ),
-        Err(CodecError::PresentIfMismatch)
-    );
-    assert_eq!(
-        flagged::publish(
-            &mut publisher,
-            &flagged_event(7, None),
-            Flags { has_value: true }
-        ),
-        Err(CodecError::PresentIfMismatch)
-    );
-    assert_eq!(log.head(), 0, "nothing was published");
+    let mut reader = log.reader_oldest();
+    // The flag is read off the element, so the log cannot hold an entry whose bytes
+    // and flag disagree: there is no flag to give that could (ADR 0065 section 6,
+    // R4a). Each element comes back under the flag its value says.
+    for (seq, (value, has_value)) in [(Some(1u16), true), (None, false)].into_iter().enumerate() {
+        flagged::publish(&mut publisher, &flagged_event(7, value))
+            .expect("an entry within the bound");
+        assert_eq!(
+            flagged::read(&log, &mut reader),
+            Ok(FlaggedRead::Item {
+                seq: seq as u64,
+                element: flagged_event(7, value),
+                flags: Flags { has_value }
+            })
+        );
+    }
 }
 
 #[test]

@@ -458,6 +458,114 @@ mod parts {
 // A default arm's tag as a value of its tag space (docs/adr/0065 §6 R3): the set
 // `new` admits is the set the runtime is told, and two codecs whose arms name the
 // same tags under the same bits convert their tags with nothing to check.
+// A flag input the value says (docs/adr/0065 §6 R4a): the codec reads it off the
+// value, a parent derives the flag it binds to the input from the body, and the
+// refusal stays only where a value handed from elsewhere can disagree.
+mod said_inputs {
+    use super::codecs::codec_chain_prev_carrier::{
+        CodecChainPrevCarrier, CodecChainPrevCarrierParts,
+    };
+    use super::codecs::codec_chain_prev_entry::CodecChainPrevEntryParts;
+    use super::codecs::codec_zenoh_decl_token::{CodecZenohDeclToken, CodecZenohDeclTokenParts};
+    use super::codecs::codec_zenoh_interest_body::{
+        CodecZenohInterestBody, CodecZenohInterestBodyParts,
+    };
+    use super::codecs::codec_zenoh_open_body::{CodecZenohOpenBody, CodecZenohOpenBodyParts};
+    use super::codecs::codec_zenoh_wireexpr::{CodecZenohWireexpr, CodecZenohWireexprParts};
+    use sce_forge_runtime::codec::{CodecError, VecSink};
+
+    fn wireexpr(suffix: Option<&str>) -> CodecZenohWireexprParts<'_> {
+        CodecZenohWireexprParts { id: 7, suffix }
+    }
+
+    #[test]
+    fn an_input_is_set_exactly_when_the_one_field_it_gates_is_there() {
+        assert!(CodecZenohWireexpr::input_n(&wireexpr(Some("a"))));
+        assert!(!CodecZenohWireexpr::input_n(&wireexpr(None)));
+        // `open_body` gates its cookie on `!A`: the input is set where it is absent.
+        let open = |cookie| CodecZenohOpenBodyParts {
+            lease: 1,
+            initial_sn: 2,
+            cookie,
+        };
+        assert!(CodecZenohOpenBody::input_a(&open(None)));
+        assert!(!CodecZenohOpenBody::input_a(&open(Some(&[1u8][..]))));
+    }
+
+    #[test]
+    fn an_input_handed_on_to_a_body_is_the_input_the_body_says() {
+        for suffix in [Some("a"), None] {
+            let body = wireexpr(suffix);
+            assert_eq!(
+                CodecZenohDeclToken::input_n(&CodecZenohDeclTokenParts {
+                    id: 1,
+                    wireexpr: &body,
+                }),
+                suffix.is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn a_flag_bound_to_a_body_is_written_as_the_body_says_it() {
+        let encode = |parts: &CodecZenohInterestBodyParts<'_>| {
+            let mut bytes = Vec::new();
+            let Ok(()) =
+                CodecZenohInterestBody::encode_source(parts, &mut VecSink::new(&mut bytes));
+            bytes
+        };
+        // The value presents `N` clear; the body has a suffix, so the frame sets it.
+        let with = wireexpr(Some("a"));
+        assert_eq!(
+            encode(&CodecZenohInterestBodyParts {
+                header: 0x00,
+                keyexpr: Some(&with),
+            }),
+            [0x30, 0x07, 0x01, b'a']
+        );
+        // The value presents `N` set; the body has none, so the frame clears it.
+        let without = wireexpr(None);
+        assert_eq!(
+            encode(&CodecZenohInterestBodyParts {
+                header: 0x20,
+                keyexpr: Some(&without),
+            }),
+            [0x10, 0x07]
+        );
+        // No body says it: the frame keeps the bit the value presents.
+        assert_eq!(
+            encode(&CodecZenohInterestBodyParts {
+                header: 0x20,
+                keyexpr: None,
+            }),
+            [0x20]
+        );
+    }
+
+    #[test]
+    fn an_entry_that_says_its_input_otherwise_than_its_chain_is_refused_before_a_byte() {
+        let entries = [CodecChainPrevEntryParts {
+            header: 0x01,
+            short_value: Some(5),
+            long_value: None,
+            tag: Some(9),
+        }];
+        let carrier = |head| CodecChainPrevCarrierParts {
+            head,
+            entries: (&entries).into(),
+        };
+        let mut bytes = Vec::new();
+        assert_eq!(
+            CodecChainPrevCarrier::encode_source(&carrier(0x00), &mut VecSink::new(&mut bytes)),
+            Err(CodecError::PresentIfMismatch)
+        );
+        assert!(bytes.is_empty(), "a refusal leaves the sink untouched");
+        CodecChainPrevCarrier::encode_source(&carrier(0x01), &mut VecSink::new(&mut bytes))
+            .expect("the entry says the input the chain hands it");
+        assert_eq!(bytes, [0x01, 0x01, 5, 9]);
+    }
+}
+
 mod unknown_tags {
     use super::codecs::codec_init_syn_envelope::CodecInitSynEnvelopeUnknownTag;
     use super::codecs::codec_origin_choice::CodecOriginChoiceUnknownTag;

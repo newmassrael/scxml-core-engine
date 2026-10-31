@@ -1,0 +1,46 @@
+# Mutation cases for "a flag input the value says is written as it says it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_flag_input_the_value_says_is_written_as_it_says_it.cases`.
+#
+# A Rust codec reads a flag input its value says off the value, a parent
+# derives the flag it binds to the input from the body, and a value handed from
+# elsewhere (a flag bound to every entry of a chain) is held to the input each
+# entry says before the first byte (docs/adr/0065 §6 R4a). The conformance
+# crate generates its codecs from the documents when it builds, so each case
+# reaches the codecs the `said_inputs` tests encode with: an input read with
+# the wrong polarity, a bound flag left as the value presents it, and an entry
+# no longer held to the flag its chain hands it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets sce-build/src/forge/generator/rust_source.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "an input is read with the wrong polarity" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                if *when_clear {
+                    format!("!{present}")''',
+     r'''                if !*when_clear {
+                    format!("!{present}")''')
+PY
+
+mutation_case "a bound flag keeps the bit the value presents" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                    Derivation::BoundInput { binders } => {
+                        self.derive_bound_input(id, binders, lines, &mut derived)
+                    }''',
+     r'''                    Derivation::BoundInput { .. } => {}''')
+PY
+
+mutation_case "an entry is not held to the flag its chain hands it" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''        for check in &self.roles.input_checks {
+            self.input_check(&check.binder, &check.against, derived, lines);
+        }''',
+     r'''        for check in self.roles.input_checks.iter().take(0) {
+            self.input_check(&check.binder, &check.against, derived, lines);
+        }''')
+PY

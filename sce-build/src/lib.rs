@@ -3675,6 +3675,12 @@ pub struct BroadcastLogElementFacts {
     /// Each is one bit: the parser refuses a wider flag input, and a widening
     /// would have to carry its width here before a template read it.
     pub caller_flag_inputs: Vec<String>,
+    /// The flag inputs among [`Self::caller_flag_inputs`] that the element's
+    /// value says itself (ADR 0065 §6 R4a). Its decode still takes them, so the
+    /// log stores them, but an encode through the source interface takes none
+    /// of them: a log in such a language derives them from the element when it
+    /// publishes, and its caller does not give them.
+    pub said_flag_inputs: Vec<String>,
     /// The element is a variant whose tag the caller supplies, because the wire
     /// form carries no tag field. The tag is a `u8` on decode.
     pub caller_variant_tag: bool,
@@ -5555,45 +5561,93 @@ fn codec_source_can_refuse_recursive(
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> bool {
-    /// The imports of a codec read from its document: each codec import
-    /// resolved and judged in turn, each enum import read for its carrier.
-    struct Unresolved<'a> {
-        imports: &'a [forge::model::ForgeImport],
-        base_dir: &'a Path,
-        visited: &'a mut HashSet<PathBuf>,
-    }
-
-    impl forge::codec_totality::Imports for Unresolved<'_> {
-        fn codec_may_fail(&mut self, alias: &str) -> bool {
-            with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
-                Some(codec_source_can_refuse_recursive(
-                    inner.model,
-                    inner.imports,
-                    inner.base_dir,
-                    inner.visited,
-                ))
-            })
-            .unwrap_or(false)
-        }
-
-        fn enum_carrier(&mut self, alias: &str) -> Option<forge::model::SceType> {
-            let imp = self.imports.iter().find(|i| i.alias == alias)?;
-            match forge::import_source::parse_quietly(self.base_dir, imp)?.document {
-                forge::model::ForgeDocument::Enum(em) => Some(em.underlying_type),
-                _ => None,
-            }
-        }
-    }
-
     !forge::codec_totality::analyse(
         cm,
-        &mut Unresolved {
+        &mut UnresolvedImports {
             imports,
             base_dir,
             visited,
         },
     )
     .is_total()
+}
+
+/// The flag-inputs of `cm` its value says (ADR 0065 §6 R4a), its imports read
+/// from its document as [`codec_source_can_refuse_recursive`] reads them.
+fn codec_says_inputs_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> Vec<String> {
+    forge::codec_roles::classify_with(
+        cm,
+        &[],
+        &mut UnresolvedImports {
+            imports,
+            base_dir,
+            visited,
+        },
+    )
+    .inputs
+    .into_keys()
+    .collect()
+}
+
+/// The imports of a codec read from its document: each codec import resolved
+/// and judged in turn, each enum import read for its carrier.
+struct UnresolvedImports<'a> {
+    imports: &'a [forge::model::ForgeImport],
+    base_dir: &'a Path,
+    visited: &'a mut HashSet<PathBuf>,
+}
+
+impl forge::codec_roles::InputImports for UnresolvedImports<'_> {
+    fn flag_binds(&mut self, alias: &str) -> Vec<forge::model::FlagBind> {
+        self.imports
+            .iter()
+            .find(|i| i.alias == alias)
+            .map(|i| i.flag_binds.clone())
+            .unwrap_or_default()
+    }
+
+    fn says_input(&mut self, alias: &str, input: &str) -> bool {
+        with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
+            Some(
+                codec_says_inputs_recursive(
+                    inner.model,
+                    inner.imports,
+                    inner.base_dir,
+                    inner.visited,
+                )
+                .iter()
+                .any(|said| said == input),
+            )
+        })
+        .unwrap_or(false)
+    }
+}
+
+impl forge::codec_totality::Imports for UnresolvedImports<'_> {
+    fn codec_may_fail(&mut self, alias: &str) -> bool {
+        with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
+            Some(codec_source_can_refuse_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
+    }
+
+    fn enum_carrier(&mut self, alias: &str) -> Option<forge::model::SceType> {
+        let imp = self.imports.iter().find(|i| i.alias == alias)?;
+        match forge::import_source::parse_quietly(self.base_dir, imp)?.document {
+            forge::model::ForgeDocument::Enum(em) => Some(em.underlying_type),
+            _ => None,
+        }
+    }
 }
 
 /// One import alias resolved to its parsed codec model, handed to a
@@ -5930,6 +5984,16 @@ fn validate_and_enrich_imports(
                     &parsed.imports,
                     &inner_base,
                     &mut refuse_visited,
+                );
+                // ADR 0065 §6 R4a: the inputs the import's value says, which
+                // its encode takes no argument for.
+                let mut inputs_visited: HashSet<PathBuf> = HashSet::new();
+                inputs_visited.insert(source.path.clone());
+                ctx.codec_says_inputs = codec_says_inputs_recursive(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut inputs_visited,
                 );
                 ctx.codec_parts_lifetime = forge::generator::source_parts_have_lifetime(cm);
                 // Owned→borrowed projection round: capture this import's
@@ -6940,13 +7004,17 @@ struct BroadcastLogElement {
 /// and nothing else, so what the codec asks the caller for, and whether its
 /// decoded form can hold a view into the buffer, are read where the element is
 /// in hand and judged per language where the log is rendered.
-fn broadcast_log_element_facts(codec: &forge::model::CodecModel) -> BroadcastLogElementFacts {
+fn broadcast_log_element_facts(
+    codec: &forge::model::CodecModel,
+    said_flag_inputs: Vec<String>,
+) -> BroadcastLogElementFacts {
     BroadcastLogElementFacts {
         caller_flag_inputs: codec
             .flag_inputs
             .iter()
             .map(|input| input.name.clone())
             .collect(),
+        said_flag_inputs,
         caller_variant_tag: codec
             .variant
             .as_ref()
@@ -7641,7 +7709,10 @@ fn validate_broadcast_log_cross_refs(
                 let sized = sized_codec(codec, imports, base_dir, &mut HashSet::new());
                 (
                     forge::codec_size::largest_encoded_bytes(&sized),
-                    broadcast_log_element_facts(codec),
+                    broadcast_log_element_facts(
+                        codec,
+                        codec_says_inputs_recursive(codec, imports, base_dir, &mut HashSet::new()),
+                    ),
                 )
             }
             other => (
