@@ -535,7 +535,8 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                     let sendEventData = ""
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
-                    // the table `classifyTarget` holds.
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
                     let sendRouted = engine.sendToTarget(
                         event: engine.resolveEventByName("landed"),
                         eventName: "landed",
@@ -608,7 +609,8 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                     let sendEventData = ""
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
-                    // the table `classifyTarget` holds.
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
                     let sendRouted = engine.sendToTarget(
                         event: engine.resolveEventByName("landed"),
                         eventName: "landed",
