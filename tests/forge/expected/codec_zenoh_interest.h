@@ -155,6 +155,9 @@ struct CodecZenohInterest {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
+        if ((header & 0x20) != 0 || (header & 0x40) != 0) {
+            if (!body.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        } else if (body.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -179,13 +182,19 @@ struct CodecZenohInterest {
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
-    /// paths should call `encode` directly against a caller-owned sink.
-    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
+    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
+    /// refuses a message whose gated field and the `sce:present-if` that
+    /// gates it contradict each other (`CodecError::PresentIfMismatch`).
+    /// Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        (void)encode(_sce_sink);
+        if (encode(_sce_sink)) {
+            return std::nullopt;
+        }
         return _sce_v;
     }
 };

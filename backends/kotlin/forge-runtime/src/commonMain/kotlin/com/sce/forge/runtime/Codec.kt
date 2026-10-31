@@ -51,10 +51,12 @@ sealed class CodecError {
     /// A CBOR codec's value exceeds its entry's width or `sce:max-size` —
     /// raised by `encode()`; decode collapses it to `null`.
     object CborOutOfRange : CodecError()
-    /// Encode-side: a field gated by a chain-membership `sce:present-if`
-    /// (`<chain>.has(<value>)`) was given when the predicate says it does
-    /// not belong on the wire, or left out when it does. `encode()` refuses
-    /// before writing the first byte, so the sink is untouched.
+    /// Encode-side: a field gated by a `sce:present-if` the codec cannot
+    /// derive (a chain-membership test, a flag input the caller gives, a
+    /// disjunction, a flag wider than one bit) was given when the predicate
+    /// says it does not belong on the wire, or left out when it does.
+    /// `encode()` refuses before writing the first byte, so the sink is
+    /// untouched.
     object PresentIfMismatch : CodecError()
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line,
     /// a parameter or an `END:` the grammar does not admit. Decode collapses it

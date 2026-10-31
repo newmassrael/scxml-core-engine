@@ -92,6 +92,12 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)n;
     (void)z;
+    if ((z & 0x01) != 0) {
+        if (!self->ext_type.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->ext_type.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if ((z & 0x01) != 0) {
+        if (!self->ext_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->ext_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

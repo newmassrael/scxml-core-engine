@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
 from .codec_zenoh_locator import CodecZenohLocator
 
 from dataclasses import dataclass, field
@@ -105,6 +105,11 @@ class CodecZenohHello:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
+        if (l & 0x01) != 0:
+            if self.locators is None:
+                raise PresentIfMismatch("locators")
+        elif self.locators is not None:
+            raise PresentIfMismatch("locators")
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

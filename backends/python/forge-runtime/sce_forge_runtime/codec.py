@@ -80,10 +80,11 @@ class LengthOutOfRange(CodecError):
 
 
 class PresentIfMismatch(CodecError):
-    """Raised by an encode when a field gated by a chain-membership
-    ``sce:present-if`` (``<chain>.has(<value>)``) was given while the
+    """Raised by an encode when a field gated by a ``sce:present-if`` the
+    codec cannot derive (a chain-membership test, a flag input the caller
+    gives, a disjunction, a flag wider than one bit) was given while the
     predicate says it does not belong on the wire, or left out while it
-    does. The chain and the field contradict each other; the encode
+    does. The predicate and the field contradict each other; the encode
     refuses before writing the first byte, so the sink is untouched.
     The argument names the field."""
 

@@ -58,10 +58,11 @@ var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 var ErrBufferOverflow = errors.New("sce/codec: buffer overflow")
 
 // ErrPresentIfMismatch is returned by Encode when a field gated by a
-// chain-membership `sce:present-if` (`<chain>.has(<value>)`) was given while
-// the predicate says it does not belong on the wire, or left out while it
-// does. The chain and the field contradict each other; Encode refuses before
-// writing the first byte, so the sink is untouched.
+// `sce:present-if` the codec cannot derive (a chain-membership test, a flag
+// input the caller gives, a disjunction, a flag wider than one bit) was given
+// while the predicate says it does not belong on the wire, or left out while
+// it does. The predicate and the field contradict each other; Encode refuses
+// before writing the first byte, so the sink is untouched.
 var ErrPresentIfMismatch = errors.New("sce/codec: present-if mismatch")
 
 // ErrUndeclaredEnumValue is returned by Decode when an enum-typed field

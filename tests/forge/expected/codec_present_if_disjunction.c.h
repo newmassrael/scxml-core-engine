@@ -65,6 +65,9 @@ static inline sce_forge_codec_status_t codec_present_if_disjunction_decode(sce_f
  * `codec_present_if_disjunction_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_present_if_disjunction_encode(const codec_present_if_disjunction_t *self, sce_forge_writer_t *w) {
+    if ((self->flags & 0x01) != 0 || (self->flags & 0x02) != 0) {
+        if (!self->seq.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->seq.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

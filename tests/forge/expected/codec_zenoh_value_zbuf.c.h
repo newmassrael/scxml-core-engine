@@ -140,6 +140,15 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
 static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_encode(const codec_zenoh_value_zbuf_t *self, sce_forge_writer_t *w, uint8_t after_shm) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)after_shm;
+    if ((after_shm & 0x01) == 0) {
+        if (!self->value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if ((after_shm & 0x01) != 0) {
+        if (!self->encoding.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->encoding.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if ((after_shm & 0x01) != 0) {
+        if (!self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */

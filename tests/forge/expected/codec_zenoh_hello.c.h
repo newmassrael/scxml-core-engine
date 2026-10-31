@@ -109,6 +109,9 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
 static inline sce_forge_codec_status_t codec_zenoh_hello_encode(const codec_zenoh_hello_t *self, sce_forge_writer_t *w, uint8_t l) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)l;
+    if ((l & 0x01) != 0) {
+        if (!self->locators.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->locators.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */

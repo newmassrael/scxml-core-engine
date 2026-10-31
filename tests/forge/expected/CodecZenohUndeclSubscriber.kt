@@ -30,6 +30,9 @@ data class CodecZenohUndeclSubscriber(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, Z: UByte): CodecError? {
+        if ((Z.toInt() and 0x01) != 0) {
+            if (this.ext_keyexpr == null) return CodecError.PresentIfMismatch
+        } else if (this.ext_keyexpr != null) return CodecError.PresentIfMismatch
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -46,12 +49,15 @@ data class CodecZenohUndeclSubscriber(
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
+    /// `null` when `encode` refuses a message whose gated field and the
+    /// `sce:present-if` that gates it contradict each other
+    /// (`CodecError.PresentIfMismatch`).
     /// Callers targeting zero-alloc hot paths should call `encode`
     /// directly against a caller-owned sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(Z: UByte): ByteArray {
+    fun encodeToByteArray(Z: UByte): ByteArray? {
         val _list = mutableListOf<Byte>()
-        encode(MutableListSink(_list), Z)
+        if (encode(MutableListSink(_list), Z) != null) return null
         return _list.toByteArray()
     }
 

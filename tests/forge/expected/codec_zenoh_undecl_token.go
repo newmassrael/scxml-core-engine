@@ -56,6 +56,13 @@ func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, Z byte) (*CodecZenohUn
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohUndeclToken) Encode(w codec.SceSink, Z byte) error {
+	if (Z & 0x01) != 0 {
+		if !s.ExtKeyexpr.IsPresent() {
+			return codec.ErrPresentIfMismatch
+		}
+	} else if s.ExtKeyexpr.IsPresent() {
+		return codec.ErrPresentIfMismatch
+	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -77,11 +84,15 @@ func (s *CodecZenohUndeclToken) Encode(w codec.SceSink, Z byte) error {
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice.
-// Callers targeting zero-alloc hot paths should call Encode directly
-// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
-func (s *CodecZenohUndeclToken) EncodeToBytes(Z byte) []byte {
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses a message with when a field's presence disagrees
+// with the `sce:present-if` that gates it (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *CodecZenohUndeclToken) EncodeToBytes(Z byte) ([]byte, error) {
 	_dst := make([]byte, 0, 261)
-	_ = s.Encode(codec.NewBytesSink(&_dst), Z)
-	return _dst
+	if err := s.Encode(codec.NewBytesSink(&_dst), Z); err != nil {
+		return nil, err
+	}
+	return _dst, nil
 }

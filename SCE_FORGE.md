@@ -1272,9 +1272,14 @@ that returned bytes outright (`encode_to_vec` and kin) return a `Result`, an
 `optional`, a `([]byte, error)` or `null` for a codec such a predicate gates,
 and are unchanged for every other codec.
 
-C11 has no wrapper that says a field was given: there the predicate alone
-decides what `encode` writes, as a flag does, and there is no mismatch to
-refuse.
+The same check is made for every gate the encoder cannot derive a flag from,
+not only a chain's: a flag input the caller supplies, a disjunction, a flag
+wider than one bit. A field gated on one flag of a carrier field of the codec
+is not checked, because the carrier is a field of the value being encoded and
+the encoder is given it as it is.
+
+C11 holds a gated field in the optional value of its element, so it makes the
+same check and refuses with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`.
 
 A chain that ends only when the frame does (`terminate-on` not `entry-flag`)
 leaves nothing after it to gate, so `entry-id` on one is refused — unless it has

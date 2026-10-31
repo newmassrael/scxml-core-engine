@@ -9212,7 +9212,8 @@ fn render_codec(
     // byte-stable. `encode_can_refuse` makes the infallible-looking facades
     // (`encode_to_vec` and kin) fallible for that codec alone.
     let (present_if_encode_prologue, encode_can_refuse) = if field_encode_blocks {
-        present_if_chain_encode_prologue(&m.fields, &chain_masks, lang)
+        let roles = crate::forge::codec_roles::classify(m, imports);
+        present_if_chain_encode_prologue(&m.fields, &chain_masks, &roles.checks, lang)
     } else {
         (String::new(), false)
     };
@@ -17865,18 +17866,6 @@ fn chain_has_values(fields: &[CodecField], chain_id: &str) -> Vec<u64> {
     values
 }
 
-/// Whether any clause of `pred` (its `||` tail included) is a chain test.
-fn present_if_has_chain_clause(pred: &PresentIfPredicate) -> bool {
-    let mut clause = Some(pred);
-    while let Some(p) = clause {
-        if p.scope == PresentIfScope::Chain {
-            return true;
-        }
-        clause = p.or_with.as_deref();
-    }
-    false
-}
-
 /// The boolean local holding "the chain has an entry with this identifier".
 /// Leading underscore: it is only read when some field is gated on it, and
 /// every backend that warns about an unused local exempts that spelling.
@@ -18440,15 +18429,25 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
 /// whichever the encoder wrote, the peer would read the other. It is refused
 /// before the first byte is written, so a refusal leaves the sink untouched.
 ///
+/// The same check is made for every gate the codec cannot derive a flag from
+/// (`checks`, from `codec_roles::classify`): a flag input the caller supplies,
+/// a disjunction, a flag wider than one bit. A field gated on one flag of a
+/// carrier field is not checked: there the encoder is given the carrier as a
+/// field of the value, and a carrier that disagrees with the field it gates is
+/// a different relation, which only a source that derives the flag can remove.
+/// The Rust encoder refuses the same set (`rust_source::gate_checks`), and
+/// `codec_totality` counts it among the reasons an encode may fail.
+///
 /// C11 holds a gated field in the optional value of its element, so it makes the
 /// same check and refuses with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`.
 ///
 /// Returns the text (each line indented and newline-terminated, empty when no
-/// predicate of the codec reads a chain) and whether `encode` can now refuse
+/// gate of the codec is one of those) and whether `encode` can now refuse
 /// — which makes its `encode_to_vec`-style facade fallible.
 fn present_if_chain_encode_prologue(
     fields: &[CodecField],
     masks: &ChainIdentifierMasks,
+    checks: &[crate::forge::codec_roles::Check],
     lang: crate::generator::Language,
 ) -> (String, bool) {
     let indent = encode_body_indent(lang);
@@ -18464,22 +18463,24 @@ fn present_if_chain_encode_prologue(
             ));
         }
     }
-    if lines.is_empty() {
-        return (String::new(), false);
-    }
+    let mut refuses = false;
     for field in fields {
         let Some(pred) = field.present_if.as_ref() else {
             continue;
         };
-        if !present_if_has_chain_clause(pred) {
+        if !checks.iter().any(|check| check.field == field.id) {
             continue;
         }
+        refuses = true;
         let test = present_if_test_literal_encode(fields, pred, lang);
         let (given, absent) = gated_field_presence(field, lang);
         let refuse = present_if_mismatch_stmt(&field.id, lang);
         lines.extend(present_if_mismatch_check(
             &test, &given, &absent, &refuse, lang,
         ));
+    }
+    if !refuses {
+        return (String::new(), false);
     }
     let text = lines
         .iter()

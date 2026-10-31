@@ -104,6 +104,9 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_decode(sce_forge_cur
  * `codec_zenoh_interest_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_interest_encode(const codec_zenoh_interest_t *self, sce_forge_writer_t *w) {
+    if ((self->header & 0x20) != 0 || (self->header & 0x40) != 0) {
+        if (!self->body.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->body.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */

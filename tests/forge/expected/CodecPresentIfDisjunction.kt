@@ -54,6 +54,9 @@ data class CodecPresentIfDisjunction(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
+        if ((this.flags.toInt() and 0x01) != 0 || (this.flags.toInt() and 0x02) != 0) {
+            if (this.seq == null) return CodecError.PresentIfMismatch
+        } else if (this.seq != null) return CodecError.PresentIfMismatch
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -71,12 +74,15 @@ data class CodecPresentIfDisjunction(
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
+    /// `null` when `encode` refuses a message whose gated field and the
+    /// `sce:present-if` that gates it contradict each other
+    /// (`CodecError.PresentIfMismatch`).
     /// Callers targeting zero-alloc hot paths should call `encode`
     /// directly against a caller-owned sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray {
+    fun encodeToByteArray(): ByteArray? {
         val _list = mutableListOf<Byte>()
-        encode(MutableListSink(_list))
+        if (encode(MutableListSink(_list)) != null) return null
         return _list.toByteArray()
     }
 

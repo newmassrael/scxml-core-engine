@@ -179,14 +179,8 @@ struct CodecChainHasEnvelope {
             }
         }
         if (!_has_extensions_2) {
-            if (!payload_len.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        } else if (payload_len.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        if (!_has_extensions_2) {
             if (!payload.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         } else if (payload.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        if (_has_extensions_2) {
-            if (!slice_count.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        } else if (slice_count.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         if (_has_extensions_2) {
             if (!slices.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         } else if (slices.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
@@ -227,8 +221,9 @@ struct CodecChainHasEnvelope {
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
     /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses a message whose chain and a gated field contradict each
-    /// other (`CodecError::PresentIfMismatch`). Callers targeting
+    /// refuses a message whose gated field and the `sce:present-if` that
+    /// gates it contradict each other (`CodecError::PresentIfMismatch`).
+    /// Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
     /// caller-owned sink.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {

@@ -81,6 +81,12 @@ static inline sce_forge_codec_status_t codec_init_syn_body_decode(sce_forge_curs
 static inline sce_forge_codec_status_t codec_init_syn_body_encode(const codec_init_syn_body_t *self, sce_forge_writer_t *w, uint8_t s) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)s;
+    if ((s & 0x01) != 0) {
+        if (!self->sn_res.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->sn_res.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if ((s & 0x01) != 0) {
+        if (!self->batch_size.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->batch_size.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

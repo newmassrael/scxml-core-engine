@@ -59,6 +59,15 @@ data class CodecChainPrevEntry(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, afterMarker: UByte, tagged: UByte): CodecError? {
+        if ((afterMarker.toInt() and 0x01) == 0) {
+            if (this.short_value == null) return CodecError.PresentIfMismatch
+        } else if (this.short_value != null) return CodecError.PresentIfMismatch
+        if ((afterMarker.toInt() and 0x01) != 0) {
+            if (this.long_value == null) return CodecError.PresentIfMismatch
+        } else if (this.long_value != null) return CodecError.PresentIfMismatch
+        if ((tagged.toInt() and 0x01) != 0) {
+            if (this.tag == null) return CodecError.PresentIfMismatch
+        } else if (this.tag != null) return CodecError.PresentIfMismatch
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -82,12 +91,15 @@ data class CodecChainPrevEntry(
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
+    /// `null` when `encode` refuses a message whose gated field and the
+    /// `sce:present-if` that gates it contradict each other
+    /// (`CodecError.PresentIfMismatch`).
     /// Callers targeting zero-alloc hot paths should call `encode`
     /// directly against a caller-owned sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(afterMarker: UByte, tagged: UByte): ByteArray {
+    fun encodeToByteArray(afterMarker: UByte, tagged: UByte): ByteArray? {
         val _list = mutableListOf<Byte>()
-        encode(MutableListSink(_list), afterMarker, tagged)
+        if (encode(MutableListSink(_list), afterMarker, tagged) != null) return null
         return _list.toByteArray()
     }
 

@@ -169,6 +169,15 @@ struct CodecZenohInitBody {
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t s, std::uint8_t a) const noexcept {
         (void)s;
         (void)a;
+        if ((s & 0x01) != 0) {
+            if (!sn_res.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        } else if (sn_res.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        if ((s & 0x01) != 0) {
+            if (!batch_size.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        } else if (batch_size.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        if ((a & 0x01) != 0) {
+            if (!cookie.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
+        } else if (cookie.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -202,13 +211,19 @@ struct CodecZenohInitBody {
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
-    /// paths should call `encode` directly against a caller-owned sink.
-    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec(std::uint8_t s, std::uint8_t a) const {
+    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
+    /// refuses a message whose gated field and the `sce:present-if` that
+    /// gates it contradict each other (`CodecError::PresentIfMismatch`).
+    /// Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec(std::uint8_t s, std::uint8_t a) const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        (void)encode(_sce_sink, s, a);
+        if (encode(_sce_sink, s, a)) {
+            return std::nullopt;
+        }
         return _sce_v;
     }
 };

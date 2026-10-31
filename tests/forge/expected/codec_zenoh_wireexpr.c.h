@@ -113,6 +113,9 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_decode(sce_forge_cur
 static inline sce_forge_codec_status_t codec_zenoh_wireexpr_encode(const codec_zenoh_wireexpr_t *self, sce_forge_writer_t *w, uint8_t n) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)n;
+    if ((n & 0x01) != 0) {
+        if (!self->suffix.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->suffix.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */

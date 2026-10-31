@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TlvChainOverflow
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_interest_body import CodecZenohInterestBody
 
@@ -128,6 +128,11 @@ class CodecZenohInterest:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
+        if (self.header & 0x20) != 0 or (self.header & 0x40) != 0:
+            if self.body is None:
+                raise PresentIfMismatch("body")
+        elif self.body is not None:
+            raise PresentIfMismatch("body")
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

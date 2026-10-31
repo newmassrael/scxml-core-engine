@@ -137,20 +137,10 @@ class CodecChainHasEnvelope:
         :class:`BytearraySink`) are effectively infallible."""
         _has_extensions_2 = self.extensions is not None and any(_e.ext_id() == 2 for _e in self.extensions)
         if not _has_extensions_2:
-            if self.payload_len is None:
-                raise PresentIfMismatch("payload_len")
-        elif self.payload_len is not None:
-            raise PresentIfMismatch("payload_len")
-        if not _has_extensions_2:
             if self.payload is None:
                 raise PresentIfMismatch("payload")
         elif self.payload is not None:
             raise PresentIfMismatch("payload")
-        if _has_extensions_2:
-            if self.slice_count is None:
-                raise PresentIfMismatch("slice_count")
-        elif self.slice_count is not None:
-            raise PresentIfMismatch("slice_count")
         if _has_extensions_2:
             if self.slices is None:
                 raise PresentIfMismatch("slices")

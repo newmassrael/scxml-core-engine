@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -70,6 +70,11 @@ class CodecZenohWireexpr:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
+        if (n & 0x01) != 0:
+            if self.suffix is None:
+                raise PresentIfMismatch("suffix")
+        elif self.suffix is not None:
+            raise PresentIfMismatch("suffix")
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
 from .codec_zenoh_value_slice import CodecZenohValueSlice
 
 from dataclasses import dataclass, field
@@ -86,6 +86,21 @@ class CodecZenohValueZbuf:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
+        if (after_shm & 0x01) == 0:
+            if self.value is None:
+                raise PresentIfMismatch("value")
+        elif self.value is not None:
+            raise PresentIfMismatch("value")
+        if (after_shm & 0x01) != 0:
+            if self.encoding is None:
+                raise PresentIfMismatch("encoding")
+        elif self.encoding is not None:
+            raise PresentIfMismatch("encoding")
+        if (after_shm & 0x01) != 0:
+            if self.slices is None:
+                raise PresentIfMismatch("slices")
+        elif self.slices is not None:
+            raise PresentIfMismatch("slices")
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

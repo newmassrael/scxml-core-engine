@@ -168,14 +168,8 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_encode(const codec
         }
     }
     if (!_has_extensions_18) {
-        if (!self->payload_len.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->payload_len.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    if (!_has_extensions_18) {
         if (!self->payload.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     } else if (self->payload.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    if (_has_extensions_18) {
-        if (!self->slice_count.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
-    } else if (self->slice_count.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     if (_has_extensions_18) {
         if (!self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     } else if (self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;

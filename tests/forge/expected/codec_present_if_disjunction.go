@@ -98,6 +98,13 @@ func (s *CodecPresentIfDisjunction) SetWantsB(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecPresentIfDisjunction) Encode(w codec.SceSink) error {
+	if (s.Flags & 0x01) != 0 || (s.Flags & 0x02) != 0 {
+		if !s.Seq.IsPresent() {
+			return codec.ErrPresentIfMismatch
+		}
+	} else if s.Seq.IsPresent() {
+		return codec.ErrPresentIfMismatch
+	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -122,11 +129,15 @@ func (s *CodecPresentIfDisjunction) Encode(w codec.SceSink) error {
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice.
-// Callers targeting zero-alloc hot paths should call Encode directly
-// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
-func (s *CodecPresentIfDisjunction) EncodeToBytes() []byte {
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses a message with when a field's presence disagrees
+// with the `sce:present-if` that gates it (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *CodecPresentIfDisjunction) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 3)
-	_ = s.Encode(codec.NewBytesSink(&_dst))
-	return _dst
+	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
+		return nil, err
+	}
+	return _dst, nil
 }

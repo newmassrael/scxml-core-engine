@@ -81,6 +81,12 @@ static inline sce_forge_codec_status_t codec_chain_flag_entry_decode(sce_forge_c
 static inline sce_forge_codec_status_t codec_chain_flag_entry_encode(const codec_chain_flag_entry_t *self, sce_forge_writer_t *w, uint8_t wide) {
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)wide;
+    if ((wide & 0x01) == 0) {
+        if (!self->short_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->short_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if ((wide & 0x01) != 0) {
+        if (!self->long_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->long_value.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated

@@ -124,6 +124,27 @@ func (s *CodecChainPrevEntry) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecChainPrevEntry) Encode(w codec.SceSink, afterMarker byte, tagged byte) error {
+	if (afterMarker & 0x01) == 0 {
+		if !s.ShortValue.IsPresent() {
+			return codec.ErrPresentIfMismatch
+		}
+	} else if s.ShortValue.IsPresent() {
+		return codec.ErrPresentIfMismatch
+	}
+	if (afterMarker & 0x01) != 0 {
+		if !s.LongValue.IsPresent() {
+			return codec.ErrPresentIfMismatch
+		}
+	} else if s.LongValue.IsPresent() {
+		return codec.ErrPresentIfMismatch
+	}
+	if (tagged & 0x01) != 0 {
+		if !s.Tag.IsPresent() {
+			return codec.ErrPresentIfMismatch
+		}
+	} else if s.Tag.IsPresent() {
+		return codec.ErrPresentIfMismatch
+	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -160,11 +181,15 @@ func (s *CodecChainPrevEntry) Encode(w codec.SceSink, afterMarker byte, tagged b
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice.
-// Callers targeting zero-alloc hot paths should call Encode directly
-// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
-func (s *CodecChainPrevEntry) EncodeToBytes(afterMarker byte, tagged byte) []byte {
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses a message with when a field's presence disagrees
+// with the `sce:present-if` that gates it (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *CodecChainPrevEntry) EncodeToBytes(afterMarker byte, tagged byte) ([]byte, error) {
 	_dst := make([]byte, 0, 5)
-	_ = s.Encode(codec.NewBytesSink(&_dst), afterMarker, tagged)
-	return _dst
+	if err := s.Encode(codec.NewBytesSink(&_dst), afterMarker, tagged); err != nil {
+		return nil, err
+	}
+	return _dst, nil
 }
