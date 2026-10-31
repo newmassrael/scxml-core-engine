@@ -340,6 +340,21 @@ pub enum CodecZenohRequestVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, 
     Default { tag: CodecZenohRequestUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, D: ?Sized> CodecZenohRequestVariantSource<'s, A0, A1, A2, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohMsgPut(_) => 1,
+            Self::CodecZenohMsgDel(_) => 2,
+            Self::CodecZenohQuery(_) => 3,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 /// Flags of `CodecZenohRequest` a parent sets in place of the ones a value presents:
 /// the end flag of a chain whose entries are `CodecZenohRequest`, which the chain
 /// derives from where an entry stands.
@@ -501,6 +516,11 @@ impl<'a> CodecZenohRequest<'a> {
     /// only error is the sink's (docs/adr/0065).
     pub fn encode_source<S: CodecZenohRequestSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
+    }
+
+    /// The tag of the arm `src` holds ([`CodecZenohRequestVariantSource::tag`]).
+    pub fn tag_of<S: CodecZenohRequestSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.

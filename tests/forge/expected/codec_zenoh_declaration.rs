@@ -333,6 +333,27 @@ pub enum CodecZenohDeclarationVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Siz
     Default { tag: CodecZenohDeclarationUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, A7: ?Sized, A8: ?Sized, D: ?Sized> CodecZenohDeclarationVariantSource<'s, A0, A1, A2, A3, A4, A5, A6, A7, A8, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohDeclKexpr(_) => 0,
+            Self::CodecZenohUndeclKexpr(_) => 1,
+            Self::CodecZenohDeclSubscriber(_) => 2,
+            Self::CodecZenohUndeclSubscriber(_) => 3,
+            Self::CodecZenohDeclQueryable(_) => 4,
+            Self::CodecZenohUndeclQueryable(_) => 5,
+            Self::CodecZenohDeclToken(_) => 6,
+            Self::CodecZenohUndeclToken(_) => 7,
+            Self::CodecZenohDeclFinal(_) => 26,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 /// Flags of `CodecZenohDeclaration` a parent sets in place of the ones a value presents:
 /// the end flag of a chain whose entries are `CodecZenohDeclaration`, which the chain
 /// derives from where an entry stands.
@@ -473,6 +494,11 @@ impl<'a> CodecZenohDeclaration<'a> {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecZenohDeclarationVariantSource::tag`]).
+    pub fn tag_of<S: CodecZenohDeclarationSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
@@ -483,18 +509,7 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclarationOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _d_header_mid: u8 = match src.body() {
-            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_) => 0,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_) => 1,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_) => 2,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_) => 3,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_) => 4,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_) => 5,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_) => 6,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_) => 7,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_) => 26,
-            CodecZenohDeclarationVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_header_mid: u8 = src.body().tag();
         let _o_d_header_n_arm: Option<usize> = match src.body() {
             CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => Some(usize::from(CodecZenohDeclKexpr::input_n(_b))),
             CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => Some(usize::from(CodecZenohDeclSubscriber::input_n(_b))),

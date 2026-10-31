@@ -216,6 +216,20 @@ pub enum CodecVariantDispatchVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized
     Default { tag: CodecVariantDispatchUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> CodecVariantDispatchVariantSource<'s, A0, A1, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecVariantSessionOpen(_) => 1,
+            Self::CodecVariantSessionClose(_) => 2,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantDispatch` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecVariantDispatch`
@@ -282,14 +296,15 @@ impl CodecVariantDispatch {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecVariantDispatchVariantSource::tag`]).
+    pub fn tag_of<S: CodecVariantDispatchSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecVariantDispatchSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
-        let _d_msg_id: u8 = match src.body() {
-            CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_) => 1,
-            CodecVariantDispatchVariantSource::CodecVariantSessionClose(_) => 2,
-            CodecVariantDispatchVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_msg_id: u8 = src.body().tag();
         w.write_u8(_d_msg_id)?;
         match src.body() {
             CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_b) => CodecVariantSessionOpen::write_source(_b, w)?,

@@ -219,6 +219,20 @@ pub enum CodecOriginChoiceVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
     Default { tag: CodecOriginChoiceUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> CodecOriginChoiceVariantSource<'s, A0, A1, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecOriginLeaf(_) => 1,
+            Self::CodecOriginScalar(_) => 2,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecOriginChoice` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecOriginChoice`
@@ -296,14 +310,15 @@ impl<'a> CodecOriginChoice<'a> {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecOriginChoiceVariantSource::tag`]).
+    pub fn tag_of<S: CodecOriginChoiceSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecOriginChoiceSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _d_tag: u8 = match src.body() {
-            CodecOriginChoiceVariantSource::CodecOriginLeaf(_) => 1,
-            CodecOriginChoiceVariantSource::CodecOriginScalar(_) => 2,
-            CodecOriginChoiceVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_tag: u8 = src.body().tag();
         w.write_u8(_d_tag)?;
         match src.body() {
             CodecOriginChoiceVariantSource::CodecOriginLeaf(_b) => CodecOriginLeaf::write_source(_b, w)?,

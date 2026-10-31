@@ -266,6 +266,25 @@ pub enum CodecZenohNetworkEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: 
     Default { tag: CodecZenohNetworkEnvelopeUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, D: ?Sized> CodecZenohNetworkEnvelopeVariantSource<'s, A0, A1, A2, A3, A4, A5, A6, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohInterest(_) => 25,
+            Self::CodecZenohResponseFinal(_) => 26,
+            Self::CodecZenohResponse(_) => 27,
+            Self::CodecZenohRequest(_) => 28,
+            Self::CodecZenohPush(_) => 29,
+            Self::CodecZenohDeclare(_) => 30,
+            Self::CodecZenohOam(_) => 31,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohNetworkEnvelope` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecZenohNetworkEnvelope`
@@ -361,6 +380,11 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     pub fn encode_source<S: CodecZenohNetworkEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
         Self::count_source(src)?;
         Self::write_source(src, w)
+    }
+
+    /// The tag of the arm `src` holds ([`CodecZenohNetworkEnvelopeVariantSource::tag`]).
+    pub fn tag_of<S: CodecZenohNetworkEnvelopeSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.

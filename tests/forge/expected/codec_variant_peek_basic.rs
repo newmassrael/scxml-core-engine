@@ -168,6 +168,19 @@ pub enum CodecVariantPeekBasicVariantSource<'s, A0: ?Sized, A1: ?Sized> {
     CodecPeekArmB(&'s A1),
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized> CodecVariantPeekBasicVariantSource<'s, A0, A1> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecPeekArmA(_) => 0,
+            Self::CodecPeekArmB(_) => 1,
+        }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantPeekBasic` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecVariantPeekBasic`
@@ -228,6 +241,11 @@ impl CodecVariantPeekBasic {
     /// only error is the sink's (docs/adr/0065).
     pub fn encode_source<S: CodecVariantPeekBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
+    }
+
+    /// The tag of the arm `src` holds ([`CodecVariantPeekBasicVariantSource::tag`]).
+    pub fn tag_of<S: CodecVariantPeekBasicSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.

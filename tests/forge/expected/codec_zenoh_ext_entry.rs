@@ -272,6 +272,21 @@ pub enum CodecZenohExtEntryVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized,
     Default { tag: CodecZenohExtEntryUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, D: ?Sized> CodecZenohExtEntryVariantSource<'s, A0, A1, A2, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohExtUnit(_) => 0,
+            Self::CodecZenohExtZint(_) => 1,
+            Self::CodecZenohExtZbuf(_) => 2,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 /// Flags of `CodecZenohExtEntry` a parent sets in place of the ones a value presents:
 /// the end flag of a chain whose entries are `CodecZenohExtEntry`, which the chain
 /// derives from where an entry stands.
@@ -395,6 +410,11 @@ impl<'a> CodecZenohExtEntry<'a> {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecZenohExtEntryVariantSource::tag`]).
+    pub fn tag_of<S: CodecZenohExtEntrySource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohExtEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
@@ -405,12 +425,7 @@ impl<'a> CodecZenohExtEntry<'a> {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohExtEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohExtEntryOverrides) -> Result<(), K::Error> {
-        let _d_header_enc: u8 = match src.body() {
-            CodecZenohExtEntryVariantSource::CodecZenohExtUnit(_) => 0,
-            CodecZenohExtEntryVariantSource::CodecZenohExtZint(_) => 1,
-            CodecZenohExtEntryVariantSource::CodecZenohExtZbuf(_) => 2,
-            CodecZenohExtEntryVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_header_enc: u8 = src.body().tag();
         let mut _c_header: u8 = (src.header() & !0x60) | (_d_header_enc << 5);
         if let Some(_o) = over.header_m {
             _c_header = (_c_header & !0x10) | (u8::from(_o) << 4);

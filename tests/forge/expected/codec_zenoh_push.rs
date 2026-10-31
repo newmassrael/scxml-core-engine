@@ -246,6 +246,19 @@ pub enum CodecZenohPushVariantSource<'s, A0: ?Sized, D: ?Sized> {
     Default { tag: CodecZenohPushUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, D: ?Sized> CodecZenohPushVariantSource<'s, A0, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohPushBody(_) => 29,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohPush` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecZenohPush`
@@ -322,13 +335,15 @@ impl CodecZenohPush {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecZenohPushVariantSource::tag`]).
+    pub fn tag_of<S: CodecZenohPushSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohPushSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
-        let _d_header_mid: u8 = match src.body() {
-            CodecZenohPushVariantSource::CodecZenohPushBody(_) => 29,
-            CodecZenohPushVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_header_mid: u8 = src.body().tag();
         let _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         w.write_u8(_c_header)?;
         match src.body() {

@@ -315,6 +315,25 @@ pub enum CodecTransportEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Si
     Default { tag: CodecTransportEnvelopeUnknownTag, body: &'s D },
 }
 
+impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, D: ?Sized> CodecTransportEnvelopeVariantSource<'s, A0, A1, A2, A3, A4, A5, A6, D> {
+    /// The tag of the arm this is: the value the document gives a known
+    /// arm, and the tag a default arm holds. It is the tag the encode
+    /// writes, or the one a caller hands the decode for a variant whose
+    /// wire form carries none.
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::CodecZenohInitBody(_) => 1,
+            Self::CodecZenohOpenBody(_) => 2,
+            Self::CodecZenohClose(_) => 3,
+            Self::CodecZenohKeepAlive(_) => 4,
+            Self::CodecZenohFrame(_) => 5,
+            Self::CodecZenohFragment(_) => 6,
+            Self::CodecZenohJoin(_) => 7,
+            Self::Default { tag, .. } => tag.get(),
+        }
+    }
+}
+
 /// Flags of `CodecTransportEnvelope` a parent sets in place of the ones a value presents:
 /// the end flag of a chain whose entries are `CodecTransportEnvelope`, which the chain
 /// derives from where an entry stands.
@@ -455,6 +474,11 @@ impl<'a> CodecTransportEnvelope<'a> {
         Self::write_source(src, w)
     }
 
+    /// The tag of the arm `src` holds ([`CodecTransportEnvelopeVariantSource::tag`]).
+    pub fn tag_of<S: CodecTransportEnvelopeSource + ?Sized>(src: &S) -> u8 {
+        src.body().tag()
+    }
+
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
@@ -465,16 +489,7 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecTransportEnvelopeOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _d_header_mid: u8 = match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_) => 1,
-            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_) => 2,
-            CodecTransportEnvelopeVariantSource::CodecZenohClose(_) => 3,
-            CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_) => 4,
-            CodecTransportEnvelopeVariantSource::CodecZenohFrame(_) => 5,
-            CodecTransportEnvelopeVariantSource::CodecZenohFragment(_) => 6,
-            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_) => 7,
-            CodecTransportEnvelopeVariantSource::Default { tag, .. } => tag.get(),
-        };
+        let _d_header_mid: u8 = src.body().tag();
         let _o_d_header_a_arm: Option<usize> = match src.body() {
             CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(CodecZenohInitBody::input_a(_b))),
             CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => Some(usize::from(CodecZenohOpenBody::input_a(_b))),
