@@ -21,7 +21,7 @@
 //
 // Operations (from `broadcastlog`, typed here over the element):
 {% if context.present %}
-//   Publish(publisher, &element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) (uint64, error)
+//   Publish(publisher, &element{% if context.flags %}, flags{% endif %}) (uint64, error)
 //                          wait-free; the entry's sequence number
 //   Read(log, &reader) (broadcastlog.Read, *{{ pascal }}Item, error)
 //                          wait-free; the item is set only when the answer is
@@ -40,9 +40,16 @@
 {% if context.present %}
 //
 // The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
-// part of the entry: Publish takes them, the log stores them in the entry's context
-// words beside the bytes, and the item Read returns holds them, so every reader decodes
-// an entry under what it was published under (ADR 0062 section 4).
+// part of the entry: the log stores them in the entry's context words beside the bytes,
+// so every reader decodes an entry under what it was published under (ADR 0062 section 4).
+{% if context.flags %}
+// Publish takes the flags, and the item Read returns holds them.
+{% endif %}
+{% if context.has_tag %}
+// The tag is not given: it is the tag of the arm the element holds, `element.Tag()`, so
+// a publisher cannot give a tag that disagrees with the element, and the element Read
+// returns reports the same tag through its own Tag().
+{% endif %}
 {% endif %}
 
 package {{ package }}
@@ -107,15 +114,12 @@ type {{ pascal }}Flags struct {
 
 {% endif %}
 {% if context.present %}
-// {{ pascal }}Item is an entry that was read: the element decoded, with what it was
-// published under.
+// {{ pascal }}Item is an entry that was read: the element decoded{% if context.flags %}, with the flags it was
+// published under{% endif %}.
 type {{ pascal }}Item struct {
 	Element *{{ element_qualified }}
 {% if context.flags %}
 	Flags   {{ pascal }}Flags
-{% endif %}
-{% if context.has_tag %}
-	Tag     byte
 {% endif %}
 }
 
@@ -140,12 +144,22 @@ func flagInput(on bool) byte {
 // published: an entry is never a truncated element.
 {% if context.present %}
 //
-// {% if context.flags %}flags are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}tag is the variant tag its decode takes{% endif %}:
-// they are encoded under here and stored in the entry's context words, so that every
-// reader decodes the entry under what it was published under. The log does not check that
-// {% if context.has_tag %}tag is the tag of the arm element holds{% else %}the flags agree with element{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% if context.flags %}
+// flags are what the element's codec takes from its caller as flag inputs: they are
+// encoded under here and stored in the entry's context words, so that every reader
+// decodes the entry under what it was published under. The log does not check that
+// the flags agree with element; the publisher gives what it knows, as every caller of
+// this codec does.
 {% endif %}
-func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}{% if context.flags %}, flags {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag byte{% endif %}) (uint64, error) {
+{% if context.has_tag %}
+// The variant tag its decode takes is not a parameter: it is the tag of the arm element
+// holds, element.Tag(), stored in the entry's context words so that every reader decodes
+// the entry under it. A publisher cannot give a tag that disagrees with the element.
+// Tag panics for an element that holds no arm, which is the zero value and never a
+// value Decode returns.
+{% endif %}
+{% endif %}
+func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}{% if context.flags %}, flags {{ pascal }}Flags{% endif %}) (uint64, error) {
 	var buffer [MaxEncodedBytes]byte
 	sink := codec.NewBoundedSink(buffer[:])
 	if err := element.Encode(sink{% for flag in context.flags %}, flagInput(flags.{{ flag.pascal }}){% endfor %}); err != nil {
@@ -160,7 +174,7 @@ func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}
 	}
 {% endfor %}
 {% if context.has_tag %}
-	entry[1+{{ context.tag_word }}] = uint64(tag)
+	entry[1+{{ context.tag_word }}] = uint64(element.Tag())
 {% endif %}
 	for index, value := range buffer[:length] {
 		entry[{{ context.payload_start }}+index/8] |= uint64(value) << (8 * (index % 8))
@@ -174,8 +188,15 @@ func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}
 // what makes decoding it safe: a torn copy is ReadLagged, never decoded. The
 // item is returned only for ReadItem, and is nil for every other answer.
 //
-// The item holds {% if context.flags %}the flags{% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}the tag{% endif %} the entry was published under, read back from its
-// context words, and the element was decoded under them.
+{% if context.flags %}
+// The item holds the flags the entry was published under, read back from its context
+// words, and the element was decoded under them.
+{% endif %}
+{% if context.has_tag %}
+// The element was decoded under the tag read back from the entry's context words, and
+// the item carries no tag of its own: the element reports it through its Tag(), the
+// unknown tag it holds if it is a default arm.
+{% endif %}
 {% else %}
 // Read reads the entry at reader's cursor and decodes it. The runtime answers
 // ReadItem only after the copy it made was checked against the slot, which is
@@ -230,9 +251,6 @@ func Read(log *{{ pascal }}, reader *broadcastlog.Reader) (broadcastlog.Read, *{
 		Element: element,
 {% if context.flags %}
 		Flags:   flags,
-{% endif %}
-{% if context.has_tag %}
-		Tag:     tag,
 {% endif %}
 	}, nil
 {% else %}
