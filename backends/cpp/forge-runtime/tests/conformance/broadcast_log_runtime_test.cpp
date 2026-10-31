@@ -184,6 +184,118 @@ void a_readers_loss_is_the_sum_of_its_lags() {
     CHECK(reader.cursor() == 7 && reader.lost() == 7, "the loss is the sum, 7");
 }
 
+// A deferred reader has no cursor until its first read binds the oldest retained entry of the head that
+// read loads, so it is told of nothing the publisher did meanwhile; a reader opened at the oldest when
+// the log was empty is told of the lag.
+void a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing() {
+    Log log;
+    auto publisher = log.publisher();
+    // Both readers are opened on the empty log; then four entries (0 to 3) are published. The retention
+    // is 2, so the oldest retained is entry 2.
+    blog::Reader eager = log.reader_oldest();
+    blog::Reader deferred = log.reader_deferred();
+    CHECK(eager.is_bound(), "a reader opened at the oldest has its cursor");
+    CHECK(!deferred.is_bound(), "a deferred reader has no cursor yet");
+    CHECK(deferred.cursor() == 0, "no cursor yet reads as 0");
+    for (std::uint64_t n = 0; n < 4; ++n) {
+        publisher->publish(entry_of(n));
+    }
+    CHECK(read_into(log, eager).read == blog::Read::lagged(2),
+          "the eager reader holds 0, 4 behind, and is told it missed 2");
+    Got first = read_into(log, deferred);
+    CHECK(first.read == blog::Read::item(2) && first.words == entry_of(2),
+          "the deferred reader's first answer is the oldest retained entry");
+    CHECK(deferred.is_bound(), "the first read bound it");
+    CHECK(deferred.lost() == 0, "it was told of nothing");
+    CHECK(deferred.cursor() == 3, "and holds the entry after the one it read");
+    Got second = read_into(log, deferred);
+    CHECK(second.read == blog::Read::item(3) && second.words == entry_of(3), "then the next entry");
+    CHECK(read_into(log, deferred).read == blog::Read::empty(), "then the head");
+}
+
+// The consumer vector: three entries published, a reader opened each way, ten more published, retention 4.
+void a_deferred_reader_is_the_late_reader_of_a_ring_that_binds_at_its_first_poll() {
+    blog::BroadcastLog<3, 5> log;
+    auto publisher = log.publisher();
+    for (std::uint64_t n = 0; n < 3; ++n) {
+        publisher->publish(entry_of(n));
+    }
+    blog::Reader deferred = log.reader_deferred();
+    blog::Reader eager = log.reader_oldest();
+    for (std::uint64_t n = 3; n < 13; ++n) {
+        publisher->publish(entry_of(n));
+    }
+    blog::BroadcastLog<3, 5>::Entry out{};
+    // 13 published, retention 4: the oldest retained is 9.
+    CHECK(log.read(eager, out) == blog::Read::lagged(9), "the reader opened early is told of the lag first");
+    for (std::uint64_t seq = 9; seq < 13; ++seq) {
+        CHECK(log.read(deferred, out) == blog::Read::item(seq) && out == entry_of(seq),
+              "the deferred reader reads 9, 10, 11, 12 in order");
+    }
+    CHECK(log.read(deferred, out) == blog::Read::empty(), "and then the head");
+    CHECK(deferred.lost() == 0, "and was told of nothing");
+}
+
+void a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start() {
+    Log log;
+    auto publisher = log.publisher();
+    blog::Reader reader = log.reader_deferred();
+    CHECK(read_into(log, reader).read == blog::Read::empty(), "nothing is published, so the first read is empty");
+    CHECK(reader.is_bound(), "an empty first read still binds");
+    CHECK(reader.cursor() == 0, "to the start of the log");
+    publisher->publish(entry_of(0));
+    Got got = read_into(log, reader);
+    CHECK(got.read == blog::Read::item(0) && got.words == entry_of(0), "the first entry published is read from 0");
+}
+
+void a_deferred_reader_on_a_young_log_binds_to_entry_zero() {
+    Log log;
+    auto publisher = log.publisher();
+    publisher->publish(entry_of(0));
+    blog::Reader reader = log.reader_deferred();
+    Got got = read_into(log, reader);
+    CHECK(got.read == blog::Read::item(0) && got.words == entry_of(0),
+          "one entry of a retention of 2: the oldest is 0");
+    CHECK(reader.lost() == 0, "nothing was lost");
+}
+
+void a_deferred_reader_that_falls_behind_later_is_told_as_any_reader_is() {
+    Log log;
+    auto publisher = log.publisher();
+    for (std::uint64_t n = 0; n < 10; ++n) {
+        publisher->publish(entry_of(n));
+    }
+    blog::Reader reader = log.reader_deferred();
+    Got first = read_into(log, reader);
+    CHECK(first.read == blog::Read::item(8) && first.words == entry_of(8), "bound at the oldest of 10, which is 8");
+    for (std::uint64_t n = 10; n < 13; ++n) {
+        publisher->publish(entry_of(n));
+    }
+    // h = 13: the window is [11, 13), and the reader holds 9.
+    CHECK(read_into(log, reader).read == blog::Read::lagged(2), "two entries are gone");
+    CHECK(reader.cursor() == 11 && reader.lost() == 2, "the reader holds 11 and has lost 2");
+}
+
+// A copy of an unbound reader is a second unbound reader: it binds at its own first read.
+void a_copy_of_a_deferred_reader_binds_on_its_own() {
+    Log log;
+    auto publisher = log.publisher();
+    publisher->publish(entry_of(0));
+    blog::Reader reader = log.reader_deferred();
+    blog::Reader second = reader;
+    publisher->publish(entry_of(1));
+    publisher->publish(entry_of(2));
+    // h = 3: the oldest retained is 1.
+    Got first = read_into(log, reader);
+    CHECK(first.read == blog::Read::item(1) && first.words == entry_of(1), "the first reader binds at 1");
+    CHECK(!second.is_bound(), "reading with the first did not bind its copy");
+    publisher->publish(entry_of(3));
+    // h = 4: the oldest retained is 2.
+    Got other = read_into(log, second);
+    CHECK(other.read == blog::Read::item(2) && other.words == entry_of(2),
+          "the copy binds at its own first read, at 2");
+}
+
 // Two slots retain one entry: each publish overwrites the only other slot.
 void a_log_of_two_slots_retains_one_entry() {
     blog::BroadcastLog<3, 2> log;
@@ -356,6 +468,12 @@ int main() {
     there_is_one_publisher_and_its_successor_continues_the_sequence();
     publishing_past_the_window_keeps_the_newest_entries();
     a_readers_loss_is_the_sum_of_its_lags();
+    a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing();
+    a_deferred_reader_is_the_late_reader_of_a_ring_that_binds_at_its_first_poll();
+    a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start();
+    a_deferred_reader_on_a_young_log_binds_to_entry_zero();
+    a_deferred_reader_that_falls_behind_later_is_told_as_any_reader_is();
+    a_copy_of_a_deferred_reader_binds_on_its_own();
     a_log_of_two_slots_retains_one_entry();
     a_log_at_its_horizon_publishes_nothing_more();
     a_log_in_static_storage_is_constant_initialised_and_usable();
