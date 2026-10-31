@@ -17,6 +17,7 @@
     - evaluateGuard(_:engine:)          a `cond`, which raises error.execution when it cannot be run
     - evaluateIfCond(_:failed:engine:)  the same for an `<if>`, which also sets its caller's flag
     - assignData / executeScript        an `<assign>` and a `<script>`, run as the Lua they were lowered to
+    - logText(_:)                       the text a `<log expr>` shows, or nil when it cannot be run
 #}
 
     // ------------------------------------------------------------------
@@ -96,6 +97,19 @@
             return true
         } catch {
             return false
+        }
+    }
+
+    /// W3C SCXML 4.7: the text of an expression, already lowered to Lua, as ECMAScript converts a value
+    /// to a string, or nil when the expression cannot be run (the caller's `error.execution`).
+    private func logText(_ expression: String) -> String? {
+        do {
+            if case .string(let text) = try ensureLua().evaluate("_scxml_tostring(\(expression))", name: "=log") {
+                return text
+            }
+            return nil
+        } catch {
+            return nil
         }
     }
 

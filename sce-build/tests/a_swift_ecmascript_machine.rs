@@ -372,6 +372,41 @@ fn an_inline_script_is_lowered_to_lua_for_the_engine() {
     );
 }
 
+/// A `<log expr>` is lowered to Lua and shown as ECMAScript converts the value to a string; an
+/// expression that fails is an `error.execution` and ends the block, and a label alone is shown as
+/// it always was.
+#[test]
+fn a_log_expression_is_lowered_to_lua_and_shown_as_a_string() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <log label="count" expr="n + 1"/>
+      <log label="plain"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"if let logged = logText(""#),
+        "the expression is run by the engine: {machine}"
+    );
+    assert!(
+        machine.contains(r#"print("count: " + logged)"#),
+        "the label leads the value: {machine}"
+    );
+    assert!(
+        machine.contains("<log> expr failed to evaluate"),
+        "a failed expression is an error.execution: {machine}"
+    );
+    assert!(
+        machine.contains(r#"print("plain")"#),
+        "a label alone is printed as before: {machine}"
+    );
+}
+
 /// A top-level `<script>` runs once, at document load, after the data is declared.
 #[test]
 fn a_top_level_script_runs_at_load_after_the_data() {
@@ -464,13 +499,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
   <state id="s0"><onentry><foreach array="l" item="i"><raise event="e"/></foreach></onentry></state>"#,
             extra: &[],
             named: "<foreach>",
-        },
-        Refusal {
-            what: "a <log expr>",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<state id="s0"><onentry><log expr="'x'"/></onentry></state>"#,
-            extra: &[],
-            named: "<log>",
         },
         Refusal {
             what: "a <data src>",
