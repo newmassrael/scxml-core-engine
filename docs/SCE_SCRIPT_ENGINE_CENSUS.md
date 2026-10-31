@@ -98,10 +98,10 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 270
+engine-documents 274
 native-prefix-documents 2
-datamodel-variable-init 466
-transition-guard 251
+datamodel-variable-init 468
+transition-guard 256
 assign-action 404
 child-invoke-needs-script-engine 57
 log-expr 46
@@ -128,6 +128,16 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-10-31, deliberately:** the four `datamodel="ecmascript"` fixtures of the
+Swift backend's script engine (`sce-build/tests/fixtures/swift_ecmascript/`:
+a guard that mixes `In()` with an expression, a guard that reads the event
+being handled, a guard that cannot be evaluated, and the session variables)
+exist to be lowered to Lua and run, so each is an engine document by
+construction. Together they raised `engine-documents` by four,
+`datamodel-variable-init` by two and `transition-guard` by five, as the census
+measured them. The W3C documents the same backend runs are read from
+`resources/`, which the census does not judge.
 
 ⚠ **2026-10-11, deliberately:** refusing an unqualified attribute outside the
 SCXML Recommendation's tables (`ADR 0021`) made the tree's documents say what
