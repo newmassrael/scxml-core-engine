@@ -5,7 +5,8 @@ import EcmaScriptMachines
 import SceRuntime
 import Testing
 
-// What the generated machines of `sce-build/tests/fixtures/swift_ecmascript` do under their `Engine`:
+// What the generated machines of `sce-build/tests/fixtures/swift_ecmascript` and of four W3C documents
+// read from `resources/` do under their `Engine`:
 // documents of `datamodel="ecmascript"` whose `<data>` initialisers and transition guards are lowered to
 // Lua at build time and run by the `SceLua` engine. The four W3C documents are the oracle for the
 // language; the rest hold what no W3C document asks: a guard that mixes In() with an expression, a guard

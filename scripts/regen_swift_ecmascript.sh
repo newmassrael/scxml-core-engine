@@ -9,8 +9,10 @@
 # These machines run their expressions on the Lua 5.4 engine of the `SceLua` module
 # (docs/SCE_LUA_TRANSLATION_SEAM.md), so they are a target of their own in
 # backends/swift/tests: a machine that needs no engine does not link Lua. The W3C
-# documents among the fixtures are links to `resources/`, not copies, so the oracle has
-# one definition.
+# documents the hand-written tests drive are read from `resources/`, where they live,
+# and are not linked or copied into the fixture directory: a second path to one document
+# is a second definition of the oracle, and the tree refuses two SCXML files of one name
+# (`committed_sourcemap_drift`).
 #
 # Usage (from repo root):
 #   scripts/regen_swift_ecmascript.sh
@@ -32,6 +34,11 @@ GENERATED_DIR="backends/swift/tests/Sources/EcmaScriptMachines"
 # name is exit status 7 (generate/unsupported-feature) and is a defect here,
 # since a fixture of this directory exists to be lowered.
 mapfile -t SOURCES < <(find "$INPUT_ROOT" -maxdepth 1 -name '*.scxml' | LC_ALL=C sort)
+# The W3C tests `EcmaScriptMachinesTests` drives by name, each read where it lives.
+W3C_DOCUMENTS=(279 321 444 550)
+for id in "${W3C_DOCUMENTS[@]}"; do
+    SOURCES+=("resources/$id/test$id.scxml")
+done
 if [ "${#SOURCES[@]}" -lt 1 ]; then
     echo "error: no statechart found under $INPUT_ROOT" >&2
     exit 1

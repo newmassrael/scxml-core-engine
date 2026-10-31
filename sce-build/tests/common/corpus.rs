@@ -16,11 +16,7 @@
 //!   * the W3C corpus under `resources/`, fetched by
 //!     `resources/download-tests.py` against `resources/manifest.xml` —
 //!     not this repository's to write, and four of its tests write an
-//!     illegal expression on purpose (309, 343, 344, 457). A tracked
-//!     link to one of them is the same document reached by another
-//!     path (the Swift lane's fixture directory links the W3C tests it
-//!     lowers), so it is the corpus too: two of those links name states
-//!     no event can enter, which is what the corpus declares on purpose;
+//!     illegal expression on purpose (309, 343, 344, 457);
 //!   * a FRAGMENT, meaning a document another tracked document pulls in
 //!     with `<xi:include>` or `<sce:use>`. It is a piece of a machine
 //!     rather than one, so the design-time lints — unreachable state,
@@ -56,7 +52,6 @@ pub fn authored_statecharts() -> Vec<String> {
     super::repository::paths_git_tracks(&["*.scxml"])
         .into_iter()
         .filter(|rel| !rel.starts_with("resources/"))
-        .filter(|rel| !links_into_w3c_corpus(&root, rel))
         .filter(|rel| {
             let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
                 return false;
@@ -69,17 +64,6 @@ pub fn authored_statecharts() -> Vec<String> {
             )
         })
         .collect()
-}
-
-/// Whether the tracked file `rel` is a link that resolves to a document under `resources/`.
-fn links_into_w3c_corpus(root: &Path, rel: &str) -> bool {
-    match (
-        std::fs::canonicalize(root.join(rel)),
-        std::fs::canonicalize(root.join("resources")),
-    ) {
-        (Ok(target), Ok(corpus)) => target.starts_with(corpus),
-        _ => false,
-    }
 }
 
 /// Every tracked document some other tracked document pulls in.
