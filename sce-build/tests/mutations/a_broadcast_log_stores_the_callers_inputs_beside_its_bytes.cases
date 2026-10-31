@@ -1,0 +1,268 @@
+# Mutation cases for "a broadcast log stores the caller's inputs beside its bytes".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases`.
+#
+# What an element's codec asks its caller for and its wire form does not carry (the flag
+# inputs, and the tag of a variant that has none of its own) is the element's context, and
+# the bounded broadcast log of ADR 0062 (section 4, "Caller inputs are part of the
+# element") stores it in the slot beside the bytes, so that every reader decodes an entry
+# under what it was published under. The slot is `[length][context words][payload words]`:
+# flag `i` is bit `i % word_bits` of context word `i / word_bits`, the tag is one word after
+# the flag words, the payload starts at `1 + context_words`, and a slot is
+# `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)` words. The numbers are decided once, in
+# Rust, and every language's template reads them:
+#
+# - `BroadcastLogElementFacts::flag_words` and `context_words` (`sce-build/src/lib.rs`);
+# - `broadcast_log_context_value` (`sce-build/src/forge/generator.rs`), which turns them into
+#   the `word`, `shift`, `tag_word`, `payload_start` and `present` a template prints, and
+#   the word width each renderer passes it;
+# - the words the C11 renderer counts to refuse an entry its 32-bit count cannot hold;
+# - the registry of the templates that store the context
+#   (`BROADCAST_LOG_CONTEXT_BACKENDS` in `sce-build/src/forge/codegen_matrix.rs`) and the
+#   refusal `refusal_for` gives a language that is not on it.
+#
+# A mutant of any of them writes the context where the other half of the log does not read
+# it, so a reader decodes an entry under flags it was not published under, or reads the
+# bytes from a word that holds the tag. The six templates are the other casefile's
+# (`a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases`); this
+# one keeps the arithmetic they share.
+#
+# The oracle is `sce-build/tests/broadcast_log_kind.rs`, which renders the module of each
+# language from facts it states (`resolution_options`, `BroadcastLogElementFacts`) and holds
+# the text it prints. The Rust tests are the killers named below because the Rust template
+# prints every number the shared code decides, and a number a mutant changes appears in the
+# text the test holds; the other languages' tests of the same names (`go_*`, `c11_*`,
+# `cpp_*`, `python_*`, `kotlin_*`) hold the same numbers and turn red beside them.
+#
+# Mutants that are not cases, each with its reason, are at the end of the file.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test broadcast_log_kind
+mutation_targets sce-build/src/lib.rs sce-build/src/forge/generator.rs sce-build/src/forge/codegen_matrix.rs
+
+# --- How many words the context takes ---
+
+# The flag words are `ceil(n / word_bits)`. Rounded down, an element with fewer flags than
+# a word has no flag word and its flags have no place. Killed by
+# `the_context_of_an_element_is_the_flag_words_and_one_word_for_the_tag`: its first row,
+# one flag over 64-bit words, expects `(flag_words, context_words)` of `(1, 1)` and gets
+# `(0, 0)`; and by `rust_stores_the_flag_inputs_an_element_asks_its_caller_for`, which holds
+# `pub const CONTEXT_WORDS: usize = 1;`.
+mutation_case "the flag words are the flags divided by the word width and rounded down" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''(self.caller_flag_inputs.len() as u32).div_ceil(word_bits)''',
+     r'''(self.caller_flag_inputs.len() as u32) / word_bits''')
+PY
+
+# One flag too many is the boundary of a word: the 65th flag is the first of the second
+# word, the 64th the last of the first. Counting one flag more makes a full word two.
+# Killed by the same unit test: its row of 64 flags expects one flag word and gets two
+# (`(64 + 1).div_ceil(64)`).
+mutation_case "a word that holds exactly as many flags as it has bits is two words" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''(self.caller_flag_inputs.len() as u32).div_ceil(word_bits)''',
+     r'''((self.caller_flag_inputs.len() as u32) + 1).div_ceil(word_bits)''')
+PY
+
+# The tag is a word of its own after the flag words. An element whose context leaves it
+# out has a slot one word short of what `publish` writes. Killed by
+# `the_context_of_an_element_is_the_flag_words_and_one_word_for_the_tag` (the row of one
+# flag and a tag expects 2 context words and gets 1) and by
+# `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`, which
+# holds `pub const CONTEXT_WORDS: usize = 2;`.
+mutation_case "the context words do not count the word that holds the tag" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''self.flag_words(word_bits) + u32::from(self.caller_variant_tag)''',
+     r'''self.flag_words(word_bits)''')
+PY
+
+# --- Where each part of the context is written ---
+
+# The tag follows the flag words. With the tag at the first context word it is written over
+# the first word of flags, so a reader that takes its flags from that word reads the tag's
+# bits. Killed by
+# `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`: two
+# flags and a tag hold `entry[1 + 1] = u64::from(tag);` and `let tag = entry[1 + 1] as u8;`,
+# and the mutant prints `entry[1 + 0]` for both.
+mutation_case "the tag is stored at the first context word, over the flags" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        tag_word => flag_words,''',
+     r'''        tag_word => 0,''')
+PY
+
+# A tag one word late is stored beyond the context, in the first word of the payload, which
+# the bytes then overwrite or share. Killed by
+# `a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags`
+# (`entry[1 + 0] = u64::from(tag);`, which the mutant prints as `entry[1 + 1]`).
+mutation_case "the tag is stored one word after the context words" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        tag_word => flag_words,''',
+     r'''        tag_word => context_words,''')
+PY
+
+# The bytes start after the length word and every context word. Starting them at the
+# length word's successor puts them over the flags. Killed by
+# `a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags`, which holds
+# `entry[2 + index / 8] |= u64::from(*byte)` and gets `entry[1 + index / 8]`, and by every
+# `*_stores_*` test of the other languages.
+mutation_case "the payload starts at the first context word" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        payload_start => 1 + context_words,''',
+     r'''        payload_start => 1,''')
+PY
+
+# The payload start counts the flag words and not the tag word, so an element that has a tag
+# and flags has its bytes start on the tag. Killed by
+# `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`: the
+# bytes of two flags and a tag start at word 3, and the mutant prints `entry[2 + index / 8]`.
+mutation_case "the payload starts before the word that holds the tag" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        payload_start => 1 + context_words,''',
+     r'''        payload_start => 1 + flag_words,''')
+PY
+
+# A flag's word is the flag's index divided by the word width. Taken as the remainder, the
+# 33rd flag of a 32-bit row is written in the first word, over the first flag. Killed by
+# `the_narrow_row_stores_the_context_in_32_bit_words`, which holds
+# `entry[1 + 1] |= u32::from(flags.f32) << 0;` (the mutant prints `entry[1 + 0]`).
+mutation_case "a flag's word is its index modulo the word width" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                word => index / word_bits,''',
+     r'''                word => index % word_bits,''')
+PY
+
+# A flag's bit is the flag's index modulo the word width. Taken as the quotient, every flag
+# of the first word is bit 0 and they overwrite one another. Killed by
+# `the_narrow_row_stores_the_context_in_32_bit_words` (`entry[1 + 0] |=
+# u32::from(flags.f31) << 31;`, which the mutant prints as `<< 0`) and by
+# `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+# (`... flags.t) << 1;`).
+mutation_case "a flag's bit is its index divided by the word width" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                shift => index % word_bits,''',
+     r'''                shift => index / word_bits,''')
+PY
+
+# A template writes the context only for an element that has some, and a context of a tag
+# alone is a context. With `present` read as "has flags" the constants of a log whose
+# element takes only a tag leave out `CONTEXT_WORDS` while `publish` writes the tag at
+# `entry[1 + 0]`. Killed by
+# `a_tag_alone_is_one_context_word_and_the_signature_takes_no_flags`
+# (`pub const CONTEXT_WORDS: usize = 1;`).
+mutation_case "a context of a tag alone is not a context" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        present => context_words > 0,''',
+     r'''        present => !element.caller_flag_inputs.is_empty(),''')
+PY
+
+# --- The width of the words the numbers are laid out for ---
+
+# The Rust renderer passes the word width of the row it chose: 64 for the wide row, 32 for
+# the narrow row of a target with 32-bit atomics. With 64 passed to a 32-bit row, 33 flags
+# and a tag take two context words where the 32-bit entry has three. Killed by
+# `the_narrow_row_stores_the_context_in_32_bit_words`, which holds
+# `pub const CONTEXT_WORDS: usize = 3;`.
+mutation_case "the narrow row lays its context out for 64-bit words" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits),''',
+     r'''        context => broadcast_log_context_value(&inputs.element, 64),''')
+PY
+
+# --- The size an entry must keep within ---
+
+# The C11 renderer refuses an entry whose words a 32-bit count cannot hold, and the words are
+# the length word, the context words and the bytes. Without the context the refusal comes one
+# word too late. Killed by `c11_counts_the_context_words_in_the_words_it_refuses_past_32_bits`:
+# the widest element with one context word (34359738344 bytes) generates, and 34359738345
+# bytes must be refused with `which is 4294967296 64-bit words`; the mutant counts
+# 4294967295 words and generates it.
+mutation_case "the C11 count of an entry's words leaves out its context words" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let words = 1 + u64::from(inputs.element.context_words(64)) + inputs.max_bytes.div_ceil(8);''',
+     r'''    let words = 1 + inputs.max_bytes.div_ceil(8);''')
+PY
+
+# --- Which languages store the context ---
+
+# A language that is not on the registry refuses an element that has a context, and every
+# language on it must hold one. Read the other way round, the languages that store the
+# context refuse it and the one that does not accepts it. Killed by
+# `what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere`
+# (every language on the registry expects `refusal_for` to be `None` for flags and for a
+# tag), and by every `*_stores_*` test, which expects the module to generate.
+mutation_case "a language that stores the context is refused an element that has one" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''        if !forge::codegen_matrix::broadcast_log_stores_context(language) {''',
+     r'''        if forge::codegen_matrix::broadcast_log_stores_context(language) {''')
+PY
+
+# A language that is left off the registry refuses what its template stores. Killed by
+# `c11_stores_the_flag_inputs_an_element_asks_its_caller_for`, whose compile of the flag
+# input `S` is expected to generate and is refused with "the C11 log template does not yet
+# store them with the entry". (The registry test above reads the same list for both sides of
+# its comparison and so does not notice.)
+mutation_case "the registry of context-storing templates does not list C11" <<'PY'
+edit("sce-build/src/forge/codegen_matrix.rs",
+     r'''pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Kotlin,
+    Language::Python,
+    Language::Go,
+    Language::C11,
+    Language::Cpp,
+];''',
+     r'''pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Kotlin,
+    Language::Python,
+    Language::Go,
+    Language::Cpp,
+];''')
+PY
+
+# --- What a language that does not store the context says ---
+
+# A language with no context words refuses flag inputs by name. With the test read the other
+# way, an element with flag inputs is not refused where the template cannot store them, and
+# the module is lowered to a call of the codec without the arguments it needs. Killed by
+# `what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere`:
+# Swift is the one language off the registry, and `refusal_for` must be `Some(..)` for two
+# flag inputs (it is `None` under the mutant, which panics "does not store a flag input yet").
+mutation_case "a language with no context words does not refuse an element with flag inputs" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''            if !self.caller_flag_inputs.is_empty() {''',
+     r'''            if self.caller_flag_inputs.is_empty() {''')
+PY
+
+# The same for the tag of a variant. Killed by the same test, whose second half asks the
+# language that does not store the context for a refusal of a tag alone and panics "does not
+# store a variant tag yet" when it gets `None`.
+mutation_case "a language with no context words does not refuse an element with a variant tag" <<'PY'
+edit("sce-build/src/lib.rs",
+     r'''            if self.caller_variant_tag {''',
+     r'''            if !self.caller_variant_tag {''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# Swift added to `BROADCAST_LOG_CONTEXT_BACKENDS`. The registry test reads the registry for
+# both sides of its comparison (`stores_context` is `broadcast_log_stores_context`), so a
+# language added to the list is expected to refuse nothing and refuses nothing; and no
+# language ships a broadcast log in Swift, so no other test renders one. What would observe
+# it is a test that holds the list itself against the set of languages that have a template,
+# which this corpus does not have yet. It needs a test first.
+#
+# The `bit` of a flag (`bit => index`). No template reads it; a flag is addressed by its
+# `word` and `shift`.
+#
+# The `1 +` of `payload_start` and of the C11 count of words (the length word). Held by
+# every `*_stores_*` test already through `payload_start => 1`, which is a case above; a
+# second case on the length word alone would be killed by the same assertions.
+#
+# The words a Kotlin renderer counts to refuse an entry an `Int` cannot hold. It does not
+# count the context words at all (`largest_encoded` is `i32::MAX - 7` of the bytes alone), so
+# there is no sum to mutate; whether an element of 2147483640 bytes and a context of one
+# word overflows the `WORDS` constant is a question of the renderer, not of the casefile.
