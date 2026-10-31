@@ -64,6 +64,12 @@ sce_lua_status sce_lua_execute(sce_lua *state, const char *chunk, size_t length,
 sce_lua_status sce_lua_evaluate(sce_lua *state, const char *expression, size_t length, const char *name,
                                 sce_lua_value *out);
 
+/// Evaluates `expression` as `return (<expression>)` and gives the global `name` its first value,
+/// whatever that is, a table included. The name is a string and never source text: a `<data id>` is
+/// an XML name, and `screen-rules` is not a Lua identifier but a subtraction.
+sce_lua_status sce_lua_define_global(sce_lua *state, const char *name, const char *expression, size_t length,
+                                     const char *chunk_name);
+
 /// Gives the global `name` the value `value`, which is not of kind `SCE_LUA_OTHER`.
 sce_lua_status sce_lua_set_global(sce_lua *state, const char *name, const sce_lua_value *value);
 

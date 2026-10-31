@@ -69,6 +69,33 @@ public final class LuaState {
         return Self.value(of: raw)
     }
 
+    /// Gives the global `name` the value of `expression`, which is evaluated as
+    /// `return (<expression>)`, whatever kind of value that is: a table or a function can be held by
+    /// the session though `LuaValue` cannot carry it out. The name is a string and not source text, so
+    /// a `<data id>` that is an XML name and not a Lua identifier (`screen-rules`) is still one global.
+    public func defineGlobal(_ name: String, as expression: String, chunkName: String = "=expression") throws {
+        let status = withBytes(of: expression) { bytes, length in
+            name.withCString { global in
+                chunkName.withCString { chunk in
+                    sce_lua_define_global(handle, global, bytes, length, chunk)
+                }
+            }
+        }
+        try check(status)
+    }
+
+    /// Whether the condition `expression` holds. A lowered condition answers a boolean, so any other
+    /// answer is a defect of the lowering and not a reading: it throws, where a guess of true or
+    /// false would take a transition, or not, for no reason a document could see.
+    public func evaluateCondition(_ expression: String, chunkName: String = "=condition") throws -> Bool {
+        switch try evaluate(expression, name: chunkName) {
+        case .boolean(let holds):
+            return holds
+        case let other:
+            throw LuaError.runtime("the condition did not evaluate to a boolean: \(other)")
+        }
+    }
+
     /// Gives the global `name` the value `value`.
     public func setGlobal(_ name: String, _ value: LuaValue) throws {
         var raw = sce_lua_value()

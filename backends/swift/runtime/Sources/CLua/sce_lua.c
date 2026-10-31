@@ -186,15 +186,15 @@ sce_lua_status sce_lua_execute(sce_lua *state, const char *chunk, size_t length,
     return run_chunk(state, chunk, length, name, 0);
 }
 
-sce_lua_status sce_lua_evaluate(sce_lua *state, const char *expression, size_t length, const char *name,
-                                sce_lua_value *out) {
+/// Runs `return (<expression>)` and leaves its first value on the stack. The newline before the
+/// closing parenthesis is what lets an expression that ends in a `--` comment still close.
+static sce_lua_status evaluate_to_stack(sce_lua *state, const char *expression, size_t length, const char *name) {
     static const char prefix[] = "return (";
     static const char suffix[] = "\n)";
     size_t prefix_length = sizeof prefix - 1;
     size_t suffix_length = sizeof suffix - 1;
     char *chunk = malloc(prefix_length + length + suffix_length);
     sce_lua_status status;
-    memset(out, 0, sizeof *out);
     if (chunk == NULL) {
         remember(state, "not enough memory", strlen("not enough memory"));
         return SCE_LUA_MEMORY;
@@ -204,6 +204,14 @@ sce_lua_status sce_lua_evaluate(sce_lua *state, const char *expression, size_t l
     memcpy(chunk + prefix_length + length, suffix, suffix_length);
     status = run_chunk(state, chunk, prefix_length + length + suffix_length, name, 1);
     free(chunk);
+    return status;
+}
+
+sce_lua_status sce_lua_evaluate(sce_lua *state, const char *expression, size_t length, const char *name,
+                                sce_lua_value *out) {
+    sce_lua_status status;
+    memset(out, 0, sizeof *out);
+    status = evaluate_to_stack(state, expression, length, name);
     if (status != SCE_LUA_OK) {
         return status;
     }
@@ -214,6 +222,38 @@ sce_lua_status sce_lua_evaluate(sce_lua *state, const char *expression, size_t l
     }
     lua_pop(state->L, 1);
     return SCE_LUA_OK;
+}
+
+typedef struct {
+    const char *name;
+} define_job;
+
+/// Gives the global `job->name` the value at index 1. The write is the part that can raise (a
+/// metamethod on `_G`), so it runs as the body of a protected call.
+static int store_global_protected(lua_State *L) {
+    define_job *job = (define_job *)lua_touserdata(L, 2);
+    lua_pushvalue(L, 1);
+    lua_setglobal(L, job->name);
+    return 0;
+}
+
+sce_lua_status sce_lua_define_global(sce_lua *state, const char *name, const char *expression, size_t length,
+                                     const char *chunk_name) {
+    lua_State *L = state->L;
+    define_job job = {name};
+    int lua_status;
+    sce_lua_status status = evaluate_to_stack(state, expression, length, chunk_name);
+    if (status != SCE_LUA_OK) {
+        return status;
+    }
+    lua_pushcfunction(L, store_global_protected);
+    lua_insert(L, -2);
+    lua_pushlightuserdata(L, &job);
+    lua_status = lua_pcall(L, 2, 0, 0);
+    if (lua_status != LUA_OK) {
+        remember_top(state);
+    }
+    return status_of(lua_status);
 }
 
 typedef struct {
