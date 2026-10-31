@@ -519,9 +519,10 @@ struct and a `std::variant`). Swift has no forge runtime, so generating a log th
 refused by name (`broadcast-log/runtime-missing`). An element whose codec takes flag
 inputs or a variant's tag from its caller is held on every language that lowers the
 kind: the entry stores them in context words between its length word and its bytes
-(one bit a flag input, 64 to a word, and one word for the tag), `publish` takes them
-and `read` returns them with the item, so each reader decodes an entry under what it
-was published under; an element that asks for neither has the entry and the
+(one bit a flag input, 64 to a word, and one word for the tag), `publish` takes the
+flags and reads the tag off the element, and `read` returns the flags with the item
+(the element reports its own tag), so each reader decodes an entry under what it was
+published under; an element that asks for neither has the entry and the
 signatures it always had. What is refused, naming the element
 (`generate/invalid-config`), is on Rust a CBOR map with a string or byte-string entry
 (whose decoded form borrows its buffer and has no owned mirror). Python, Kotlin, Go,

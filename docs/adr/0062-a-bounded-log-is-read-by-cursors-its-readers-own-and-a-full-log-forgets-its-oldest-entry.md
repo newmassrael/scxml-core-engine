@@ -281,15 +281,16 @@ Properties, each of which is checked (§6):
     build-time constant of the element (a flag input is one bit, which the parser fixes; a tag is a `u8`), so the entry
     is still a fixed number of words and `broadcast-log/element-size-unbounded` stays sound. An element with no caller
     input has no context word, and its slot, its constants and its API are exactly what they were.
-  - **The typed API.** `publish` takes the flags (as booleans, never the codec's own integer, so that the value the
-    codec encodes under and the value stored are one value) and the tag where the element has them; `read` returns them
-    with the entry, so a reader sees under what an entry was published. Both are in the item the way the element is.
-    An element with no caller input has the signatures it had.
-  - **What the log does not do** for a tag: it does not derive the tag from the value. The codec's `encode` takes no tag
-    (the active arm is the value's own discriminant), and no generated codec exposes the tag of its active arm; the
-    publisher supplies the tag its value corresponds to, as every caller of such a codec does, and a reader receives
-    exactly the pair that was published. Deriving it would remove the redundancy and is the better end state; it needs
-    each codec backend to expose the arm's tag, and is a change to the codecs and not to the log.
+  - **The typed API.** `publish` takes the flags where the element has them (as booleans, never the codec's own integer,
+    so that the value the codec encodes under and the value stored are one value) and reads the tag off the element;
+    `read` returns the flags with the entry, so a reader sees under what an entry was published, and the element it
+    returns reports its own tag. An element with no caller input has the signatures it had.
+  - **The tag is a function of the value.** The codec's `encode` takes no tag (the active arm is the value's own
+    discriminant), and every generated codec exposes the tag of its active arm, so `publish` stores the element's own tag
+    in the context word and cannot be given one that disagrees with the element. The word stays in the entry because
+    `decode` takes the tag from the caller, and a reader decodes under the one stored. A flag is different: a flag input
+    is not a function of the value, so the publisher still gives it, and the codec refuses a value that contradicts it
+    (section "The codecs refuse a flag their element contradicts").
   - **What stays refused.** A CBOR map entry of text or bytes in Rust, because the decoded form borrows the slot's copy
     (below, "Element forms the Rust template refuses"): the remedy is an owned form bounded by `sce:max-size`, a change to
     that codec's generator.
@@ -1456,9 +1457,19 @@ enums from the owner of that generator, and the per-arm literal is one string in
 the `decode` both print, so the two cannot disagree. All five languages already held the unknown tag of a catch-all arm, so the
 accessor is total there; for a value that holds no arm (a state `decode` never produces) Python raises and Go panics, and C11
 and C++ answer 0. A codec with a field or flag named `tag` collides with the accessor in the five languages, and no diagnostic
-refuses it yet. The log does not use the accessor yet: its `publish` still takes the tag, until the Rust one exists, so the five
-templates change together. 11 text-pinning tests hold the accessors, over a fixture directory and over the real
+refuses it yet. 11 text-pinning tests hold the accessors, over a fixture directory and over the real
 `broadcast_log_conformance_choice` document in every language.
+
+### The log takes the tag from the value (2026-10-31)
+
+With the Rust accessor (`{Codec}::tag_of`, generic over the source so a borrowed element works too) the six templates
+changed together: the typed `publish` of a caller-tag variant has no `tag` parameter and stores the element's own tag in the
+context word after the flag words, and the item no longer carries a `tag` beside the element (the element reports it, a
+catch-all arm the unknown tag it was decoded under). The entry, `CONTEXT_WORDS`, `WORDS` and the flag words are unchanged, in
+the 64-bit rows and the 32-bit narrow row of C11. The tests that gave a tag to `publish`, and the one that gave a tag selecting
+no arm (a state `publish` can no longer reach), are replaced by tests that the stored context word equals the element's tag
+for each arm and that the element read back reports the same. A codec's error for a tag that selects no arm is now reached
+only through `decode`, which a caller still gives a tag.
 
 ### What is still undone
 
@@ -1477,8 +1488,6 @@ What is left:
   toolchain than the package's tools version and carries an availability annotation on Apple platforms.
 - **The narrow row of C++**, which keeps one 64-bit row. Rust's and C11's are built. Kotlin, Go and Python have no narrow row: the
   targets they run on offer 64-bit atomics, and a target that did not would take the row of the other two.
-- **The log taking the tag from the value.** The five non-Rust codecs expose the active arm's tag (section above); the Rust
-  codecs do not yet, and the `publish` of every template changes together once they do.
 - **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry, whose decoded form borrows
   its input. The remedy is an owned form bounded by `sce:max-size`, in the Rust CBOR generator; not started. (A codec that takes flag
   inputs or a variant tag from its caller is stored with the entry by every template that ships, section 4; a typed diagnostic
@@ -1491,7 +1500,9 @@ What is left:
   checker does not; lengthening them is a change to each recorder, with a round of CI to read after it.
 - **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the
   strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; the casefiles written
-  on 2026-10-31 for the caller-input context (41 cases) and for the Rust template and renderer (43 cases); and the Miri
+  on 2026-10-31 for the caller-input context (41 cases) and for the Rust template and renderer (43 cases); the two cases
+  that weaken the loads of the deferred reader's bind (the head, and the narrow row's last-slot stamp) to relaxed, whose
+  killers are the deferred loom models and which no run has judged; and the Miri
   measurement, which CI cannot repeat because the mutation selector passes its arguments to `cargo test` and a Miri runner for
   `scripts/mutate` is not built.
 
