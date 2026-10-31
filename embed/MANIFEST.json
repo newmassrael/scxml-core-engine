@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "8636e2cf91",
+  "embed_version": "c38aba6e5a",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 473,
+  "symbol_count": 477,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -2765,6 +2765,43 @@
         "method void () noexcept ~Read"
       ],
       "name": "SCE::Forge::Broadcast::Read"
+    },
+    {
+      "header": "sce/forge/broadcast_log.h",
+      "kind": "struct",
+      "members": [
+        "method bool (std::uint64_t) noexcept slots_fit",
+        "method std::uint64_t (std::uint64_t) noexcept busy",
+        "method std::uint64_t (std::uint64_t) noexcept done",
+        "method std::uint64_t (std::uint64_t, std::uint64_t) noexcept advance",
+        "method std::uint64_t (std::uint64_t, std::uint64_t) noexcept distance",
+        "method std::uint64_t (std::uint64_t, std::uint64_t, std::uint64_t) noexcept missed"
+      ],
+      "name": "SCE::Forge::Broadcast::detail::StampArith<T>"
+    },
+    {
+      "header": "sce/forge/broadcast_log.h",
+      "kind": "struct",
+      "members": [
+        "using Cell = std::atomic<Raw>",
+        "using Raw = std::uint64_t"
+      ],
+      "name": "SCE::Forge::Broadcast::Wide"
+    },
+    {
+      "header": "sce/forge/broadcast_log_narrow.h",
+      "kind": "struct",
+      "members": [
+        "using Cell = std::atomic<Raw>",
+        "using Raw = std::uint32_t"
+      ],
+      "name": "SCE::Forge::Broadcast::Narrow<T>"
+    },
+    {
+      "header": "sce/forge/broadcast_log_narrow.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Broadcast::NarrowBroadcastLog",
+      "type": "BroadcastLog<W, Slots, Narrow<Bits>>"
     },
     {
       "header": "sce/forge/cbor.h",
