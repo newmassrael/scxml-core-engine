@@ -113,6 +113,120 @@ private func hostOn(
     #expect(host.cancelled == ["zone", "now"])
 }
 
+// MARK: - HTTP
+
+private final class OneAnswer: HostTransport {
+    var answer: HostExchange
+    private(set) var asked: [HostHTTPRequest] = []
+
+    init(_ answer: HostExchange) {
+        self.answer = answer
+    }
+
+    func exchange(_ request: HostHTTPRequest) -> HostExchange {
+        asked.append(request)
+        return answer
+    }
+}
+
+private func fetch(
+    _ host: ReferenceHost,
+    method: String = "GET",
+    url: String = "http://example.test/a",
+    headers: String = "",
+    body: String = ""
+) -> HostOutcome? {
+    host.start(
+        operation: "sce-host-http-fetch",
+        id: "fetch",
+        params: ["method": method, "url": url, "headers": headers, "body": body]
+    )
+}
+
+private func httpHost(_ answer: HostExchange) -> (ReferenceHost, OneAnswer) {
+    let transport = OneAnswer(answer)
+    return (ReferenceHost(clock: ScriptedClockSource(), transport: transport), transport)
+}
+
+@Test func aResponseIsItsStatusItsLowercasedHeadersAndItsBody() throws {
+    let (host, transport) = httpHost(
+        .response(
+            HostHTTPResponse(
+                status: 201,
+                headers: [HostHTTPHeader(name: "Content-Type", value: "  text/plain "), HostHTTPHeader(name: "X-A", value: "1")],
+                body: Array("hi".utf8)
+            )
+        )
+    )
+    let answer = try record(fetch(host, method: "POST", headers: "Accept: */*\r\nX-B:  2 \n\n", body: "payload"))
+    #expect(answer.member("status") == .number("201"))
+    #expect(answer.member("headers") == .text("content-type: text/plain\nx-a: 1"))
+    #expect(answer.member("body") == .text("hi"))
+    #expect(answer.member("error") == .text(""))
+    // The request lines were split into name and value, the spaces and tabs around a value
+    // dropped, and the empty lines ignored.
+    #expect(
+        transport.asked == [
+            HostHTTPRequest(
+                method: "POST",
+                url: "http://example.test/a",
+                headers: [HostHTTPHeader(name: "Accept", value: "*/*"), HostHTTPHeader(name: "X-B", value: "2")],
+                body: "payload"
+            )
+        ]
+    )
+}
+
+@Test func anArgumentTheOperationDoesNotAcceptIsRefusedAndNothingIsAsked() {
+    let (host, transport) = httpHost(.unreachable)
+    let refusal = HostOutcome.refuse(#"{"reason":"invalid_argument"}"#)
+    #expect(fetch(host, method: "TRACE") == refusal)
+    #expect(fetch(host, method: "get") == refusal)
+    for url in ["ftp://example.test/", "http://", "http://:80/", "http://exa mple.test/", "/relative"] {
+        #expect(fetch(host, url: url) == refusal, "\(url) is not an http URL")
+    }
+    #expect(fetch(host, headers: "NoColon") == refusal)
+    #expect(fetch(host, headers: "Bad Name: v") == refusal)
+    #expect(transport.asked.isEmpty)
+}
+
+@Test func aTransportThatGotNoResponseFailsNetworkAndAHostWithNoTransportDoes() throws {
+    let (host, _) = httpHost(.unreachable)
+    #expect(try record(fetch(host)).member("error") == .text("network"))
+    let bare = ReferenceHost(clock: ScriptedClockSource())
+    let answer = try record(fetch(bare))
+    #expect(answer.member("error") == .text("network"))
+    #expect(answer.member("status") == .number("0"))
+}
+
+@Test func aTransportThatHasNotAnsweredIsHeldUntilTheHostIsToldToStop() {
+    let (host, _) = httpHost(.pending)
+    #expect(fetch(host) == .hold)
+    host.cancel("fetch")
+    #expect(host.cancelled == ["fetch"])
+}
+
+@Test func aResponseToHeadHasNoBodyAndOneTooLargeOrNotTextIsAFailure() throws {
+    let big = HostHTTPResponse(status: 200, headers: [], body: [UInt8](repeating: 0x61, count: 16385))
+    let (tooBig, _) = httpHost(.response(big))
+    #expect(try record(fetch(tooBig)).member("error") == .text("response_too_large"))
+    // The same body is none at all to a HEAD.
+    let (head, _) = httpHost(.response(big))
+    let headAnswer = try record(fetch(head, method: "HEAD"))
+    #expect(headAnswer.member("error") == .text(""))
+    #expect(headAnswer.member("body") == .text(""))
+    let bad = HostHTTPResponse(status: 200, headers: [], body: [0xFF, 0xFE])
+    let (notText, _) = httpHost(.response(bad))
+    #expect(try record(fetch(notText)).member("error") == .text("invalid_body"))
+    let wide = HostHTTPResponse(
+        status: 200,
+        headers: [HostHTTPHeader(name: "X", value: String(repeating: "a", count: 4096))],
+        body: []
+    )
+    let (tooWide, _) = httpHost(.response(wide))
+    #expect(try record(fetch(tooWide)).member("error") == .text("response_too_large"))
+}
+
 // MARK: - Key-value store
 
 private func put(_ host: ReferenceHost, _ key: String, _ value: String) throws -> JSONValue {

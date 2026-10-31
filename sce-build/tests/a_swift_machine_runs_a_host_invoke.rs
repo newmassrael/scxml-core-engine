@@ -10,9 +10,12 @@
 //!
 //! The `<param>`s are the fields of the request record when the invoke types one: each is
 //! evaluated once, kept as the text the host reads and as the typed pair the request's JSON
-//! is written from, and the adapter rebuilds the record from that text. What else the
-//! request carries (a `src`, a `namelist`, a `<content>`, a deadline) is refused by name
-//! and not written wrong, until the slice that lowers it.
+//! is written from, and the adapter rebuilds the record from that text. A
+//! `_sce_deadline_ms` among them is the engine's, which arms it and does not hand it on, and
+//! the policy names the invokes a host runs so the engine refuses a `done.invoke` that did
+//! not come through the completion door. What else the request carries (a `src`, a
+//! `namelist`, a `<content>`) is refused by name and not written wrong, until the slice
+//! that lowers it.
 //!
 //! `StaticDatamodelTests` replays the machines against a reference host; this file holds
 //! the text the generator writes and the line it refuses by name.
@@ -170,6 +173,38 @@ fn a_typed_request_is_collected_at_the_start_and_rebuilt_for_the_host() {
             "let typed = StaticHostKvPutRequest(key: start.requestString(\"key\"), value: start.requestString(\"value\"))",
             "if let result = invoker.startPut(typed, token: start.token) {",
         ],
+    );
+}
+
+/// The policy of a machine that runs host invokes names them, and a deadline is collected
+/// like any other param and left to the engine to take out.
+#[test]
+fn a_policy_names_its_host_invokes_and_a_deadline_is_left_to_the_engine() {
+    let (status, files, said) = generate("static_host_http.scxml", &[]);
+    assert_eq!(status, Some(0), "static_host_http is written: {said}");
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "static_host_http_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(
+        code,
+        &[
+            "public var hostInvokeIDs: [String] { [\"fetch\"] }",
+            "appendFormParam(&hostParams, \"_sce_deadline_ms\", sceValue)",
+        ],
+    );
+    // A machine that runs none names none.
+    let (status, files, said) = generate("static_invoke.scxml", &[]);
+    assert_eq!(status, Some(0), "static_invoke is written: {said}");
+    let plain = &files
+        .iter()
+        .find(|(name, _)| name == "static_invoke_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    assert!(
+        !plain.contains("hostInvokeIDs"),
+        "no host invoke, no ids:\n{plain}"
     );
 }
 

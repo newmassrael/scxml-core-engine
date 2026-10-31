@@ -234,6 +234,11 @@ public protocol StatePolicy: AnyObject {
     /// that does not say needs no parent.
     var needsParent: Bool { get }
 
+    /// The ids of the document's `<invoke>`s a host runs (§scxml-6.4.1). Their
+    /// `done.invoke.<id>` is accepted only through `Engine.completeHostInvoke`; a policy
+    /// of a document with none answers none.
+    var hostInvokeIDs: [String] { get }
+
     /// Initializes the datamodel via the script engine (§scxml-5.3).
     func initializeDataModel(engine: Engine<Self>)
 
@@ -330,6 +335,8 @@ public protocol StatePolicy: AnyObject {
 
 extension StatePolicy {
     public var needsParent: Bool { false }
+
+    public var hostInvokeIDs: [String] { [] }
 
     public func initializeDataModel(engine: Engine<Self>) {}
 

@@ -4305,9 +4305,10 @@ pub(crate) fn swift_invoke_unlowered(
 /// One a host declared (the standard host features' types are declared by every host)
 /// is started when its state is entered and cancelled when the state exits, and what
 /// the host completes it with is a typed record. Its `<param>`s are the fields of the
-/// request record when it types one, and the text the host is handed otherwise. What
-/// else the request carries is not lowered yet: a `src`, a `namelist`, a `<content>`,
-/// an `idlocation` and a `_sce_deadline_ms` each is named.
+/// request record when it types one, and the text the host is handed otherwise; a
+/// `_sce_deadline_ms` among them is the engine's, which arms it and does not hand it on.
+/// What else the request carries is not lowered yet: a `src`, a `namelist`, a
+/// `<content>` and an `idlocation` each is named.
 fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Option<String> {
     let type_name = &info.invoke_type;
     if !info.host_served {
@@ -4317,14 +4318,6 @@ fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Op
         return Some(format!(
             "an <invoke type=\"{type_name}\"> a host runs with a namelist"
         ));
-    }
-    if info
-        .base
-        .params
-        .iter()
-        .any(|param| param.name == crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM)
-    {
-        return Some(format!("an <invoke type=\"{type_name}\"> with a deadline"));
     }
     if !info.src.is_empty() || !info.srcexpr.is_empty() || !info.native_src.is_empty() {
         return Some(format!("an <invoke type=\"{type_name}\"> with a src"));

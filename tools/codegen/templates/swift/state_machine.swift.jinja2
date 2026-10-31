@@ -531,6 +531,13 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var needsDataModelInit: Bool { false }
     public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker else 'false' }} }
     public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
+{% set host_invoke_list = model.invokes | host_invoker %}
+{% if host_invoke_list %}
+
+    /// The `<invoke>`s a host runs (W3C SCXML 6.4.1): their `done.invoke.<id>` is
+    /// accepted only through the engine's `completeHostInvoke`.
+    public var hostInvokeIDs: [String] { [{% for invoke_info in host_invoke_list %}"{{ invoke_info.invoke_id | escape_swift }}"{{ ', ' if not loop.last }}{% endfor %}] }
+{% endif %}
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { {{ 'true' if (model.invokes | scxml | selectattr('autoforward') | list) or (model.invokes | hybrid | selectattr('autoforward') | list) else 'false' }} }
 

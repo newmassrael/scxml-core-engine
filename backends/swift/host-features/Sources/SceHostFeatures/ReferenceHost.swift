@@ -91,9 +91,17 @@ public final class ReferenceHost {
         "sce-host-notify-request-permission",
         "sce-host-notify-post",
         "sce-host-notify-cancel",
+        "sce-host-http-fetch",
     ]
 
     private let clock: any ClockSource
+
+    /// What carries an HTTP exchange; nil for a host with none, whose every fetch fails
+    /// `network`.
+    private let transport: (any HostTransport)?
+
+    /// The invocations started and not yet answered, by id.
+    private var held: [String] = []
 
     /// Failures to inject: the operation type to the code it fails with.
     private var faults: [String: String] = [:]
@@ -118,10 +126,11 @@ public final class ReferenceHost {
     /// Handed to the platform, in the order posted.
     private var shownList: [PostedNotification] = []
 
-    /// A host reading `clock`, with an empty store, nothing posted, and the notification
-    /// permission undetermined.
-    public init(clock: any ClockSource) {
+    /// A host reading `clock` and carrying HTTP over `transport`, with an empty store,
+    /// nothing posted, and the notification permission undetermined.
+    public init(clock: any ClockSource, transport: (any HostTransport)? = nil) {
         self.clock = clock
+        self.transport = transport
     }
 
     /// Injects failures: each operation type named fails with the code it maps to, once
@@ -186,6 +195,12 @@ public final class ReferenceHost {
             refused = !validKey(params["key"] ?? "")
         case "sce-host-notify-post", "sce-host-notify-cancel":
             refused = (params["id"] ?? "").isEmpty
+        case "sce-host-http-fetch":
+            refused = !acceptableExchange(
+                method: params["method"] ?? "",
+                url: params["url"] ?? "",
+                headers: params["headers"] ?? ""
+            )
         default:
             refused = false
         }
@@ -219,14 +234,23 @@ public final class ReferenceHost {
                 body: params["body"] ?? "",
                 atMs: params["at_ms"] ?? ""
             )
-        default:
+        case "sce-host-notify-cancel":
             return notifyCancel(params["id"] ?? "")
+        default:
+            return httpFetch(
+                id: id,
+                method: params["method"] ?? "",
+                url: params["url"] ?? "",
+                headers: params["headers"] ?? "",
+                body: params["body"] ?? ""
+            )
         }
     }
 
     /// Tells the host to stop invocation `id`, because its state exited or its deadline
     /// passed. What it held for it is dropped.
     public func cancel(_ id: String) {
+        held.removeAll { $0.utf8.elementsEqual(id.utf8) }
         cancelled.append(id)
     }
 
@@ -256,6 +280,8 @@ public final class ReferenceHost {
             zero = [.truth("found", false), .text("key", "")]
         case "sce-host-notify-permission", "sce-host-notify-request-permission":
             zero = [.text("state", "")]
+        case "sce-host-http-fetch":
+            zero = [.integer("status", UInt16(0)), .text("headers", ""), .text("body", "")]
         default:
             zero = [.text("status", "")]
         }
@@ -375,5 +401,58 @@ public final class ReferenceHost {
 
     private func notifyCancel(_ id: String) -> HostOutcome {
         record(.truth("existed", withdraw(id)))
+    }
+
+    // MARK: - HTTP
+
+    private func httpFetch(id: String, method: String, url: String, headers: String, body: String) -> HostOutcome {
+        let lines = httpHeaderLines(headers) ?? []
+        let request = HostHTTPRequest(method: method, url: url, headers: lines, body: body)
+        guard let transport else {
+            return failure("sce-host-http-fetch", code: "network")
+        }
+        let response: HostHTTPResponse
+        switch transport.exchange(request) {
+        case .unreachable:
+            return failure("sce-host-http-fetch", code: "network")
+        case .pending:
+            held.append(id)
+            return .hold
+        case .response(let answer):
+            response = answer
+        }
+        let joined = response.headers
+            .map { "\($0.name.lowercased()): \($0.value.trimmedOfWhitespace)" }
+            .joined(separator: "\n")
+        // A response to HEAD has no body, whatever the transport carried.
+        let payload = method == "HEAD" ? [] : response.body
+        if joined.utf8.count > httpHeadersBound || payload.count > httpBodyBound {
+            return failure("sce-host-http-fetch", code: "response_too_large")
+        }
+        guard let text = String(validating: payload, as: UTF8.self) else {
+            return failure("sce-host-http-fetch", code: "invalid_body")
+        }
+        return record(
+            .integer("status", UInt16(clamping: response.status)),
+            .text("headers", joined),
+            .text("body", text)
+        )
+    }
+}
+
+extension String {
+    /// The text without the whitespace around it (Go's `strings.TrimSpace`: Unicode white
+    /// space).
+    fileprivate var trimmedOfWhitespace: String {
+        var scalars = Array(unicodeScalars)
+        while let first = scalars.first, first.properties.isWhitespace {
+            scalars.removeFirst()
+        }
+        while let last = scalars.last, last.properties.isWhitespace {
+            scalars.removeLast()
+        }
+        var text = String.UnicodeScalarView()
+        text.append(contentsOf: scalars)
+        return String(text)
     }
 }

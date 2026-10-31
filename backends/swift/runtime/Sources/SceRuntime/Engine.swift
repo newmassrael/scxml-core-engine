@@ -535,7 +535,10 @@ public final class Engine<Policy: StatePolicy> {
             guard let act = scheduler.popReadyAct(at: turnNowMs) else {
                 break
             }
-            if act.route != nil {
+            if let deadline = act.hostInvokeDeadline {
+                // §scxml-6.4.1: the invocation outlived the time its `<invoke>` gave it.
+                expireHostInvoke(deadline)
+            } else if act.route != nil {
                 // §scxml-6.2: to the target the send named when it was made.
                 deliverRouted(act)
             } else if let event = act.event {
@@ -1233,6 +1236,23 @@ public final class Engine<Policy: StatePolicy> {
         scheduler.cancelEvent(sendID: sendID)
     }
 
+    /// Arms the deadline of a host-run invocation (§scxml-6.4.1) `ms` milliseconds from
+    /// now, in the queue the delayed sends wait in: one deadline order, and one
+    /// `timeUntilNextScheduled` that counts it. Held at the largest instant when the sum
+    /// would pass it, so a deadline as large as `Int64.max` is never in the past.
+    func armHostInvokeDeadline(_ deadline: HostInvokeDeadline, afterMs ms: Int64) {
+        let now = schedNowMs()
+        scheduler.scheduleHostInvokeDeadline(
+            deadline,
+            readyAtMs: ms > Int64.max - now ? Int64.max : now + ms
+        )
+    }
+
+    /// Takes back the deadline of the start `token` names, if it is still armed.
+    func dropHostInvokeDeadline(token: UInt64) {
+        scheduler.dropHostInvokeDeadline(token: token)
+    }
+
     /// Whether the scheduler has events ready to fire.
     public func hasReadyEvents() -> Bool {
         scheduler.hasReadyEvents(at: schedNowMs())
@@ -1854,6 +1874,14 @@ public final class Engine<Policy: StatePolicy> {
     private func processNextExternalEvent() -> Bool {
         guard var eventWithMeta = externalQueue.pop() else {
             return false
+        }
+        // §scxml-6.4: the `done.invoke` of an invocation a host runs is accepted only
+        // through `completeHostInvoke`, which checked the start was still running. One
+        // that came by another door may be a cancelled run's late reply, and is refused,
+        // counted, before it is anyone's event.
+        if isRefusedHostInvokeCompletion(eventWithMeta) {
+            hostInvokes.refusedCompletions += 1
+            return true
         }
         // Taking an event off the external queue is where a macrostep begins, so it is
         // where the previous one's ceiling stops applying. A machine left inside an

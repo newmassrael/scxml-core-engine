@@ -145,6 +145,49 @@ public struct HostInvokeResponse: Equatable {
 /// running.
 public typealias HostInvokeHandler = (HostInvokeEvent) -> HostInvokeResponse?
 
+/// The reserved `<param>` a host-run `<invoke>` names its deadline with, in
+/// milliseconds. The engine reads it and does not hand it to the host.
+public let hostInvokeDeadlineParam = "_sce_deadline_ms"
+
+/// The end of the time one start of a host-run invocation was given: which start it
+/// ends, by the token its start carried.
+public struct HostInvokeDeadline: Equatable, Sendable {
+    public var processorType: String
+    public var invokeID: String
+    public var token: UInt64
+
+    public init(processorType: String, invokeID: String, token: UInt64) {
+        self.processorType = processorType
+        self.invokeID = invokeID
+        self.token = token
+    }
+}
+
+/// Reads the text of a `hostInvokeDeadlineParam` value as milliseconds.
+///
+/// One or more ASCII digits, optionally followed by `.` and one or more `0` (a
+/// `<param expr>` reaches the request as the text of its value, and a script engine may
+/// render a whole number `5000.0`), within a signed 64-bit count. Anything else is
+/// refused: no sign, no whitespace, no exponent, no digit separator.
+///
+/// Spelled out and not left to `Int64(_:)`, because every runtime implements it and the
+/// languages' parsers disagree; the table they are all held to is
+/// `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`.
+public func parseHostInvokeDeadlineMs(_ written: String) -> Int64? {
+    let parts = written.utf8.split(separator: UInt8(ascii: "."), maxSplits: 1, omittingEmptySubsequences: false)
+    guard let whole = parts.first, !whole.isEmpty, whole.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
+        return nil
+    }
+    if parts.count == 2 {
+        let fraction = parts[1]
+        guard !fraction.isEmpty, fraction.allSatisfy({ $0 == 0x30 }) else {
+            return nil
+        }
+    }
+    // All ASCII digits, so the only way this fails is a value past `Int64.max`.
+    return Int64(String(decoding: whole, as: UTF8.self), radix: 10)
+}
+
 /// Names a run: the `type` and the id of the `<invoke>`.
 struct HostInvokeKey: Hashable {
     var processorType: String
@@ -160,6 +203,10 @@ struct HostInvokeBook {
     var started: [HostInvokeKey: UInt64] = [:]
 
     var nextToken: UInt64 = 1
+
+    /// `done.invoke` events refused at dequeue because they did not come through
+    /// `completeHostInvoke`.
+    var refusedCompletions: UInt64 = 0
 }
 
 extension Engine {
@@ -190,18 +237,46 @@ extension Engine {
             return false
         }
         var request = request
+        // A `_sce_deadline_ms` param is the engine's, not the host's: it is taken out of
+        // the request and armed with the start. A value that is not a whole number of
+        // milliseconds raises `error.execution` and starts nothing (§scxml-6.4.1: an
+        // argument of the element that cannot be evaluated), and the call answers true
+        // because the report has been made; false is kept for "no invoker ran it".
+        var deadlineMs: Int64?
+        if let values = request.params.removeValue(forKey: hostInvokeDeadlineParam) {
+            guard values.count == 1, let ms = parseHostInvokeDeadlineMs(values[0]) else {
+                if let errorEvent = policy.getEventFromName("error.execution") {
+                    raise(
+                        .platformError(
+                            errorEvent,
+                            message:
+                                "<invoke type='\(request.processorType)' id='\(request.invokeID)'>: \(hostInvokeDeadlineParam)=\(values.joined(separator: ",").debugDescription) is not a whole number of milliseconds"
+                        )
+                    )
+                }
+                return true
+            }
+            deadlineMs = ms
+        }
         let token = hostInvokes.nextToken
         hostInvokes.nextToken += 1
         request.token = token
         let key = HostInvokeKey(processorType: request.processorType, invokeID: request.invokeID)
         hostInvokes.started[key] = token
+        if let deadlineMs {
+            armHostInvokeDeadline(
+                HostInvokeDeadline(processorType: request.processorType, invokeID: request.invokeID, token: token),
+                afterMs: deadlineMs
+            )
+        }
 
         let response = handler(.start(request))
         if let refusal = response?.refusal {
             // §scxml-6.4.1: the host could not start it, so it never started: taken back
-            // out of the running set, and the element's error raised with what the host
-            // said.
+            // out of the running set with its deadline dropped, and the element's error
+            // raised with what the host said.
             hostInvokes.started[key] = nil
+            dropHostInvokeDeadline(token: token)
             if let errorEvent = policy.getEventFromName("error.execution") {
                 raise(.platformError(errorEvent, message: refusal))
             }
@@ -290,6 +365,7 @@ extension Engine {
             return false
         }
         hostInvokes.started[key] = nil
+        dropHostInvokeDeadline(token: token)
         // The id is the DOCUMENT's, because `done.invoke.<id>` and `error.invoke.<id>`
         // are the names the author wrote a transition for.
         let name = failed ? errorInvokePrefix + invokeID : createDoneInvokeEventName(invokeID)
@@ -320,6 +396,13 @@ extension Engine {
             return false
         }
         hostInvokes.started[key] = nil
+        dropHostInvokeDeadline(token: token)
+        return deliverHostInvokeCancel(processorType: processorType, invokeID: invokeID, token: token)
+    }
+
+    /// Tells the invoker of `processorType` to stop the start `token` names. Whether
+    /// there was an invoker to tell.
+    private func deliverHostInvokeCancel(processorType: String, invokeID: String, token: UInt64) -> Bool {
         guard let handler = hostInvokes.handlers[processorType] else {
             return false
         }
@@ -327,5 +410,63 @@ extension Engine {
             .cancel(HostInvokeCancel(processorType: processorType, invokeID: invokeID, token: token))
         )
         return true
+    }
+
+    /// Ends the start `deadline` names, if it is still running: the host is told to stop,
+    /// and the document receives `error.invoke.<id>`, or the generic `error.invoke` when
+    /// it names no specific one, with `_event.invokeid` set and `_event.data` the string
+    /// "deadline" (§scxml-6.4.1). Through the same door a completion takes, so exactly one
+    /// of the two happens.
+    func expireHostInvoke(_ deadline: HostInvokeDeadline) {
+        let key = HostInvokeKey(processorType: deadline.processorType, invokeID: deadline.invokeID)
+        guard hostInvokes.started[key] == deadline.token else {
+            return
+        }
+        hostInvokes.started[key] = nil
+        guard
+            deliverHostInvokeCancel(
+                processorType: deadline.processorType,
+                invokeID: deadline.invokeID,
+                token: deadline.token
+            )
+        else {
+            return
+        }
+        var metadata = EventMetadata.external(sendID: "", origin: "")
+        metadata.data = "\"deadline\""
+        metadata.invokeID = deadline.invokeID
+        if let arriving = arrivingEvent(name: errorInvokePrefix + deadline.invokeID, metadata: metadata) {
+            raiseExternalWithMeta(arriving)
+        }
+    }
+
+    /// Whether `event` is the `done.invoke` of an invocation a host runs that did not
+    /// come through `completeHostInvoke`: one the engine refuses at dequeue (§scxml-6.4),
+    /// because it may be a cancelled run's late reply.
+    func isRefusedHostInvokeCompletion(_ event: EventWithMetadata<Event>) -> Bool {
+        if event.metadata.hostInvokeToken != nil {
+            return false
+        }
+        let ids = policy.hostInvokeIDs
+        if ids.isEmpty {
+            return false
+        }
+        let name = policy.getEventName(event.event)
+        if name.utf8.starts(with: doneInvokePrefix.utf8) {
+            let id = String(decoding: name.utf8.dropFirst(doneInvokePrefix.utf8.count), as: UTF8.self)
+            return ids.contains { $0.utf8.elementsEqual(id.utf8) }
+        }
+        // The generic `done.invoke` a document that names no specific completion
+        // receives: its invokeid says whose completion it is.
+        return name.utf8.elementsEqual(doneInvokeEvent.utf8)
+            && ids.contains { $0.utf8.elementsEqual(event.metadata.invokeID.utf8) }
+    }
+
+    /// How many `done.invoke` events of host-run invocations the engine refused because
+    /// they did not arrive through `completeHostInvoke`. A refusal is correct, and saying
+    /// it happened is not optional: a host that raised its completion by another door and
+    /// saw the document never move would otherwise have nothing to find.
+    public var refusedHostInvokeCompletions: UInt64 {
+        hostInvokes.refusedCompletions
     }
 }

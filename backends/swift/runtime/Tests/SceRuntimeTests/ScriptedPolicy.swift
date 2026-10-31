@@ -68,6 +68,9 @@ final class ScriptedPolicy: InvocablePolicy {
     var parentDeliveries: [(name: String, data: String)] = []
     var hasParent = false
 
+    /// The ids of the `<invoke>`s a host runs, for a test that plays a document with some.
+    var hostInvokeIDs: [String] = []
+
     var invocationsRunning: Set<String> = []
     var invocationDeliveries: [(invokeID: String, name: String)] = []
     var sessionsRunning: Set<String> = []

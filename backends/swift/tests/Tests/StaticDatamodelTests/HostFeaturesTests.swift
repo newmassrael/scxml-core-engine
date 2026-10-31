@@ -57,10 +57,73 @@ private func byKey(_ value: JSONValue) -> JSONValue {
     }
 }
 
-/// The host and its clock, which a step's `host` directives set.
+/// A transport that answers what a scenario says and keeps what it was given.
+private final class ScriptedTransport: HostTransport {
+    private var answer: HostExchange?
+    private(set) var log: [HostHTTPRequest] = []
+
+    func exchange(_ request: HostHTTPRequest) -> HostExchange {
+        log.append(request)
+        return answer ?? .unreachable
+    }
+
+    /// Sets what a step's `http` says the transport answers: `hold` does not answer, `fail`
+    /// is a transport that got no response, and otherwise the status, the header pairs and
+    /// a body given as text, as hex bytes or as a text repeated.
+    func apply(_ directive: [(key: String, value: JSONValue)], at: SourceLocation) {
+        func member(_ name: String) -> JSONValue? {
+            directive.first { $0.key == name }?.value
+        }
+        if case .bool(true)? = member("hold") {
+            answer = .pending
+            return
+        }
+        if member("fail") != nil {
+            answer = .unreachable
+            return
+        }
+        var headers: [HostHTTPHeader] = []
+        if case .array(let pairs)? = member("headers") {
+            for pair in pairs {
+                if case .array(let items) = pair, items.count == 2, case .text(let name) = items[0],
+                    case .text(let value) = items[1]
+                {
+                    headers.append(HostHTTPHeader(name: name, value: value))
+                }
+            }
+        }
+        var body: [UInt8] = []
+        if case .text(let text)? = member("body") {
+            body = Array(text.utf8)
+        } else if case .text(let hex)? = member("body_hex") {
+            let digits = Array(hex.utf8)
+            var index = 0
+            while index + 1 < digits.count {
+                if let byte = UInt8(String(decoding: digits[index...(index + 1)], as: UTF8.self), radix: 16) {
+                    body.append(byte)
+                }
+                index += 2
+            }
+        } else if case .array(let repeated)? = member("body_repeat"), repeated.count == 2,
+            case .text(let unit) = repeated[0], let count = integerValue(repeated[1], as: Int.self)
+        {
+            for _ in 0..<count {
+                body.append(contentsOf: Array(unit.utf8))
+            }
+        }
+        guard let status = member("status").flatMap({ integerValue($0, as: Int.self) }) else {
+            fail("an `http` directive answers a status, hold, or fail", at)
+            return
+        }
+        answer = .response(HostHTTPResponse(status: status, headers: headers, body: body))
+    }
+}
+
+/// The host, its clock and its transport, which a step's `host` directives set.
 private struct HostRig {
     let host: ReferenceHost
     let clock: ScriptedClockSource
+    let transport: ScriptedTransport
 
     /// Applies the `host` object of a step. A directive this host does not serve fails the
     /// step that names it, and is never ignored: a step whose host was not set up as it
@@ -117,6 +180,12 @@ private struct HostRig {
                 if let keys = integerValue(value, as: Int.self) {
                     host.setQuota(keys)
                 }
+            case "http":
+                guard case .object(let members) = value else {
+                    fail("the `http` directive is an object", at)
+                    continue
+                }
+                transport.apply(members, at: at)
             default:
                 fail("`\(name)` is a host directive this host does not serve yet", at)
             }
@@ -141,6 +210,21 @@ private struct HostRig {
                 state.append((key: name, value: .array(host.shown().map { JSONValue.text($0) })))
             case "cancelled":
                 state.append((key: name, value: .array(host.cancelled.map { JSONValue.text($0) })))
+            case "http":
+                // What the transport was given in all: method, URL, the request's header
+                // lines as name and value, and the body.
+                let given = transport.log.map { request -> JSONValue in
+                    let headers = request.headers.map { header -> JSONValue in
+                        .object([(key: "name", value: .text(header.name)), (key: "value", value: .text(header.value))])
+                    }
+                    return .object([
+                        (key: "method", value: .text(request.method)),
+                        (key: "url", value: .text(request.url)),
+                        (key: "headers", value: .array(headers)),
+                        (key: "body", value: .text(request.body)),
+                    ])
+                }
+                state.append((key: name, value: .array(given)))
             default:
                 fail("`\(name)` is host state this host does not hold yet", at)
             }
@@ -192,12 +276,15 @@ private func replayHost<Policy: StatePolicy>(
     }
 
     let clock = ScriptedClockSource()
-    let rig = HostRig(host: ReferenceHost(clock: clock), clock: clock)
+    let transport = ScriptedTransport()
+    let rig = HostRig(host: ReferenceHost(clock: clock, transport: transport), clock: clock, transport: transport)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
     serve(rig.host, on: engine)
     engine.initialize()
-    engine.step()
+    // `tick` and not `step`: it takes what has come due in the scheduler, which is where
+    // the end of an invocation's time waits.
+    engine.tick()
 
     // What the replay compared. A scenario none of whose expectations was judged passed
     // for want of anything to fail on.
@@ -218,7 +305,7 @@ private func replayHost<Policy: StatePolicy>(
         }
         if case .number(let text)? = step.member("advance_ms"), let ms = Int64(text) {
             engine.advanceTimeMs(ms)
-            engine.step()
+            engine.tick()
         }
         if case .text(let event)? = step.member("event") {
             guard engine.resolveEventByName(event) != nil else {
@@ -230,7 +317,7 @@ private func replayHost<Policy: StatePolicy>(
                 data = writeJSON(payload)
             }
             engine.raiseExternalByName(event, eventData: data)
-            engine.step()
+            engine.tick()
         }
         guard case .object(let expect)? = step.member("expect") else {
             fail("\(label): a step states what it expects", sourceLocation)
@@ -310,6 +397,20 @@ private func replayHost<Policy: StatePolicy>(
             "existed": { .bool(policy.existed) },
             "next_found": { .bool(policy.nextFound) },
             "next": { .text(policy.next) },
+        ]
+    )
+}
+
+@Test func aMachineMakesAnHTTPExchangeThroughItsHost() {
+    let policy = StaticHostHttpPolicy()
+    replayHost(
+        "static_host_http",
+        policy: policy,
+        variables: [
+            "outcome": { .text(policy.outcome) },
+            "status": { integer(policy.status) },
+            "response_headers": { .text(policy.responseHeaders) },
+            "response_body": { .text(policy.responseBody) },
         ]
     )
 }

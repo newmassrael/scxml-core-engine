@@ -66,6 +66,10 @@ public struct ReadyAct<Event> {
     /// The target the send resolved when it was made (§scxml-6.2), or nil for this
     /// session's own external queue.
     public var route: ScheduledRoute?
+
+    /// Set when the act is not a send at all but the end of the time a host-run
+    /// invocation was given (§scxml-6.4.1): which start it ends. Nil for every send.
+    public var hostInvokeDeadline: HostInvokeDeadline? = nil
 }
 
 /// An entry still waiting in the scheduler, with the moment of the engine's clock it
@@ -125,6 +129,10 @@ public struct PullScheduler<Event> {
         /// The target a delayed send resolved when it was made (§scxml-6.2), or nil
         /// for this session's own external queue.
         var route: ScheduledRoute?
+
+        /// Set for the end of the time a host-run invocation was given, which is no
+        /// send: it has no send id and `<cancel>` does not reach it.
+        var hostDeadline: HostInvokeDeadline? = nil
     }
 
     private var entries: [Entry] = []
@@ -220,11 +228,36 @@ public struct PullScheduler<Event> {
         )
     }
 
+    /// Queues the end of the time the host-run invocation `deadline` names was given,
+    /// at `readyAtMs` (§scxml-6.4.1).
+    ///
+    /// The same queue as a delayed send, so the two come due in one order and
+    /// `nextReadyAtMs` covers both. It has no send id, so `<cancel>` cannot reach it.
+    public mutating func scheduleHostInvokeDeadline(_ deadline: HostInvokeDeadline, readyAtMs: Int64) {
+        entries.append(
+            Entry(
+                event: nil,
+                eventData: "",
+                sendID: "",
+                origin: "",
+                name: "",
+                readyAtMs: readyAtMs,
+                route: nil,
+                hostDeadline: deadline
+            )
+        )
+    }
+
+    /// Takes back the deadline of the start `token` names, if it is still queued.
+    public mutating func dropHostInvokeDeadline(token: UInt64) {
+        entries.removeAll { $0.hostDeadline?.token == token }
+    }
+
     /// Cancels a scheduled event by send id (§scxml-6.2.5). Returns whether it was
     /// found and removed.
     public mutating func cancelEvent(sendID: String) -> Bool {
         let before = entries.count
-        entries.removeAll { $0.sendID.utf8.elementsEqual(sendID.utf8) }
+        entries.removeAll { $0.hostDeadline == nil && $0.sendID.utf8.elementsEqual(sendID.utf8) }
         return entries.count < before
     }
 
@@ -285,7 +318,8 @@ public struct PullScheduler<Event> {
             sendID: entry.sendID,
             origin: entry.origin,
             name: entry.name,
-            route: entry.route
+            route: entry.route,
+            hostInvokeDeadline: entry.hostDeadline
         )
     }
 
@@ -322,7 +356,8 @@ public struct PullScheduler<Event> {
                         sendID: entry.sendID,
                         origin: entry.origin,
                         name: entry.name,
-                        route: entry.route
+                        route: entry.route,
+                        hostInvokeDeadline: entry.hostDeadline
                     )
                 )
             }
