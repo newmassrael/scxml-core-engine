@@ -1,0 +1,282 @@
+# Mutation cases for "a broadcast log template stores the context where the runtime reads it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases`.
+#
+# The bounded broadcast log of ADR 0062 (section 4, "Caller inputs are part of the
+# element") stores what an element's codec asks its caller for, its flag inputs and the
+# tag of a variant, in context words between the length word and the bytes of a slot. The
+# numbers are decided once in Rust (`a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases`
+# keeps them); each of the six templates, one per language, writes them where `publish`
+# stores the entry and reads them back where `read` decodes it. That is a second place the
+# layout must agree with itself in, in six languages, and a template that stores a flag at
+# one bit and reads it from another decodes every entry under flags it was not published
+# under, with nothing in the run to say so.
+#
+# The layout a template must keep, for words of `W` bits:
+#
+# - flag `i` is bit `i % W` of context word `i / W`, written on `publish` and read back on
+#   `read` from the same word and the same bit;
+# - the tag is one word after the flag words, written and read at the same word;
+# - the bytes start at word `1 + CONTEXT_WORDS`, past every context word.
+#
+# The oracle is `sce-build/tests/broadcast_log_kind.rs`, which renders the module of each
+# language from facts it states and holds the text it prints. The templates are embedded in
+# the test binary by the `sce-build` build script, so a case that edits one reaches the test
+# that renders it with nothing else declared. What a mutant changes is a line the language's
+# own test holds, so each case names that language's test:
+#
+# - Rust: `rust_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+# - Kotlin: `kotlin_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+#   and `kotlin_carries_flags_past_a_64_bit_word_into_the_next_context_word`
+# - Python: `python_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+# - Go: `go_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+# - C11: `c11_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+# - C++: `cpp_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own`
+#
+# Each holds two flags (`S` at bit 0, `T` at bit 1) and a tag, so the context is two words
+# and the bytes start at word 3: a flag whose bit is lost, a tag read or written at the
+# wrong word, or a payload that starts on a context word is a line that is not in the
+# text. Each language has four mutants: the bit a flag is written at, the word the tag is
+# written at, the word the bytes start at (Python, which packs the bytes before it writes
+# them, is mutated where it unpacks them), and the bit a flag is read back from (for Rust,
+# whose tests do not hold the read-back of a flag, the word the tag is read back from).
+#
+# Mutants that are not cases, each with its reason, are at the end of the file.
+#
+# Anchors are literal slices of the template; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test broadcast_log_kind
+mutation_targets tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2 tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2 tools/codegen/templates/forge/python/broadcast_log.py.jinja2 tools/codegen/templates/forge/go/broadcast_log.go.jinja2 tools/codegen/templates/forge/c/broadcast_log.h.jinja2 tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2
+
+# --- Rust ---
+
+# Every flag is written at bit 0 of its word, so the second flag of a word lands on the
+# first. Killed by the Rust test above: `entry[1 + 0] |= u64::from(flags.t) << 1;` is
+# printed `<< 0`; and by `the_narrow_row_stores_the_context_in_32_bit_words`
+# (`flags.f31) << 31;`).
+mutation_case "rust writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''from(flags.{{ flag.snake }}) << {{ flag.shift }};''',
+     r'''from(flags.{{ flag.snake }}) << 0;''')
+PY
+
+# The tag is written at the first context word, over the first word of flags. Killed by
+# the Rust test: `entry[1 + 1] = u64::from(tag);` is printed `entry[1 + 0]`.
+mutation_case "rust writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(tag);''',
+     r'''entry[1 + 0] = {{ word_type }}::from(tag);''')
+PY
+
+# The bytes are written from the first context word, over the flags. Killed by the Rust
+# test: `entry[3 + index / 8] |= u64::from(*byte)` is printed `entry[1 + index / 8]`.
+mutation_case "rust writes the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''entry[{{ context.payload_start }} + index / {{ word_bytes }}] |=''',
+     r'''entry[1 + index / {{ word_bytes }}] |=''')
+PY
+
+# The tag is read from the first context word, which holds flags when the element has any.
+# Killed by the Rust test: `let tag = entry[1 + 1] as u8;` is printed `entry[1 + 0]`.
+mutation_case "rust reads the tag from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''let tag = entry[1 + {{ context.tag_word }}] as u8;''',
+     r'''let tag = entry[1 + 0] as u8;''')
+PY
+
+# --- Kotlin ---
+
+# Killed by the Kotlin test: `(if (flags.T) 1L else 0L) shl 1)` is printed `shl 0`.
+mutation_case "kotlin writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
+     r'''((if (flags.{{ flag.camel }}) 1L else 0L) shl {{ flag.shift }})''',
+     r'''((if (flags.{{ flag.camel }}) 1L else 0L) shl 0)''')
+PY
+
+# Killed by the Kotlin test: `entry[1 + 1] = tag.toLong()` is printed `entry[1 + 0]`.
+mutation_case "kotlin writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
+     r'''entry[1 + {{ context.tag_word }}] = tag.toLong()''',
+     r'''entry[1 + 0] = tag.toLong()''')
+PY
+
+# Killed by the Kotlin test: `val word = 3 + index / 8` is printed `val word = 1 + index / 8`.
+mutation_case "kotlin writes the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
+     r'''val word = {{ context.payload_start }} + index / 8''',
+     r'''val word = 1 + index / 8''')
+PY
+
+# Every flag is read back from bit 0. Killed by
+# `kotlin_carries_flags_past_a_64_bit_word_into_the_next_context_word`:
+# `f63 = ((entry[1 + 0] ushr 63) and 1L) == 1L,` is printed `ushr 0`.
+mutation_case "kotlin reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
+     r'''((entry[1 + {{ flag.word }}] ushr {{ flag.shift }}) and 1L) == 1L''',
+     r'''((entry[1 + {{ flag.word }}] ushr 0) and 1L) == 1L''')
+PY
+
+# --- Python ---
+
+# Killed by the Python test: `entry[1 + 0] |= int(flags.t) << 1` is printed `<< 0`.
+mutation_case "python writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
+     r'''|= int(flags.{{ flag.snake }}) << {{ flag.shift }}''',
+     r'''|= int(flags.{{ flag.snake }}) << 0''')
+PY
+
+# Killed by the Python test: `entry[1 + 1] = tag` is printed `entry[1 + 0] = tag`.
+mutation_case "python writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
+     r'''entry[1 + {{ context.tag_word }}] = tag''',
+     r'''entry[1 + 0] = tag''')
+PY
+
+# Python packs the bytes into words before it puts them in the entry, so the offset that
+# matters is the one it reads them back from: the bytes of an entry are the words after the
+# context. Killed by the Python test: `for word in entry[3:])` is printed `entry[1:]`, so
+# a reader would take the flag words and the tag for the first bytes of the element.
+mutation_case "python reads the bytes back from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
+     r'''for word in entry[{{ context.payload_start }}:])''',
+     r'''for word in entry[1:])''')
+PY
+
+# Killed by the Python test: `t=bool((entry[1 + 0] >> 1) & 1),` is printed `>> 0`.
+mutation_case "python reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
+     r'''bool((entry[1 + {{ flag.word }}] >> {{ flag.shift }}) & 1),''',
+     r'''bool((entry[1 + {{ flag.word }}] >> 0) & 1),''')
+PY
+
+# --- Go ---
+
+# Killed by the Go test: `entry[1+0] |= uint64(1) << 1` is printed `<< 0`.
+mutation_case "go writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
+     r'''entry[1+{{ flag.word }}] |= uint64(1) << {{ flag.shift }}''',
+     r'''entry[1+{{ flag.word }}] |= uint64(1) << 0''')
+PY
+
+# Killed by the Go test: `entry[1+1] = uint64(tag)` is printed `entry[1+0] = uint64(tag)`.
+mutation_case "go writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
+     r'''entry[1+{{ context.tag_word }}] = uint64(tag)''',
+     r'''entry[1+0] = uint64(tag)''')
+PY
+
+# Killed by the Go test: `entry[3+index/8] |= uint64(value) << (8 * (index % 8))` is printed
+# `entry[1+index/8] |= ...`.
+mutation_case "go writes the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
+     r'''entry[{{ context.payload_start }}+index/8] |= uint64(value)''',
+     r'''entry[1+index/8] |= uint64(value)''')
+PY
+
+# Killed by the Go test: `T: (entry[1+0]>>1)&1 == 1,` is printed `>>0`.
+mutation_case "go reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
+     r'''(entry[1+{{ flag.word }}]>>{{ flag.shift }})&1 == 1,''',
+     r'''(entry[1+{{ flag.word }}]>>0)&1 == 1,''')
+PY
+
+# --- C11 ---
+
+# Killed by the C11 test: `if (flags->t) {\n        entry[1u + 0u] |= UINT64_C(1) << 1u;` is
+# printed `<< 0u`.
+mutation_case "c11 writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
+     r'''|= UINT64_C(1) << {{ flag.shift }}u;''',
+     r'''|= UINT64_C(1) << 0u;''')
+PY
+
+# Killed by the C11 test: `entry[1u + 1u] = (uint64_t)tag;` is printed `entry[1u + 0u]`.
+mutation_case "c11 writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
+     r'''entry[1u + {{ context.tag_word }}u] = (uint64_t)tag;''',
+     r'''entry[1u + 0u] = (uint64_t)tag;''')
+PY
+
+# Killed by the C11 test: `entry[3u + index / 8u] |= (uint64_t)bytes[index]` is printed
+# `entry[1u + index / 8u] |= ...`.
+mutation_case "c11 writes the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
+     r'''entry[{{ context.payload_start }}u + index / 8u] |=''',
+     r'''entry[1u + index / 8u] |=''')
+PY
+
+# Killed by the C11 test: `result.flags.t = ((entry[1u + 0u] >> 1u) & UINT64_C(1)) != 0u;` is
+# printed `>> 0u`.
+mutation_case "c11 reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
+     r'''((entry[1u + {{ flag.word }}u] >> {{ flag.shift }}u) & UINT64_C(1)) != 0u;''',
+     r'''((entry[1u + {{ flag.word }}u] >> 0u) & UINT64_C(1)) != 0u;''')
+PY
+
+# --- C++ ---
+
+# Killed by the C++ test: `if (flags.t) {\n        entry[1 + 0] |= std::uint64_t{1} << 1;` is
+# printed `<< 0;`.
+mutation_case "cpp writes every flag at bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
+     r'''|= std::uint64_t{1} << {{ flag.shift }};''',
+     r'''|= std::uint64_t{1} << 0;''')
+PY
+
+# Killed by the C++ test: `entry[1 + 1] = static_cast<std::uint64_t>(tag);` is printed
+# `entry[1 + 0]`.
+mutation_case "cpp writes the tag at the first context word" <<'PY'
+edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
+     r'''entry[1 + {{ context.tag_word }}] = static_cast<std::uint64_t>(tag);''',
+     r'''entry[1 + 0] = static_cast<std::uint64_t>(tag);''')
+PY
+
+# Killed by the C++ test: `entry[3 + index / 8] |= static_cast<std::uint64_t>(bytes[index])` is
+# printed `entry[1 + index / 8] |= ...`.
+mutation_case "cpp writes the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
+     r'''entry[{{ context.payload_start }} + index / 8] |=''',
+     r'''entry[1 + index / 8] |=''')
+PY
+
+# Killed by the C++ test: `flags.t = ((entry[1 + 0] >> 1) & std::uint64_t{1}) != 0;` is
+# printed `>> 0`.
+mutation_case "cpp reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
+     r'''((entry[1 + {{ flag.word }}] >> {{ flag.shift }}) & std::uint64_t{1}) != 0;''',
+     r'''((entry[1 + {{ flag.word }}] >> 0) & std::uint64_t{1}) != 0;''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# The read-back of a flag in the Rust template (`((entry[1 + {{ flag.word }}] >> {{ flag.shift }})
+# & 1) == 1`), in its shift and in its word. The Rust tests hold what `publish` writes and not
+# what `read` reads back of a flag: the one flag of
+# `rust_stores_the_flag_inputs_an_element_asks_its_caller_for` is at bit 0 of word 0, which the
+# mutant prints as it is, and `the_narrow_row_stores_the_context_in_32_bit_words` holds the
+# writes alone. It needs a test
+# first: a Rust test with two flags and a tag that holds `t: ((entry[1 + 0] >> 1) & 1) == 1,`,
+# and one with 65 flags that holds the read-back of the 64th and 65th as the other languages' do.
+#
+# The offset the Rust template reads the bytes from (`entry[{{ context.payload_start }} + index
+# / {{ word_bytes }}] >> ...`). No Rust test holds the line that unpacks the bytes, only the one
+# that packs them, so a mutant of the read is printed in no needle. It needs a test first.
+#
+# The offset the bytes are read from in the Kotlin, Go, C11 and C++ templates
+# (`entry[{{ context.payload_start }} ... index / 8] >> ...`). Each is held by its language's
+# test (`bytes[index] = (entry[3 + index / 8] ushr ...`, `encoded[index] = byte(entry[3+index/8]
+# >> ...`, `bytes[index] = (uint8_t)(entry[3u + index / 8u] >> ...`, and the C++ line of the same
+# shape), and a case on each would be killed by the same assertion that holds the write above.
+# It is not written, to keep the round short: the write and the read of the offset are one
+# number from `payload_start`, which the other casefile mutates at its source.
+#
+# The Python `ljust(8 * (WORDS - {{ context.payload_start }}), ...)` that pads the bytes to the
+# words of the payload. Held by `padded = bytes(buffer[:length]).ljust(8 * (WORDS - 3), ...` in
+# the Python test; the mutant `WORDS - 1` is killed by it and is not a case for the same reason
+# as above.
+#
+# The `WORDS` constant of each language (`1 + CONTEXT_WORDS + ...`). Every `*_stores_*` test holds
+# it as text, so a template that leaves `CONTEXT_WORDS` out of it is killed; it is the arithmetic
+# of the slot rather than where a flag is stored, and it is not a case of this file.
