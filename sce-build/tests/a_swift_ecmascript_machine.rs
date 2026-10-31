@@ -311,6 +311,48 @@ fn an_invoke_hands_its_child_the_values_it_names_as_json() {
     );
 }
 
+/// The `<finalize>` of an `<invoke>` is the script the parent runs, in its own data model with `_event`
+/// bound to the event the child sent, before it selects transitions on that event. The invocation is
+/// the one whose session the event names as its origin, so the script rides on the session the parent
+/// tracks, and the machine reports that it has a finalize.
+#[test]
+fn a_finalize_runs_in_the_parent_before_it_selects_on_the_childs_event() {
+    let body = r##"
+  <datamodel><data id="seen" expr="0"/></datamodel>
+  <state id="s0">
+    <invoke type="scxml">
+      <finalize><assign location="seen" expr="_event.data"/></finalize>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0" datamodel="ecmascript">
+          <datamodel><data id="p" expr="0"/></datamodel>
+          <state id="c0"><transition target="cdone"/></state>
+          <final id="cdone"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke" target="done"/>
+  </state>
+  <final id="done"/>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("public var hasFinalize: Bool { true }"),
+        "the machine reports that it has a finalize: {machine}"
+    );
+    assert!(
+        machine.contains("public func executeFinalizeForChildEvent("),
+        "the finalize is run for the child's event: {machine}"
+    );
+    assert!(
+        machine.contains(r#"finalizeScript: ""#) && !machine.contains(r#"finalizeScript: """#),
+        "the session the parent tracks carries the finalize script: {machine}"
+    );
+    assert!(
+        machine.contains("bindCurrentEvent(event.event, engine: engine)"),
+        "_event is the event the child sent: {machine}"
+    );
+}
+
 /// A child that runs no script engine has no variable to take a value, so what is handed to it is
 /// refused by name.
 #[test]

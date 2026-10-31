@@ -4291,7 +4291,9 @@ pub(crate) fn swift_invoke_unlowered(
     if !is_ecma && !info.common.base.idlocation.is_empty() {
         return Some("an <invoke idlocation>".to_string());
     }
-    if !info.finalize_content.is_empty() {
+    // What the child hands back is a script an `ecmascript` parent runs in its own data model,
+    // with `_event` the event the child sent, before it selects on that event.
+    if !is_ecma && !info.finalize_content.is_empty() {
         return Some("an <invoke> with a <finalize>".to_string());
     }
     // A child that runs a script engine links the engine of its own, which is only the

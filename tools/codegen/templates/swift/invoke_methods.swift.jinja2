@@ -211,7 +211,7 @@
             invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
             parentSessionID: sessionID,
             autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
-            finalizeScript: ""
+            finalizeScript: "{{ (invoke_info.finalize_content | to_lua_script | escape_swift) if (ecmascript_datamodel and invoke_info.finalize_content) else '' }}"
         )
         // W3C SCXML 6.4: the child's delayed sends are measured on this machine's
         // clock, so a delay on either side of the boundary is the same instant and a
@@ -441,6 +441,27 @@
             child.raiseExternalByNameWithMeta(eventName, metadata: metadata)
         }
 {% endfor %}
+    }
+{% endif %}
+{% set finalize_invokes = child_invokes | selectattr('finalize_content') | list %}
+{% if finalize_invokes and ecmascript_datamodel %}
+
+    /// W3C SCXML 6.5: the `<finalize>` of the invocation an event came from runs before the
+    /// parent selects transitions on that event, in the parent's data model, with `_event` the
+    /// event the child sent. The invocation is the one whose session the event names as its
+    /// origin; an event from anywhere else (the host, this machine itself) finalizes nothing.
+    public func executeFinalizeForChildEvent(_ event: inout EventWithMetadata<{{ machine_name }}Event>, engine: Engine<{{ machine_name }}Policy>) {
+        let origin = event.metadata.origin
+        guard !origin.isEmpty,
+            let child = activeInvokes.values.first(where: { $0.sessionID == origin && !$0.finalizeScript.isEmpty })
+        else {
+            return
+        }
+        populateEventMetadata(event.metadata)
+        bindCurrentEvent(event.event, engine: engine)
+        if !executeScript(child.finalizeScript, name: "=finalize") {
+            raiseExecutionError("<finalize> failed to execute", engine: engine)
+        }
     }
 {% endif %}
 
