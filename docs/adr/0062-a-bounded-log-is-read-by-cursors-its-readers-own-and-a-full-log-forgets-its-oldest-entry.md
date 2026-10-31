@@ -1090,13 +1090,11 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   constants, the words of an entry as the runtime holds them (the context word between the length and the bytes), a reader
   getting back the flag it was published under, two readers decoding every entry under the same flag, and a reader getting
   back the tag.
-- **A difference from Rust that the conformance does not hide.** The Rust codec refuses a flag that disagrees with the element
-  (`PresentIfMismatch`, from the source form of ADR 0058), so a Rust log never holds an entry whose bytes and flag disagree. The
-  Kotlin codec has no such check for a field gated on a flag input: its encode writes a gated field whenever the field holds a
-  value and skips it when it does not, whatever the flag says (the chain-membership gates are the only ones it checks). A
-  Kotlin publisher that gives a flag the element contradicts is therefore not refused, and the entry reads back decoded under
-  the stored flag. No Kotlin test asserts the refusal the Rust test does, because the code does not do it; closing it is a
-  change to the Kotlin codec generator, and moves its goldens and every generated Kotlin tree that has a flag-gated field.
+- **A flag the element contradicts is refused.** The Kotlin codec's `encode` checks a flag input against the field it gates
+  before it writes a byte, as the Rust codec does (`CodecError.PresentIfMismatch`; see "The codecs refuse a flag their
+  element contradicts" below), so a Kotlin log never holds an entry whose bytes and flag disagree: `publish` answers
+  `Refused` and takes no sequence number.
+  `aFlagItsElementContradictsIsRefusedByTheCodecAndNothingIsPublished` holds it.
 - **Run (2026-10-29, build machines).** `cargo test -p sce-build --features cli --test broadcast_log_kind` passed 114
   tests with Kotlin, Python and Rust registered, the workspace clippy with `-D warnings` was clean, and
   `scripts/gates/forge-kotlin.sh` ended `BUILD SUCCESSFUL` after running `generateBroadcastLogContextFixtures`, compiling
@@ -1119,14 +1117,11 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   turning the stored bits back into `bool` and passing them, then the tag, to `decode`. A tag outside 0 to 255 is a
   `ValueError` before the codec is asked anything, because the entry stores the tag as one byte and Python has no `u8` to
   refuse it; nothing is published.
-- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
-  (`PresentIfMismatch`, from its source-based `encode`). The Python codec's `encode` does not: it writes a gated field when
-  the value is not `None` and never reads the flag, and the log, which does not judge the publisher's flags either, stores
-  what it was given. A value published under a flag that says it is absent is stored with its bytes and read back without
-  the value; a value published as absent under a flag that says it is there is stored and raises `CodecError` at `read`.
-  `test_the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this and turns red on the
-  first `publish` the day the Python codec refuses the disagreement, which is the better end state and a change to the
-  codec generator and not to the log.
+- **A flag the element contradicts is refused.** The Python codec's `encode` checks a flag input against the field it gates
+  before it writes a byte, as the Rust codec does (`PresentIfMismatch`; see "The codecs refuse a flag their element
+  contradicts" below), so `publish` raises it and takes no sequence number. The log judges nothing of its own: it stores
+  what the codec accepted.
+  `test_a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published` holds it.
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the Python module for flags alone, for flags and a tag, for a tag
   alone, for 65 flags (flag 63 closes the first context word, flag 64 opens the second), and for an element with no caller
   input; the refusal test for Python is now one of acceptance, and the registry-driven tests follow the list.
@@ -1159,18 +1154,12 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   `*<Log>Item{Element, Flags, Tag}` in the element's place (`Flags` and `Tag` only where the element has them), and an element
   with none keeps `(broadcastlog.Read, *Element, error)`. The log does not derive the tag from the value: the publisher
   gives it.
-- **What the Go codec does with a flag the element contradicts.** Nothing: the generated `Encode` of a field gated on a flag
-  input tests the optional field (`IsPresent()`) and never reads the flag parameter (only the chain-membership gates are
-  checked, `ErrPresentIfMismatch`), and `Decode` reads the field under `(flag & mask) != 0`. So a Go publisher that gives a
-  flag the element contradicts is not refused, by the codec or by the log (which does not judge flags either): a value
-  published under a flag that says it is absent is stored with its bytes and reads back without the value, and a value
-  published as absent under a flag that says it is there is stored and `Read` returns the codec's error for the short
-  frame. The Rust codec refuses the disagreement (`PresentIfMismatch`, from its source form); Kotlin and Python do not,
-  as above. `TestBroadcastLogContextTheFlagThatWasStoredDecidesHowAnEntryIsReadAndTheLogDoesNotJudgeIt` pins the Go
-  behaviour and turns red on the first `Publish` the day the Go codec refuses the disagreement, which is the better end
-  state and a change to the codec generator and not to the log (it moves the goldens and every generated Go tree with a
-  flag-gated field). A tag that selects no arm is the codec's `codec.ErrNeedMoreBytes` at `Read` (the variant has no
-  catch-all arm), which a test also pins.
+- **A flag the element contradicts is refused.** The generated `Encode` of a field gated on a flag input checks the flag
+  against the optional field (`IsPresent()`) before it writes a byte, as the Rust codec does (`codec.ErrPresentIfMismatch`;
+  see "The codecs refuse a flag their element contradicts" below), so `Publish` returns that error and takes no sequence
+  number. `TestBroadcastLogContextAFlagItsElementContradictsIsRefusedByTheCodecAndNothingIsPublished` holds it. A tag that
+  selects no arm is the codec's `codec.ErrNeedMoreBytes` at `Read` (the variant has no catch-all arm), which a test also
+  pins.
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the Go package for flags alone, for flags and a tag, for a tag
   alone, for 65 flags (flag 63 closes the first context word, flag 64 opens the second) and for an element with no caller
   input; the two Go refusal tests (a flag input, a tag) are replaced by those, and the registry-driven tests follow the
@@ -1204,16 +1193,11 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   stored bits back into the `uint8_t`s it passes, flags then tag, to `<element>_decode`, and sets them before the decode, so a
   `READ_DECODE_FAILED` result also says what the codec refused under. The status enums, the length check and the bounds are
   unchanged.
-- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
-  (`PresentIfMismatch`, from its source-based `encode`). The C codec does not for a field gated on a flag input: its generated
-  `encode` writes a gated field whenever the field's optional value is present, and never reads the flag (read for a gated fixed
-  field, which is what the shared document has; the other gated shapes were not each read; the check that returns
-  `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`, `present_if_chain_encode_prologue`, is written only for chain-membership predicates).
-  The log judges nothing either and stores what it was given: a present value published under a clear flag is stored with its
-  bytes and reads back without the value, and an absent value published under a set flag is stored and refused at `read` by the
-  codec. `the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this and turns red at the
-  first `publish` the day the C codec refuses the disagreement, which is the better end state and a change to the codec
-  generator, not to the log. Nothing here was changed in the codec.
+- **A flag the element contradicts is refused.** The generated `encode` of a field gated on a flag input checks the flag against
+  the field's optional value before it writes a byte, as the Rust codec does (`SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`; see "The
+  codecs refuse a flag their element contradicts" below), so `publish` answers `PUBLISH_ENCODE_FAILED` with that status and takes
+  no sequence number. The log judges nothing of its own: it stores what the codec accepted.
+  `a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published` holds it.
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs`: the C11 refusals of a flag input and of a tag are now acceptance tests, and
   five shapes are pinned (a flag input from the real codec, flags with a tag, a tag alone, 65 flags where flag 63 closes the
   first context word and flag 64 opens the second, and an element with no caller input keeping the lines it had); one more holds
@@ -1252,15 +1236,11 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   entry, passes them, flags then tag, to `<Element>::decode(cursor, ...)`, and returns them in `Item::flags` and `Item::tag`,
   after the element. The result alternatives `Empty`, `Lagged` and `Malformed` are unchanged: a malformed entry carries no flags
   or tag here, where the C11 result reports what its codec refused under. The length check and the bounds are unchanged.
-- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
-  (`PresentIfMismatch`, from its source-based `encode`). The C++ codec does not for a field gated on a flag input, as the C
-  one does not: its generated `encode` of a gated fixed field writes the field whenever the field's `std::optional` holds a
-  value and takes the flag parameter only to silence an unused-parameter warning (read for a gated fixed field, which is what the
-  shared document has; the other gated shapes were not each read; the check that returns `CodecError::PresentIfMismatch`,
-  `present_if_chain_encode_prologue`, is written only for chain-membership predicates). The log judges nothing either and stores
-  what it was given. `the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this in the
-  lane test and turns red at the first `publish` the day the C++ codec refuses the disagreement, which is the better end state
-  and a change to the codec generator, not to the log. Nothing here was changed in the codec.
+- **A flag the element contradicts is refused.** The generated `encode` of a field gated on a flag input checks the flag against
+  the field's `std::optional` before it writes a byte, as the Rust codec does (`CodecError::PresentIfMismatch`; see "The codecs
+  refuse a flag their element contradicts" below), so `publish` answers with that error and takes no sequence number
+  (`published()` is false and `seq` is `kNoSequence`). The log judges nothing of its own: it stores what the codec accepted.
+  `a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published` holds it in the lane test.
 - **Tests.** `sce-build/tests/broadcast_log_kind.rs`: the C++ refusal of a flag input is now an acceptance test with five shapes
   pinned (a flag input from the real codec, flags with a tag, a tag alone, 65 flags where flag 63 closes the first context word
   and flag 64 opens the second, and an element with no caller input keeping the lines it had), and the C++ test of the CBOR
@@ -1280,6 +1260,41 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   `-Werror`) and the older `broadcast_log_generated`, which exercises the no-context path, among them. `clang-format` was
   run on the C++ test and not on the generated header. No generated tree moves: no `.scxml` of the fixtures or the standard
   library changed.
+
+### The codecs refuse a flag their element contradicts (2026-10-31)
+
+- **The gap.** The Rust codec refuses a flag input that contradicts the field it gates (`PresentIfMismatch`, from the source form
+  of ADR 0058). The Kotlin, Python, Go, C11 and C++ encodes did not: for a field gated on a flag input they wrote the field
+  whenever its value was present and never read the flag, and only a chain-membership gate was checked. A log that stores the
+  caller's flags beside the bytes (§4) would then hold an entry whose flag and bytes disagree, and read it back without the
+  value or refuse it at `read`. The five lane tests of the sections above pinned that behaviour and said it was a change to
+  the codec generator and not to the log.
+- **The rule.** `codec_roles::classify` names the gates a codec cannot derive a flag from: a flag input the caller supplies, a
+  disjunction, a flag wider than one bit, a chain's membership. The Rust encoder refuses a disagreement with each
+  (`rust_source::gate_checks`), and `codec_totality` counts each among the reasons an encode may fail (ADR 0065), which a
+  document states for every backend. The other five encodes now check the same set, in the prologue of `encode` before the
+  first byte, so a refusal leaves the sink untouched: `present_if_chain_encode_prologue` takes that list instead of asking
+  whether a predicate has a chain clause. A gate on one flag of a carrier field of the codec is not checked, because the
+  encoder is given the carrier as a field of the value; only a source form that derives the flag removes that relation
+  (ADR 0058 §6).
+- **What it moves.** The `encode_to_vec`-style facade of a codec with such a gate is fallible in the five languages
+  (`([]byte, error)` in Go, `std::optional` in C++, `null` in Kotlin, a raise in Python, a status in C11), as it already was
+  for a chain gate, and as the Rust one is. That is a change of signature for a consumer of a generated codec of that kind.
+  93 goldens under `tests/forge/expected/` move (19 Go, 19 Kotlin, 18 Python, 37 C and C++ headers); no other committed
+  tree does. The wording of the facade comments in the Go,
+  C++ and Kotlin templates and of the five runtimes' error documentation no longer says "chain-membership". `SCE_FORGE.md` §4.6
+  states the set, and its paragraph that said C11 had no mismatch to refuse is corrected: C11 refuses with
+  `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`.
+- **The log.** It judges nothing of its own and stores what the codec accepted, so `publish` is refused by the codec and takes
+  no sequence number: Python raises `PresentIfMismatch`, Go returns `codec.ErrPresentIfMismatch`, Kotlin answers `Refused`, C11
+  answers `PUBLISH_ENCODE_FAILED` with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`, C++ answers with
+  `CodecError::PresentIfMismatch`. The test of each lane that pinned the opposite is rewritten, and Kotlin, which had none,
+  has one.
+- **Run (2026-10-31, build machines).** `forge_conformance` passed 1268 tests on the regenerated goldens; the Python lane ended
+  with every `unittest` arm `OK` (304, 28 and 45 tests), the Go lane with its packages `ok`, the C11 lane with 29 ctest tests
+  passed, the C++ lane with 18, and the Kotlin lane `BUILD SUCCESSFUL`. All 462 mutation casefiles still apply.
+- **Not decided here.** Whether the carrier-flag relation is also refused where a source form does not derive the flag is
+  left to the backends that take the source interface.
 
 ### What is still undone
 
