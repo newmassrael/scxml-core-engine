@@ -24,7 +24,7 @@
 #
 # Operations (from `{{ runtime_dep }}`, typed here over the element):
 {% if context.present %}
-#   publish(publisher, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) -> int         the entry's sequence number
+#   publish(publisher, element{% if context.flags %}, flags{% endif %}) -> int         the entry's sequence number
 {% else %}
 #   publish(publisher, element) -> int         the entry's sequence number
 {% endif %}
@@ -32,9 +32,16 @@
 {% if context.present %}
 #
 # The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
-# part of the entry: `publish` takes them, the log stores them in the entry's context
-# words beside the bytes, and an item returns them, so every reader decodes an entry
-# under what it was published under (ADR 0062 section 4).
+# part of the entry: the log stores them in the entry's context words beside the
+# bytes, so every reader decodes an entry under what it was published under (ADR 0062
+# section 4).
+{% if context.flags %}
+# `publish` takes the flags and an item returns them.
+{% endif %}
+{% if context.has_tag %}
+# The tag is not given: it is a function of the element, which `publish` reads off it
+# (`element.tag()`) and stores, and the tag of an item's element is its own.
+{% endif %}
 #
 {% endif %}
 # A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
@@ -117,9 +124,6 @@ class {{ pascal }}Item:
 {% if context.flags %}
     flags: {{ pascal }}Flags
 {% endif %}
-{% if context.has_tag %}
-    tag: int
-{% endif %}
 {% else %}
     """The entry ``seq``, decoded; the reader now holds ``seq + 1``."""
 
@@ -137,7 +141,7 @@ class {{ pascal }}Item:
 
 
 {% if context.present %}
-def publish(publisher: runtime.Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag: int{% endif %}) -> int:
+def publish(publisher: runtime.Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}) -> int:
 {% else %}
 def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
 {% endif %}
@@ -151,23 +155,24 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
     by the codec (``BufferOverflow`` from the bounded sink) and nothing is
     published: an entry is never a truncated element.
 {% if context.present %}
+{% if context.flags %}
 
-    What the element's codec asks its caller for is given here: {% if context.flags %}``flags`` are its flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}``tag`` is the variant tag its decode takes{% endif %}.
+    ``flags`` are what the element's codec takes from its caller as flag inputs.
     They are encoded under here and stored in the entry's context words, so that
     every reader decodes the entry under what it was published under. The log
-    does not check that {% if context.has_tag %}``tag`` is the tag of the arm ``element`` holds{% else %}the flags agree with ``element``{% endif %}; the publisher gives what it
-    knows, as every caller of this codec does.
+    does not check that the flags agree with ``element``; the publisher gives what
+    it knows, as every caller of this codec does.
+{% endif %}
 {% if context.has_tag %}
 
-    A ``tag`` that is not one byte (0 to 255) is a ``ValueError`` and nothing is
-    published: the entry stores the tag as one byte.
+    The variant tag the element's decode takes is not a parameter: it is a
+    function of ``element``, ``element.tag()``, the tag of the arm it holds. It is
+    stored in the entry's context words, so that no entry is stored under a tag
+    its bytes disagree with and every reader decodes the entry under the arm it
+    was published as.
 {% endif %}
 {% endif %}
     """
-{% if context.has_tag %}
-    if not 0 <= tag <= 0xFF:
-        raise ValueError(f"the tag {tag} is not one byte: an entry stores the variant's tag as one byte")
-{% endif %}
     buffer = bytearray(MAX_ENCODED_BYTES)
     sink = runtime_codec.MemoryviewSink(memoryview(buffer))
     element.encode(sink{% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %})
@@ -180,7 +185,7 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
     entry[1 + {{ flag.word }}] |= int(flags.{{ flag.snake }}) << {{ flag.shift }}
 {% endfor %}
 {% if context.has_tag %}
-    entry[1 + {{ context.tag_word }}] = tag
+    entry[1 + {{ context.tag_word }}] = element.tag()
 {% endif %}
 {% endif %}
     entry.extend(int.from_bytes(padded[at : at + 8], "little") for at in range(0, len(padded), 8))
@@ -219,4 +224,4 @@ def read(log: {{ pascal }}, reader: runtime.Reader) -> {{ pascal }}Read:
     element = {{ element_pascal }}.decode(runtime_codec.SceCursor(packed[:stored]){% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
     if element is None:
         raise runtime_codec.CodecError(f"the entry {found.seq} is {stored} bytes that its element's codec does not decode")
-    return {{ pascal }}Item(found.seq, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %})
+    return {{ pascal }}Item(found.seq, element{% if context.flags %}, flags{% endif %})
