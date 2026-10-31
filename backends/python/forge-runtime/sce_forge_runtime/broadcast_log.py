@@ -94,20 +94,29 @@ class Reader:
     Opening a reader costs the log nothing: the publisher does not know how many
     readers exist. A reader is used by one thread at a time. Open one with
     :meth:`BroadcastLog.reader_oldest`, :meth:`BroadcastLog.reader_head` or
-    :meth:`BroadcastLog.reader_at`.
+    :meth:`BroadcastLog.reader_at`, or :meth:`BroadcastLog.reader_deferred`.
     """
 
-    __slots__ = ("_log", "_cursor", "_lost")
+    __slots__ = ("_log", "_cursor", "_lost", "_bound")
 
-    def __init__(self, log: "BroadcastLog", cursor: int) -> None:
+    def __init__(self, log: "BroadcastLog", cursor: int, bound: bool = True) -> None:
         self._log = log
         self._cursor = cursor
         self._lost = 0
+        self._bound = bound
 
     @property
     def cursor(self) -> int:
-        """The sequence number this reader reads next."""
+        """The sequence number this reader reads next. A reader opened by
+        :meth:`BroadcastLog.reader_deferred` has none until its first read binds
+        one: this is 0 and :attr:`is_bound` is false until then."""
         return self._cursor
+
+    @property
+    def is_bound(self) -> bool:
+        """Whether the reader has a cursor: false only for a deferred reader that
+        has not read yet."""
+        return self._bound
 
     @property
     def lost(self) -> int:
@@ -169,6 +178,20 @@ class BroadcastLog:
         with self._lock:
             return Reader(self, max(0, self._head - self.retention))
 
+    def reader_deferred(self) -> Reader:
+        """A reader whose start is the oldest retained entry **at its first read**,
+        and not at this call: it has no cursor until that read binds one, from the
+        head that read loads, so a reader that waited is told of nothing the
+        publisher did meanwhile, where :meth:`reader_oldest` would tell it of the
+        lag. Opening it takes no lock and costs the log nothing.
+
+        The first read binds as :meth:`reader_oldest` does and then goes on as any
+        read does: the answer is an :class:`Item`, :class:`Empty` for a log with
+        nothing published, or :class:`Lagged` if the publisher overtook the cursor
+        inside that read (ADR 0062 section 2). Under this row's lock nothing can
+        overtake it, so the last cannot happen here."""
+        return Reader(self, 0, bound=False)
+
     def reader_head(self) -> Reader:
         """A reader at the head: it sees only what is published after this call."""
         with self._lock:
@@ -197,8 +220,13 @@ class BroadcastLog:
         if len(out) != self._words:
             raise ValueError(f"the buffer holds {len(out)} words and an entry has {self._words}")
         with self._lock:
-            r = reader._cursor
             h = self._head
+            if not reader._bound:
+                # The first read of a deferred reader binds its cursor at the head
+                # loaded here, and then goes on as every read does with that head.
+                reader._cursor = max(0, h - self.retention)
+                reader._bound = True
+            r = reader._cursor
             if r >= h:
                 return Empty()
             if h - r > self.retention:
