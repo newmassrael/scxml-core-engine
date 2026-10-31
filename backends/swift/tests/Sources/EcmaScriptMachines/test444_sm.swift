@@ -384,6 +384,21 @@ public final class Test444Policy: InvocablePolicy {
         }
     }
 
+    /// W3C SCXML 5.7.1, 5.6.2: the value of an expression, already lowered to Lua, as JSON text, which
+    /// keeps its type: a number stays one and an object keeps its shape, so a receiver reading
+    /// `_event.data.value === 42` finds 42. A value ECMAScript cannot write as JSON (`undefined`, a
+    /// function) is `null`, and an expression that cannot be run is nil (the caller's `error.execution`).
+    private func evaluateJSON(_ expression: String) -> String? {
+        do {
+            if case .string(let text) = try ensureLua().evaluate("JSON.stringify(\(expression))", name: "=value") {
+                return text
+            }
+            return "null"
+        } catch {
+            return nil
+        }
+    }
+
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited.
     public func initializeDataModel(engine: Engine<Test444Policy>) {
