@@ -38,8 +38,8 @@
  *   {{ snake }}_publish(&publisher, &element{% if context.flags %}, &flags{% endif %}{% if context.has_tag %}, tag{% endif %})        wait-free; the entry's sequence number
  *   {{ snake }}_read(log, &reader, &out)             wait-free; an item, nothing new, or
  *                                                    how many entries were missed
- * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_head` or
- * `{{ snake }}_reader_at`, and owns its cursor.
+ * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_deferred`,
+ * `{{ snake }}_reader_head` or `{{ snake }}_reader_at`, and owns its cursor.
 {% if ownership_only %}
  * This target has no atomic read-modify-write instruction, so there is no swap to
  * hand the place out with: the publisher is a matter of ownership, `_split` for a
@@ -293,6 +293,13 @@ static inline uint32_t {{ snake }}_head(const {{ snake }}_t *log)
 static inline {{ snake }}_reader_t {{ snake }}_reader_oldest(const {{ snake }}_t *log)
 {
     return sce_blogn_reader_oldest(&log->core);
+}
+
+/* A reader whose start is the oldest retained entry at its first read, and not at
+ * this call: it has no cursor until `{{ snake }}_read` binds one. */
+static inline {{ snake }}_reader_t {{ snake }}_reader_deferred(const {{ snake }}_t *log)
+{
+    return sce_blogn_reader_deferred(&log->core);
 }
 
 /* A reader at the head: it sees only what is published after this call. */

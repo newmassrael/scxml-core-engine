@@ -1983,6 +1983,8 @@ fn c11_generates_a_log_over_the_runtime_sized_from_its_element() {
             "typedef sce_blog_reader_t event_ring_reader_t;",
             "static inline int event_ring_init(event_ring_t *log)",
             "sce_blog_init(&log->core, log->storage, EVENT_RING_SLOTS, EVENT_RING_WORDS)",
+            "static inline event_ring_reader_t event_ring_reader_deferred(const event_ring_t *log)",
+            "return sce_blog_reader_deferred(&log->core);",
             "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
              *publisher, const event_record_t *element)",
             "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length)",
@@ -2924,6 +2926,8 @@ fn c11_a_target_with_32_bit_atomics_is_generated_over_the_narrow_row() {
             "static inline int event_ring_split(event_ring_t *log, event_ring_publisher_t *publisher)",
             "static inline event_ring_publisher_t event_ring_publisher_unchecked(event_ring_t *log)",
             "static inline uint32_t event_ring_head(const event_ring_t *log)",
+            "static inline event_ring_reader_t event_ring_reader_deferred(const event_ring_t *log)",
+            "return sce_blogn_reader_deferred(&log->core);",
             "uint32_t entry[EVENT_RING_WORDS] = {0};",
             "entry[0] = (uint32_t)length;",
             "entry[1u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
@@ -3398,6 +3402,10 @@ fn c11_the_names_the_narrow_header_calls_are_the_ones_the_narrow_runtime_declare
         (
             "sce_blogn_reader_oldest(",
             "static inline sce_blogn_reader_t sce_blogn_reader_oldest(const sce_blogn_t *log) {",
+        ),
+        (
+            "sce_blogn_reader_deferred(",
+            "static inline sce_blogn_reader_t sce_blogn_reader_deferred(const sce_blogn_t *log) {",
         ),
         (
             "sce_blogn_reader_head(",
