@@ -438,6 +438,40 @@ mod parts {
         assert_eq!(CodecVariantDispatchUnknownTag::new(2), None);
     }
 
+    // A value's tag is read from the arm it holds, through the interface, so each
+    // form answers from the table the encode writes from, and a decoded frame
+    // gives back the tag it was read with.
+    #[test]
+    fn a_value_says_the_tag_of_the_arm_it_holds() {
+        let open = CodecVariantSessionOpenParts { version: 7 };
+        let close = CodecVariantSessionCloseParts { reason: 4 };
+        let tag_of = |body| CodecVariantDispatch::tag_of(&CodecVariantDispatchParts { body });
+        assert_eq!(
+            tag_of(CodecVariantDispatchPartsBody::CodecVariantSessionOpen(
+                &open
+            )),
+            1
+        );
+        assert_eq!(
+            tag_of(CodecVariantDispatchPartsBody::CodecVariantSessionClose(
+                &close
+            )),
+            2
+        );
+        assert_eq!(
+            tag_of(CodecVariantDispatchPartsBody::Default {
+                tag: CodecVariantDispatchUnknownTag::new(9).expect("no arm names 9"),
+                body: &close
+            }),
+            9
+        );
+        for frame in [[1u8, 0, 7].as_slice(), &[2, 4], &[9, 4]] {
+            let decoded =
+                CodecVariantDispatch::decode(&mut SceCursor::new(frame)).expect("a frame");
+            assert_eq!(CodecVariantDispatch::tag_of(&decoded), frame[0]);
+        }
+    }
+
     #[test]
     fn an_embedded_body_is_written_and_read_back() {
         let locator = CodecZenohLocatorParts { locator: "tcp/a:1" };

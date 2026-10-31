@@ -1316,6 +1316,47 @@ impl<'a> Plan<'a> {
                 ));
             }
         }
+        // The tag of each arm: the one table the encode writes from and a caller
+        // reads a value's tag from. A type's arguments take no `#[cfg]`, so the
+        // impl is written once for each build the arms tell apart, with the
+        // arms that build holds (docs/adr/0072).
+        let ty = self.l().type_name(&self.tag_type()).to_string();
+        let mut tag_impls = String::new();
+        for world in self.worlds() {
+            let held: Vec<&Arm> = arms.iter().filter(|arm| world.holds(arm)).collect();
+            let mut tags = String::new();
+            for arm in &held {
+                match arm.value {
+                    Some(value) => tags.push_str(&format!(
+                        "            Self::{}(_) => {value},\n",
+                        arm.variant_name
+                    )),
+                    None => tags.push_str("            Self::Default { tag, .. } => tag.get(),\n"),
+                }
+            }
+            let params: Vec<String> = held
+                .iter()
+                .map(|arm| format!("{}: ?Sized", arm.generic))
+                .collect();
+            let args: Vec<&str> = held.iter().map(|arm| arm.generic.as_str()).collect();
+            if let Some(cfg) = &world.cfg {
+                tag_impls.push_str(&format!("{cfg}\n"));
+            }
+            tag_impls.push_str(&format!(
+                "impl<'s, {params}> {enum_name}<'s, {args}> {{\n\
+                 \x20   /// The tag of the arm this is: the value the document gives a known\n\
+                 \x20   /// arm, and the tag a default arm holds. It is the tag the encode\n\
+                 \x20   /// writes, or the one a caller hands the decode for a variant whose\n\
+                 \x20   /// wire form carries none.\n\
+                 \x20   pub fn tag(&self) -> {ty} {{\n\
+                 \x20       match self {{\n{tags}\x20       }}\n\
+                 \x20   }}\n\
+                 }}\n\n",
+                params = params.join(", "),
+                args = args.join(", "),
+                enum_name = self.body_enum(),
+            ));
+        }
         format!(
             "/// The arm of `{name}`'s variant a value holds, each arm's body as the\n\
              /// source it says. The tag is not among them: `{name}` derives it from\n\
@@ -1324,10 +1365,29 @@ impl<'a> Plan<'a> {
              // A default arm's tag is read by the codec that embeds this one and\n\
              // derives its own carrier bits from the arm, which not every build uses.\n\
              #[allow(dead_code)]\n\
-             pub enum {enum_name}<'s, {generics}> {{\n{variants}}}\n\n",
+             pub enum {enum_name}<'s, {generics}> {{\n{variants}}}\n\n\
+             {tag_impls}",
             name = self.name(),
             enum_name = self.body_enum(),
             generics = generics.join(", "),
+        )
+    }
+
+    /// `tag_of`: the tag of the arm a value holds, read through the interface,
+    /// so every form of the value (the builder, the parts, the owned form, the
+    /// view) answers from the one table.
+    fn tag_of_function(&self) -> String {
+        if self.arms().is_empty() {
+            return String::new();
+        }
+        format!(
+            "\x20   /// The tag of the arm `src` holds ([`{body}::tag`]).\n\
+             \x20   pub fn tag_of<S: {trait_name} + ?Sized>(src: &S) -> {ty} {{\n\
+             \x20       src.body().tag()\n\
+             \x20   }}\n\n",
+            body = self.body_enum(),
+            trait_name = self.trait_name,
+            ty = self.l().type_name(&self.tag_type()),
         )
     }
 
@@ -1739,6 +1799,7 @@ impl<'a> Plan<'a> {
              \x20       Self::write_source(src, w{args})\n\
              \x20   }}\n\n\
              {inputs}\
+             {tag_of}\
              {write}\n\
              {count}\
              }}\n\
@@ -1748,6 +1809,7 @@ impl<'a> Plan<'a> {
             trait_name = self.trait_name,
             result = self.write_result("K"),
             inputs = self.input_functions(),
+            tag_of = self.tag_of_function(),
         )
     }
 
@@ -1942,28 +2004,9 @@ impl<'a> Plan<'a> {
     /// The tag the active arm names, which the encode writes where the codec
     /// holds it. A default arm names none, so it presents the tag it holds.
     fn derive_variant_tag(&self, id: &ElementId, lines: &mut Vec<String>, derived: &mut Derived) {
-        let enum_name = self.body_enum();
         let ty = self.l().type_name(&self.tag_type()).to_string();
         let local = self.local("_d_", id);
-        let mut arms: Vec<String> = Vec::new();
-        for arm in self.arms() {
-            if let Some(feature) = &arm.feature {
-                arms.push(format!("    {}", rust_feature_cfg(feature)));
-            }
-            match arm.value {
-                Some(value) => arms.push(format!(
-                    "    {enum_name}::{}(_) => {value},",
-                    arm.variant_name
-                )),
-                None => arms.push(format!(
-                    "    {enum_name}::Default {{ tag, .. }} => tag.get(),"
-                )),
-            }
-        }
-        lines.push(format!(
-            "let {local}: {ty} = match src.body() {{\n{}\n}};",
-            arms.join("\n")
-        ));
+        lines.push(format!("let {local}: {ty} = src.body().tag();"));
         match id {
             ElementId::Field(name) => {
                 derived.fields.insert(name.clone(), local);

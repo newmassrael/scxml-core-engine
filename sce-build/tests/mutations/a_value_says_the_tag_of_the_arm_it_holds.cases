@@ -1,0 +1,31 @@
+# Mutation cases for "a value says the tag of the arm it holds".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_value_says_the_tag_of_the_arm_it_holds.cases`.
+#
+# A Rust variant's tag is read from the arm a value holds:
+# `{Codec}VariantSource::tag()` is the one table, `{Codec}::tag_of(src)` reads it
+# through the interface for every form, and the encode writes its tag from the
+# same table. The conformance crate generates its codecs when it builds, so
+# each case reaches the codec the round trip reads a tag from and encodes: a
+# known arm that answers another arm's tag, and a default arm that answers no
+# tag of its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets sce-build/src/forge/generator/rust_source.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "a known arm answers another arm's tag" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                        "            Self::{}(_) => {value},\n",''',
+     r'''                        "            Self::{}(_) => {value} ^ 1,\n",''')
+PY
+
+mutation_case "a default arm answers no tag of its own" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                    None => tags.push_str("            Self::Default { tag, .. } => tag.get(),\n"),''',
+     r'''                    None => tags.push_str("            Self::Default { .. } => 0,\n"),''')
+PY
