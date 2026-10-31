@@ -1296,6 +1296,96 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
 - **Not decided here.** Whether the carrier-flag relation is also refused where a source form does not derive the flag is
   left to the backends that take the source interface.
 
+### What the C11 narrow row landed (2026-10-31)
+
+The C11 runtime and generator have the narrow row that the Rust runtime has (see "What the narrow and load/store-only rows
+landed"): a 32-bit stamp, 32-bit words, and a publisher that needs no read-modify-write. Which target gets which row in C11:
+
+| Target | Atomics the target has | Row (header of `backends/c/forge-runtime/include/sce/forge/`) | Stamp | One publisher by |
+|---|---|---|---|---|
+| x86-64, AArch64, RISC-V 64 with `A` | 64-bit loads and stores, 32-bit compare-and-swap | `broadcast_log.h` | 64 bits | `sce_blog_publisher_acquire` |
+| Cortex-M3 and up, RISC-V 32 with `A`, ESP32 | 32-bit compare-and-swap, not 64-bit loads and stores | `broadcast_log_narrow.h` | 32 bits | `_publisher_acquire` (32-bit swap), `_split`, or `_publisher_unchecked` |
+| Cortex-M0, RISC-V 32 without `A` | loads and stores only | `broadcast_log_narrow.h` | 32 bits | `_split`, or `_publisher_unchecked` for a log in static storage; the header defines no `_publisher_acquire` |
+
+- **The row is chosen as Rust's is.** `render_broadcast_log_c` asks `c11_broadcast_log_row`, which is
+  `rust_broadcast_log_row` (`devices.<d>.target` through `target_atomics::rmw_width`, or `platform.atomic_rmw_width`, the
+  two refused when they differ, a triple the table does not know refused unless a width is stated beside it) followed, for
+  a narrow row, by `judge_broadcast_log_stamp` at `BROADCAST_LOG_NARROW_STAMP_BITS`: the same three refusals
+  (`broadcast-log/wrap-bound-unstated`, `.../wrap-bound-below-deploy-minimum`, `.../slots-not-a-divisor-of-the-stamp-space`),
+  with the same messages. A width of 64, or a deploy that states neither, keeps the 64-bit row: `broadcast_log.h`, its
+  template `broadcast_log.h.jinja2` and the headers generated from it are not edited, so their text is what it was. 32 and 0
+  give `broadcast_log_narrow.h` and `broadcast_log_narrow.h.jinja2`. The words the C11 refusals count are the row's: 32-bit
+  words for the narrow row, and its length word, which holds 32 bits, refuses an element of more than `2^32 - 1` bytes.
+- **One header and one template per row, not one made generic.** The algorithm is written once per header
+  (`sce_blogn_*`, `SCE_BLOGN_*`), the Rust text ported access for access with the orders unchanged. A header generic over the
+  width by a macro would have changed the 64-bit header's text and every name in it, and its template is quoted by mutation
+  casefiles, so it is left alone and the narrow row is added beside it. The price is a second copy of the protocol and of the
+  typed API; folding both onto one core, once the 64-bit output can be compared byte for byte after the change, is the
+  better end state. The stamp width is the compile-time macro `SCE_BLOGN_STAMP_BITS` (32 unless a translation unit defines it
+  before the include, between 2 and 32, checked by an array type whose size is negative otherwise), so a unit test sets 3
+  and reaches the head's wrap in a few publishes, as `Narrow<3>` does. The generated header asserts that the runtime keeps
+  the width it was judged against, that its slot count is a power of two and at most half the stamp space, and states
+  `<LOG>_STAMP_BITS` and `<LOG>_WRAP_BOUND_OPS`.
+- **What is the Rust row's, as it is.** A sequence number is a count modulo `2^32`: `sce_blogn_head`, a reader's `cursor`, the
+  `seq` of an item and what `sce_blogn_publish` returns are residues of the same width (`uint32_t`; `skipped` and `lost` are
+  `uint64_t`, because a lag from a head that wrapped is counted one lap on). The slot count divides the stamp space;
+  `sce_blogn_init` refuses another shape. `sce_blogn_reader_oldest` asks the last slot, whose stamp `SCE_BLOGN_UNWRITTEN`
+  (1) says it was never written, and every slot is stamped with it at `sce_blogn_init`. `sce_blogn_reader_at` reads its
+  argument modulo `2^w` and takes the head for a position `K` or more behind it. A narrow publisher has no horizon, so its
+  publish returns the sequence number and the generated typed status has no `_PUBLISH_HORIZON`. The theorem, the bound, the
+  divisor and the outcomes outside the bound are the section above's, and nothing in them depends on the language.
+- **Where C11 differs from Rust, on purpose.**
+  - *The cell and the swap.* The runtime has no `<stdatomic.h>`: its words are plain objects accessed through the platform's
+    `sce_atomic_*` externs. The narrow row uses the u32 acquire load, the u32 release store, the u32 relaxed load and store
+    and the two fences, and no new extern. Rust's one-publisher check is an 8-bit swap; here it is a 32-bit
+    compare-and-swap on `publisher_taken` (the family has no 8-bit atomic, and the 64-bit row's is the same), which a core
+    with loads and stores only may not have. The row therefore has the ownership forms: `sce_blogn_split` takes the place
+    from a log the caller holds exclusively with a load and a store, and `sce_blogn_publisher_unchecked` takes it on the
+    caller's word for a log in static storage; each raises the flag, so a later `acquire` refuses, and
+    `sce_blogn_publisher_release` clears it. The header of a target with no read-modify-write defines no
+    `_publisher_acquire` at all, so a call is a compile error and not a link error against a symbol the platform lacks.
+  - *`split` proves less than Rust's.* Rust's `split` takes an exclusive borrow, which is a proof that there is no other
+    publisher. C cannot prove it, so the precondition is the caller's (no other thread is taking the place at that moment), and
+    because the check is a load and a store, a race between two such callers is not detected. It refuses a held place, which
+    the borrow checker never needs to.
+  - *No pointer-width cell.* Rust uses `AtomicUsize` because a load/store target's atomics are not nameable by a stable
+    `cfg`, and so the row has no 16-bit-pointer target. The C cell is a `uint32_t` through the platform's u32 family, which a
+    core with 16-bit pointers can implement as it must for the queues' u32 rows, so the row does not read the pointer width.
+    That claim is about the header and has not been tried on such a target.
+  - *One width per translation unit.* The Rust lane is a const generic; here two widths cannot meet in one translation
+    unit, so the wrap tests and the 32-bit tests are separate programs.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs`: the row choice by target and by stated width, the three refusals and the
+  shared refusals before the row, the 64-bit text equal whether the deploy says 64, names a 64-bit target or says nothing,
+  the ownership header's lack of a compare-and-swap, the context in 32-bit words (33 flags and a tag), the real codec's flag
+  input over a thumbv6m deploy, the 32-bit counts of words and of the length word, the stamp width against the runtime's
+  macro, and each runtime name the generated header calls against its declaration. `backends/c/forge-runtime/tests/conformance/`:
+  `broadcast_log_narrow_runtime_test.c` (ctest `broadcast_log_narrow_runtime_c`) is the unit tests of `Narrow<3>` over a stamp
+  of 3 bits, with the wrap cases `a_reader_one_stamp_space_behind_is_told_empty_and_keeps_its_place` to
+  `a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_one`; `broadcast_log_narrow_runtime_32_test.c`
+  (`broadcast_log_narrow_runtime_32_c`) holds the arithmetic at 32 bits, the lag counted a lap on in 64 bits, the constructor,
+  the three publisher forms and a thread stress over 200000 entries at 2, 4 and 8 slots; `broadcast_log_narrow_generated_test.c`
+  (`broadcast_log_narrow_generated_c`) compiles the headers `sce-codegen orchestrate` writes for a thumbv7em deploy (a
+  nine-byte record across 4-byte words, with the packed words pinned) and a thumbv6m deploy (the ownership forms), and
+  `broadcast_log_narrow_unstated_pause_c` holds the refusal of the same set with no pause stated. The GenMC scenario
+  `tests/genmc/broadcast_log_narrow_slot_reuse.c` runs a 3-bit stamp and two slots, with six entries published before the
+  threads start so that three more cross the head's wrap and the slot reuse; the reader keeps the full count and judges
+  every answer by it. `scripts/gates/genmc-queue.sh` globs the directory, so the scenario is picked up with no registration,
+  and its mutants (the hosted atomics' orderings, which are one macro for both widths) run over it as over the others.
+  The mutation casefile `a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases` had two anchors moved by the
+  renderer and has them re-aimed, and a case for the C11 narrow row's word width.
+- **Not run.** The change was written with nothing built, run or measured. The generator, the template, the headers, the C
+  tests and their CMake have been compiled by no compiler and the new `sce-build` tests have not run. The GenMC scenario
+  has not been explored, and its `REQUIRED` list (the four mutants of the 64-bit scenario, chosen by the same reading) is
+  unmeasured; the two fence mutants are left unlisted for the gate to print. The 3-bit cases are the Rust unit tests
+  carried over by arithmetic, not by a run. No `thumbv6m` or `thumbv7em` build of a generated header was made.
+  `broadcast_log.h` still says that a target whose atomics do not reach 64 bits has no broadcast log, which its text may not
+  change in this step and which is no longer true of the kind.
+- **What the merged tree is held to.** `cargo test -p sce-build --features cli --test
+  broadcast_log_kind`; `scripts/gates/forge-c11.sh` (the new ctest tests `broadcast_log_narrow_runtime_c`,
+  `broadcast_log_narrow_runtime_32_c`, `broadcast_log_narrow_generated_c` and `broadcast_log_narrow_unstated_pause_c`, on
+  top of the existing ones); `scripts/gates/genmc-queue.sh` for the new scenario and its mutants; the workspace clippy with
+  `-D warnings`; and `scripts/mutate --check` over the casefile above.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1308,7 +1398,8 @@ generation and conformance runs and their ARMv6-M and ARMv7-M builds (see their 
 What is left:
 
 - **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a forge runtime. The narrow rows of the
-  languages other than Rust, which each template will need on a target without 64-bit atomics, are not built: Rust's are.
+  languages other than Rust and C11, which each template will need on a target without 64-bit atomics, are not built:
+  Rust's and C11's are (C++ keeps one 64-bit row).
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
 - **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry (a codec that takes flag inputs or
   a variant tag from its caller is stored with the entry by every template that ships, section 4). A typed diagnostic for an
