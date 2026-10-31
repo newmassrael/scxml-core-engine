@@ -165,7 +165,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
         let actual = TransformRounding.computeRounded(arg0)
         #expect(actual == expected, "transform_rounding")
-    }}
+    }
+}
 
 // MARK: - transform: transform_floor
 
@@ -177,7 +178,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
         let actual = TransformFloor.computeFloored(arg0)
         #expect(actual == expected, "transform_floor")
-    }}
+    }
+}
 
 // MARK: - transform: transform_guarded_div
 
@@ -190,7 +192,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
         let actual = TransformGuardedDiv.computeShare(arg0, arg1)
         #expect(actual == expected, "transform_guarded_div")
-    }}
+    }
+}
 
 // MARK: - transform: transform_mixed_width_add
 
@@ -203,7 +206,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
         let actual = TransformMixedWidthAdd.computeTotal(arg0, arg1)
         #expect(actual == expected, "transform_mixed_width_add")
-    }}
+    }
+}
 
 // MARK: - transform: transform_single_sum
 
@@ -216,7 +220,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = Float(try oracleReal(testCase.member("expected")))
         let actual = TransformSingleSum.computeTotal(arg0, arg1)
         #expect(actual == expected, "transform_single_sum")
-    }}
+    }
+}
 
 // MARK: - transform: transform_mixed_width_or
 
@@ -229,7 +234,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
         let actual = TransformMixedWidthOr.computeMerged(arg0, arg1)
         #expect(actual == expected, "transform_mixed_width_or")
-    }}
+    }
+}
 
 // MARK: - transform: transform_literal_notations
 
@@ -248,7 +254,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_high_hex = try oracleInteger(expected?.member("high_hex"), as: UInt8.self)
         let actual_high_hex = TransformLiteralNotations.computeHighHex(arg0)
         #expect(actual_high_hex == expected_high_hex, "transform_literal_notations high_hex")
-    }}
+    }
+}
 
 // MARK: - transform: transform_extreme_literals
 
@@ -264,7 +271,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_lowest = try oracleInteger(expected?.member("lowest"), as: Int64.self)
         let actual_lowest = TransformExtremeLiterals.computeLowest(arg0)
         #expect(actual_lowest == expected_lowest, "transform_extreme_literals lowest")
-    }}
+    }
+}
 
 // MARK: - transform: transform_narrowing_wraps
 
@@ -285,7 +293,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_narrow_signed = try oracleInteger(expected?.member("narrow_signed"), as: Int32.self)
         let actual_narrow_signed = TransformNarrowingWraps.computeNarrowSigned(arg0, arg1, arg2)
         #expect(actual_narrow_signed == expected_narrow_signed, "transform_narrowing_wraps narrow_signed")
-    }}
+    }
+}
 
 // MARK: - transform: transform_int_div
 
@@ -298,7 +307,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
         let actual = TransformIntDiv.computeQuotient(arg0, arg1)
         #expect(actual == expected, "transform_int_div")
-    }}
+    }
+}
 
 // MARK: - transform: transform_int_rem
 
@@ -311,7 +321,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleInteger(testCase.member("expected"), as: Int32.self)
         let actual = TransformIntRem.computeRemainder(arg0, arg1)
         #expect(actual == expected, "transform_int_rem")
-    }}
+    }
+}
 
 // MARK: - transform: transform_int_ratio
 
@@ -324,7 +335,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleReal(testCase.member("expected"))
         let actual = TransformIntRatio.computeRatio(arg0, arg1)
         expectClose(Double(actual), Double(expected), "transform_int_ratio")
-    }}
+    }
+}
 
 // MARK: - transform: transform_temperature
 
@@ -336,7 +348,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected = try oracleReal(testCase.member("expected"))
         let actual = TransformTemperature.computeTemperature(arg0)
         expectClose(Double(actual), Double(expected), "transform_temperature")
-    }}
+    }
+}
 
 // MARK: - transform: transform_bitwise
 
@@ -352,7 +365,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_low_nibble = try oracleInteger(expected?.member("low_nibble"), as: UInt8.self)
         let actual_low_nibble = TransformBitwise.computeLowNibble(arg0)
         #expect(actual_low_nibble == expected_low_nibble, "transform_bitwise low_nibble")
-    }}
+    }
+}
 
 // MARK: - transform: transform_mixed_boolean
 
@@ -369,7 +383,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_ranged = try oracleTruth(expected?.member("ranged"))
         let actual_ranged = TransformMixedBoolean.computeRanged(arg0, arg1)
         #expect(actual_ranged == expected_ranged, "transform_mixed_boolean ranged")
-    }}
+    }
+}
 
 // MARK: - transform: transform_multi_output
 
@@ -385,7 +400,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expected_kelvin = try oracleReal(expected?.member("kelvin"))
         let actual_kelvin = TransformMultiOutput.computeKelvin(arg0)
         expectClose(Double(actual_kelvin), Double(expected_kelvin), "transform_multi_output kelvin")
-    }}
+    }
+}
+
+// MARK: - transform: transform_previous_value
+
+@Test func transformPreviousValueMatchesReference() throws {
+
+    let steps = try oracleArray(try oracleSpec("stateful_transforms", "transform_previous_value").member("sequence"))
+    let holder = TransformPreviousValue()
+    for pass in 0..<2 {
+        if pass == 1 {
+            holder.reset()
+        }
+        for (i, step) in steps.enumerated() {
+            let args = try oracleArray(step.member("args"))
+            let arg0 = try oracleInteger(args[0], as: Int32.self)
+            let arg1 = try oracleTruth(args[1])
+            let expected = step.member("expected")
+            let out = holder.update(arg0, arg1)
+            let expected_total = try oracleInteger(expected?.member("total"), as: Int32.self)
+            #expect(out.total == expected_total, "transform_previous_value pass \(pass) step \(i) total")
+            let expected_delta = try oracleInteger(expected?.member("delta"), as: Int32.self)
+            #expect(out.delta == expected_delta, "transform_previous_value pass \(pass) step \(i) delta")
+            let expected_rising = try oracleTruth(expected?.member("rising"))
+            #expect(out.rising == expected_rising, "transform_previous_value pass \(pass) step \(i) rising")
+        }
+    }
+}
 
 // MARK: - condition: condition_threshold
 
