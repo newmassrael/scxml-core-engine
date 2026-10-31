@@ -207,35 +207,36 @@ pub trait CodecRepeatFlagGatedSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone>;
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>>;
 }
 
 impl<T: CodecRepeatFlagGatedSource + ?Sized> CodecRepeatFlagGatedSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
         (**self).entries()
     }
 }
 
 /// A value of `CodecRepeatFlagGated` held in the types a caller already has: a source
-/// ([`CodecRepeatFlagGatedSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecRepeatFlagGatedSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecRepeatFlagGatedParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: Option<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts]>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts], 4>>,
 }
 
 impl<'a> CodecRepeatFlagGatedSource for CodecRepeatFlagGatedParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone> {
-        self.entries.map(<[_]>::iter)
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
+        self.entries.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -243,8 +244,8 @@ impl CodecRepeatFlagGatedSource for CodecRepeatFlagGated {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone> {
-        self.entries.as_ref().map(|_l| _l.iter())
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
+        self.entries.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -270,10 +271,7 @@ impl CodecRepeatFlagGated {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecRepeatFlagGatedOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().map_or(0, |_l| _l.count());
-        if _k_entries > 4 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_entries: usize = src.entries().map_or(0, |_l| _l.len());
         let _p_head_l_0: bool = src.entries().is_some();
         let _f_d_count: Option<usize> = if src.entries().is_some() { Some(_k_entries) } else { None };
         let _d_count: u8 = _f_d_count.unwrap_or(0) as u8;

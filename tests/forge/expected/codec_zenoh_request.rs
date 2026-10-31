@@ -382,7 +382,7 @@ pub trait CodecZenohRequestSource {
     /// The `keyexpr` field.
     fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>>;
     /// The arm of the variant this value holds.
     fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource>;
 }
@@ -397,7 +397,7 @@ impl<T: CodecZenohRequestSource + ?Sized> CodecZenohRequestSource for &T {
     fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
         (**self).keyexpr()
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
         (**self).extensions()
     }
     fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource> {
@@ -417,7 +417,8 @@ pub enum CodecZenohRequestPartsBody<'a> {
 }
 
 /// A value of `CodecZenohRequest` held in the types a caller already has: a source
-/// ([`CodecZenohRequestSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohRequestSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohRequestParts<'a> {
@@ -428,7 +429,7 @@ pub struct CodecZenohRequestParts<'a> {
     /// The `keyexpr` field.
     pub keyexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
     /// The `extensions` field.
-    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4>>,
     /// The arm of the variant this value holds.
     pub body: CodecZenohRequestPartsBody<'a>,
 }
@@ -443,8 +444,8 @@ impl<'a> CodecZenohRequestSource for CodecZenohRequestParts<'a> {
     fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
         self.keyexpr
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.map(<[_]>::iter)
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
     }
     fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource> {
         match &self.body {
@@ -466,8 +467,8 @@ impl<'a> CodecZenohRequestSource for CodecZenohRequest<'a> {
     fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
         &self.keyexpr
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| _l.iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
     fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource> {
         match &self.body {
@@ -489,8 +490,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohRequestSource for Co
     fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
         &self.keyexpr
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(|_l| _l.list_iter())
     }
     fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource> {
         match &self.body {
@@ -524,10 +525,7 @@ impl<'a> CodecZenohRequest<'a> {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohRequestSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohRequestOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.count());
-        if _k_extensions > 4 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
         let _p_header_z_0: bool = src.extensions().is_some();
         let mut _c_header: u8 = (src.header() & !0x80) | (u8::from(_p_header_z_0) << 7);
         if let Some(_o) = over.header_n {
@@ -636,7 +634,7 @@ pub struct CodecZenohRequestOwned<S: ::sce_forge_runtime::codec::CodecStorage = 
     pub header: u8,
     pub rid: u64,
     pub keyexpr: CodecZenohWireexprOwned<S>,
-    pub extensions: Option<S::List<CodecZenohExtEntryOwned<S>, 16>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4>>,
     pub body: CodecZenohRequestOwnedVariant<S>,
 }
 
@@ -775,7 +773,7 @@ impl<'a> CodecZenohRequest<'a> {
             header: self.header,
             rid: self.rid,
             keyexpr: self.keyexpr.try_into_owned_in::<S>()?,
-            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
             body: self.body.try_into_owned_in::<S>()?,
         })
     }
@@ -819,7 +817,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohRequestOwned<S> {
         _out.rid = self.rid;
         self.keyexpr.as_borrowed_into(&mut _out.keyexpr);
         match &self.extensions {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.extensions = None,
         }
         self.body.try_as_borrowed_into(&mut _out.body)?;

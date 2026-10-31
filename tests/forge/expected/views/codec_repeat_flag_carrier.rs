@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_chain_flag_entry::CodecChainFlagEntry;
 
-use sce_forge_runtime::codec::{ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
 use super::codec_chain_flag_entry::CodecChainFlagEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -194,34 +194,35 @@ pub trait CodecRepeatFlagCarrierSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>;
 }
 
 impl<T: CodecRepeatFlagCarrierSource + ?Sized> CodecRepeatFlagCarrierSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4> {
         (**self).entries()
     }
 }
 
 /// A value of `CodecRepeatFlagCarrier` held in the types a caller already has: a source
-/// ([`CodecRepeatFlagCarrierSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecRepeatFlagCarrierSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecRepeatFlagCarrierParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: &'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts],
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts], 4>,
 }
 
 impl<'a> CodecRepeatFlagCarrierSource for CodecRepeatFlagCarrierParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4> {
         self.entries.iter()
     }
 }
@@ -230,8 +231,8 @@ impl CodecRepeatFlagCarrierSource for CodecRepeatFlagCarrier {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
-        self.entries.iter()
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
     }
 }
 
@@ -239,7 +240,7 @@ impl<'a> CodecRepeatFlagCarrierSource for CodecRepeatFlagCarrierView<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4> {
         self.entries.iter()
     }
 }
@@ -266,10 +267,7 @@ impl CodecRepeatFlagCarrier {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecRepeatFlagCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecRepeatFlagCarrierOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().count();
-        if _k_entries > 4 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_entries: usize = src.entries().len();
         let _d_count: u8 = _k_entries as u8;
         let mut _c_head: u8 = src.head();
         if let Some(_o) = over.head_w {
@@ -349,7 +347,7 @@ impl ListWalk<1> for CodecRepeatFlagCarrierEntriesWalk {
 pub struct CodecRepeatFlagCarrierView<'a> {
     pub head: u8,
     pub count: u8,
-    pub entries: ListView<'a, CodecRepeatFlagCarrierEntriesWalk, 1>,
+    pub entries: Bounded<ListView<'a, CodecRepeatFlagCarrierEntriesWalk, 1>, 4>,
 }
 
 #[allow(dead_code)]
@@ -407,7 +405,7 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
                 }
                 _count += 1;
             }
-            _out.entries = ListView::new(_rest, _count, [head & 0x1]);
+            _out.entries = Bounded::new(ListView::new(_rest, _count, [head & 0x1])).ok_or(CodecError::TooManyElements)?;
         }
         _out.head = head;
         _out.count = count;

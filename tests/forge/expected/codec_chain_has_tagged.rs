@@ -218,7 +218,7 @@ pub trait CodecChainHasTaggedSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>;
     /// The `priority` field.
     fn priority(&self) -> Option<u8>;
     /// The `checksum` field.
@@ -229,7 +229,7 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
         (**self).entries()
     }
     fn priority(&self) -> Option<u8> {
@@ -241,14 +241,15 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
 }
 
 /// A value of `CodecChainHasTagged` held in the types a caller already has: a source
-/// ([`CodecChainHasTaggedSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecChainHasTaggedSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecChainHasTaggedParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The `entries` field.
-    pub entries: &'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts],
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts], 3>,
     /// The `priority` field.
     pub priority: Option<u8>,
     /// The `checksum` field.
@@ -259,7 +260,7 @@ impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedParts<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
         self.entries.iter()
     }
     fn priority(&self) -> Option<u8> {
@@ -274,8 +275,8 @@ impl CodecChainHasTaggedSource for CodecChainHasTagged {
     fn header(&self) -> u8 {
         self.header
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
-        self.entries.iter()
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
     }
     fn priority(&self) -> Option<u8> {
         self.priority
@@ -306,10 +307,7 @@ impl CodecChainHasTagged {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainHasTaggedOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().count();
-        if _k_entries > 3 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_entries: usize = src.entries().len();
         let mut _c_header: u8 = src.header();
         if let Some(_o) = over.header_wide {
             _c_header = (_c_header & !0x1) | u8::from(_o);

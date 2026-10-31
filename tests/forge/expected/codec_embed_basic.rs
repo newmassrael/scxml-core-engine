@@ -143,7 +143,8 @@ impl<T: CodecEmbedBasicSource + ?Sized> CodecEmbedBasicSource for &T {
 }
 
 /// A value of `CodecEmbedBasic` held in the types a caller already has: a source
-/// ([`CodecEmbedBasicSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecEmbedBasicSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecEmbedBasicParts<'a> {

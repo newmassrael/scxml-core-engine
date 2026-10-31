@@ -183,45 +183,46 @@ pub trait CodecRepeatUnconditionalCountSource {
     /// The `options` field.
     fn options(&self) -> u8;
     /// The `links` field.
-    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone;
+    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>;
     /// The `weights` field.
-    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone>;
+    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>>;
 }
 
 impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCountSource for &T {
     fn options(&self) -> u8 {
         (**self).options()
     }
-    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
         (**self).links()
     }
-    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
+    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
         (**self).weights()
     }
 }
 
 /// A value of `CodecRepeatUnconditionalCount` held in the types a caller already has: a source
-/// ([`CodecRepeatUnconditionalCountSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecRepeatUnconditionalCountSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecRepeatUnconditionalCountParts<'a> {
     /// The `options` field.
     pub options: u8,
     /// The `links` field.
-    pub links: &'a [super::codec_repeat_elem::CodecRepeatElemParts],
+    pub links: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>,
     /// The `weights` field.
-    pub weights: Option<&'a [super::codec_repeat_elem::CodecRepeatElemParts]>,
+    pub weights: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>>,
 }
 
 impl<'a> CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCountParts<'a> {
     fn options(&self) -> u8 {
         self.options
     }
-    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
         self.links.iter()
     }
-    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
-        self.weights.map(<[_]>::iter)
+    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
+        self.weights.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -229,11 +230,11 @@ impl CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCount {
     fn options(&self) -> u8 {
         self.options
     }
-    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
-        self.links.iter()
+    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.links)
     }
-    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
-        self.weights.as_ref().map(|_l| _l.iter())
+    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
+        self.weights.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -251,14 +252,8 @@ impl CodecRepeatUnconditionalCount {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_links: usize = src.links().count();
-        if _k_links > 64 {
-            return Err(CodecError::TooManyElements);
-        }
-        let _k_weights: usize = src.weights().map_or(0, |_l| _l.count());
-        if _k_weights > 64 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_links: usize = src.links().len();
+        let _k_weights: usize = src.weights().map_or(0, |_l| _l.len());
         let _p_options_h_0: bool = src.weights().is_some();
         if src.weights().is_some() && _k_weights != _k_links {
             return Err(CodecError::InconsistentSource);

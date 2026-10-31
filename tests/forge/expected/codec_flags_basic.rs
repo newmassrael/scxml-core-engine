@@ -211,7 +211,8 @@ impl<T: CodecFlagsBasicSource + ?Sized> CodecFlagsBasicSource for &T {
 }
 
 /// A value of `CodecFlagsBasic` held in the types a caller already has: a source
-/// ([`CodecFlagsBasicSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecFlagsBasicSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecFlagsBasicParts {

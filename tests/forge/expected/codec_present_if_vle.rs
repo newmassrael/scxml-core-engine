@@ -165,7 +165,8 @@ impl<T: CodecPresentIfVleSource + ?Sized> CodecPresentIfVleSource for &T {
 }
 
 /// A value of `CodecPresentIfVle` held in the types a caller already has: a source
-/// ([`CodecPresentIfVleSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecPresentIfVleSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecPresentIfVleParts {

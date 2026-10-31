@@ -146,7 +146,8 @@ impl<T: CodecChainHasSliceSource + ?Sized> CodecChainHasSliceSource for &T {
 }
 
 /// A value of `CodecChainHasSlice` held in the types a caller already has: a source
-/// ([`CodecChainHasSliceSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecChainHasSliceSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecChainHasSliceParts<'a> {

@@ -331,7 +331,8 @@ pub enum CodecZenohExtEntryPartsBody<'a> {
 }
 
 /// A value of `CodecZenohExtEntry` held in the types a caller already has: a source
-/// ([`CodecZenohExtEntrySource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohExtEntrySource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohExtEntryParts<'a> {

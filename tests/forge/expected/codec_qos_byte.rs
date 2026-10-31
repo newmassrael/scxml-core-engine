@@ -207,7 +207,8 @@ impl<T: CodecQosByteSource + ?Sized> CodecQosByteSource for &T {
 }
 
 /// A value of `CodecQosByte` held in the types a caller already has: a source
-/// ([`CodecQosByteSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecQosByteSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecQosByteParts {

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f6c860c2693fcb3366bc871ff801c9b0ee9e491a1759830f8d83238267cc3b45
+// source-hash: 62067cbe5198ad923571ee5243de08cf004a9a483bf54ae3e6db2a14e8ad77a7
 // SCE-MAP: filter_moving_average.scxml:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")

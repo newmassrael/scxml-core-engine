@@ -207,7 +207,8 @@ impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprIn
 }
 
 /// A value of `CodecZenohDeclExtKeyexprInner` held in the types a caller already has: a source
-/// ([`CodecZenohDeclExtKeyexprInnerSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohDeclExtKeyexprInnerSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohDeclExtKeyexprInnerParts<'a> {

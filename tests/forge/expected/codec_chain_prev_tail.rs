@@ -192,34 +192,35 @@ pub trait CodecChainPrevTailSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>;
 }
 
 impl<T: CodecChainPrevTailSource + ?Sized> CodecChainPrevTailSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
         (**self).entries()
     }
 }
 
 /// A value of `CodecChainPrevTail` held in the types a caller already has: a source
-/// ([`CodecChainPrevTailSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecChainPrevTailSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecChainPrevTailParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: &'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts],
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>,
 }
 
 impl<'a> CodecChainPrevTailSource for CodecChainPrevTailParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
         self.entries.iter()
     }
 }
@@ -228,8 +229,8 @@ impl CodecChainPrevTailSource for CodecChainPrevTail {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone {
-        self.entries.iter()
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
     }
 }
 
@@ -255,10 +256,7 @@ impl CodecChainPrevTail {
     /// ones `src` presents.
     #[doc(hidden)]
     pub fn write_source_in<S: CodecChainPrevTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainPrevTailOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().count();
-        if _k_entries > 4 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_entries: usize = src.entries().len();
         let mut _c_head: u8 = src.head();
         if let Some(_o) = over.head_t {
             _c_head = (_c_head & !0x1) | u8::from(_o);

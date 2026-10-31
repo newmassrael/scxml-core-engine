@@ -143,7 +143,8 @@ impl<T: CodecZenohFrameSource + ?Sized> CodecZenohFrameSource for &T {
 }
 
 /// A value of `CodecZenohFrame` held in the types a caller already has: a source
-/// ([`CodecZenohFrameSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohFrameSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohFrameParts<'a> {

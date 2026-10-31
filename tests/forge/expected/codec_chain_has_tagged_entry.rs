@@ -167,7 +167,8 @@ impl<T: CodecChainHasTaggedEntrySource + ?Sized> CodecChainHasTaggedEntrySource 
 }
 
 /// A value of `CodecChainHasTaggedEntry` held in the types a caller already has: a source
-/// ([`CodecChainHasTaggedEntrySource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecChainHasTaggedEntrySource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecChainHasTaggedEntryParts {

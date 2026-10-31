@@ -153,34 +153,35 @@ pub trait CodecTlvChainBasicSource {
     /// The `header_flags` field.
     fn header_flags(&self) -> u8;
     /// The `extensions` field.
-    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone;
+    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 8>;
 }
 
 impl<T: CodecTlvChainBasicSource + ?Sized> CodecTlvChainBasicSource for &T {
     fn header_flags(&self) -> u8 {
         (**self).header_flags()
     }
-    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone {
+    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 8> {
         (**self).extensions()
     }
 }
 
 /// A value of `CodecTlvChainBasic` held in the types a caller already has: a source
-/// ([`CodecTlvChainBasicSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecTlvChainBasicSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecTlvChainBasicParts<'a> {
     /// The `header_flags` field.
     pub header_flags: u8,
     /// The `extensions` field.
-    pub extensions: &'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>],
+    pub extensions: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>], 8>,
 }
 
 impl<'a> CodecTlvChainBasicSource for CodecTlvChainBasicParts<'a> {
     fn header_flags(&self) -> u8 {
         self.header_flags
     }
-    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone {
+    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 8> {
         self.extensions.iter()
     }
 }
@@ -189,8 +190,8 @@ impl<'a> CodecTlvChainBasicSource for CodecTlvChainBasic<'a> {
     fn header_flags(&self) -> u8 {
         self.header_flags
     }
-    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone {
-        self.extensions.iter()
+    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 8> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.extensions)
     }
 }
 
@@ -198,8 +199,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvChainBasicSource for C
     fn header_flags(&self) -> u8 {
         self.header_flags
     }
-    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone {
-        ::sce_forge_runtime::codec::SceList::as_slice(&self.extensions).iter()
+    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 8> {
+        self.extensions.list_iter()
     }
 }
 
@@ -218,10 +219,7 @@ impl<'a> CodecTlvChainBasic<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecTlvChainBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_extensions: usize = src.extensions().count();
-        if _k_extensions > 8 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_extensions: usize = src.extensions().len();
         w.write_u8(src.header_flags())?;
         for _e in src.extensions() {
             CodecTlvEntry::write_source(&_e, w)?;
@@ -306,7 +304,7 @@ use super::codec_tlv_entry::CodecTlvEntryOwned;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecTlvChainBasicOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header_flags: u8,
-    pub extensions: S::List<CodecTlvEntryOwned<S>, 16>,
+    pub extensions: ::sce_forge_runtime::codec::Bounded<S::List<CodecTlvEntryOwned<S>, 8>, 8>,
 }
 
 #[allow(dead_code)]
@@ -325,7 +323,7 @@ impl<'a> CodecTlvChainBasic<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTlvChainBasicOwned<S>, CodecError> {
         Ok(CodecTlvChainBasicOwned {
             header_flags: self.header_flags,
-            extensions: ::sce_forge_runtime::codec::try_collect_list(self.extensions, |_e| _e.try_into_owned_in::<S>())?,
+            extensions: ::sce_forge_runtime::codec::try_collect_bounded(self.extensions, |_e| _e.try_into_owned_in::<S>())?,
         })
     }
 
@@ -365,7 +363,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvChainBasicOwned<S> {
     /// and is not to be read.
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecTlvChainBasic<'o>) -> Result<(), CodecError> {
         _out.header_flags = self.header_flags;
-        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.extensions, &self.extensions, |_e| Ok(_e.as_borrowed()))?;
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.extensions, self.extensions.inner(), |_e| Ok(_e.as_borrowed()))?;
         Ok(())
     }
 

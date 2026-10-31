@@ -155,7 +155,8 @@ impl<T: CodecLengthRefSource + ?Sized> CodecLengthRefSource for &T {
 }
 
 /// A value of `CodecLengthRef` held in the types a caller already has: a source
-/// ([`CodecLengthRefSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecLengthRefSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecLengthRefParts<'a> {

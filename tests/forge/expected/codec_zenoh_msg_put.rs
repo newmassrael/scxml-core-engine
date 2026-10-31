@@ -216,35 +216,32 @@ impl<'a> CodecZenohMsgPut<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 1114;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -260,7 +257,7 @@ pub trait CodecZenohMsgPutSource {
     /// The `encoding` field.
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource>;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>>;
     /// The `payload` field.
     fn payload(&self) -> &[u8];
 }
@@ -275,7 +272,7 @@ impl<T: CodecZenohMsgPutSource + ?Sized> CodecZenohMsgPutSource for &T {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         (**self).encoding()
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
         (**self).extensions()
     }
     fn payload(&self) -> &[u8] {
@@ -284,7 +281,8 @@ impl<T: CodecZenohMsgPutSource + ?Sized> CodecZenohMsgPutSource for &T {
 }
 
 /// A value of `CodecZenohMsgPut` held in the types a caller already has: a source
-/// ([`CodecZenohMsgPutSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohMsgPutSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohMsgPutParts<'a> {
@@ -295,7 +293,7 @@ pub struct CodecZenohMsgPutParts<'a> {
     /// The `encoding` field.
     pub encoding: Option<&'a super::codec_zenoh_encoding::CodecZenohEncodingParts<'a>>,
     /// The `extensions` field.
-    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 8>>,
     /// The `payload` field.
     pub payload: &'a [u8],
 }
@@ -310,8 +308,8 @@ impl<'a> CodecZenohMsgPutSource for CodecZenohMsgPutParts<'a> {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         self.encoding
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.map(<[_]>::iter)
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
     }
     fn payload(&self) -> &[u8] {
         self.payload
@@ -328,8 +326,8 @@ impl<'a> CodecZenohMsgPutSource for CodecZenohMsgPut<'a> {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         self.encoding.as_ref()
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| _l.iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
+        self.extensions.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
     fn payload(&self) -> &[u8] {
         self.payload
@@ -346,8 +344,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohMsgPutSource for Cod
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         self.encoding.as_ref()
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
+        self.extensions.as_ref().map(|_l| _l.list_iter())
     }
     fn payload(&self) -> &[u8] {
         ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
@@ -359,19 +357,16 @@ impl<'a> CodecZenohMsgPut<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecZenohMsgPutSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohMsgPutSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecZenohMsgPutSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohMsgPutSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.count());
-        if _k_extensions > 8 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+    pub fn write_source<S: CodecZenohMsgPutSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
         let _p_header_t_0: bool = src.timestamp().is_some();
         let _p_header_e_0: bool = src.encoding().is_some();
         let _p_header_z_0: bool = src.extensions().is_some();
@@ -398,17 +393,17 @@ impl<'a> CodecZenohMsgPut<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohMsgPutSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohMsgPutSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecZenohMsgPutSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohMsgPut<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -416,10 +411,12 @@ impl<'a, S: CodecZenohMsgPutSource + ?Sized> ::sce_forge_runtime::codec::SourceW
 #[allow(dead_code)]
 impl<'a> CodecZenohMsgPut<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecZenohMsgPutSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecZenohMsgPutSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -476,7 +473,7 @@ pub struct CodecZenohMsgPutOwned<S: ::sce_forge_runtime::codec::CodecStorage = :
     pub header: u8,
     pub timestamp: Option<CodecZenohTimestampOwned<S>>,
     pub encoding: Option<CodecZenohEncodingOwned<S>>,
-    pub extensions: Option<S::List<CodecZenohExtEntryOwned<S>, 16>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 8>, 8>>,
     pub payload_len: u64,
     pub payload: S::Bytes<256>,
 }
@@ -524,7 +521,7 @@ impl<'a> CodecZenohMsgPut<'a> {
             header: self.header,
             timestamp: self.timestamp.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
             encoding: self.encoding.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
-            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
             payload_len: self.payload_len,
             payload: <S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.payload)?,
         })
@@ -575,7 +572,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohMsgPutOwned<S> {
             None => _out.encoding = None,
         }
         match &self.extensions {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.extensions = None,
         }
         _out.payload_len = self.payload_len;
@@ -605,22 +602,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohMsgPutOwned<S> {
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecZenohMsgPut::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohMsgPut::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }

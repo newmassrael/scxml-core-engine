@@ -151,39 +151,40 @@ impl<'a> CodecZenohQueryValue<'a> {
 /// computes those from what is ([`CodecZenohQueryValue::encode_source`]).
 pub trait CodecZenohQueryValueSource {
     /// The `exts` field.
-    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone;
+    fn exts(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4>;
 }
 
 impl<T: CodecZenohQueryValueSource + ?Sized> CodecZenohQueryValueSource for &T {
-    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
+    fn exts(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4> {
         (**self).exts()
     }
 }
 
 /// A value of `CodecZenohQueryValue` held in the types a caller already has: a source
-/// ([`CodecZenohQueryValueSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohQueryValueSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohQueryValueParts<'a> {
     /// The `exts` field.
-    pub exts: &'a [super::codec_zenoh_value_entry::CodecZenohValueEntryParts<'a>],
+    pub exts: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_entry::CodecZenohValueEntryParts<'a>], 4>,
 }
 
 impl<'a> CodecZenohQueryValueSource for CodecZenohQueryValueParts<'a> {
-    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
+    fn exts(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4> {
         self.exts.iter()
     }
 }
 
 impl<'a> CodecZenohQueryValueSource for CodecZenohQueryValue<'a> {
-    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
-        self.exts.iter()
+    fn exts(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.exts)
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryValueSource for CodecZenohQueryValueOwned<S> {
-    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
-        ::sce_forge_runtime::codec::SceList::as_slice(&self.exts).iter()
+    fn exts(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4> {
+        self.exts.list_iter()
     }
 }
 
@@ -202,10 +203,7 @@ impl<'a> CodecZenohQueryValue<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohQueryValueSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_exts: usize = src.exts().count();
-        if _k_exts > 4 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_exts: usize = src.exts().len();
         let mut _prev_after_shm: u8 = 0;
         for (_i, _e) in src.exts().enumerate() {
             CodecZenohValueEntry::write_source_in(&_e, w, _prev_after_shm, &super::codec_zenoh_value_entry::CodecZenohValueEntryOverrides::header_z(_i + 1 < _k_exts))?;
@@ -290,7 +288,7 @@ use super::codec_zenoh_value_entry::CodecZenohValueEntryOwned;
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohQueryValueOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub exts: S::List<CodecZenohValueEntryOwned<S>, 16>,
+    pub exts: ::sce_forge_runtime::codec::Bounded<S::List<CodecZenohValueEntryOwned<S>, 4>, 4>,
 }
 
 #[allow(dead_code)]
@@ -308,7 +306,7 @@ impl<'a> CodecZenohQueryValue<'a> {
     /// way.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohQueryValueOwned<S>, CodecError> {
         Ok(CodecZenohQueryValueOwned {
-            exts: ::sce_forge_runtime::codec::try_collect_list(self.exts, |_e| _e.try_into_owned_in::<S>())?,
+            exts: ::sce_forge_runtime::codec::try_collect_bounded(self.exts, |_e| _e.try_into_owned_in::<S>())?,
         })
     }
 
@@ -347,7 +345,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryValueOwned<S> {
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohQueryValue<'o>) -> Result<(), CodecError> {
-        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.exts, &self.exts, |_e| _e.try_as_borrowed())?;
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.exts, self.exts.inner(), |_e| _e.try_as_borrowed())?;
         Ok(())
     }
 

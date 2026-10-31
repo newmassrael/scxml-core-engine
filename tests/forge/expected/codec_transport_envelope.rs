@@ -386,7 +386,8 @@ pub enum CodecTransportEnvelopePartsBody<'a> {
 }
 
 /// A value of `CodecTransportEnvelope` held in the types a caller already has: a source
-/// ([`CodecTransportEnvelopeSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecTransportEnvelopeSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecTransportEnvelopeParts<'a> {

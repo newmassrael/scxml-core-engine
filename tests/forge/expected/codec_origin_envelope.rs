@@ -204,7 +204,7 @@ pub trait CodecOriginEnvelopeSource {
     /// The `optional` field.
     fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource>;
     /// The `items` field.
-    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone;
+    fn items(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone, 3>;
 }
 
 impl<T: CodecOriginEnvelopeSource + ?Sized> CodecOriginEnvelopeSource for &T {
@@ -220,13 +220,14 @@ impl<T: CodecOriginEnvelopeSource + ?Sized> CodecOriginEnvelopeSource for &T {
     fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource> {
         (**self).optional()
     }
-    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone {
+    fn items(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone, 3> {
         (**self).items()
     }
 }
 
 /// A value of `CodecOriginEnvelope` held in the types a caller already has: a source
-/// ([`CodecOriginEnvelopeSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecOriginEnvelopeSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecOriginEnvelopeParts<'a> {
@@ -239,7 +240,7 @@ pub struct CodecOriginEnvelopeParts<'a> {
     /// The `optional` field.
     pub optional: Option<&'a super::codec_origin_leaf::CodecOriginLeafParts<'a>>,
     /// The `items` field.
-    pub items: &'a [super::codec_origin_leaf::CodecOriginLeafParts<'a>],
+    pub items: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_origin_leaf::CodecOriginLeafParts<'a>], 3>,
 }
 
 impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelopeParts<'a> {
@@ -255,7 +256,7 @@ impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelopeParts<'a> {
     fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource> {
         self.optional
     }
-    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone {
+    fn items(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone, 3> {
         self.items.iter()
     }
 }
@@ -273,8 +274,8 @@ impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelope<'a> {
     fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource> {
         self.optional.as_ref()
     }
-    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone {
-        self.items.iter()
+    fn items(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone, 3> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.items)
     }
 }
 
@@ -291,8 +292,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeSource for 
     fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource> {
         self.optional.as_ref()
     }
-    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone {
-        ::sce_forge_runtime::codec::SceList::as_slice(&self.items).iter()
+    fn items(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone, 3> {
+        self.items.list_iter()
     }
 }
 
@@ -311,10 +312,7 @@ impl<'a> CodecOriginEnvelope<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecOriginEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_items: usize = src.items().count();
-        if _k_items > 3 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_items: usize = src.items().len();
         let _p_hdr_has_opt_0: bool = src.optional().is_some();
         let _n_d_note_len_0: usize = src.note().len();
         let _d_note_len: u8 = u8::try_from(_n_d_note_len_0).map_err(|_| CodecError::LengthOutOfRange)?;
@@ -416,7 +414,7 @@ pub struct CodecOriginEnvelopeOwned<S: ::sce_forge_runtime::codec::CodecStorage 
     pub m: u8,
     pub required: CodecOriginLeafOwned<S>,
     pub optional: Option<CodecOriginLeafOwned<S>>,
-    pub items: S::List<CodecOriginLeafOwned<S>, 3>,
+    pub items: ::sce_forge_runtime::codec::Bounded<S::List<CodecOriginLeafOwned<S>, 3>, 3>,
 }
 
 #[allow(dead_code)]
@@ -453,7 +451,7 @@ impl<'a> CodecOriginEnvelope<'a> {
             m: self.m,
             required: self.required.try_into_owned_in::<S>()?,
             optional: self.optional.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
-            items: ::sce_forge_runtime::codec::try_collect_list(self.items, |_e| _e.try_into_owned_in::<S>())?,
+            items: ::sce_forge_runtime::codec::try_collect_bounded(self.items, |_e| _e.try_into_owned_in::<S>())?,
         })
     }
 
@@ -501,7 +499,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeOwned<S> {
             Some(_v) => _v.as_borrowed_into(_out.optional.insert(Default::default())),
             None => _out.optional = None,
         }
-        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.items, &self.items, |_e| Ok(_e.as_borrowed()))?;
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.items, self.items.inner(), |_e| Ok(_e.as_borrowed()))?;
         Ok(())
     }
 
@@ -568,7 +566,7 @@ impl<'a> CodecOriginEnvelope<'a> {
             m: self.m,
             required: self.required.try_into_owned_in_origin::<S>(origin)?,
             optional: self.optional.map(|_v| _v.try_into_owned_in_origin::<S>(origin)).transpose()?,
-            items: ::sce_forge_runtime::codec::try_collect_list(self.items, |_e| _e.try_into_owned_in_origin::<S>(origin))?,
+            items: ::sce_forge_runtime::codec::try_collect_bounded(self.items, |_e| _e.try_into_owned_in_origin::<S>(origin))?,
         })
     }
 }

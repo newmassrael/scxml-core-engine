@@ -146,7 +146,8 @@ impl<T: CodecZenohTimestampSource + ?Sized> CodecZenohTimestampSource for &T {
 }
 
 /// A value of `CodecZenohTimestamp` held in the types a caller already has: a source
-/// ([`CodecZenohTimestampSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohTimestampSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohTimestampParts<'a> {

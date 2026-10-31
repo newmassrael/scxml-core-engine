@@ -131,7 +131,8 @@ impl<T: CodecSimpleFrameSource + ?Sized> CodecSimpleFrameSource for &T {
 }
 
 /// A value of `CodecSimpleFrame` held in the types a caller already has: a source
-/// ([`CodecSimpleFrameSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecSimpleFrameSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecSimpleFrameParts {

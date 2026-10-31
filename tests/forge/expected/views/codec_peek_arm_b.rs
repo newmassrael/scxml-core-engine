@@ -176,7 +176,8 @@ impl<T: CodecPeekArmBSource + ?Sized> CodecPeekArmBSource for &T {
 }
 
 /// A value of `CodecPeekArmB` held in the types a caller already has: a source
-/// ([`CodecPeekArmBSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecPeekArmBSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecPeekArmBParts {

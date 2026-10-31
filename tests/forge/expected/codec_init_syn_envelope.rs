@@ -286,7 +286,8 @@ pub enum CodecInitSynEnvelopePartsBody<'a> {
 }
 
 /// A value of `CodecInitSynEnvelope` held in the types a caller already has: a source
-/// ([`CodecInitSynEnvelopeSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecInitSynEnvelopeSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecInitSynEnvelopeParts<'a> {

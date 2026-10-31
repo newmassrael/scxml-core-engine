@@ -175,7 +175,8 @@ impl<T: CodecZenohDeclQueryableSource + ?Sized> CodecZenohDeclQueryableSource fo
 }
 
 /// A value of `CodecZenohDeclQueryable` held in the types a caller already has: a source
-/// ([`CodecZenohDeclQueryableSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohDeclQueryableSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohDeclQueryableParts<'a> {

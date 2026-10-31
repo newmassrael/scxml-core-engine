@@ -172,35 +172,36 @@ pub trait CodecTlvChainPresentIfBasicSource {
     /// The `carrier` field.
     fn carrier(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone>;
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 4>>;
 }
 
 impl<T: CodecTlvChainPresentIfBasicSource + ?Sized> CodecTlvChainPresentIfBasicSource for &T {
     fn carrier(&self) -> u8 {
         (**self).carrier()
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 4>> {
         (**self).entries()
     }
 }
 
 /// A value of `CodecTlvChainPresentIfBasic` held in the types a caller already has: a source
-/// ([`CodecTlvChainPresentIfBasicSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecTlvChainPresentIfBasicSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecTlvChainPresentIfBasicParts<'a> {
     /// The `carrier` field.
     pub carrier: u8,
     /// The `entries` field.
-    pub entries: Option<&'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>]>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>], 4>>,
 }
 
 impl<'a> CodecTlvChainPresentIfBasicSource for CodecTlvChainPresentIfBasicParts<'a> {
     fn carrier(&self) -> u8 {
         self.carrier
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone> {
-        self.entries.map(<[_]>::iter)
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 4>> {
+        self.entries.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -208,8 +209,8 @@ impl<'a> CodecTlvChainPresentIfBasicSource for CodecTlvChainPresentIfBasic<'a> {
     fn carrier(&self) -> u8 {
         self.carrier
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone> {
-        self.entries.as_ref().map(|_l| _l.iter())
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 4>> {
+        self.entries.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -217,8 +218,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvChainPresentIfBasicSou
     fn carrier(&self) -> u8 {
         self.carrier
     }
-    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone> {
-        self.entries.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone, 4>> {
+        self.entries.as_ref().map(|_l| _l.list_iter())
     }
 }
 
@@ -237,10 +238,7 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecTlvChainPresentIfBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().map_or(0, |_l| _l.count());
-        if _k_entries > 4 {
-            return Err(CodecError::TlvChainOverflow);
-        }
+        let _k_entries: usize = src.entries().map_or(0, |_l| _l.len());
         let _p_carrier_has_chain_0: bool = src.entries().is_some();
         let _c_carrier: u8 = (src.carrier() & !0x1) | u8::from(_p_carrier_has_chain_0);
         w.write_u8(_c_carrier)?;
@@ -329,7 +327,7 @@ use super::codec_tlv_entry::CodecTlvEntryOwned;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecTlvChainPresentIfBasicOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub carrier: u8,
-    pub entries: Option<S::List<CodecTlvEntryOwned<S>, 16>>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecTlvEntryOwned<S>, 4>, 4>>,
 }
 
 #[allow(dead_code)]
@@ -361,7 +359,7 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTlvChainPresentIfBasicOwned<S>, CodecError> {
         Ok(CodecTlvChainPresentIfBasicOwned {
             carrier: self.carrier,
-            entries: self.entries.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            entries: self.entries.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
 
@@ -402,7 +400,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvChainPresentIfBasicOwn
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecTlvChainPresentIfBasic<'o>) -> Result<(), CodecError> {
         _out.carrier = self.carrier;
         match &self.entries {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.entries.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.entries.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.entries = None,
         }
         Ok(())

@@ -209,7 +209,8 @@ impl<T: CodecPresentIfDisjunctionSource + ?Sized> CodecPresentIfDisjunctionSourc
 }
 
 /// A value of `CodecPresentIfDisjunction` held in the types a caller already has: a source
-/// ([`CodecPresentIfDisjunctionSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecPresentIfDisjunctionSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecPresentIfDisjunctionParts {

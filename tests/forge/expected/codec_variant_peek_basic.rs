@@ -192,7 +192,8 @@ pub enum CodecVariantPeekBasicPartsBody<'a> {
 }
 
 /// A value of `CodecVariantPeekBasic` held in the types a caller already has: a source
-/// ([`CodecVariantPeekBasicSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecVariantPeekBasicSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecVariantPeekBasicParts<'a> {

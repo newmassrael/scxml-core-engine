@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_nested_body::CodecNestedBody;
 
-use sce_forge_runtime::codec::{ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
 use super::codec_nested_body::CodecNestedBodyView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -143,35 +143,32 @@ impl<'a> CodecNestedParent<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 2710;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -187,7 +184,7 @@ pub trait CodecNestedParentSource {
     /// The `optional_body` field.
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource>;
     /// The `body_list` field.
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone;
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4>;
 }
 
 impl<T: CodecNestedParentSource + ?Sized> CodecNestedParentSource for &T {
@@ -200,13 +197,14 @@ impl<T: CodecNestedParentSource + ?Sized> CodecNestedParentSource for &T {
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
         (**self).optional_body()
     }
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
         (**self).body_list()
     }
 }
 
 /// A value of `CodecNestedParent` held in the types a caller already has: a source
-/// ([`CodecNestedParentSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecNestedParentSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecNestedParentParts<'a> {
@@ -217,7 +215,7 @@ pub struct CodecNestedParentParts<'a> {
     /// The `optional_body` field.
     pub optional_body: Option<&'a super::codec_nested_body::CodecNestedBodyParts<'a>>,
     /// The `body_list` field.
-    pub body_list: &'a [super::codec_nested_body::CodecNestedBodyParts<'a>],
+    pub body_list: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_nested_body::CodecNestedBodyParts<'a>], 4>,
 }
 
 impl<'a> CodecNestedParentSource for CodecNestedParentParts<'a> {
@@ -230,7 +228,7 @@ impl<'a> CodecNestedParentSource for CodecNestedParentParts<'a> {
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
         self.optional_body
     }
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
         self.body_list.iter()
     }
 }
@@ -245,8 +243,8 @@ impl<'a> CodecNestedParentSource for CodecNestedParent<'a> {
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
         self.optional_body.as_ref()
     }
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
-        self.body_list.iter()
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
+        ::sce_forge_runtime::codec::BoundedIter::from(&self.body_list)
     }
 }
 
@@ -260,7 +258,7 @@ impl<'a> CodecNestedParentSource for CodecNestedParentView<'a> {
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
         self.optional_body.as_ref()
     }
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
         self.body_list.iter()
     }
 }
@@ -275,8 +273,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecNestedParentSource for Co
     fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
         self.optional_body.as_ref()
     }
-    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
-        ::sce_forge_runtime::codec::SceList::as_slice(&self.body_list).iter()
+    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
+        self.body_list.list_iter()
     }
 }
 
@@ -285,20 +283,16 @@ impl<'a> CodecNestedParent<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecNestedParentSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_body_list: usize = src.body_list().count();
-        if _k_body_list > 4 {
-            return Err(CodecError::TooManyElements);
-        }
+    pub fn write_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let _k_body_list: usize = src.body_list().len();
         let _p_hdr_has_opt_0: bool = src.optional_body().is_some();
         let _d_m: u8 = _k_body_list as u8;
         let _c_hdr: u8 = (src.hdr() & !0x1) | u8::from(_p_hdr_has_opt_0);
@@ -317,17 +311,17 @@ impl<'a> CodecNestedParent<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecNestedParentSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecNestedParentSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecNestedParentSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecNestedParent<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -335,10 +329,12 @@ impl<'a, S: CodecNestedParentSource + ?Sized> ::sce_forge_runtime::codec::Source
 #[allow(dead_code)]
 impl<'a> CodecNestedParent<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecNestedParentSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecNestedParentSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -382,7 +378,7 @@ pub struct CodecNestedParentView<'a> {
     pub m: u8,
     pub required_body: CodecNestedBodyView<'a>,
     pub optional_body: Option<CodecNestedBodyView<'a>>,
-    pub body_list: ListView<'a, CodecNestedParentBodyListWalk, 0>,
+    pub body_list: Bounded<ListView<'a, CodecNestedParentBodyListWalk, 0>, 4>,
 }
 
 #[allow(dead_code)]
@@ -446,7 +442,7 @@ impl<'a> CodecNestedParentView<'a> {
                 }
                 _count += 1;
             }
-            _out.body_list = ListView::new(_rest, _count, []);
+            _out.body_list = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?;
         }
         _out.hdr = hdr;
         _out.m = m;
@@ -491,18 +487,17 @@ impl<'a> CodecNestedParentView<'a> {
     /// builder. It writes the canonical wire, not the frame the view was decoded
     /// from, so a frame `decode` accepted in a form that is not canonical is
     /// not passed on as it came.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         CodecNestedParent::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses a
-    /// value it cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 
     pub fn has_opt(&self) -> bool {
@@ -553,7 +548,7 @@ pub struct CodecNestedParentOwned<S: ::sce_forge_runtime::codec::CodecStorage = 
     pub m: u8,
     pub required_body: CodecNestedBodyOwned<S>,
     pub optional_body: Option<CodecNestedBodyOwned<S>>,
-    pub body_list: S::List<CodecNestedBodyOwned<S>, 4>,
+    pub body_list: ::sce_forge_runtime::codec::Bounded<S::List<CodecNestedBodyOwned<S>, 4>, 4>,
 }
 
 #[allow(dead_code)]
@@ -588,7 +583,7 @@ impl<'a> CodecNestedParent<'a> {
             m: self.m,
             required_body: self.required_body.try_into_owned_in::<S>()?,
             optional_body: self.optional_body.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
-            body_list: ::sce_forge_runtime::codec::try_collect_list(self.body_list, |_e| _e.try_into_owned_in::<S>())?,
+            body_list: ::sce_forge_runtime::codec::try_collect_bounded(self.body_list, |_e| _e.try_into_owned_in::<S>())?,
         })
     }
 
@@ -634,7 +629,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecNestedParentOwned<S> {
             Some(_v) => _v.try_as_borrowed_into(_out.optional_body.insert(Default::default()))?,
             None => _out.optional_body = None,
         }
-        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.body_list, &self.body_list, |_e| _e.try_as_borrowed())?;
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.body_list, self.body_list.inner(), |_e| _e.try_as_borrowed())?;
         Ok(())
     }
 
@@ -660,22 +655,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecNestedParentOwned<S> {
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecNestedParent::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecNestedParent::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }

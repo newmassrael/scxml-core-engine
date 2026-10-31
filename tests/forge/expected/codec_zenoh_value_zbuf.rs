@@ -179,7 +179,7 @@ pub trait CodecZenohValueZbufSource {
     /// The `encoding` field.
     fn encoding(&self) -> Option<u64>;
     /// The `slices` field.
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone>;
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>>;
 }
 
 impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
@@ -192,13 +192,14 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
     fn encoding(&self) -> Option<u64> {
         (**self).encoding()
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone> {
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>> {
         (**self).slices()
     }
 }
 
 /// A value of `CodecZenohValueZbuf` held in the types a caller already has: a source
-/// ([`CodecZenohValueZbufSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohValueZbufSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohValueZbufParts<'a> {
@@ -209,7 +210,7 @@ pub struct CodecZenohValueZbufParts<'a> {
     /// The `encoding` field.
     pub encoding: Option<u64>,
     /// The `slices` field.
-    pub slices: Option<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>]>,
+    pub slices: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], 4>>,
 }
 
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
@@ -222,8 +223,8 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
     fn encoding(&self) -> Option<u64> {
         self.encoding
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone> {
-        self.slices.map(<[_]>::iter)
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -237,8 +238,8 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbuf<'a> {
     fn encoding(&self) -> Option<u64> {
         self.encoding
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone> {
-        self.slices.as_ref().map(|_l| _l.iter())
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -252,8 +253,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufSource for 
     fn encoding(&self) -> Option<u64> {
         self.encoding
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone> {
-        self.slices.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(|_l| _l.list_iter())
     }
 }
 
@@ -271,10 +272,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohValueZbufSource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_slices: usize = src.slices().map_or(0, |_l| _l.count());
-        if _k_slices > 4 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_slices: usize = src.slices().map_or(0, |_l| _l.len());
         let _n_d_value_len_0: usize = match src.value() {
             Some(_v) => _v.len(),
             None => 0,
@@ -373,7 +371,7 @@ pub struct CodecZenohValueZbufOwned<S: ::sce_forge_runtime::codec::CodecStorage 
     pub value: Option<S::Bytes<32>>,
     pub encoding: Option<u64>,
     pub slice_count: Option<u64>,
-    pub slices: Option<S::List<CodecZenohValueSliceOwned<S>, 4>>,
+    pub slices: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohValueSliceOwned<S>, 4>, 4>>,
 }
 
 #[allow(dead_code)]
@@ -395,7 +393,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
             value: self.value.map(<S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
             encoding: self.encoding,
             slice_count: self.slice_count,
-            slices: self.slices.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            slices: self.slices.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
 
@@ -439,7 +437,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
         _out.encoding = self.encoding;
         _out.slice_count = self.slice_count;
         match &self.slices {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.slices.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.slices.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.slices = None,
         }
         Ok(())

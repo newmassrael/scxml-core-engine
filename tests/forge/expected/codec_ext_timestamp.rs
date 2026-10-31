@@ -154,7 +154,8 @@ impl<T: CodecExtTimestampSource + ?Sized> CodecExtTimestampSource for &T {
 }
 
 /// A value of `CodecExtTimestamp` held in the types a caller already has: a source
-/// ([`CodecExtTimestampSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecExtTimestampSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecExtTimestampParts<'a> {

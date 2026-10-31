@@ -204,7 +204,7 @@ pub trait CodecZenohHelloSource {
     /// The `zid` field.
     fn zid(&self) -> &[u8];
     /// The `locators` field.
-    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone>;
+    fn locators(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 64>>;
 }
 
 impl<T: CodecZenohHelloSource + ?Sized> CodecZenohHelloSource for &T {
@@ -217,13 +217,14 @@ impl<T: CodecZenohHelloSource + ?Sized> CodecZenohHelloSource for &T {
     fn zid(&self) -> &[u8] {
         (**self).zid()
     }
-    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone> {
+    fn locators(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 64>> {
         (**self).locators()
     }
 }
 
 /// A value of `CodecZenohHello` held in the types a caller already has: a source
-/// ([`CodecZenohHelloSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohHelloSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohHelloParts<'a> {
@@ -234,7 +235,7 @@ pub struct CodecZenohHelloParts<'a> {
     /// The `zid` field.
     pub zid: &'a [u8],
     /// The `locators` field.
-    pub locators: Option<&'a [super::codec_zenoh_locator::CodecZenohLocatorParts<'a>]>,
+    pub locators: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_locator::CodecZenohLocatorParts<'a>], 64>>,
 }
 
 impl<'a> CodecZenohHelloSource for CodecZenohHelloParts<'a> {
@@ -247,8 +248,8 @@ impl<'a> CodecZenohHelloSource for CodecZenohHelloParts<'a> {
     fn zid(&self) -> &[u8] {
         self.zid
     }
-    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone> {
-        self.locators.map(<[_]>::iter)
+    fn locators(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 64>> {
+        self.locators.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -262,8 +263,8 @@ impl<'a> CodecZenohHelloSource for CodecZenohHello<'a> {
     fn zid(&self) -> &[u8] {
         self.zid
     }
-    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone> {
-        self.locators.as_ref().map(|_l| _l.iter())
+    fn locators(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 64>> {
+        self.locators.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -277,8 +278,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohHelloSource for Code
     fn zid(&self) -> &[u8] {
         ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid)
     }
-    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone> {
-        self.locators.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn locators(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 64>> {
+        self.locators.as_ref().map(|_l| _l.list_iter())
     }
 }
 
@@ -296,10 +297,7 @@ impl<'a> CodecZenohHello<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohHelloSource + ?Sized, K: SceSink>(src: &S, w: &mut K, l: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_locators: usize = src.locators().map_or(0, |_l| _l.count());
-        if _k_locators > 64 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_locators: usize = src.locators().map_or(0, |_l| _l.len());
         let _n_d_cbyte_zid_len_m1_0: usize = src.zid().len().checked_sub(1).ok_or(CodecError::LengthOutOfRange)?;
         let _f_d_num_locators: Option<usize> = if src.locators().is_some() { Some(_k_locators) } else { None };
         let _d_num_locators: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_num_locators.unwrap_or(0));
@@ -379,7 +377,7 @@ pub struct CodecZenohHelloOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::
     pub cbyte: u8,
     pub zid: S::Bytes<16>,
     pub num_locators: Option<u64>,
-    pub locators: Option<S::List<CodecZenohLocatorOwned<S>, 64>>,
+    pub locators: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohLocatorOwned<S>, 64>, 64>>,
 }
 
 #[allow(dead_code)]
@@ -418,7 +416,7 @@ impl<'a> CodecZenohHello<'a> {
             cbyte: self.cbyte,
             zid: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.zid)?,
             num_locators: self.num_locators,
-            locators: self.locators.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            locators: self.locators.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
 
@@ -462,7 +460,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohHelloOwned<S> {
         _out.zid = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid);
         _out.num_locators = self.num_locators;
         match &self.locators {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.locators.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.locators.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.locators = None,
         }
         Ok(())

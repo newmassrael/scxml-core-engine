@@ -138,7 +138,8 @@ impl<T: CodecZenohExtZbufSource + ?Sized> CodecZenohExtZbufSource for &T {
 }
 
 /// A value of `CodecZenohExtZbuf` held in the types a caller already has: a source
-/// ([`CodecZenohExtZbufSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecZenohExtZbufSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohExtZbufParts<'a> {

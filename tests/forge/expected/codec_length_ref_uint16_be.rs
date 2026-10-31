@@ -147,7 +147,8 @@ impl<T: CodecLengthRefUint16BeSource + ?Sized> CodecLengthRefUint16BeSource for 
 }
 
 /// A value of `CodecLengthRefUint16Be` held in the types a caller already has: a source
-/// ([`CodecLengthRefUint16BeSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecLengthRefUint16BeSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecLengthRefUint16BeParts<'a> {

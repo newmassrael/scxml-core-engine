@@ -184,7 +184,8 @@ impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource fo
 }
 
 /// A value of `CodecPresentIfLengthRef` held in the types a caller already has: a source
-/// ([`CodecPresentIfLengthRefSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecPresentIfLengthRefSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecPresentIfLengthRefParts<'a> {

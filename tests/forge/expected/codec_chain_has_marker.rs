@@ -226,55 +226,56 @@ pub trait CodecChainHasMarkerSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>>;
     /// The `payload` field.
     fn payload(&self) -> Option<&[u8]>;
     /// The `slices` field.
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone>;
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>>;
 }
 
 impl<T: CodecChainHasMarkerSource + ?Sized> CodecChainHasMarkerSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
         (**self).extensions()
     }
     fn payload(&self) -> Option<&[u8]> {
         (**self).payload()
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>> {
         (**self).slices()
     }
 }
 
 /// A value of `CodecChainHasMarker` held in the types a caller already has: a source
-/// ([`CodecChainHasMarkerSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecChainHasMarkerSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecChainHasMarkerParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The `extensions` field.
-    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4>>,
     /// The `payload` field.
     pub payload: Option<&'a [u8]>,
     /// The `slices` field.
-    pub slices: Option<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>]>,
+    pub slices: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>], 4>>,
 }
 
 impl<'a> CodecChainHasMarkerSource for CodecChainHasMarkerParts<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.map(<[_]>::iter)
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
     }
     fn payload(&self) -> Option<&[u8]> {
         self.payload
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
-        self.slices.map(<[_]>::iter)
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -282,14 +283,14 @@ impl<'a> CodecChainHasMarkerSource for CodecChainHasMarker<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| _l.iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
     fn payload(&self) -> Option<&[u8]> {
         self.payload
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
-        self.slices.as_ref().map(|_l| _l.iter())
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -297,14 +298,14 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSource for 
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
-        self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+        self.extensions.as_ref().map(|_l| _l.list_iter())
     }
     fn payload(&self) -> Option<&[u8]> {
         self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
     }
-    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
-        self.slices.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>> {
+        self.slices.as_ref().map(|_l| _l.list_iter())
     }
 }
 
@@ -322,14 +323,8 @@ impl<'a> CodecChainHasMarker<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecChainHasMarkerSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.count());
-        if _k_extensions > 4 {
-            return Err(CodecError::TlvChainOverflow);
-        }
-        let _k_slices: usize = src.slices().map_or(0, |_l| _l.count());
-        if _k_slices > 4 {
-            return Err(CodecError::TooManyElements);
-        }
+        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
+        let _k_slices: usize = src.slices().map_or(0, |_l| _l.len());
         let _p_header_e_0: bool = src.extensions().is_some();
         let _n_d_payload_len_0: usize = match src.payload() {
             Some(_v) => _v.len(),
@@ -447,11 +442,11 @@ use super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceOwned;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecChainHasMarkerOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
-    pub extensions: Option<S::List<CodecZenohExtEntryOwned<S>, 16>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4>>,
     pub payload_len: Option<u64>,
     pub payload: Option<S::Bytes<256>>,
     pub slice_count: Option<u32>,
-    pub slices: Option<S::List<CodecChainHasMarkerSliceOwned<S>, 4>>,
+    pub slices: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecChainHasMarkerSliceOwned<S>, 4>, 4>>,
 }
 
 #[allow(dead_code)]
@@ -487,11 +482,11 @@ impl<'a> CodecChainHasMarker<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasMarkerOwned<S>, CodecError> {
         Ok(CodecChainHasMarkerOwned {
             header: self.header,
-            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
             payload_len: self.payload_len,
             payload: self.payload.map(<S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
             slice_count: self.slice_count,
-            slices: self.slices.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            slices: self.slices.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
 
@@ -532,14 +527,14 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasMarker<'o>) -> Result<(), CodecError> {
         _out.header = self.header;
         match &self.extensions {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.extensions = None,
         }
         _out.payload_len = self.payload_len;
         _out.payload = self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
         _out.slice_count = self.slice_count;
         match &self.slices {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.slices.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.slices.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.slices = None,
         }
         Ok(())

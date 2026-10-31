@@ -179,7 +179,8 @@ impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
 }
 
 /// A value of `CodecExtEncodingInfo` held in the types a caller already has: a source
-/// ([`CodecExtEncodingInfoSource`]) whose lists are slices and whose bodies are references.
+/// ([`CodecExtEncodingInfoSource`]) whose lists are slices within their bounds and whose
+/// bodies are references.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecExtEncodingInfoParts<'a> {
