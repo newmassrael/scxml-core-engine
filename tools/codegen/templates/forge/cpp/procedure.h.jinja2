@@ -280,7 +280,7 @@ private:
     {{ f.cpp_type }} {{ f.id }}_{};
 {% endfor %}
 {% for f in internal_fields %}
-    {{ f.cpp_type }} {{ f.id }}_{% if f.default_value %} = {{ f.default_value }}{% endif %};
+    {{ f.cpp_type }} {{ f.id }}_{% if f.default_value %} = {{ f.default_value }}{% else %}{}{% endif %};
 {% endfor %}
 {% if has_imports %}
 

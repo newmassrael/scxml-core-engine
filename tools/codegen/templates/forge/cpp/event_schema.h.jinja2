@@ -36,8 +36,10 @@ inline constexpr std::uint32_t {{ b.upper }} = {{ b.value }};
 
 {% if fields %}
 struct {{ payload_struct_name }} {
+{# Value-initialized, as a codec's fields are (codec.h.jinja2): a payload built
+   by default holds no indeterminate member. #}
 {% for f in fields %}
-    {{ f.cpp_type }} {{ f.id }};
+    {{ f.cpp_type }} {{ f.id }}{};
 {% endfor %}
 };
 {% else %}

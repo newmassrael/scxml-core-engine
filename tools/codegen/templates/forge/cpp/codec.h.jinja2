@@ -112,8 +112,13 @@ using {{ struct_name }}Variant = std::variant<
 
 {% endif %}
 struct {{ struct_name }} {
+{# Every field is initialized: its declared default where it has one, else its
+   value-initialized zero. A field left without one makes a default-constructed
+   codec hold indeterminate bytes, which a copy then reads (C++ Core Guidelines
+   ES.20, C.48); gcc's -Wmaybe-uninitialized found it through a variant whose
+   first alternative is such a codec. #}
 {% for field in fields %}
-    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% endif %};
+    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% else %}{}{% endif %};
 {% endfor %}
 {% if has_variant %}
 {% if variant.default_arm_index is defined and variant.has_feature_gated_arm %}
