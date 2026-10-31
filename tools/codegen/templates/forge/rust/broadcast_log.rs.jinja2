@@ -22,7 +22,7 @@
 // Operations (from `sce_forge_runtime::{{ runtime_module }}`, typed here over the
 // element):
 {% if context.present %}
-//   publish(&mut publisher, &element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given{% else %}flags{% endif %}{% endif %}{% if context.has_tag %}, tag{% endif %}) -> Result<u64, CodecError>   wait-free; the entry's sequence number
+//   publish(&mut publisher, &element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given{% else %}flags{% endif %}{% endif %}) -> Result<u64, CodecError>   wait-free; the entry's sequence number
 {% else %}
 //   publish(&mut publisher, &element) -> Result<u64, CodecError>   wait-free; the entry's sequence number
 {% endif %}
@@ -30,9 +30,16 @@
 {% if context.present %}
 //
 // The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
-// part of the entry: `publish` takes them, the log stores them in the entry's context
-// words beside the bytes, and an `Item` returns them, so every reader decodes an entry
-// under what it was published under (ADR 0062 section 4).
+// part of the entry: the log stores them in the entry's context words beside the
+// bytes, so every reader decodes an entry under what it was published under (ADR 0062
+// section 4).
+{% if context.flags %}
+// `publish` takes the flags and an `Item` returns them.
+{% endif %}
+{% if context.has_tag %}
+// The tag is not given: it is a function of the element, which `publish` reads off it
+// (`{{ element_pascal }}::tag_of`) and stores, and the tag of an `Item`'s element is its own.
+{% endif %}
 {% if context.said_flags %}
 // A flag input the element's value says is not taken: `publish` reads it off the
 // element, as its encode does (ADR 0065 section 6, R4a).
@@ -178,14 +185,14 @@ pub enum {{ pascal }}Read {
 {% if context.present %}
     /// The entry `seq`, decoded, with what it was published under; the reader now holds
     /// `seq + 1`.
+{% if context.has_tag %}
+    /// The tag it was decoded under is the element's own (`{{ element_pascal }}::tag_of`).
+{% endif %}
     Item {
         seq: u64,
         element: {{ element_stored }},
 {% if context.flags %}
         flags: {{ pascal }}Flags,
-{% endif %}
-{% if context.has_tag %}
-        tag: u8,
 {% endif %}
     },
 {% else %}
@@ -211,13 +218,22 @@ pub enum {{ pascal }}Read {
 /// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
 /// published: an entry is never a truncated element.
 {% if context.present %}
+{% if context.flags %}
 ///
-/// {% if context.flags %}`{% if context.said_flags %}given{% else %}flags{% endif %}` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+/// `{% if context.said_flags %}given{% else %}flags{% endif %}` are what the element's codec takes from its caller as flag inputs:
 /// they are encoded under here and stored in the entry's context words, so that every reader
 /// decodes the entry under what it was published under.{% if context.said_flags %} A flag the element says is
 /// read off `element` and stored as it says it, so no entry is stored under a flag its bytes
 /// disagree with.{% endif %} The log does not check that
-/// {% if context.has_tag %}`tag` is the tag of the arm `element` holds{% else %}the flags it is given agree with `element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+/// the flags it is given agree with `element`; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
+{% if context.has_tag %}
+///
+/// The variant tag the element's decode takes is not a parameter: it is a function of
+/// `element`, `{{ element_pascal }}::tag_of(element)`, the tag of the arm it holds. It is stored
+/// in the entry's context words, so that no entry is stored under a tag its bytes disagree
+/// with and every reader decodes the entry under the arm it was published as.
+{% endif %}
 {% endif %}
 pub fn publish(
     publisher: &mut {{ pascal }}Publisher<'_>,
@@ -228,9 +244,6 @@ pub fn publish(
 {% else %}
     flags: {{ pascal }}Flags,
 {% endif %}
-{% endif %}
-{% if context.has_tag %}
-    tag: u8,
 {% endif %}
 ) -> Result<u64, CodecError> {
 {% if context.said_flags %}
@@ -254,7 +267,7 @@ pub fn publish(
     entry[1 + {{ flag.word }}] |= {{ word_type }}::from(flags.{{ flag.snake }}) << {{ flag.shift }};
 {% endfor %}
 {% if context.has_tag %}
-    entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(tag);
+    entry[1 + {{ context.tag_word }}] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));
 {% endif %}
     for (index, byte) in bytes[..length].iter().enumerate() {
         entry[{{ context.payload_start }} + index / {{ word_bytes }}] |= {{ word_type }}::from(*byte) << (8 * (index % {{ word_bytes }}));
@@ -316,9 +329,6 @@ pub fn read(
                 element,
 {% if context.flags %}
                 flags,
-{% endif %}
-{% if context.has_tag %}
-                tag,
 {% endif %}
             })
 {% else %}
