@@ -200,6 +200,20 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   length, and no `CodecError` names it. The decode does not call it: the arms before its catch-all take every tag the
   document names (an arm left out of a build refusing its tag, ADR 0072) and the tag is read from its bits, so the
   catch-all builds the value directly. An arm under a build feature is among the known tags in every build.
+  The consumer measured R3 (multicast image, thumbv7m): its text shrank by 256 bytes and the frame emitter by 58.
+  The `put` codec's own count was gone, but its counting copy stayed (782 to 770 bytes), because `put` still refuses an
+  extension chain longer than its bound, and the codecs that hold `put` count it. The copy goes when nothing counts
+  `put`, which is R2.
+  The set of tags a default arm holds depends on the tag's bits and the arms' tags only, not on the bodies the arms
+  hold. Two codecs whose arms name the same tags under the same bits therefore have the same set. The consumer has
+  two such codecs, an extension entry and a query extension entry that differ in one arm's body. It converted one's
+  tag to the other's through `new(tag.get())`, an `unreachable!()` for the `None` that cannot happen, and an
+  assertion over all 256 bytes. The runtime now holds the set as `TagSpace` (the largest tag and the known tags as
+  runs). Each `XUnknownTag` states its set by implementing the trait `UnknownTag`. `UnknownTag::from_unknown` converts
+  any other codec's tag whose set is inside the target's. The inclusion is a constant asserted where the call is
+  compiled, so the conversion has no failure and no check at run time. This is refinement subtyping: one predicate
+  implies the other. It is decided per pair at the call, so no step has to see both documents. The value that
+  `from_unknown` hands to the constructor carries an `Admitted` proof that only the runtime can make.
 - **R4, gate normal forms.** A gate the encoder cannot derive becomes a sum type over the cases it allows:
   - a disjunction `a.X || b.Y` becomes one arm for each satisfying assignment of the flags it names;
   - a flag a parent passes in that gates fields here is derived in the other direction, so the parent's bit is

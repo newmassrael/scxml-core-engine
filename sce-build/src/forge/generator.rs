@@ -9693,13 +9693,12 @@ fn render_codec(
                     rust_source::unknown_tag_type(&filters::to_pascal_case(m.name.clone())).into(),
                 );
                 obj.insert("bits".into(), unknown.bits.into());
+                let runs = unknown.known_runs();
                 obj.insert(
                     "known".into(),
                     serde_json::Value::Array(
-                        unknown
-                            .known_runs()
-                            .into_iter()
-                            .map(|(first, last)| {
+                        runs.iter()
+                            .map(|&(first, last)| {
                                 if first == last {
                                     first.to_string().into()
                                 } else {
@@ -9712,6 +9711,17 @@ fn render_codec(
                 if let Some(max) = unknown.max_below_type() {
                     obj.insert("max".into(), max.to_string().into());
                 }
+                // The same set as the runtime's `TagSpace` (docs/adr/0065 §6 R3),
+                // from which a conversion between two codecs' tags is proven.
+                obj.insert("space_max".into(), unknown.max().to_string().into());
+                obj.insert(
+                    "space_runs".into(),
+                    runs.iter()
+                        .map(|(first, last)| format!("({first}, {last})"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                        .into(),
+                );
                 variant_obj.insert("unknown_tag".into(), obj.into());
             }
         }

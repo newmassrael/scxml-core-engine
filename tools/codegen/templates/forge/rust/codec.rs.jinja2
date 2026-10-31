@@ -109,6 +109,33 @@ impl {{ unknown.type_name }} {
     }
 }
 
+{# The set `new` admits, stated for the runtime: another codec's unknown tag whose
+   set this one includes converts to it with no check left to run
+   (`UnknownTag::from_unknown`). #}
+impl ::sce_forge_runtime::codec::UnknownTag for {{ unknown.type_name }} {
+    const SPACE: ::sce_forge_runtime::codec::TagSpace =
+        ::sce_forge_runtime::codec::TagSpace::new({{ unknown.space_max }}, &[{{ unknown.space_runs }}]);
+
+{% if variant.tag_native_type == "u64" %}
+    fn widened(self) -> u64 {
+        self.0
+    }
+
+    fn from_admitted(tag: u64, _proof: ::sce_forge_runtime::codec::Admitted) -> Self {
+        Self(tag)
+    }
+{% else %}
+    fn widened(self) -> u64 {
+        u64::from(self.0)
+    }
+
+    fn from_admitted(tag: u64, _proof: ::sce_forge_runtime::codec::Admitted) -> Self {
+{# The proof says `tag` is at most `SPACE.max`, which the type holds. #}
+        Self(tag as {{ variant.tag_native_type }})
+    }
+{% endif %}
+}
+
 {% endif %}
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded

@@ -956,6 +956,172 @@ pub fn measure<C: SourceWrite<S>, S: ?Sized>(
     })
 }
 
+// ── Tags a default arm holds ────────────────────────────────────
+
+/// The tags a codec's default arm holds (docs/adr/0065 §6 R3): every value from 0
+/// to [`Self::max`], the largest its bits hold, except the tags its arms name.
+///
+/// The set is a function of the tag's bits and the arms' tags alone, so two
+/// codecs whose arms hold different bodies under the same tags have the same set,
+/// and a value of one is a value of the other. [`UnknownTag::from_unknown`] relies
+/// on that fact, which [`Self::includes`] decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TagSpace {
+    max: u64,
+    known: &'static [(u64, u64)],
+}
+
+impl TagSpace {
+    /// The tags from 0 to `max` outside `known`, where `known` lists the arms'
+    /// tags as runs `(first, last)`: ascending, each at most `max`, and with a
+    /// gap between one run and the next. A run that touches the next is one run.
+    ///
+    /// Panics when `known` breaks that, which in a constant is a compile error.
+    pub const fn new(max: u64, known: &'static [(u64, u64)]) -> Self {
+        let mut i = 0;
+        while i < known.len() {
+            let (first, last) = known[i];
+            assert!(first <= last, "a known run ends before it starts");
+            assert!(last <= max, "a known run is past the largest tag");
+            if i + 1 < known.len() {
+                let next = known[i + 1].0;
+                assert!(
+                    last < next && last + 1 < next,
+                    "known runs are not ascending with a gap between them"
+                );
+            }
+            i += 1;
+        }
+        Self { max, known }
+    }
+
+    /// The largest tag the bits hold.
+    pub const fn max(&self) -> u64 {
+        self.max
+    }
+
+    /// Whether a default arm holds `tag`.
+    pub const fn admits(&self, tag: u64) -> bool {
+        tag <= self.max && !Self::covered(self.known, tag, tag)
+    }
+
+    /// Whether every tag `other` admits is one `self` admits.
+    ///
+    /// The tags `self` refuses below `other.max` are its known runs and the tags
+    /// past its own `max`; `other` admits none of them exactly when each such run
+    /// lies inside one of `other`'s known runs. Its runs have gaps between them,
+    /// so a run their union covers lies inside one of them.
+    pub const fn includes(&self, other: &TagSpace) -> bool {
+        let mut i = 0;
+        while i < self.known.len() {
+            let (first, last) = self.known[i];
+            if first <= other.max {
+                let last = if last < other.max { last } else { other.max };
+                if !Self::covered(other.known, first, last) {
+                    return false;
+                }
+            }
+            i += 1;
+        }
+        other.max <= self.max || Self::covered(other.known, self.max + 1, other.max)
+    }
+
+    /// Whether one of `runs` holds every tag from `first` to `last`.
+    const fn covered(runs: &[(u64, u64)], first: u64, last: u64) -> bool {
+        let mut i = 0;
+        while i < runs.len() {
+            if runs[i].0 <= first && last <= runs[i].1 {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+}
+
+/// The proof [`UnknownTag::from_unknown`] hands [`UnknownTag::from_admitted`]
+/// that the tag is one the target admits. Only this crate makes one, so no
+/// caller outside it can reach `from_admitted` with a tag nobody checked.
+#[derive(Debug)]
+pub struct Admitted(());
+
+/// A codec's tag for its default arm: a value of its [`TagSpace`]. Generated, one
+/// impl for each codec whose variant has a default arm (`{Codec}UnknownTag`).
+pub trait UnknownTag: Copy {
+    /// The tags a value of this type can be.
+    const SPACE: TagSpace;
+
+    /// The tag, widened to `u64`.
+    fn widened(self) -> u64;
+
+    /// `tag` as this type. Reached only through [`Self::from_unknown`], whose
+    /// [`Admitted`] says `tag` is in [`Self::SPACE`].
+    fn from_admitted(tag: u64, proof: Admitted) -> Self;
+
+    /// `other`'s tag as this type, which cannot fail: the build refuses the call
+    /// unless this type admits every tag `other`'s type can be.
+    ///
+    /// Two codecs whose tags have the same bits and whose arms name the same tags
+    /// convert both ways; a codec whose arms name only some of another's tags
+    /// receives from it and not the other way. The proof is a constant, so the
+    /// conversion costs nothing when it runs.
+    ///
+    /// A target whose arms name fewer of the tags receives:
+    ///
+    /// ```
+    /// use sce_forge_runtime::codec::{Admitted, TagSpace, UnknownTag};
+    /// #[derive(Clone, Copy)]
+    /// struct Narrow(u8);
+    /// impl UnknownTag for Narrow {
+    ///     const SPACE: TagSpace = TagSpace::new(3, &[(0, 2)]);
+    ///     fn widened(self) -> u64 { u64::from(self.0) }
+    ///     fn from_admitted(tag: u64, _: Admitted) -> Self { Self(tag as u8) }
+    /// }
+    /// #[derive(Clone, Copy)]
+    /// struct Wide(u8);
+    /// impl UnknownTag for Wide {
+    ///     const SPACE: TagSpace = TagSpace::new(3, &[(0, 1)]);
+    ///     fn widened(self) -> u64 { u64::from(self.0) }
+    ///     fn from_admitted(tag: u64, _: Admitted) -> Self { Self(tag as u8) }
+    /// }
+    /// // Wide admits 2 and 3, Narrow only 3.
+    /// fn convert(narrow: Narrow) -> Wide { Wide::from_unknown(narrow) }
+    /// # fn main() { assert_eq!(convert(Narrow(3)).0, 3); }
+    /// ```
+    ///
+    /// and the same pair the other way does not build:
+    ///
+    /// ```compile_fail,E0080
+    /// use sce_forge_runtime::codec::{Admitted, TagSpace, UnknownTag};
+    /// #[derive(Clone, Copy)]
+    /// struct Narrow(u8);
+    /// impl UnknownTag for Narrow {
+    ///     const SPACE: TagSpace = TagSpace::new(3, &[(0, 2)]);
+    ///     fn widened(self) -> u64 { u64::from(self.0) }
+    ///     fn from_admitted(tag: u64, _: Admitted) -> Self { Self(tag as u8) }
+    /// }
+    /// #[derive(Clone, Copy)]
+    /// struct Wide(u8);
+    /// impl UnknownTag for Wide {
+    ///     const SPACE: TagSpace = TagSpace::new(3, &[(0, 1)]);
+    ///     fn widened(self) -> u64 { u64::from(self.0) }
+    ///     fn from_admitted(tag: u64, _: Admitted) -> Self { Self(tag as u8) }
+    /// }
+    /// // Wide admits 2, which Narrow names as an arm's tag.
+    /// fn convert(wide: Wide) -> Narrow { Narrow::from_unknown(wide) }
+    /// # fn main() { convert(Wide(2)); }
+    /// ```
+    fn from_unknown<A: UnknownTag>(other: A) -> Self {
+        const {
+            assert!(
+                Self::SPACE.includes(&A::SPACE),
+                "the source can hold a tag the target refuses"
+            )
+        };
+        Self::from_admitted(other.widened(), Admitted(()))
+    }
+}
+
 // ── Heap-backed sink (alloc-only) ────────────────────────────────
 
 #[cfg(feature = "alloc")]
@@ -1658,5 +1824,74 @@ mod tests {
         let d: &mut dyn SceSink<Error = CodecError> = &mut s;
         d.write_u32_le(0x0102_0304).unwrap();
         assert_eq!(buf, [0x04, 0x03, 0x02, 0x01]);
+    }
+
+    // ── Tags a default arm holds ─────────────────────────────────
+
+    /// Whether `wide` includes `narrow`, found by asking each tag up to the
+    /// larger max: the definition `includes` decides by runs.
+    fn includes_by_every_tag(wide: &TagSpace, narrow: &TagSpace) -> bool {
+        (0..=wide.max().max(narrow.max())).all(|t| !narrow.admits(t) || wide.admits(t))
+    }
+
+    #[test]
+    fn a_tag_space_admits_the_tags_its_bits_hold_and_no_arm_names() {
+        let space = TagSpace::new(31, &[(0, 7), (26, 26)]);
+        for tag in 0..=40 {
+            let expected = matches!(tag, 8..=25 | 27..=31);
+            assert_eq!(space.admits(tag), expected, "tag {tag}");
+        }
+    }
+
+    #[test]
+    fn a_tag_space_includes_another_exactly_when_every_tag_of_it_says_so() {
+        let spaces = [
+            TagSpace::new(3, &[(0, 2)]),
+            TagSpace::new(3, &[(0, 1)]),
+            TagSpace::new(3, &[(1, 2)]),
+            TagSpace::new(3, &[]),
+            TagSpace::new(7, &[(0, 2)]),
+            TagSpace::new(7, &[(0, 2), (4, 7)]),
+            TagSpace::new(31, &[(0, 7), (26, 26)]),
+            TagSpace::new(31, &[(0, 7), (26, 31)]),
+            TagSpace::new(255, &[(0, 2)]),
+        ];
+        for wide in &spaces {
+            for narrow in &spaces {
+                assert_eq!(
+                    wide.includes(narrow),
+                    includes_by_every_tag(wide, narrow),
+                    "{wide:?} includes {narrow:?}"
+                );
+            }
+        }
+        // The pairs the definition is about, stated directly.
+        assert!(spaces[0].includes(&TagSpace::new(3, &[(0, 2)])));
+        assert!(spaces[1].includes(&spaces[0]));
+        assert!(!spaces[0].includes(&spaces[1]));
+        assert!(spaces[4].includes(&spaces[0]));
+        assert!(!spaces[0].includes(&spaces[4]));
+        assert!(spaces[0].includes(&spaces[5]));
+    }
+
+    #[test]
+    fn the_largest_tag_space_is_decided_without_overflow() {
+        let all = TagSpace::new(u64::MAX, &[(0, 2)]);
+        let top = TagSpace::new(u64::MAX, &[(0, u64::MAX - 1)]);
+        assert!(all.includes(&top));
+        assert!(!top.includes(&all));
+        assert!(all.admits(u64::MAX));
+    }
+
+    #[test]
+    #[should_panic(expected = "known runs are not ascending with a gap between them")]
+    fn runs_that_touch_are_refused_as_one_run_written_twice() {
+        let _ = TagSpace::new(7, &[(0, 1), (2, 3)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "a known run is past the largest tag")]
+    fn a_run_past_the_largest_tag_is_refused() {
+        let _ = TagSpace::new(3, &[(0, 4)]);
     }
 }

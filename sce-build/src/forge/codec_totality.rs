@@ -400,16 +400,21 @@ pub struct UnknownTag {
 }
 
 impl UnknownTag {
+    /// The largest tag the bits hold.
+    pub fn max(&self) -> u64 {
+        mask_of(self.bits)
+    }
+
     /// The largest tag the bits hold, when it is smaller than the largest value
     /// of the type, so that a tag of the type can be past it.
     pub fn max_below_type(&self) -> Option<u64> {
         let type_bits = unsigned_bits(&self.ty).unwrap_or(64);
-        (self.bits < type_bits).then(|| mask_of(self.bits))
+        (self.bits < type_bits).then(|| self.max())
     }
 
     /// Whether `tag` is one a default arm may hold.
     pub fn admits(&self, tag: u64) -> bool {
-        tag <= mask_of(self.bits) && !self.known.contains(&tag)
+        tag <= self.max() && !self.known.contains(&tag)
     }
 
     /// The known tags as runs of consecutive values, each `(first, last)`, in

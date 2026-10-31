@@ -461,3 +461,66 @@ mod parts {
         assert_eq!(again, bytes);
     }
 }
+
+// A default arm's tag as a value of its tag space (docs/adr/0065 §6 R3): the set
+// `new` admits is the set the runtime is told, and two codecs whose arms name the
+// same tags under the same bits convert their tags with nothing to check.
+mod unknown_tags {
+    use super::codecs::codec_init_syn_envelope::CodecInitSynEnvelopeUnknownTag;
+    use super::codecs::codec_origin_choice::CodecOriginChoiceUnknownTag;
+    use super::codecs::codec_transport_envelope::CodecTransportEnvelopeUnknownTag;
+    use super::codecs::codec_variant_dispatch::CodecVariantDispatchUnknownTag;
+    use super::codecs::codec_zenoh_declaration::CodecZenohDeclarationUnknownTag;
+    use super::codecs::codec_zenoh_ext_entry::CodecZenohExtEntryUnknownTag;
+    use super::codecs::codec_zenoh_network_envelope::CodecZenohNetworkEnvelopeUnknownTag;
+    use super::codecs::codec_zenoh_oam::CodecZenohOamUnknownTag;
+    use super::codecs::codec_zenoh_push::CodecZenohPushUnknownTag;
+    use super::codecs::codec_zenoh_push_body::CodecZenohPushBodyUnknownTag;
+    use super::codecs::codec_zenoh_request::CodecZenohRequestUnknownTag;
+    use super::codecs::codec_zenoh_response::CodecZenohResponseUnknownTag;
+    use super::codecs::codec_zenoh_value_entry::CodecZenohValueEntryUnknownTag;
+    use sce_forge_runtime::codec::UnknownTag;
+
+    macro_rules! assert_space_is_what_new_admits {
+        ($($tag:ty),+ $(,)?) => {$(
+            for t in 0..=u8::MAX {
+                assert_eq!(
+                    <$tag>::new(t).is_some(),
+                    <$tag as UnknownTag>::SPACE.admits(u64::from(t)),
+                    "{} at {t}",
+                    stringify!($tag)
+                );
+            }
+        )+};
+    }
+
+    #[test]
+    fn the_space_each_codec_states_is_the_set_its_constructor_admits() {
+        assert_space_is_what_new_admits!(
+            CodecInitSynEnvelopeUnknownTag,
+            CodecOriginChoiceUnknownTag,
+            CodecTransportEnvelopeUnknownTag,
+            CodecVariantDispatchUnknownTag,
+            CodecZenohDeclarationUnknownTag,
+            CodecZenohExtEntryUnknownTag,
+            CodecZenohNetworkEnvelopeUnknownTag,
+            CodecZenohOamUnknownTag,
+            CodecZenohPushUnknownTag,
+            CodecZenohPushBodyUnknownTag,
+            CodecZenohRequestUnknownTag,
+            CodecZenohResponseUnknownTag,
+            CodecZenohValueEntryUnknownTag,
+        );
+    }
+
+    #[test]
+    fn codecs_whose_arms_name_the_same_tags_convert_their_unknown_tag_both_ways() {
+        // An extension entry and a value entry dispatch on the same two bits and
+        // name arms 0, 1 and 2; their arms hold different bodies. Each holds 3 alone.
+        let ext = CodecZenohExtEntryUnknownTag::new(3).expect("no arm names 3");
+        let value = CodecZenohValueEntryUnknownTag::from_unknown(ext);
+        assert_eq!(value.get(), 3);
+        assert_eq!(CodecZenohExtEntryUnknownTag::from_unknown(value), ext);
+        assert_eq!(CodecZenohOamUnknownTag::from_unknown(ext).get(), 3);
+    }
+}

@@ -1,0 +1,33 @@
+# Mutation cases for "a tag space includes another only when every tag says so".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_tag_space_includes_another_only_when_every_tag_says_so.cases`.
+#
+# `UnknownTag::from_unknown` converts one codec's default-arm tag to another's
+# with no check at run time, on the strength of `TagSpace::includes`, a constant
+# the build asserts (docs/adr/0065 §6 R3). Each case makes `includes` say yes to
+# a pair where the source can hold a tag the target refuses: a known run of the
+# target the source admits part of, or the tags past the target's largest. The
+# runtime's `a_tag_space_includes_another_exactly_when_every_tag_of_it_says_so`,
+# which asks each tag, refuses both.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/codec.rs
+mutation_oracles backends/rust/forge-runtime/src/codec.rs
+
+mutation_case "a known run of the target is taken as covered when it is not" <<'PY'
+edit("backends/rust/forge-runtime/src/codec.rs",
+     r'''                if !Self::covered(other.known, first, last) {
+                    return false;
+                }''',
+     r'''                let _ = (first, last);''')
+PY
+
+mutation_case "the tags past the target's largest are not asked about" <<'PY'
+edit("backends/rust/forge-runtime/src/codec.rs",
+     r'''        other.max <= self.max || Self::covered(other.known, self.max + 1, other.max)''',
+     r'''        true''')
+PY
