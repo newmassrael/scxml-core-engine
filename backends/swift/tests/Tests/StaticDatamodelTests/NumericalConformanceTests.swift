@@ -777,6 +777,18 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "algorithm_tick_until_due")
     }}
 
+// MARK: - algorithm: algorithm_lcg_table
+
+@Test func algorithmLcgTableMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_lcg_table") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let returned = AlgorithmLcgTable.algorithmLcgTable(arg0)
+        let expected = try oracleInteger(testCase.member("expected"), as: UInt32.self)
+        #expect(returned == expected, "algorithm_lcg_table")
+    }}
+
 // MARK: - algorithm: algorithm_checked_call
 
 @Test func algorithmCheckedCallMatchesReference() throws {
@@ -915,6 +927,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
         let expected = try oracleInteger(testCase.member("expected"), as: Int64.self)
         #expect(returned == expected, "algorithm_list_param_sum")
+    }}
+
+// MARK: - algorithm: algorithm_crc16
+
+@Test func algorithmCrc16MatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_crc16") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleBytes(args[0])
+        let returned = AlgorithmCrc16.algorithmCrc16(arg0)
+        let expected = try oracleInteger(testCase.member("expected"), as: UInt16.self)
+        #expect(returned == expected, "algorithm_crc16")
+    }}
+
+// MARK: - algorithm: algorithm_crc16_table
+
+@Test func algorithmCrc16TableMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_crc16_table") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleBytes(args[0])
+        let returned = AlgorithmCrc16Table.algorithmCrc16Table(arg0)
+        let expected = try oracleInteger(testCase.member("expected"), as: UInt16.self)
+        #expect(returned == expected, "algorithm_crc16_table")
     }}
 
 // MARK: - algorithm: algorithm_hlc_compare
