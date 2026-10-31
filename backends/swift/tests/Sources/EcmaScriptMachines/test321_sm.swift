@@ -384,6 +384,36 @@ public final class Test321Policy: InvocablePolicy {
         }
     }
 
+    /// W3C SCXML 4.6: starts a `<foreach>`. The array expression, already lowered to Lua, is read once
+    /// and a shallow copy is kept in a variable of the session named for the loop's nesting depth
+    /// ("the array is not changed by the loop": a body that changes the variable does not change what the
+    /// loop walks). Answers how many items there are, or nil when the value is not an array or cannot be
+    /// read (the caller's `error.execution`).
+    private func beginForeach(_ depth: Int, _ array: String) -> Int? {
+        let slot = "_scxml_foreach_\(depth)"
+        let copied = executeScript(
+            "local source = \(array); if not _isArray(source) then error('<foreach> array is not an array') end; "
+                + "local copy = {}; for i = 1, #source do copy[i] = source[i] end; \(slot) = copy",
+            name: "=foreach")
+        guard copied, case .integer(let count)? = try? ensureLua().evaluate("#\(slot)", name: "=foreach") else {
+            return nil
+        }
+        return Int(count)
+    }
+
+    /// W3C SCXML 4.6: gives the `<foreach>`'s item (and, when it names one, its index) the values of one
+    /// iteration, both locations already lowered to Lua. A location that cannot be written is the caller's
+    /// `error.execution`.
+    private func bindForeach(_ depth: Int, at position: Int, item: String, index: String?) -> Bool {
+        guard executeScript("\(item) = _scxml_foreach_\(depth)[\(position + 1)]", name: "=foreach") else {
+            return false
+        }
+        guard let index else {
+            return true
+        }
+        return executeScript("\(index) = \(position)", name: "=foreach")
+    }
+
     /// W3C SCXML 5.7.1, 5.6.2: the value of an expression, already lowered to Lua, as JSON text, which
     /// keeps its type: a number stays one and an object keeps its shape, so a receiver reading
     /// `_event.data.value === 42` finds 42. A value ECMAScript cannot write as JSON (`undefined`, a
