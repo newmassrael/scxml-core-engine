@@ -366,9 +366,10 @@ public final class EcmaGuardErrorPolicy: InvocablePolicy {
         }
     }
 
-    /// W3C SCXML 4.7: the text of an expression, already lowered to Lua, as ECMAScript converts a value
-    /// to a string, or nil when the expression cannot be run (the caller's `error.execution`).
-    private func logText(_ expression: String) -> String? {
+    /// W3C SCXML 4.7, 6.2: the text of an expression, already lowered to Lua, as ECMAScript converts a
+    /// value to a string, or nil when the expression cannot be run (the caller's `error.execution`).
+    /// What a `<log expr>` shows and what a `<send>`'s computed event, target and delay say.
+    private func evaluateText(_ expression: String) -> String? {
         do {
             if case .string(let text) = try ensureLua().evaluate("_scxml_tostring(\(expression))", name: "=log") {
                 return text
