@@ -53,6 +53,19 @@ impl CodecZenohResponseUnknownTag {
     }
 }
 
+impl ::sce_forge_runtime::codec::UnknownTag for CodecZenohResponseUnknownTag {
+    const SPACE: ::sce_forge_runtime::codec::TagSpace =
+        ::sce_forge_runtime::codec::TagSpace::new(31, &[(4, 5)]);
+
+    fn widened(self) -> u64 {
+        u64::from(self.0)
+    }
+
+    fn from_admitted(tag: u64, _proof: ::sce_forge_runtime::codec::Admitted) -> Self {
+        Self(tag as u8)
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
