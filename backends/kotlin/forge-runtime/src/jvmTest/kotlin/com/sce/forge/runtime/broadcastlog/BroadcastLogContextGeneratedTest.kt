@@ -7,8 +7,9 @@
 //
 // An element's codec may take single-bit flag inputs on `encode` and `decode`, and a
 // variant with no tag field takes its tag on `decode`. The log stores them in the
-// entry's context words, takes them on `publish` and returns them with the item, so
-// every reader decodes an entry under what it was published under. Here the file the
+// entry's context words, takes the flags on `publish` and returns them with the item,
+// and reads the tag off the element (`element.tag`), so every reader decodes an entry
+// under what it was published under. Here the file the
 // generator writes for each of the two logs is compiled over the element classes it
 // imports, and the typed functions are used on one thread: a rename in the codec, a
 // context word in the wrong place or a flag read under the wrong bit stops the build
@@ -201,35 +202,46 @@ class BroadcastLogContextGeneratedTest {
         val publisher = assertNotNull(log.publisher())
         val reader = log.readerOldest()
         // The wire form of an arm carries no tag: the small arm is its one byte and the large arm
-        // its two bytes little-endian, and the context word is the tag the publisher gave.
-        assertIs<BroadcastLogConformanceChosenPublish.Published>(publishChosen(publisher, small(9), 1.toUByte()))
-        assertIs<BroadcastLogConformanceChosenPublish.Published>(publishChosen(publisher, large(0x0102), 0.toUByte()))
-        assertEquals(listOf(1L, 1L, 0x09L), rawEntry(log, reader, CHOSEN_WORDS))
-        assertEquals(listOf(2L, 0L, 0x0102L), rawEntry(log, reader, CHOSEN_WORDS))
+        // its two bytes little-endian, and the context word is the tag the element says
+        // (`element.tag`): `publish` takes no tag, so the word cannot disagree with the arm.
+        val sent = listOf(
+            small(9) to listOf(1L, 1L, 0x09L),
+            large(0x0102) to listOf(2L, 0L, 0x0102L),
+        )
+        for ((element, _) in sent) {
+            assertIs<BroadcastLogConformanceChosenPublish.Published>(publishChosen(publisher, element))
+        }
+        for ((element, words) in sent) {
+            val stored = rawEntry(log, reader, CHOSEN_WORDS)
+            assertEquals(words, stored)
+            assertEquals(element.tag.toLong(), stored[1], "the context word is the tag of the element")
+        }
     }
 
     @Test
-    fun aReaderGetsBackTheTagAnEntryWasPublishedUnder() {
+    fun aReaderGetsBackTheElementAsTheArmItWasPublishedAs() {
         val log = newBroadcastLogConformanceChosen()
         val publisher = assertNotNull(log.publisher())
         val reader = log.readerOldest()
 
         // The wire form of an arm carries no tag, so the two arms' bytes are the arm's own and
-        // which arm a frame is comes from the tag stored beside it.
+        // which arm a frame is comes from the tag stored beside it, which `publish` takes from
+        // the element. The item holds no tag beside the element: the element's own is the one
+        // it was decoded under.
         val sent = listOf(
             small(9) to 1,
             large(0x0102) to 0,
             small(255) to 1,
         )
-        for ((element, tag) in sent) {
-            assertIs<BroadcastLogConformanceChosenPublish.Published>(publishChosen(publisher, element, tag.toUByte()))
+        for ((element, _) in sent) {
+            assertIs<BroadcastLogConformanceChosenPublish.Published>(publishChosen(publisher, element))
         }
         for ((seq, entry) in sent.withIndex()) {
-            assertEquals(
-                BroadcastLogConformanceChosenRead.Item(seq.toLong(), entry.first, entry.second.toUByte()),
-                readChosen(log, reader),
-                "entry $seq comes back as the arm it was published as",
-            )
+            assertEquals(entry.second.toUByte(), entry.first.tag, "entry $seq is an arm with this tag")
+            val item = assertIs<BroadcastLogConformanceChosenRead.Item>(readChosen(log, reader))
+            assertEquals(seq.toLong(), item.seq)
+            assertEquals(entry.second.toUByte(), item.element.tag, "entry $seq comes back as the arm it was published as")
+            assertEquals(entry.first, item.element, "entry $seq comes back whole")
         }
         assertEquals(BroadcastLogConformanceChosenRead.Empty, readChosen(log, reader))
     }
