@@ -1,0 +1,435 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}{# ADR 0062: the broadcast log, C11, narrow row (32-bit stamp and words). #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit -- regenerate from the source SCXML file. */
+/*
+ * ADR 0062 broadcast-log -- a bounded log that one execution context appends to
+ * and any number of readers read, each by a cursor of its own. The document
+ * states the contract (element type `{{ element_snake }}_t`, {{ producers }} producer,
+ * `{{ declared_progress }}`, the last {{ retention }} entries retained) and names no algorithm;
+ * the algorithm is the runtime's sequence-locked ring, and the memory ordering
+ * is part of it, not a choice.
+ *
+ * An entry is the element's wire bytes, never a value: the log stores the bytes
+ * the element document's codec writes, so a slot has no destructor to run when
+ * it is overwritten, and a copy that was torn is thrown away unread.
+ *
+ * The log is `{{ snake }}_t`: its control block and the storage of its slots, all
+ * static in the object, so nothing allocates. Build it with `{{ snake }}_init`
+ * before another participant can reach it, and do not move it while it lives
+ * (its control block points into its own storage).
+ *
+ * Operations (the runtime's `sce_blogn_*`, typed here over the element):
+{% if ownership_only %}
+ *   {{ snake }}_split(log, &publisher)         takes the one place of the publisher from a log the
+ *                                              caller holds exclusively, with a load and a store
+ *   {{ snake }}_publisher_unchecked(log)       takes it on the caller's word, for a log in static storage
+{% else %}
+ *   {{ snake }}_publisher_acquire(log, &publisher)   takes the one place of the publisher, by a
+ *                                                    32-bit compare-and-swap
+ *   {{ snake }}_split(log, &publisher)         the same place from a log the caller holds exclusively
+ *   {{ snake }}_publisher_unchecked(log)       the same place on the caller's word
+{% endif %}
+ *   {{ snake }}_publish(&publisher, &element{% if context.flags %}, &flags{% endif %}{% if context.has_tag %}, tag{% endif %})        wait-free; the entry's sequence number
+ *   {{ snake }}_read(log, &reader, &out)             wait-free; an item, nothing new, or
+ *                                                    how many entries were missed
+ * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_head` or
+ * `{{ snake }}_reader_at`, and owns its cursor.
+{% if ownership_only %}
+ * This target has no atomic read-modify-write instruction, so there is no swap to
+ * hand the place out with: the publisher is a matter of ownership, `_split` for a
+ * log the caller holds exclusively (the check is a load and a store) and
+ * `_publisher_unchecked` for a log in static storage, whose contract the runtime states.
+{% endif %}
+ *
+ * This header is generated over the runtime's narrow row, for a target whose
+ * atomics are {{ stamp_bits }} bits wide or only loads and stores: its stamp is {{ stamp_bits }} bits and wraps.
+ * Every sequence number (a `seq`, the number `publish` returns, the head, a reader's
+ * cursor) counts modulo 2^{{ stamp_bits }}. A reader gets the answers the document states
+ * while the publisher begins at most {{ wrap_bound_ops }} publishes between two of its reads:
+ * the deploy states the longest pause the design relies on as
+ * `machines.<machine>.queues.{{ log_name }}.min_wrap_ops`, and this header was generated against
+ * it. The slot count `{{ upper_name }}_SLOTS` is a power of two, so that the slot index of a
+ * cursor known only modulo 2^{{ stamp_bits }} is the publisher's.
+{% if context.present %}
+ *
+ * The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+ * part of the entry: `{{ snake }}_publish` takes them, the log stores them in the entry's
+ * context words beside the bytes, and `{{ snake }}_read` returns them with the item, so
+ * every reader decodes an entry under what it was published under (ADR 0062 section 4).
+{% endif %}
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stddef.h>
+{% if context.flags %}
+#include <stdbool.h>
+{% endif %}
+#include <stdint.h>
+
+/* `SCE_STATIC_ASSERT` for the size guards below. This header opens
+ * `extern "C"`, so a C++ consumer compiles it as C++, where `_Static_assert` is
+ * not a keyword. */
+#include <sce/portability.h>
+
+#include <sce/forge/broadcast_log_narrow.h>
+#include <sce/forge/codec.h>
+
+#include "{{ element_snake }}.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The entries a reader may rely on (`<sce:retention>`): the last
+ * `{{ upper_name }}_RETENTION` published. */
+#define {{ upper_name }}_RETENTION ((uint32_t){{ retention }}u)
+
+/* The slots the log keeps: one more than the retention, because the slot being
+ * overwritten is in flux and cannot be promised to a reader. */
+#define {{ upper_name }}_SLOTS ((uint32_t)({{ upper_name }}_RETENTION + 1u))
+
+/* The width of the stamp this log was generated against, and the longest pause in
+ * publishes between two reads of one reader for which that stamp tells an entry from
+ * the same slot's entry of a lap on: half the stamp space less the slots. */
+#define {{ upper_name }}_STAMP_BITS ((uint32_t){{ stamp_bits }}u)
+#define {{ upper_name }}_WRAP_BOUND_OPS ((uint64_t){{ wrap_bound_ops }}u)
+
+/* The most bytes the element `{{ element_snake }}_t` encodes to, read from its
+ * document when this header was generated. */
+#define {{ upper_name }}_MAX_ENCODED_BYTES ((size_t){{ max_bytes }}u)
+
+{% if context.present %}
+/* The words of an entry that hold what the element's codec asks its caller for
+ * (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+ * codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}. */
+#define {{ upper_name }}_CONTEXT_WORDS ((uint32_t){{ context.context_words }}u)
+
+/* The 32-bit words an entry holds: one for the length of the encoded element,
+ * `{{ upper_name }}_CONTEXT_WORDS` for its context, then as many as
+ * `{{ upper_name }}_MAX_ENCODED_BYTES` bytes take at four to a word, that is
+ * `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 4)`. */
+#define {{ upper_name }}_WORDS \
+    ((uint32_t)(1u + {{ upper_name }}_CONTEXT_WORDS + {{ upper_name }}_MAX_ENCODED_BYTES / 4u + ({{ upper_name }}_MAX_ENCODED_BYTES % 4u != 0u ? 1u : 0u)))
+{% else %}
+/* The 32-bit words an entry holds: one for the length of the encoded element,
+ * then as many as `{{ upper_name }}_MAX_ENCODED_BYTES` bytes take at four to a word,
+ * that is `1 + ceil(MAX_ENCODED_BYTES / 4)`. */
+#define {{ upper_name }}_WORDS \
+    ((uint32_t)(1u + {{ upper_name }}_MAX_ENCODED_BYTES / 4u + ({{ upper_name }}_MAX_ENCODED_BYTES % 4u != 0u ? 1u : 0u)))
+{% endif %}
+
+/* The bytes of the buffer an element is encoded into and decoded from: the
+ * bound, and at least one so that an element that encodes to nothing still has
+ * an array to point at. */
+#define {{ upper_name }}_BUFFER_BYTES \
+    ({{ upper_name }}_MAX_ENCODED_BYTES > 0u ? {{ upper_name }}_MAX_ENCODED_BYTES : 1u)
+
+/* What the document requires of publish and read (`<sce:progress>`). */
+#define {{ upper_name }}_DECLARED_PROGRESS "{{ declared_progress }}"
+
+/* The runtime's stamp is the width this log was judged against, and the slots divide
+ * the stamp space: the two conditions the wrap bound above rests on. */
+SCE_STATIC_ASSERT(SCE_BLOGN_STAMP_BITS == {{ upper_name }}_STAMP_BITS,
+    "{{ snake }}: the runtime's stamp is not the width this log was generated against");
+SCE_STATIC_ASSERT(({{ upper_name }}_SLOTS & ({{ upper_name }}_SLOTS - 1u)) == 0u,
+    "{{ snake }}: a narrow log keeps a power of two of slots, so that the slot index survives the stamp's wrap");
+SCE_STATIC_ASSERT((uint64_t){{ upper_name }}_SLOTS <= (uint64_t)SCE_BLOGN_HALF,
+    "{{ snake }}: a narrow log keeps at most half the stamp space in slots");
+
+/* The storage fits the address space of the target. */
+SCE_STATIC_ASSERT((uint64_t){{ upper_name }}_SLOTS * ((uint64_t){{ upper_name }}_WORDS + 1u) <= (uint64_t)SIZE_MAX,
+    "{{ snake }}: the log's storage is larger than the target can address");
+SCE_STATIC_ASSERT((uint64_t){{ upper_name }}_MAX_ENCODED_BYTES <= (uint64_t)SIZE_MAX,
+    "{{ snake }}: the element's largest encoding is larger than the target can address");
+
+/* The log: `{{ upper_name }}_SLOTS` slots of `{{ upper_name }}_WORDS` words. It owns its storage and
+ * allocates nothing, so it may be static. */
+typedef struct {{ snake }} {
+    sce_blogn_t core;
+    uint32_t storage[SCE_BLOGN_STORAGE_WORDS({{ upper_name }}_SLOTS, {{ upper_name }}_WORDS)];
+} {{ snake }}_t;
+
+/* The publishing side of the log: one at a time. */
+typedef sce_blogn_publisher_t {{ snake }}_publisher_t;
+
+/* A reader's position, which it owns and shares with nothing. */
+typedef sce_blogn_reader_t {{ snake }}_reader_t;
+
+{% if context.flags %}
+/* The flag inputs the element's codec takes from its caller, which the log stores
+ * with each entry: what `{{ snake }}_publish` was given is what a reader gets back, and
+ * what the entry is decoded under. */
+typedef struct {
+{% for flag in context.flags %}
+    bool {{ flag.snake }};
+{% endfor %}
+} {{ snake }}_flags_t;
+
+/* A flag input as the codec takes it: one bit, in a byte that is 1 or 0. */
+static inline uint8_t {{ snake }}_flag_input(bool on)
+{
+    return (uint8_t)(on ? 1u : 0u);
+}
+
+{% endif %}
+/* What a typed publish did. A narrow log has no horizon: its count wraps, and a
+ * publish that the codec accepted is always published. */
+typedef enum {
+    /* The element was encoded and published; `seq` is its sequence number, modulo
+     * 2^{{ stamp_bits }}. */
+    {{ upper_name }}_PUBLISH_OK = 0,
+    /* The codec refused the element, most often because it encodes to more than
+     * `{{ upper_name }}_MAX_ENCODED_BYTES`: nothing was published, and `codec_status` says why. An entry
+     * is never a truncated element. */
+    {{ upper_name }}_PUBLISH_ENCODE_FAILED = 1
+} {{ snake }}_publish_status_t;
+
+typedef struct {
+    {{ snake }}_publish_status_t status;
+    /* The sequence number the entry took; meaningful for `{{ upper_name }}_PUBLISH_OK`. */
+    uint64_t seq;
+    /* Why the codec refused; meaningful for `{{ upper_name }}_PUBLISH_ENCODE_FAILED`. */
+    sce_forge_codec_status_t codec_status;
+} {{ snake }}_publish_result_t;
+
+/* What a typed read found: the runtime's three answers, with the entry decoded,
+ * and two refusals of the stored bytes. */
+typedef enum {
+    /* The entry `seq` was decoded into the caller's element, and the reader now
+     * holds `seq + 1`. */
+    {{ upper_name }}_READ_ITEM = 0,
+    /* The reader is at the head: nothing newer is published. */
+    {{ upper_name }}_READ_EMPTY = 1,
+    /* The reader had fallen behind the window and missed `skipped` (at least one)
+     * entries; it now holds the oldest entry retained. */
+    {{ upper_name }}_READ_LAGGED = 2,
+    /* The stored length is above `{{ upper_name }}_MAX_ENCODED_BYTES`, which no entry this log wrote
+     * has: nothing was copied or decoded. The reader has moved past the entry. */
+    {{ upper_name }}_READ_BAD_LENGTH = 3,
+    /* The stored bytes did not decode; `codec_status` says why. The reader has
+     * moved past the entry. */
+    {{ upper_name }}_READ_DECODE_FAILED = 4
+} {{ snake }}_read_status_t;
+
+typedef struct {
+    {{ snake }}_read_status_t status;
+    /* The sequence number of the entry decoded, modulo 2^{{ stamp_bits }}; meaningful for
+     * `{{ upper_name }}_READ_ITEM`. */
+    uint64_t seq;
+    /* How many entries the reader missed; meaningful for `{{ upper_name }}_READ_LAGGED`. */
+    uint64_t skipped;
+    /* Why the codec refused; meaningful for `{{ upper_name }}_READ_DECODE_FAILED`. */
+    sce_forge_codec_status_t codec_status;
+{% if context.flags %}
+    /* The flag inputs the entry was published with, which it was decoded under.
+     * Meaningful for `{{ upper_name }}_READ_ITEM`, and set for `{{ upper_name }}_READ_DECODE_FAILED`
+     * to what the codec refused under. */
+    {{ snake }}_flags_t flags;
+{% endif %}
+{% if context.has_tag %}
+    /* The variant tag the entry was published with, which it was decoded under.
+     * Meaningful for `{{ upper_name }}_READ_ITEM`, and set for `{{ upper_name }}_READ_DECODE_FAILED`
+     * to what the codec refused under. */
+    uint8_t tag;
+{% endif %}
+} {{ snake }}_read_result_t;
+
+/* Builds an empty log. Returns zero, and builds nothing, for a shape the runtime
+ * refuses; the constants above are checked at generation time and again by the
+ * assertions above, so for a generated log it returns nonzero. Not safe against a
+ * concurrent user: hand the log to the other participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *log)
+{
+    return sce_blogn_init(&log->core, log->storage, {{ upper_name }}_SLOTS, {{ upper_name }}_WORDS);
+}
+
+{% if not ownership_only %}
+/* Takes the publisher's place with a 32-bit compare-and-swap, or returns zero while
+ * another is held: a log written by two publishers is not this algorithm. */
+static inline int {{ snake }}_publisher_acquire({{ snake }}_t *log, {{ snake }}_publisher_t *publisher)
+{
+    return sce_blogn_publisher_acquire(&log->core, publisher);
+}
+
+{% endif %}
+/* Takes the publisher's place from a log the caller holds exclusively (before it is
+ * shared with another thread), with a load and a store and no read-modify-write, or
+ * returns zero while a place is held. */
+static inline int {{ snake }}_split({{ snake }}_t *log, {{ snake }}_publisher_t *publisher)
+{
+    return sce_blogn_split(&log->core, publisher);
+}
+
+/* The publisher of a log in static storage, taken on the caller's word: no other
+ * publisher of this log exists while it is used, and the last publish of an earlier
+ * one happens before this call (the runtime's `sce_blogn_publisher_unchecked`
+ * states the contract). */
+static inline {{ snake }}_publisher_t {{ snake }}_publisher_unchecked({{ snake }}_t *log)
+{
+    return sce_blogn_publisher_unchecked(&log->core);
+}
+
+/* Gives the publisher's place back. */
+static inline void {{ snake }}_publisher_release({{ snake }}_publisher_t *publisher)
+{
+    sce_blogn_publisher_release(publisher);
+}
+
+/* The number of entries published so far, modulo 2^{{ stamp_bits }}. */
+static inline uint32_t {{ snake }}_head(const {{ snake }}_t *log)
+{
+    return sce_blogn_head(&log->core);
+}
+
+/* A reader at the oldest retained entry. */
+static inline {{ snake }}_reader_t {{ snake }}_reader_oldest(const {{ snake }}_t *log)
+{
+    return sce_blogn_reader_oldest(&log->core);
+}
+
+/* A reader at the head: it sees only what is published after this call. */
+static inline {{ snake }}_reader_t {{ snake }}_reader_head(const {{ snake }}_t *log)
+{
+    return sce_blogn_reader_head(&log->core);
+}
+
+/* A reader at the sequence number `seq` (an entry's, as `publish` or `read` gave it),
+ * or at the head when `seq` is half the stamp space or more behind it. */
+static inline {{ snake }}_reader_t {{ snake }}_reader_at(const {{ snake }}_t *log, uint64_t seq)
+{
+    return sce_blogn_reader_at(&log->core, seq);
+}
+
+/* Publishes `*element`: encodes it into a buffer of `{{ upper_name }}_MAX_ENCODED_BYTES` bytes, packs
+ * its length and its bytes (little-endian, four to a word) into
+ * `{{ upper_name }}_WORDS` words, and hands them to the runtime, which never waits.
+{% if context.present %}
+ *
+ * {% if context.flags %}`*flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+ * they are encoded under here and stored in the entry's context words (after the length
+ * word, before the bytes), so that every reader decodes the entry under what it was
+ * published under. The log does not check that
+ * {% if context.has_tag %}`tag` is the tag of the arm `*element` holds{% else %}the flags agree with `*element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
+ *
+ * An element that encodes to more than `{{ upper_name }}_MAX_ENCODED_BYTES` bytes is refused by the
+ * codec (SCE_FORGE_CODEC_BUFFER_OVERFLOW from its bounded writer) and nothing is
+ * published: the codec never reports more bytes than the buffer it was given
+ * holds, so the packing below never indexes past the entry. */
+static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags %}, const {{ snake }}_flags_t *flags{% endif %}{% if context.has_tag %}, uint8_t tag{% endif %})
+{
+    uint8_t bytes[{{ upper_name }}_BUFFER_BYTES] = {0};
+    uint32_t entry[{{ upper_name }}_WORDS] = {0};
+    size_t length = 0u;
+    {{ snake }}_publish_result_t result;
+    result.status = {{ upper_name }}_PUBLISH_OK;
+    result.seq = 0u;
+    result.codec_status = {{ element_snake }}_encode_to_buf(element, bytes, {{ upper_name }}_MAX_ENCODED_BYTES, &length{% for flag in context.flags %}, {{ snake }}_flag_input(flags->{{ flag.snake }}){% endfor %});
+    if (result.codec_status != SCE_FORGE_CODEC_OK) {
+        result.status = {{ upper_name }}_PUBLISH_ENCODE_FAILED;
+        return result;
+    }
+    entry[0] = (uint32_t)length;
+{% for flag in context.flags %}
+    if (flags->{{ flag.snake }}) {
+        entry[1u + {{ flag.word }}u] |= UINT32_C(1) << {{ flag.shift }}u;
+    }
+{% endfor %}
+{% if context.has_tag %}
+    entry[1u + {{ context.tag_word }}u] = (uint32_t)tag;
+{% endif %}
+{% if max_bytes > 0 %}
+    for (size_t index = 0u; index < length; index++) {
+        entry[{{ context.payload_start }}u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));
+    }
+{% endif %}
+    result.seq = (uint64_t)sce_blogn_publish(publisher, entry);
+    return result;
+}
+
+/* Reads the entry at `reader`'s cursor and decodes it into `*out`. The runtime
+ * answers an item only after the copy it made was checked against the slot, which
+ * is what makes decoding it safe: a torn copy is `{{ upper_name }}_READ_LAGGED`, never decoded.
+{% if context.present %}
+ *
+ * The context the entry was published with is read from its context words, handed
+ * to the codec's decode ({% if context.flags %}the flag inputs{% endif %}{% if context.flags and context.has_tag %}, then {% endif %}{% if context.has_tag %}the tag{% endif %}) and returned in the result.
+{% endif %}
+ *
+ * A stored length above `{{ upper_name }}_MAX_ENCODED_BYTES` is not a length this log wrote, and is
+ * `{{ upper_name }}_READ_BAD_LENGTH` and never a copy past the buffer. `*out` is meaningful only
+ * for `{{ upper_name }}_READ_ITEM`. The decoded element owns its bytes (the codec copies a
+ * payload into the struct), so it outlives the buffer it was read from. */
+static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *log, {{ snake }}_reader_t *reader, {{ element_snake }}_t *out)
+{
+    uint8_t bytes[{{ upper_name }}_BUFFER_BYTES] = {0};
+    uint32_t entry[{{ upper_name }}_WORDS] = {0};
+    sce_forge_cursor_t cursor;
+    sce_blogn_read_t found;
+    uint64_t stored;
+    size_t length;
+    {{ snake }}_read_result_t result;
+    result.status = {{ upper_name }}_READ_ITEM;
+    result.seq = 0u;
+    result.skipped = 0u;
+    result.codec_status = SCE_FORGE_CODEC_OK;
+{% for flag in context.flags %}
+    result.flags.{{ flag.snake }} = false;
+{% endfor %}
+{% if context.has_tag %}
+    result.tag = 0u;
+{% endif %}
+    found = sce_blogn_read(&log->core, reader, entry);
+    if (found.status == SCE_BLOGN_EMPTY) {
+        result.status = {{ upper_name }}_READ_EMPTY;
+        return result;
+    }
+    if (found.status == SCE_BLOGN_LAGGED) {
+        result.status = {{ upper_name }}_READ_LAGGED;
+        result.skipped = found.skipped;
+        return result;
+    }
+    result.seq = (uint64_t)found.seq;
+    stored = (uint64_t)entry[0];
+    if (stored > (uint64_t){{ upper_name }}_MAX_ENCODED_BYTES) {
+        result.status = {{ upper_name }}_READ_BAD_LENGTH;
+        return result;
+    }
+    length = (size_t)stored;
+{% if max_bytes > 0 %}
+    for (size_t index = 0u; index < length; index++) {
+        bytes[index] = (uint8_t)(entry[{{ context.payload_start }}u + index / 4u] >> (8u * (index % 4u)));
+    }
+{% endif %}
+{% if context.present %}
+    /* What the entry was published under: the context words are written by the typed
+     * publish alone and a torn copy is never decoded, so a flag is a bit and the tag
+     * a byte. */
+{% endif %}
+{% for flag in context.flags %}
+    result.flags.{{ flag.snake }} = ((entry[1u + {{ flag.word }}u] >> {{ flag.shift }}u) & UINT32_C(1)) != 0u;
+{% endfor %}
+{% if context.has_tag %}
+    result.tag = (uint8_t)(entry[1u + {{ context.tag_word }}u] & UINT32_C(0xFF));
+{% endif %}
+    cursor = sce_forge_cursor_init(bytes, length);
+    result.codec_status = {{ element_snake }}_decode(&cursor, out{% for flag in context.flags %}, {{ snake }}_flag_input(result.flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, result.tag{% endif %});
+    if (result.codec_status != SCE_FORGE_CODEC_OK) {
+        result.status = {{ upper_name }}_READ_DECODE_FAILED;
+    }
+    return result;
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */

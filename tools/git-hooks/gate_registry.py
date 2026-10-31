@@ -770,6 +770,11 @@ GATES: dict[str, dict] = {
             # members their drivers read: an edit of one alone has to start
             # the suite.
             "tests/host_features/**",
+            # The narrow row's runtime header, which the C11 broadcast-log
+            # tests read to hold the stamp width the generator judges against
+            # to the width the header keeps and each name the generated header
+            # calls to a declaration of it.
+            "backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

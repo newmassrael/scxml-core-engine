@@ -167,8 +167,23 @@ PY
 # `pub const CONTEXT_WORDS: usize = 3;`.
 mutation_case "the narrow row lays its context out for 64-bit words" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        context => broadcast_log_context_value(&inputs.element, word_bits),''',
-     r'''        context => broadcast_log_context_value(&inputs.element, 64),''')
+     r'''        log_name => &m.name,
+        context => broadcast_log_context_value(&inputs.element, word_bits),''',
+     r'''        log_name => &m.name,
+        context => broadcast_log_context_value(&inputs.element, 64),''')
+PY
+
+# The C11 renderer passes the word width of its row as well: 64 for the 64-bit row, 32 for the
+# narrow row of a target with 32-bit atomics or none. With 64 passed to the narrow header, 33
+# flags and a tag take two context words where its 32-bit entry has three. Killed by
+# `c11_the_narrow_row_stores_the_context_in_32_bit_words`, which holds
+# `#define EVENT_RING_CONTEXT_WORDS ((uint32_t)3u)`.
+mutation_case "the C11 narrow row lays its context out for 64-bit words" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits),
+        ownership_only =>''',
+     r'''        context => broadcast_log_context_value(&inputs.element, 64),
+        ownership_only =>''')
 PY
 
 # --- The size an entry must keep within ---
@@ -181,8 +196,8 @@ PY
 # 4294967295 words and generates it.
 mutation_case "the C11 count of an entry's words leaves out its context words" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''    let words = 1 + u64::from(inputs.element.context_words(64)) + inputs.max_bytes.div_ceil(8);''',
-     r'''    let words = 1 + inputs.max_bytes.div_ceil(8);''')
+     r'''        + u64::from(inputs.element.context_words(word_bits))''',
+     r'''        + 0u64''')
 PY
 
 # --- Which languages store the context ---

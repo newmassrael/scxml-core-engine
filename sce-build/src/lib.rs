@@ -3645,9 +3645,9 @@ pub struct BroadcastLogResolution {
     pub element: BroadcastLogElementFacts,
     /// `platform.atomic_rmw_width` of the target machine, in bits (0, 32 or 64), when
     /// the deploy states one. With [`Self::target`] it decides which row of the
-    /// Rust runtime the module is generated over: the 64-bit row where the widest
-    /// read-modify-write atomic is 64 bits or nothing is said, and the narrow row
-    /// (a 32-bit stamp) below that. Read by the Rust renderer only.
+    /// Rust and C11 runtime the module is generated over: the 64-bit row where the
+    /// widest read-modify-write atomic is 64 bits or nothing is said, and the narrow
+    /// row (a 32-bit stamp) below that. Read by the Rust and C11 renderers only.
     pub atomic_rmw_width: Option<u32>,
     /// The build target triple of the device the machine is on
     /// (`devices.<d>.target`), when the deploy names one; the generator reads what

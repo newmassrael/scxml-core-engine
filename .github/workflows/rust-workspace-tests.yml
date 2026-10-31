@@ -133,6 +133,10 @@ on:
       # `every_replay_scenario_keeps_to_its_vocabulary` holds to the members
       # their drivers read: an edit of one alone starts the suite.
       - 'tests/host_features/**'
+      # The narrow row's runtime header, which the C11 broadcast-log tests read
+      # to hold the stamp width the generator judges against to the one the
+      # header keeps.
+      - 'backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
   pull_request:
     branches: [ main ]
     paths:
@@ -212,6 +216,10 @@ on:
       # `every_replay_scenario_keeps_to_its_vocabulary` holds to the members
       # their drivers read: an edit of one alone starts the suite.
       - 'tests/host_features/**'
+      # The narrow row's runtime header, which the C11 broadcast-log tests read
+      # to hold the stamp width the generator judges against to the one the
+      # header keeps.
+      - 'backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
 
 # This lane is not superseded by the push that follows it.
 #

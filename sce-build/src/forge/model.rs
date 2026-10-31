@@ -5984,7 +5984,10 @@ pub const fn broadcast_log_slots_divide_the_stamp_space(retention: u32) -> bool 
 /// The stamp width, in bits, of the Rust runtime's narrow row
 /// (`sce_forge_runtime::broadcast_log_narrow::STAMP_BITS`): the row a target
 /// without 64-bit atomics gets, in 32-bit stamps held in pointer-width atomics.
-/// A test reads the runtime's constant and holds the two equal.
+/// A test reads the runtime's constant and holds the two equal; the C11 runtime's
+/// narrow row keeps the same width (`SCE_BLOGN_STAMP_BITS` in
+/// `backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h`), held equal by
+/// a test as well.
 pub const BROADCAST_LOG_NARROW_STAMP_BITS: u32 = 32;
 
 /// The longest pause, in publishes, a deploy may rely on for a log of `retention`

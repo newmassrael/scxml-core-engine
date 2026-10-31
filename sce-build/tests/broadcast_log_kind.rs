@@ -2893,6 +2893,550 @@ fn c11_and_rust_refuse_one_log_with_one_message() {
     assert_eq!(rust.replace("Rust", "C11"), c);
 }
 
+// --- C11: the row the target chooses, the 64-bit row or the narrow one ---
+
+#[test]
+fn c11_a_target_with_32_bit_atomics_is_generated_over_the_narrow_row() {
+    // 4 bytes in 32-bit words: 1 + ceil(4 / 4) = 2 words an entry; a retention of 7 keeps
+    // 8 slots, so the stamp covers a pause of 2^31 - 8 = 2147483640 publishes.
+    let options = target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+    let code = compile_single_c(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target gets the narrow row: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "/* Runtime: sce/forge/broadcast_log_narrow.h */",
+            "#include <sce/forge/broadcast_log_narrow.h>",
+            "#define EVENT_RING_RETENTION ((uint32_t)7u)",
+            "#define EVENT_RING_STAMP_BITS ((uint32_t)32u)",
+            "#define EVENT_RING_WRAP_BOUND_OPS ((uint64_t)2147483640u)",
+            "((uint32_t)(1u + EVENT_RING_MAX_ENCODED_BYTES / 4u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 4u != 0u ? 1u : 0u)))",
+            "SCE_STATIC_ASSERT(SCE_BLOGN_STAMP_BITS == EVENT_RING_STAMP_BITS,",
+            "SCE_STATIC_ASSERT((EVENT_RING_SLOTS & (EVENT_RING_SLOTS - 1u)) == 0u,",
+            "sce_blogn_t core;",
+            "uint32_t storage[SCE_BLOGN_STORAGE_WORDS(EVENT_RING_SLOTS, EVENT_RING_WORDS)];",
+            "typedef sce_blogn_publisher_t event_ring_publisher_t;",
+            "typedef sce_blogn_reader_t event_ring_reader_t;",
+            "sce_blogn_init(&log->core, log->storage, EVENT_RING_SLOTS, EVENT_RING_WORDS)",
+            "static inline int event_ring_publisher_acquire(event_ring_t *log, \
+             event_ring_publisher_t *publisher)",
+            "static inline int event_ring_split(event_ring_t *log, event_ring_publisher_t *publisher)",
+            "static inline event_ring_publisher_t event_ring_publisher_unchecked(event_ring_t *log)",
+            "static inline uint32_t event_ring_head(const event_ring_t *log)",
+            "uint32_t entry[EVENT_RING_WORDS] = {0};",
+            "entry[0] = (uint32_t)length;",
+            "entry[1u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
+            "result.seq = (uint64_t)sce_blogn_publish(publisher, entry);",
+            "found = sce_blogn_read(&log->core, reader, entry);",
+            "stored = (uint64_t)entry[0];",
+            "bytes[index] = (uint8_t)(entry[1u + index / 4u] >> (8u * (index % 4u)));",
+            "event_record_decode(&cursor, out)",
+            "EVENT_RING_PUBLISH_OK = 0,",
+            "EVENT_RING_PUBLISH_ENCODE_FAILED = 1\n",
+            "EVENT_RING_READ_DECODE_FAILED = 4",
+            "`machines.<machine>.queues.event_ring.min_wrap_ops`",
+        ],
+    );
+    // Nothing of the 64-bit row is left in the narrow header: no 64-bit entry or storage,
+    // no runtime symbol of the 64-bit row, and no horizon, which a wrapping count has not.
+    for forbidden in [
+        "uint64_t entry[",
+        "uint64_t storage[",
+        "sce_blog_",
+        "sce/forge/broadcast_log.h",
+        "_PUBLISH_HORIZON",
+        "SCE_BLOG_HORIZON",
+    ] {
+        assert!(
+            !code.contains(forbidden),
+            "the narrow header must not hold `{forbidden}`:\n{code}"
+        );
+    }
+}
+
+#[test]
+fn c11_a_target_with_loads_and_stores_only_has_no_compare_and_swap_publisher() {
+    // A width of 0 stated, and a triple the table knows to have no read-modify-write atomic
+    // (ARMv6-M), are the same statement. The header defines the two forms that need none,
+    // and does not define the one that does, so a call of it is a compile error on that
+    // target and not a link error against a symbol the platform does not have.
+    for (width, target) in [(Some(0), None), (None, Some("thumbv6m-none-eabi"))] {
+        let options = target_options(None, width, target, Some(1_000_000));
+        let code = compile_single_c(&event_ring(), &options)
+            .unwrap_or_else(|e| panic!("{width:?} {target:?}: {:?}", e.error));
+        assert_holds(
+            &code,
+            &[
+                "/* Runtime: sce/forge/broadcast_log_narrow.h */",
+                "static inline int event_ring_split(event_ring_t *log, event_ring_publisher_t *publisher)",
+                "static inline event_ring_publisher_t event_ring_publisher_unchecked(event_ring_t *log)",
+                "takes the one place of the publisher from a log the",
+                "This target has no atomic read-modify-write instruction",
+            ],
+        );
+        assert!(
+            !code.contains("acquire") && !code.contains("compare-and-swap"),
+            "no compare-and-swap is promised or used where there is none ({width:?} {target:?}):\n{code}"
+        );
+    }
+}
+
+#[test]
+fn c11_a_64_bit_target_or_a_deploy_that_says_nothing_keeps_the_64_bit_row() {
+    let generate = |width, target| {
+        compile_single_c(&event_ring(), &target_options(None, width, target, None))
+            .unwrap_or_else(|e| panic!("{width:?} {target:?}: {:?}", e.error))
+    };
+    let said_nothing = generate(None, None);
+    // The row is the same header whether the deploy says 64, names a 64-bit target or says
+    // nothing, and a pause it does not state is not asked for: the 64-bit stamp has no wrap
+    // bound. It is also the header a log with no deploy at all is given.
+    assert_eq!(said_nothing, generate(Some(64), None));
+    assert_eq!(
+        said_nothing,
+        generate(None, Some("x86_64-unknown-linux-gnu"))
+    );
+    assert_eq!(
+        said_nothing,
+        compile_single_c(
+            &event_ring(),
+            &resolution_options(None, 4, BroadcastLogElementFacts::default())
+        )
+        .expect("a log with no deploy generates")
+    );
+    assert_holds(
+        &said_nothing,
+        &[
+            "/* Runtime: sce/forge/broadcast_log.h */",
+            "#include <sce/forge/broadcast_log.h>",
+            "((uint32_t)(1u + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
+            "uint64_t storage[SCE_BLOG_STORAGE_WORDS(EVENT_RING_SLOTS, EVENT_RING_WORDS)];",
+            "uint64_t entry[EVENT_RING_WORDS] = {0};",
+            "EVENT_RING_PUBLISH_HORIZON = 2",
+        ],
+    );
+    assert!(!said_nothing.contains("blogn"), "{said_nothing}");
+    assert!(!said_nothing.contains("STAMP_BITS"), "{said_nothing}");
+}
+
+#[test]
+fn c11_a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered() {
+    let at = |pause: Option<u64>| {
+        compile_single_c(&event_ring(), &target_options(None, Some(32), None, pause))
+    };
+
+    let unstated = at(None).err().unwrap_or_else(|| {
+        panic!("a narrow stamp wraps, so a log with no stated pause is refused")
+    });
+    match generate_error(unstated) {
+        GenerateError::BroadcastLogWrapBoundUnstated {
+            log_name,
+            stamp_bits,
+            bound,
+        } => {
+            assert_eq!(log_name, "event_ring");
+            assert_eq!((stamp_bits, bound), (32, EVENT_RING_PAUSE));
+        }
+        other => panic!("expected BroadcastLogWrapBoundUnstated, got {other:?}"),
+    }
+
+    let too_long = at(Some(EVENT_RING_PAUSE + 1))
+        .err()
+        .unwrap_or_else(|| panic!("a pause above what the stamp covers is refused"));
+    match generate_error(too_long) {
+        GenerateError::BroadcastLogWrapBoundBelowDeployMinimum {
+            bound,
+            min_wrap_ops,
+            ..
+        } => assert_eq!(
+            (bound, min_wrap_ops),
+            (EVENT_RING_PAUSE, EVENT_RING_PAUSE + 1)
+        ),
+        other => panic!("expected BroadcastLogWrapBoundBelowDeployMinimum, got {other:?}"),
+    }
+
+    // The pause the stamp covers, exactly and below, is met.
+    at(Some(EVENT_RING_PAUSE)).expect("the boundary is covered");
+    at(Some(1)).expect("a short pause is covered");
+}
+
+#[test]
+fn c11_a_narrow_row_whose_slot_count_does_not_divide_the_stamp_space_is_refused() {
+    // A retention of 5 keeps 5 + 1 = 6 slots, between 4 and 8.
+    let xml = deploy_key_ring();
+    let located = compile_single_c(&xml, &target_options(Some(5), Some(32), None, Some(1)))
+        .err()
+        .unwrap_or_else(|| panic!("a narrow stamp wraps, and 6 slots do not divide 2^32"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    match generate_error(located) {
+        GenerateError::BroadcastLogSlotsNotADivisorOfTheStampSpace {
+            retention,
+            slots,
+            stamp_bits,
+            nearest_below,
+            nearest_above,
+            ..
+        } => {
+            assert_eq!((retention, slots, stamp_bits), (5, 6, 32));
+            // One less than 4 and than 8.
+            assert_eq!((nearest_below, nearest_above), (3, 7));
+        }
+        other => panic!("expected BroadcastLogSlotsNotADivisorOfTheStampSpace, got {other:?}"),
+    }
+    // The 64-bit row has no wrap and keeps any retention.
+    compile_single_c(&xml, &target_options(Some(5), Some(64), None, None))
+        .expect("the 64-bit row keeps a retention of 5");
+}
+
+#[test]
+fn c11_a_width_that_contradicts_the_target_is_refused_and_an_unknown_target_needs_a_width() {
+    let located = compile_single_c(
+        &event_ring(),
+        &target_options(None, Some(64), Some("thumbv7em-none-eabihf"), None),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("two statements of the atomics that differ cannot both hold"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("platform.atomic_rmw_width 64"), "{detail}");
+    assert!(detail.contains("thumbv7em-none-eabihf"), "{detail}");
+    assert!(detail.contains("atomic is 32 bits"), "{detail}");
+
+    let unknown = Some("my-board-none-elf");
+    let located = compile_single_c(&event_ring(), &target_options(None, None, unknown, Some(1)))
+        .err()
+        .unwrap_or_else(|| panic!("a target the generator does not know says nothing"));
+    assert!(
+        invalid_config(located).contains("does not know"),
+        "the refusal says why"
+    );
+    // A width stated beside it stands alone for a triple the table does not know.
+    compile_single_c(
+        &event_ring(),
+        &target_options(None, Some(32), unknown, Some(1)),
+    )
+    .expect("a stated width is taken for a target the table does not know");
+}
+
+#[test]
+fn c11_the_row_is_chosen_after_the_refusals_every_language_shares() {
+    // A retention that resolves to nothing is refused by the shared helper before any row is
+    // chosen, so a narrow target is not asked about its pause first.
+    let located = compile_single_c(
+        &deploy_key_ring(),
+        &target_options(Some(0), Some(32), None, None),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a retention of 0 is refused"));
+    assert!(
+        invalid_config(located).contains("the retention resolves to 0"),
+        "the shared refusal comes before the row's"
+    );
+}
+
+#[test]
+fn c11_the_narrow_row_stores_the_context_in_32_bit_words() {
+    // The same entry over 32-bit words: 33 flags need two flag words, the tag a third; the
+    // bytes then start at word 4, four to a word. Flag 31 is the last bit of the first
+    // context word, written with `UINT32_C(1) << 31u`, and flag 32 the first bit of the
+    // second.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..33).map(|index| format!("f{index}")).collect(),
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let mut options = target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+    options
+        .broadcast_log_resolutions
+        .as_mut()
+        .and_then(|resolutions| resolutions.get_mut("event_ring"))
+        .expect("the log has a resolution")
+        .element = facts;
+    let code = compile_single_c(&event_ring(), &options)
+        .unwrap_or_else(|e| panic!("a 32-bit target stores the context: {:?}", e.error));
+    assert_holds(
+        &code,
+        &[
+            "#include <stdbool.h>",
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)3u)",
+            "((uint32_t)(1u + EVENT_RING_CONTEXT_WORDS + EVENT_RING_MAX_ENCODED_BYTES / 4u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 4u != 0u ? 1u : 0u)))",
+            "    bool f0;\n",
+            "    bool f32;\n} event_ring_flags_t;",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element, const event_ring_flags_t *flags, \
+             uint8_t tag)",
+            "if (flags->f0) {\n        entry[1u + 0u] |= UINT32_C(1) << 0u;\n    }",
+            "if (flags->f31) {\n        entry[1u + 0u] |= UINT32_C(1) << 31u;\n    }",
+            "if (flags->f32) {\n        entry[1u + 1u] |= UINT32_C(1) << 0u;\n    }",
+            "entry[1u + 2u] = (uint32_t)tag;",
+            "entry[4u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
+            "result.flags.f31 = ((entry[1u + 0u] >> 31u) & UINT32_C(1)) != 0u;",
+            "result.flags.f32 = ((entry[1u + 1u] >> 0u) & UINT32_C(1)) != 0u;",
+            "result.tag = (uint8_t)(entry[1u + 2u] & UINT32_C(0xFF));",
+            "bytes[index] = (uint8_t)(entry[4u + index / 4u] >> (8u * (index % 4u)));",
+        ],
+    );
+    assert!(
+        !code.contains("UINT64_C"),
+        "no 64-bit word is left in the narrow header:\n{code}"
+    );
+}
+
+#[test]
+fn c11_the_narrow_row_stores_the_flag_input_of_the_real_codec() {
+    // The codec `event_record` takes the flag input `S` from its caller. Generated as a set
+    // for a 32-bit target, the log keeps it in one context word of 32 bits ahead of the
+    // 2 bytes of the element (1 word of bytes): 1 + 1 + ceil(2 / 4) = 3 words an entry.
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let deploy = parse_deploy_str(
+        r##"
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv6m-none-eabi
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        queues:
+          event_ring:
+            min_wrap_ops: 1000
+"##,
+    )
+    .expect("deploy parses");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_c_log(
+        compile_documents_with(
+            Language::C11,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&deploy),
+        )
+        .unwrap_or_else(|e| panic!("a narrow log stores the flag input: {:?}", e.error)),
+    );
+    assert_holds(
+        &code,
+        &[
+            "/* Runtime: sce/forge/broadcast_log_narrow.h */",
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)2u)",
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)1u)",
+            "typedef struct {\n    bool s;\n} event_ring_flags_t;",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
+             event_ring_flag_input(flags->s))",
+            "if (flags->s) {\n        entry[1u + 0u] |= UINT32_C(1) << 0u;\n    }",
+            "entry[2u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
+            "result.flags.s = ((entry[1u + 0u] >> 0u) & UINT32_C(1)) != 0u;",
+            "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s))",
+        ],
+    );
+}
+
+#[test]
+fn c11_the_narrow_row_counts_words_and_the_length_in_32_bits() {
+    let narrow = |bytes: u64| {
+        let mut options =
+            target_options(None, None, Some("thumbv7em-none-eabihf"), Some(1_000_000));
+        options
+            .broadcast_log_resolutions
+            .as_mut()
+            .and_then(|resolutions| resolutions.get_mut("event_ring"))
+            .expect("the log has a resolution")
+            .element_max_bytes = bytes;
+        compile_single_c(&event_ring(), &options)
+    };
+    // The length word holds 32 bits: 4294967295 bytes is the most it counts, and one more
+    // is refused although its words (1 + 1073741824) are few enough.
+    let code = narrow(4_294_967_295).expect("the longest length a 32-bit word holds generates");
+    assert!(
+        code.contains("#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)4294967295u)"),
+        "{code}"
+    );
+    let located = narrow(4_294_967_296)
+        .err()
+        .unwrap_or_else(|| panic!("a length a 32-bit word cannot hold is refused"));
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("encodes to at most 4294967296 bytes"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("keeps the length of an entry in a 32-bit word"),
+        "{detail}"
+    );
+    // The words are counted in the row's own word: 1 + ceil(bytes / 4) at most 4294967295
+    // allows 4 * 4294967294 = 17179869176 bytes, and one more byte needs a word more.
+    let located = narrow(17_179_869_177)
+        .err()
+        .unwrap_or_else(|| panic!("one word more than 32 bits count is refused"));
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("which is 4294967296 32-bit words"),
+        "the narrow row counts 32-bit words: {detail}"
+    );
+}
+
+#[test]
+fn c11_a_deploy_states_the_target_and_the_pause_and_the_set_generates_the_narrow_row() {
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let deploy = |queues: &str| {
+        parse_deploy_str(&format!(
+            r##"
+version: "1.0"
+topology:
+  ecu1:
+    target: thumbv7em-none-eabihf
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+          event_retention: 15
+{queues}
+"##
+        ))
+        .expect("deploy parses")
+    };
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let documents = [("event_ring.scxml", &xml), ("event_record.scxml", &codec)];
+
+    // The machine's device is built for ARMv7E-M (32-bit atomics), and the deploy states the
+    // pause for the log, so the set generates the narrow row, sized from the limit: 16
+    // slots, of which 2^31 - 16 = 2147483632 is what the stamp covers.
+    let cfg = deploy("        queues:\n          event_ring:\n            min_wrap_ops: 1000000");
+    let code = generated_c_log(
+        compile_documents_with(Language::C11, &documents, &options, Some(&cfg))
+            .unwrap_or_else(|e| panic!("the deploy gives a target and a pause: {:?}", e.error)),
+    );
+    assert_holds(
+        &code,
+        &[
+            "/* Runtime: sce/forge/broadcast_log_narrow.h */",
+            "#define EVENT_RING_RETENTION ((uint32_t)15u)",
+            "#define EVENT_RING_WRAP_BOUND_OPS ((uint64_t)2147483632u)",
+        ],
+    );
+
+    // The same deploy without the pause is refused: the target says the stamp wraps.
+    let cfg = deploy("");
+    let located = compile_documents_with(Language::C11, &documents, &options, Some(&cfg))
+        .err()
+        .unwrap_or_else(|| panic!("a narrow stamp needs the pause stated"));
+    match generate_error(located) {
+        GenerateError::BroadcastLogWrapBoundUnstated {
+            log_name, bound, ..
+        } => assert_eq!(
+            (log_name.as_str(), bound),
+            ("event_ring", (1u64 << 31) - 16)
+        ),
+        other => panic!("expected BroadcastLogWrapBoundUnstated, got {other:?}"),
+    }
+}
+
+#[test]
+fn c11_the_stamp_the_generator_judges_is_the_one_the_narrow_row_keeps() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h"),
+    )
+    .expect("the narrow row's header");
+    let declared = format!("#define SCE_BLOGN_STAMP_BITS {BROADCAST_LOG_NARROW_STAMP_BITS}u");
+    assert!(
+        source.contains(&declared),
+        "the runtime's narrow row keeps a stamp of the width the generator judges ({declared})"
+    );
+}
+
+#[test]
+fn c11_the_names_the_narrow_header_calls_are_the_ones_the_narrow_runtime_declares() {
+    let code = compile_single_c(
+        &event_ring(),
+        &target_options(None, Some(32), None, Some(1_000_000)),
+    )
+    .expect("a 32-bit target gets the narrow row");
+    let runtime = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h"),
+    )
+    .expect("the narrow row's header");
+    // What the header writes, and the declaration in the runtime's header that it names.
+    let uses = [
+        (
+            "sce_blogn_init(",
+            "static inline int sce_blogn_init(sce_blogn_t *log, uint32_t *storage, uint32_t slots, uint32_t words) {",
+        ),
+        (
+            "sce_blogn_publisher_acquire(",
+            "static inline int sce_blogn_publisher_acquire(sce_blogn_t *log, sce_blogn_publisher_t *publisher) {",
+        ),
+        (
+            "sce_blogn_split(",
+            "static inline int sce_blogn_split(sce_blogn_t *log, sce_blogn_publisher_t *publisher) {",
+        ),
+        (
+            "sce_blogn_publisher_unchecked(",
+            "static inline sce_blogn_publisher_t sce_blogn_publisher_unchecked(sce_blogn_t *log) {",
+        ),
+        (
+            "sce_blogn_publisher_release(",
+            "static inline void sce_blogn_publisher_release(sce_blogn_publisher_t *publisher) {",
+        ),
+        (
+            "sce_blogn_head(",
+            "static inline uint32_t sce_blogn_head(const sce_blogn_t *log) {",
+        ),
+        (
+            "sce_blogn_reader_oldest(",
+            "static inline sce_blogn_reader_t sce_blogn_reader_oldest(const sce_blogn_t *log) {",
+        ),
+        (
+            "sce_blogn_reader_head(",
+            "static inline sce_blogn_reader_t sce_blogn_reader_head(const sce_blogn_t *log) {",
+        ),
+        (
+            "sce_blogn_reader_at(",
+            "static inline sce_blogn_reader_t sce_blogn_reader_at(const sce_blogn_t *log, uint64_t seq) {",
+        ),
+        (
+            "sce_blogn_publish(",
+            "static inline uint32_t sce_blogn_publish(sce_blogn_publisher_t *publisher, const uint32_t *entry) {",
+        ),
+        (
+            "sce_blogn_read(",
+            "static inline sce_blogn_read_t sce_blogn_read(const sce_blogn_t *log, sce_blogn_reader_t *reader, uint32_t *out) {",
+        ),
+        ("SCE_BLOGN_EMPTY", "SCE_BLOGN_EMPTY = 1,"),
+        ("SCE_BLOGN_LAGGED", "SCE_BLOGN_LAGGED = 2"),
+        (
+            "SCE_BLOGN_STORAGE_WORDS(",
+            "#define SCE_BLOGN_STORAGE_WORDS(slots, words)",
+        ),
+        ("SCE_BLOGN_HALF", "#define SCE_BLOGN_HALF "),
+        ("SCE_BLOGN_STAMP_BITS", "#define SCE_BLOGN_STAMP_BITS "),
+    ];
+    for (written, declaration) in uses {
+        assert!(
+            code.contains(written),
+            "the header no longer writes `{written}`:\n{code}"
+        );
+        assert!(
+            runtime.contains(declaration),
+            "the runtime's header no longer declares `{declaration}`, which the generated \
+             header's `{written}` names"
+        );
+    }
+}
+
 // --- C++ generates the log over its runtime row ---
 
 /// The generated C++ of the log `event_ring`, out of the outputs of a set that
