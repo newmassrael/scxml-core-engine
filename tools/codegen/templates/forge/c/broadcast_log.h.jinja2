@@ -26,7 +26,7 @@
  *
  * Operations (the runtime's `sce_blog_*`, typed here over the element):
  *   {{ snake }}_publisher_acquire(log, &publisher)   takes the one place of the publisher
- *   {{ snake }}_publish(&publisher, &element{% if context.flags %}, &flags{% endif %}{% if context.has_tag %}, tag{% endif %})        wait-free; the entry's sequence number
+ *   {{ snake }}_publish(&publisher, &element{% if context.flags %}, &flags{% endif %})        wait-free; the entry's sequence number
  *   {{ snake }}_read(log, &reader, &out)             wait-free; an item, nothing new, or
  *                                                    how many entries were missed
  * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_deferred`,
@@ -34,9 +34,18 @@
 {% if context.present %}
  *
  * The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
- * part of the entry: `{{ snake }}_publish` takes them, the log stores them in the entry's
- * context words beside the bytes, and `{{ snake }}_read` returns them with the item, so
- * every reader decodes an entry under what it was published under (ADR 0062 section 4).
+ * part of the entry: the log stores them in the entry's context words beside the
+ * bytes, so every reader decodes an entry under what it was published under (ADR 0062
+ * section 4).
+{% if context.flags %}
+ * `{{ snake }}_publish` takes the flags, and `{{ snake }}_read` returns them with the item.
+{% endif %}
+{% if context.has_tag %}
+ * The tag is not given: it is the tag of the arm the element holds,
+ * `{{ element_snake }}_tag(element)`, so a publisher cannot give a tag that disagrees with
+ * the element, and the element `{{ snake }}_read` decodes reports the same tag through
+ * `{{ element_snake }}_tag`.
+{% endif %}
 {% endif %}
  */
 
@@ -195,12 +204,6 @@ typedef struct {
      * to what the codec refused under. */
     {{ snake }}_flags_t flags;
 {% endif %}
-{% if context.has_tag %}
-    /* The variant tag the entry was published with, which it was decoded under.
-     * Meaningful for `{{ upper_name }}_READ_ITEM`, and set for `{{ upper_name }}_READ_DECODE_FAILED`
-     * to what the codec refused under. */
-    uint8_t tag;
-{% endif %}
 } {{ snake }}_read_result_t;
 
 /* Builds an empty log. Returns zero, and builds nothing, for a shape the runtime
@@ -261,18 +264,26 @@ static inline {{ snake }}_reader_t {{ snake }}_reader_at(const {{ snake }}_t *lo
  * `{{ upper_name }}_WORDS` words, and hands them to the runtime, which never waits.
 {% if context.present %}
  *
- * {% if context.flags %}`*flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
- * they are encoded under here and stored in the entry's context words (after the length
- * word, before the bytes), so that every reader decodes the entry under what it was
- * published under. The log does not check that
- * {% if context.has_tag %}`tag` is the tag of the arm `*element` holds{% else %}the flags agree with `*element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% if context.flags %}
+ * `*flags` are what the element's codec takes from its caller as flag inputs: they are
+ * encoded under here and stored in the entry's context words (after the length word,
+ * before the bytes), so that every reader decodes the entry under what it was published
+ * under. The log does not check that the flags agree with `*element`; the publisher
+ * gives what it knows, as every caller of this codec does.
+{% endif %}
+{% if context.has_tag %}
+ * The variant tag its decode takes is not a parameter: it is the tag of the arm
+ * `*element` holds, `{{ element_snake }}_tag(element)`, stored in the entry's context words
+ * so that every reader decodes the entry under it. A publisher cannot give a tag that
+ * disagrees with the element.
+{% endif %}
 {% endif %}
  *
  * An element that encodes to more than `{{ upper_name }}_MAX_ENCODED_BYTES` bytes is refused by the
  * codec (SCE_FORGE_CODEC_BUFFER_OVERFLOW from its bounded writer) and nothing is
  * published: the codec never reports more bytes than the buffer it was given
  * holds, so the packing below never indexes past the entry. */
-static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags %}, const {{ snake }}_flags_t *flags{% endif %}{% if context.has_tag %}, uint8_t tag{% endif %})
+static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags %}, const {{ snake }}_flags_t *flags{% endif %})
 {
     uint8_t bytes[{{ upper_name }}_BUFFER_BYTES] = {0};
     uint64_t entry[{{ upper_name }}_WORDS] = {0};
@@ -293,7 +304,7 @@ static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publi
     }
 {% endfor %}
 {% if context.has_tag %}
-    entry[1u + {{ context.tag_word }}u] = (uint64_t)tag;
+    entry[1u + {{ context.tag_word }}u] = (uint64_t){{ element_snake }}_tag(element);
 {% endif %}
 {% if max_bytes > 0 %}
     for (size_t index = 0u; index < length; index++) {
@@ -314,8 +325,15 @@ static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publi
  * is what makes decoding it safe: a torn copy is `{{ upper_name }}_READ_LAGGED`, never decoded.
 {% if context.present %}
  *
- * The context the entry was published with is read from its context words, handed
- * to the codec's decode ({% if context.flags %}the flag inputs{% endif %}{% if context.flags and context.has_tag %}, then {% endif %}{% if context.has_tag %}the tag{% endif %}) and returned in the result.
+ * The context the entry was published with is read from its context words and handed
+ * to the codec's decode ({% if context.flags %}the flag inputs{% endif %}{% if context.flags and context.has_tag %}, then {% endif %}{% if context.has_tag %}the tag{% endif %}).
+{% if context.flags %}
+ * The result returns the flags.
+{% endif %}
+{% if context.has_tag %}
+ * The result carries no tag of its own: the element reports it through
+ * `{{ element_snake }}_tag`, the unknown tag it holds if it is a default arm.
+{% endif %}
 {% endif %}
  *
  * A stored length above `{{ upper_name }}_MAX_ENCODED_BYTES` is not a length this log wrote, and is
@@ -330,6 +348,9 @@ static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *lo
     sce_blog_read_t found;
     uint64_t stored;
     size_t length;
+{% if context.has_tag %}
+    uint8_t tag;
+{% endif %}
     {{ snake }}_read_result_t result;
     result.status = {{ upper_name }}_READ_ITEM;
     result.seq = 0u;
@@ -338,9 +359,6 @@ static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *lo
 {% for flag in context.flags %}
     result.flags.{{ flag.snake }} = false;
 {% endfor %}
-{% if context.has_tag %}
-    result.tag = 0u;
-{% endif %}
     found = sce_blog_read(&log->core, reader, entry);
     if (found.status == SCE_BLOG_EMPTY) {
         result.status = {{ upper_name }}_READ_EMPTY;
@@ -372,10 +390,10 @@ static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *lo
     result.flags.{{ flag.snake }} = ((entry[1u + {{ flag.word }}u] >> {{ flag.shift }}u) & UINT64_C(1)) != 0u;
 {% endfor %}
 {% if context.has_tag %}
-    result.tag = (uint8_t)(entry[1u + {{ context.tag_word }}u] & UINT64_C(0xFF));
+    tag = (uint8_t)(entry[1u + {{ context.tag_word }}u] & UINT64_C(0xFF));
 {% endif %}
     cursor = sce_forge_cursor_init(bytes, length);
-    result.codec_status = {{ element_snake }}_decode(&cursor, out{% for flag in context.flags %}, {{ snake }}_flag_input(result.flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, result.tag{% endif %});
+    result.codec_status = {{ element_snake }}_decode(&cursor, out{% for flag in context.flags %}, {{ snake }}_flag_input(result.flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %});
     if (result.codec_status != SCE_FORGE_CODEC_OK) {
         result.status = {{ upper_name }}_READ_DECODE_FAILED;
     }
