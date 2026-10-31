@@ -1,0 +1,27 @@
+// ── Owned projection with an origin (`--owned-origin`) ───────────────
+// The owned form above is made by `try_into_owned_in`, which copies each string
+// and each byte string out of the view. `try_into_owned_in_origin` makes the same
+// form from the view AND the origin the view was decoded from, through the
+// storage profile's `OriginStorage`, so a profile that can share that origin holds
+// each entry as a reference to it and copies nothing. It is the projection every
+// other generated owned form has under this option, and it is rendered after the
+// codec's source interface so that the output with the option off is a prefix of
+// the output with it on.
+#[allow(dead_code)]
+impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
+    /// The projection `try_into_owned_in` makes, with the profile's text and byte
+    /// containers made from `{{ origin_param }}`, what the decoded bytes were taken
+    /// from. A profile that shares that buffer builds containers that refer back
+    /// to it instead of copying out of it; what the origin is, and what to do with
+    /// a slice that does not come from it, is the profile's to say.
+    ///
+    /// Each string and byte string is held at its declared capacity, as in
+    /// `try_into_owned_in`; every other entry is moved as that projection moves it.
+    pub fn {{ owned_in_origin_fn }}{{ origin_generics_impl }}(self, {{ origin_param }}: {{ origin_ref_type }}) -> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {
+        Ok({{ struct_name }}Owned {
+{% for e in entries %}
+            {{ e.name }}: {{ e.owned_origin_expr }},
+{% endfor %}
+        })
+    }
+}

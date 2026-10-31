@@ -16,7 +16,7 @@
 // no CBOR is spelled in this generator either.
 
 use crate::forge::error::{ForgeError, GenerateError};
-use crate::forge::generator::{ImportContext, LangCtx};
+use crate::forge::generator::{ImportContext, LangCtx, ORIGIN_PARAM, OWNED_IN_ORIGIN_FN};
 use crate::forge::model::{CborEntry, CodecModel, SceType};
 
 // ⚠ An entry's `name` is the backend's field identifier
@@ -174,15 +174,45 @@ pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 /// asked of a codec that has a mirror, whose every string and byte string has a
 /// capacity ([`rust_owned_mirror`]).
 pub(crate) fn rust_owned_value_type(l: &LangCtx, e: &CborEntry) -> String {
-    let capacity = || {
-        e.length
-            .or(e.max_size)
-            .expect("a codec with an owned mirror bounds every string and byte string entry")
-    };
     match e.present_type() {
-        SceType::String => format!("{RUST_STORAGE_PARAM}::Str<{}>", capacity()),
-        SceType::Bytes => format!("{RUST_STORAGE_PARAM}::Bytes<{}>", capacity()),
+        SceType::String => format!("{RUST_STORAGE_PARAM}::Str<{}>", rust_owned_capacity(e)),
+        SceType::Bytes => format!("{RUST_STORAGE_PARAM}::Bytes<{}>", rust_owned_capacity(e)),
         other => l.type_name(other).into_owned(),
+    }
+}
+
+/// The capacity the Rust owned mirror holds the string or byte string `e` at: the
+/// exact length of a byte string, or the `sce:max-size` of any other. The one
+/// number [`rust_owned_value_type`] declares the container at and the origin
+/// projection ([`rust_owned_origin_expr`]) builds it at.
+fn rust_owned_capacity(e: &CborEntry) -> u32 {
+    e.length
+        .or(e.max_size)
+        .expect("a codec with an owned mirror bounds every string and byte string entry")
+}
+
+/// The expression that builds the present value of `e` for the Rust owned mirror
+/// from the view's field `field` and the origin parameter: a string or a byte
+/// string through the profile's `OriginStorage` (`str_from` or `bytes_from`, at the
+/// entry's capacity), an entry that may be absent built only when present, and any
+/// other entry moved as `try_into_owned_in` moves it. A fallible build is written
+/// with its `?`, so the expression is the field's value.
+fn rust_owned_origin_expr(e: &CborEntry, field: &str) -> String {
+    let constructor = match e.present_type() {
+        SceType::String => "str_from",
+        SceType::Bytes => "bytes_from",
+        _ => return field.to_string(),
+    };
+    let build = |arg: &str| {
+        format!(
+            "<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::OriginStorage>::{constructor}::<{}>({ORIGIN_PARAM}, {arg})",
+            rust_owned_capacity(e)
+        )
+    };
+    if e.is_required() {
+        format!("{}?", build(field))
+    } else {
+        format!("{field}.map(|_v| {}).transpose()?", build("_v"))
     }
 }
 
@@ -519,13 +549,62 @@ fn render_rust(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Rust, imports);
+    render_in_key_order(&l, env, rust_context(&l, m, imports)?)
+}
+
+/// The origin-aware projection of the Rust owned mirror, `try_into_owned_in_origin`
+/// (`--owned-origin`), as the text that follows the module the default output is,
+/// or `None` for a map with no mirror, which has no projection to add.
+///
+/// A template of its own, rendered from the context the module is, because the
+/// caller appends it after the codec's source interface: the module without the
+/// option is then a prefix of the module with it, the property every other
+/// generated owned form holds. The signature, the names and the origin parameter
+/// are the positional codec's (`OWNED_IN_ORIGIN_FN`, `ORIGIN_PARAM`).
+pub fn render_rust_owned_origin(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<Option<String>, ForgeError> {
+    if !rust_owned_mirror(m) {
+        return Ok(None);
+    }
+    let l = LangCtx::new(Language::Rust, imports);
+    let mut ctx = rust_context(&l, m, imports)?;
+    let origin_storage = format!("{RUST_RUNTIME_CODEC}::OriginStorage");
+    ctx.insert("owned_in_origin_fn".into(), OWNED_IN_ORIGIN_FN.into());
+    ctx.insert("origin_param".into(), ORIGIN_PARAM.into());
+    ctx.insert(
+        "origin_ref_type".into(),
+        format!("&<{RUST_STORAGE_PARAM} as {origin_storage}>::Origin").into(),
+    );
+    ctx.insert(
+        "origin_generics_impl".into(),
+        format!("<{RUST_STORAGE_PARAM}: {origin_storage}>").into(),
+    );
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            let field = format!("self.{}", entry["name"].as_str().unwrap_or_default());
+            entry["owned_origin_expr"] = rust_owned_origin_expr(e, &field).into();
+        }
+    }
+    l.render(env, "codec_cbor_origin", ctx).map(Some)
+}
+
+/// The context the Rust module is rendered from, with the owned mirror's names and
+/// each entry's owned type when the map has a mirror.
+fn rust_context(
+    l: &LangCtx,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<serde_json::Map<String, serde_json::Value>, ForgeError> {
     // A string or byte string is a view of the input, so the struct borrows
     // only when one of its entries does.
     let borrows = m
         .cbor_entries
         .iter()
         .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
-    let mut ctx = common_context(&l, m, imports, |e| match e.present_type() {
+    let mut ctx = common_context(l, m, imports, |e| match e.present_type() {
         SceType::String => "&'a str".to_string(),
         SceType::Bytes => "&'a [u8]".to_string(),
         other => l.type_name(other).into_owned(),
@@ -591,7 +670,7 @@ fn render_rust(
         );
         if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
             for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-                let owned = rust_owned_value_type(&l, e);
+                let owned = rust_owned_value_type(l, e);
                 entry["owned_field_type"] = if e.is_required() {
                     owned.clone()
                 } else {
@@ -602,5 +681,5 @@ fn render_rust(
             }
         }
     }
-    render_in_key_order(&l, env, ctx)
+    Ok(ctx)
 }

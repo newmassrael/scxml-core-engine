@@ -7043,10 +7043,10 @@ const OWNED_IN_FN: &str = "try_into_owned_in";
 /// from, so a profile can share that origin instead of copying out of it.
 /// Generated only when the document asks (`--owned-origin`), so the default
 /// output — the copying projection above — is untouched.
-const OWNED_IN_ORIGIN_FN: &str = "try_into_owned_in_origin";
+pub(crate) const OWNED_IN_ORIGIN_FN: &str = "try_into_owned_in_origin";
 
 /// Name of the origin parameter in every `*_in_origin` projection.
-const ORIGIN_PARAM: &str = "origin";
+pub(crate) const ORIGIN_PARAM: &str = "origin";
 
 /// Owned-projection mapping for one codec field — the `{Codec}Owned<S>`
 /// mirror (the rkyv-style Archived(borrowed) ↔ native(owned) split, both
@@ -7853,6 +7853,19 @@ fn render_codec(
                 struct_lifetime: if borrows { "<'a>" } else { "" },
                 inline_encode,
             }));
+            // The owned mirror's origin projection is the last thing in the module,
+            // after the source interface, so that the module without the option is a
+            // prefix of the module with it (as for a positional codec). A map with no
+            // mirror has none to add.
+            let origin = if owned_origin {
+                crate::forge::cbor_codec::render_rust_owned_origin(env, m, imports)?
+            } else {
+                None
+            };
+            if let Some(origin) = origin {
+                text.push('\n');
+                text.push_str(&origin);
+            }
         }
         return Ok(text);
     }
