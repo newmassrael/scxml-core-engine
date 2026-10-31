@@ -15,7 +15,11 @@
 # rewritten files stay there, and `bx --action regen` is what brings them back.
 #
 # Usage (from repo root):
-#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests
+#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, w3c
+#
+# `w3c` is not one of the four packages: it writes the W3C suite into `backends/swift/tests` and
+# runs its tests alone, so it is not in the default list. `scripts/gate w3c-swift` runs it, and
+# `scripts/gate swift-backend` runs the four.
 #
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing) and a
@@ -45,12 +49,26 @@ else
 fi
 
 for package in "${PACKAGES[@]}"; do
-    if [ "$package" = "tests" ]; then
-        scripts/regen_swift_statecharts.sh
-        scripts/regen_static_datamodel_swift.sh
-        scripts/regen_swift_ecmascript.sh
-        scripts/regen_swift_w3c.sh
-    fi
-    echo "== swift test: backends/swift/$package"
-    (cd "backends/swift/$package" && swift test)
+    case "$package" in
+        w3c)
+            # The W3C suite is a question of its own (`scripts/gate w3c-swift`): the machines
+            # `generate-w3c -l swift` writes from the W3C documents, run against the engine. It
+            # is written here and not committed, and `tests` below neither writes nor runs it.
+            scripts/regen_swift_w3c.sh
+            echo "== swift test: backends/swift/tests (W3C suite)"
+            (cd backends/swift/tests && swift test --filter W3cMachinesTests)
+            ;;
+        tests)
+            scripts/regen_swift_statecharts.sh
+            scripts/regen_static_datamodel_swift.sh
+            scripts/regen_swift_ecmascript.sh
+            echo "== swift test: backends/swift/tests"
+            # A tree the W3C lane left on this machine is built with the rest, and not run here.
+            (cd backends/swift/tests && swift test --skip W3cMachinesTests)
+            ;;
+        *)
+            echo "== swift test: backends/swift/$package"
+            (cd "backends/swift/$package" && swift test)
+            ;;
+    esac
 done

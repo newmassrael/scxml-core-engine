@@ -2,7 +2,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+import Foundation
 import PackageDescription
+
+// The W3C suite is written, and not committed, by `sce-codegen generate-w3c -l swift`
+// (`scripts/regen_swift_w3c.sh`), so a checkout that has not written it has no sources for
+// `W3cMachines` and SwiftPM refuses a target with none. The targets exist where the suite does:
+// the lane that judges the W3C suite writes it first (`scripts/test_swift_backend.sh w3c`), and
+// the lane that judges the packages does not need to.
+let w3cSuiteWritten = FileManager.default.fileExists(
+    atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("Sources/W3cMachines").path)
+let w3cTargets: [Target] =
+    w3cSuiteWritten
+    ? [
+        .target(
+            name: "W3cMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "W3cMachinesTests",
+            dependencies: [
+                "W3cMachines",
+                .product(name: "SceRuntime", package: "runtime"),
+            ]
+        ),
+    ] : []
 
 // The machines `sce-codegen generate -l swift` writes, compiled against the Swift
 // runtime, and the tests that drive each through its `Engine`. `StaticMachines` and
@@ -69,19 +97,5 @@ let package = Package(
                 .product(name: "SceLua", package: "runtime"),
             ]
         ),
-        .target(
-            name: "W3cMachines",
-            dependencies: [
-                .product(name: "SceRuntime", package: "runtime"),
-                .product(name: "SceLua", package: "runtime"),
-            ]
-        ),
-        .testTarget(
-            name: "W3cMachinesTests",
-            dependencies: [
-                "W3cMachines",
-                .product(name: "SceRuntime", package: "runtime"),
-            ]
-        ),
-    ]
+    ] + w3cTargets
 )

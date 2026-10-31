@@ -59,6 +59,7 @@ on:
       - 'scripts/lib/swift_pin.sh'
       - 'scripts/install_swift_toolchain.sh'
       - 'scripts/gates/swift-backend.sh'
+      - 'scripts/gates/w3c-swift.sh'
       - 'scripts/gates/lib.sh'
       - 'bx.toml'
       - '.github/workflows/swift-backend.yml'
@@ -149,3 +150,9 @@ jobs:
 
     - name: Run the Swift backend gate
       run: scripts/gate swift-backend
+
+    # The W3C suite, written by `generate-w3c -l swift` and run against the engine. A step of
+    # this job and not a job of its own: it needs the generator built and the toolchain
+    # installed, which are the steps above, and a second job would repeat them.
+    - name: Run the Swift W3C gate
+      run: scripts/gate w3c-swift

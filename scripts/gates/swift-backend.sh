@@ -14,8 +14,9 @@
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
 #
 # Until this gate existed nothing a hosted runner ran compiled a line of Swift: the other
-# backends' suites are reached through their W3C and Forge lanes, and Swift has neither
-# lane yet (its `ACCEPTED` rows in `a_backend_holds_what_the_other_backends_hold` say so).
+# backends' suites are reached through their W3C and Forge lanes. Swift has the W3C one now
+# (`w3c-swift`, which writes and runs the W3C suite and is not run here) and no Forge lane
+# yet (its `ACCEPTED` row in `a_backend_holds_what_the_other_backends_hold` says so).
 # `regen-reproduces` judges that the committed Swift machines are what the generator writes;
 # this judges that what the generator writes COMPILES and BEHAVES.
 #

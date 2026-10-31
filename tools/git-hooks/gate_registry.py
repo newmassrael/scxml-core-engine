@@ -338,6 +338,8 @@ COST_MEASURED: dict[str, str] = {
     "forge-kotlin": "2026-09-18",
     # 38s, the worse of two runs of the gate script through bx (38 and 19).
     "swift-backend": "2026-10-28",
+    # 76s, the lane script under the gate through bx (see the gate's own entry).
+    "w3c-swift": "2026-11-01",
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
@@ -1023,6 +1025,31 @@ GATES: dict[str, dict] = {
                    "installs the pin by its digest.",
         "cost_s": 38,
         "summary": "Swift backend: runtime, forge runtime and generated machines",
+    },
+    # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
+    # suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
+    # the same job, as `mutation-cases` rides `tree-hygiene.yml`, because what the two need is the
+    # same: the generator built, the pinned toolchain installed and checked against its digest.
+    # A job of its own would repeat those steps and pay for them twice.
+    #
+    # `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin
+    # that not every build machine is verified to carry, and the gate fails loudly without it.
+    "w3c-swift": {
+        "workflows": ["swift-backend.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+                   "in bx.toml) that not every build machine is verified to "
+                   "carry; the gate refuses without it, so a push that "
+                   "selected it there would be refused for a reason that says "
+                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "by its digest.",
+        # 76s, `scripts/test_swift_backend.sh w3c` through `bx` on a build machine on
+        # 2026-11-01, which is what the gate runs and reads (a gate run is refused locally
+        # for this repository, so the script under it was timed). 156 fixtures lowered and
+        # 156 tests run. Warm, like `swift-backend`'s figure: a runner starts from nothing.
+        "cost_s": 76,
+        "summary": "W3C conformance, Swift AOT",
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs
