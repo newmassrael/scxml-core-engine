@@ -120,11 +120,15 @@ PY
 # narrow log is refused as one whose pause is not stated. Killed by
 # `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`, whose deploy states
 # 1000000 and which expects the module.
+# The mutant still reads `inputs.min_wrap_ops` and discards it: the shared judgement
+# (`judged_broadcast_log_row`) is the one place that field is read, so a mutant that
+# passed `None` outright left it unread and the tree failed to compile under
+# `-D warnings` (`dead_code`), which the round reports as INCONCLUSIVE.
 mutation_case "the narrow row is judged without the pause the deploy states" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''            inputs.min_wrap_ops,
         )?;''',
-     r'''            None,
+     r'''            inputs.min_wrap_ops.filter(|_| false),
         )?;''')
 PY
 
