@@ -1,0 +1,336 @@
+# Mutation cases for "a Rust broadcast log is rendered over the row its target has".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_rust_broadcast_log_is_rendered_over_the_row_its_target_has.cases`.
+#
+# The bounded broadcast log of ADR 0062 (section 4, "Stamp width") has two rows in the Rust
+# runtime: the 64-bit row, and a narrow row of a 32-bit stamp and 32-bit words for a target
+# that has no 64-bit atomics. Which one a module is generated over is decided in Rust, in
+# `render_broadcast_log_rust`, from what the deploy says of the target, and a narrow stamp
+# wraps, so the generator also judges the log against the stamp (`judge_broadcast_log_stamp`)
+# before it writes a line. A defect in that decision is a module for the wrong row: it
+# compiles, names a runtime module that exists, and is wrong where nothing in a build says
+# so (a publisher handed out by a swap the target does not have, a pause the stamp cannot
+# keep, a slot count that does not divide the stamp space).
+#
+# This file keeps the decision and the judgement:
+#
+# - the row table of `render_broadcast_log_rust` and the flags it passes the template;
+# - the gate that asks the narrow row, and only the narrow row, for the pause it relies on;
+# - `rust_broadcast_log_row`: the two statements of a target's atomics (the triple, and
+#   `platform.atomic_rmw_width`) and the row each width gets;
+# - `resolve_broadcast_log_render_inputs`: the retention a document means, the refusal of a
+#   retention of nothing, and the rows those refusals are placed on;
+# - `judge_broadcast_log_stamp` with its three refusals, and the three functions of
+#   `sce-build/src/forge/model.rs` it reads the stamp space and the longest pause from.
+#
+# The text of the template is the next casefile's
+# (`a_rust_broadcast_log_template_prints_the_slot_the_runtime_has.cases`), and what the
+# generated module does when it runs is the one after it
+# (`a_rust_broadcast_log_module_publishes_and_reads_back_what_it_stores.cases`).
+#
+# The oracle is `sce-build/tests/broadcast_log_kind.rs`. It calls `judge_broadcast_log_stamp`
+# and the model functions directly, and renders the module for a log whose deploy states
+# what each case needs (`target_options`, `resolution_options`), so a mutant of the decision
+# is a module that holds other lines or a refusal that does not come. Each case names the
+# test that turns red.
+#
+# Mutants that are not cases, each with its reason, are at the end of the file.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test broadcast_log_kind
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/model.rs
+
+# --- The row table and what the template is told of it ---
+
+# The 64-bit row lays the context out for words of 32 bits, so 65 flags and a tag take four
+# context words and not three. Killed by
+# `rust_carries_flags_past_a_64_bit_word_into_the_next_context_word`, which holds
+# `pub const CONTEXT_WORDS: usize = 3;`.
+mutation_case "the 64-bit row lays its context out for 32-bit words" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''RustBroadcastLogRow::Wide => ("broadcast_log", "u64", 64, 8, "eight"),''',
+     r'''RustBroadcastLogRow::Wide => ("broadcast_log", "u64", 32, 8, "eight"),''')
+PY
+
+# The narrow template is chosen only for a row that is not the 64-bit one, and the module of
+# a target with a swap is the narrow module with a publisher taken by an 8-bit swap. With the
+# narrow template chosen for the ownership row alone, a 32-bit target is given the 64-bit
+# module and its guard. Killed by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`:
+# it holds `const _: () = assert!(MAX_ENCODED_BYTES <= u32::MAX as usize);` and the
+# narrow `compile_error!` cfg, which the mutant does not print.
+mutation_case "only the ownership row is given the narrow template" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        narrow => row != RustBroadcastLogRow::Wide,''',
+     r'''        narrow => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),''')
+PY
+
+# The ownership-only text is chosen only for a target with no read-modify-write atomic. Chosen
+# for every narrow row, a target that has the swap is told its publisher is `split()` alone.
+# Killed by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`, which holds
+# "The publisher is `log.publisher()`, taken once by an 8-bit swap, or" and gets the text of
+# the other row.
+mutation_case "every narrow row is given the ownership-only publisher" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),''',
+     r'''        ownership_only => row != RustBroadcastLogRow::Wide,''')
+PY
+
+# The pause the module states is the longest the stamp covers for the log's own retention:
+# `2^31 - (retention + 1)`. With one more slot counted the module promises a number the bound
+# does not give. Killed by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`
+# (`begins at most 2147483640 publishes`, which the mutant prints as 2147483639) and by
+# `a_deploy_states_the_target_and_the_pause_and_the_set_generates_the_narrow_row`
+# (`begins at most 2147483632 publishes`).
+mutation_case "the pause the module states counts one slot more than the log keeps" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.retention,
+        ),''',
+     r'''        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.retention + 1,
+        ),''')
+PY
+
+# --- The gate that asks the narrow row for its pause ---
+
+# A stamp is judged for the narrow row alone: the 64-bit stamp wraps after 2^63 publishes and
+# is asked nothing. Judged for the 64-bit row and not the narrow one, a narrow target is never
+# asked for its pause and a 64-bit target with no pause stated is refused. Killed by
+# `a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered` (the refusals do not
+# come) and `a_64_bit_target_or_a_deploy_that_says_nothing_keeps_the_64_bit_row` (a log that
+# states no pause is refused).
+mutation_case "the 64-bit row is judged against the stamp and the narrow row is not" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if row != RustBroadcastLogRow::Wide {
+        judge_broadcast_log_stamp(''',
+     r'''    if row == RustBroadcastLogRow::Wide {
+        judge_broadcast_log_stamp(''')
+PY
+
+# The pause the deploy states is what the narrow row is judged against. Without it every
+# narrow log is refused as one whose pause is not stated. Killed by
+# `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`, whose deploy states
+# 1000000 and which expects the module.
+mutation_case "the narrow row is judged without the pause the deploy states" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            inputs.min_wrap_ops,
+        )?;''',
+     r'''            None,
+        )?;''')
+PY
+
+# The narrow row is judged at the width of its stamp, 32 bits. At 64 the judgement answers
+# `Ok` at once, so a narrow log whose slots do not divide the stamp space, or whose pause is
+# not stated, is generated. Killed by `a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered`
+# and `a_narrow_row_whose_slot_count_does_not_divide_the_stamp_space_is_refused`, which expect
+# the refusals.
+mutation_case "the narrow row is judged at the width of the 64-bit stamp" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.min_wrap_ops,''',
+     r'''            crate::forge::model::BROADCAST_LOG_FULL_STAMP_BITS,
+            inputs.min_wrap_ops,''')
+PY
+
+# --- The row a target has ---
+
+# Two statements of a target's atomics, the triple and `platform.atomic_rmw_width`, are refused
+# when they differ. Refused when they agree instead, a deploy that states the width its target
+# has is refused and one that contradicts it is accepted. Killed by
+# `a_width_that_contradicts_the_target_is_refused_and_an_unknown_target_needs_a_width`: the
+# 64-bit width beside `thumbv7em-none-eabihf` must be refused naming `atomic is 32 bits`.
+mutation_case "a width that agrees with the target is the one refused" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let width = match (stated, known) {
+        (Some(stated), Some(known)) if stated != known => {''',
+     r'''    let width = match (stated, known) {
+        (Some(stated), Some(known)) if stated == known => {''')
+PY
+
+# A width the deploy states stands for the target. Read as what the triple says whatever the
+# deploy states, a width stated beside no triple at all is lost and the 64-bit row is
+# generated. Killed by `a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered`,
+# whose deploy states 32 and names no target, and expects the narrow row's refusals.
+mutation_case "a stated width is read as what the target's triple says" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        (Some(stated), _) => Some(stated),
+        (None, Some(known)) => Some(known),
+        (None, None) if triple.is_some() => {''',
+     r'''        (Some(_), _) => known,
+        (None, Some(known)) => Some(known),
+        (None, None) if triple.is_some() => {''')
+PY
+
+# A deploy that says nothing says nothing against any row, so the 64-bit row is generated as
+# it always was. With the narrow row for it, every log of a deploy with no target is judged
+# for a pause it never stated. Killed by
+# `a_64_bit_target_or_a_deploy_that_says_nothing_keeps_the_64_bit_row`, whose first
+# `generate(None, None)` is refused instead of generated.
+mutation_case "a deploy that says nothing about the atomics gets the narrow row" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        None | Some(64) => Ok(RustBroadcastLogRow::Wide),''',
+     r'''        Some(64) => Ok(RustBroadcastLogRow::Wide),
+        None => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: false,
+        }),''')
+PY
+
+# A target with a compare-and-swap takes its publisher by the 8-bit swap, or by `split`. Given
+# the ownership-only row, the module says its publisher is `split()` alone. Killed by
+# `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row` (the swap sentence).
+mutation_case "a width of 32 gets the ownership-only publisher" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Some(32) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: false,
+        }),''',
+     r'''        Some(32) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: true,
+        }),''')
+PY
+
+# A width of 0 is a target with loads and stores only, which has no swap to hand a publisher
+# out with. Given the swap, its module promises a publisher taken by an 8-bit swap. Killed by
+# `a_target_with_loads_and_stores_only_is_generated_with_an_ownership_publisher`, for both
+# its statements of the width (0 stated, and `thumbv6m-none-eabi`).
+mutation_case "a width of 0 gets a publisher taken by a swap" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Some(0) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: true,
+        }),''',
+     r'''        Some(0) => Ok(RustBroadcastLogRow::Narrow {
+            ownership_only: false,
+        }),''')
+PY
+
+# --- What a render reads of the build ---
+
+# A retention the document writes as a literal is the document's, whatever the deploy resolved
+# for a key. With the resolution read first, a literal is overridden by a number the deploy
+# says for something else. Killed by `a_literal_retention_is_the_documents_whatever_the_resolution_says`
+# (`pub const RETENTION: usize = 7;`, which the mutant prints as 99).
+mutation_case "a literal retention is overridden by the resolved one" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let retention = match (&m.retention, resolution.retention) {
+        (CapacitySource::CompileConst { value }, _) => *value,
+''',
+     r'''    let retention = match (&m.retention, resolution.retention) {
+        (CapacitySource::CompileConst { value }, None) => *value,
+        (CapacitySource::CompileConst { .. }, Some(resolved)) => resolved,
+''')
+PY
+
+# A retention that resolves to nothing is refused, because a log keeps at least one entry and
+# at least two slots. Without the refusal the module is written with `RETENTION` of 0. Killed
+# by `a_retention_that_resolves_to_nothing_is_refused`, which expects the refusal and
+# `the_row_is_chosen_after_the_refusals_every_language_shares`.
+mutation_case "a retention of nothing is generated" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if retention == 0 {''',
+     r'''    if retention == u32::MAX {''')
+PY
+
+# The refusal of an element the template cannot hold is placed on the row that names the
+# element, so that a reader finds the line to repair. Placed on the retention row, it points
+# at a line that is not wrong. Killed by `an_element_the_template_cannot_hold_is_refused_on_the_element_type_row`
+# (`row_text` must hold `<sce:element-type>event_record<`).
+mutation_case "the refusal of an element is placed on the retention row" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            template = broadcast_log_template_label(language),
+        )))
+        .at_line(m.element_type_line));''',
+     r'''            template = broadcast_log_template_label(language),
+        )))
+        .at_line(m.retention_line));''')
+PY
+
+# --- The stamp a narrow row keeps ---
+
+# A stamp of 64 bits is asked nothing. Asked at 64 as well, a full-width log of a retention that
+# does not divide the stamp space is refused for a wrap it does not have. Killed by
+# `a_full_width_stamp_is_asked_nothing`: retention 5 at 64 bits must be `Ok`, and the mutant
+# refuses it for 6 slots. (The renderer never asks the 64-bit row, so no render test reaches
+# this line.)
+mutation_case "a stamp of 64 bits is asked for its pause" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if stamp_bits >= BROADCAST_LOG_FULL_STAMP_BITS {''',
+     r'''    if stamp_bits > BROADCAST_LOG_FULL_STAMP_BITS {''')
+PY
+
+# The slot index `n mod (retention + 1)` stays continuous across the wrap only when the slot
+# count divides the stamp space. With the test read the other way, the logs that divide it are
+# refused and the others are not. Killed by
+# `a_narrow_stamp_with_a_retention_that_is_not_one_less_than_a_power_of_two_is_refused`
+# and `a_narrow_stamp_needs_the_delay_the_design_relies_on_and_a_bound_that_covers_it`
+# (retention 7 is refused).
+mutation_case "a slot count that divides the stamp space is the one refused" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if !broadcast_log_slots_divide_the_stamp_space(retention) {''',
+     r'''    if broadcast_log_slots_divide_the_stamp_space(retention) {''')
+PY
+
+# A pause the stamp covers exactly is covered: the bound is the longest pause, not one below
+# it. Refused at the bound, the boundary a deploy may state is lost. Killed by
+# `a_narrow_stamp_needs_the_delay_the_design_relies_on_and_a_bound_that_covers_it`
+# (`Some(bound)` must be `Ok`) and `a_narrow_row_needs_the_pause_the_design_relies_on_stated_and_covered`
+# (`at(Some(EVENT_RING_PAUSE))`).
+mutation_case "a pause equal to the bound is refused" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Some(min_wrap_ops) if min_wrap_ops > bound => Err(ForgeError::from(''',
+     r'''        Some(min_wrap_ops) if min_wrap_ops >= bound => Err(ForgeError::from(''')
+PY
+
+# The bound a deploy's pause is checked against counts the slots of the log. Counted for a log
+# with no slots, the bound is `2^31 - 1` and a pause above the true bound is covered. Killed by
+# `a_narrow_stamp_needs_the_delay_the_design_relies_on_and_a_bound_that_covers_it`:
+# `Some(bound + 1)` must be `BroadcastLogWrapBoundBelowDeployMinimum`, and the `bound` the
+# refusal carries is `2^31 - 8`.
+mutation_case "the bound a pause is judged against ignores the slots" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let bound = broadcast_log_longest_pause_ops(stamp_bits, retention);''',
+     r'''    let bound = broadcast_log_longest_pause_ops(stamp_bits, 0);''')
+PY
+
+# The longest pause is half the stamp space less the slots, `2^(bits - 1) - (retention + 1)`.
+# With the slots one fewer the bound is one too long. Killed by
+# `the_longest_pause_is_half_the_stamp_space_less_the_slots` (`(1u64 << 31) - 8` for a
+# retention of 7).
+mutation_case "the longest pause leaves out the slot being overwritten" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''    half.saturating_sub(retention as u64 + 1)''',
+     r'''    half.saturating_sub(retention as u64)''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# The refusal of a width that is none of 0, 32 and 64 (`Some(other)` in `rust_broadcast_log_row`).
+# No test states `platform.atomic_rmw_width` as 16 or 48, so a mutant that gives such a width the
+# 64-bit row, or removes the refusal, is observed by nothing. It needs a test first: a deploy with
+# a width of 16 and a refusal that names `0, 32 and 64`.
+#
+# The `.at_line(m.retention_line)` of the refusals of `rust_broadcast_log_row` (the two statements
+# that differ, a target the table does not know), and the row the deploy-key refusal of
+# `resolve_broadcast_log_render_inputs` is placed on. The tests of the first two read the detail
+# and not `row_text`, and `a_deploy_key_the_set_could_not_resolve_is_refused_on_the_retention_row`
+# reads the row of the third but the element-type row is the only one a second case could be told
+# apart by. It needs a test first: `row_text` of the refusal of a contradicting width and of an
+# unknown target must hold `<sce:retention`.
+#
+# `stamp_bits => BROADCAST_LOG_NARROW_STAMP_BITS` of the narrow template's context and the
+# `word_bytes_word` of the row table. The template prints them only in comments (`its stamp is 32
+# bits`, `eight to a word`), and no test of the Rust module holds those words. It needs a test
+# first.
+#
+# The `stamp_bits < 2` of `broadcast_log_longest_pause_ops` read as `<= 2`, and the `>` of
+# `broadcast_log_wrap_bound_ops` read as `>=`. Equivalent mutants: a width of 2 gives the same
+# `half` either way, and at 64 the `else` branch reads `64 - 1`, which is what the branch above it
+# reads. Not cases.
+#
+# The `nearest_below` and `nearest_above` of the slot-count refusal. They are held by
+# `a_narrow_stamp_with_a_retention_that_is_not_one_less_than_a_power_of_two_is_refused`
+# (`(3, 7)` for 6 slots), and a case on each would be killed by that one assertion; it is not
+# written to keep the round short.
