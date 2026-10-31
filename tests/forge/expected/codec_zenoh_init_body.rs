@@ -179,8 +179,8 @@ impl<'a> CodecZenohInitBody<'a> {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, s: u8, a: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, s, a)
+    pub fn encode<S: SceSink>(&self, w: &mut S, s: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        Self::encode_source(self, w, s)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -197,10 +197,10 @@ impl<'a> CodecZenohInitBody<'a> {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, s: u8, a: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self, s: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, s, a)?;
+        self.encode(&mut _sce_sink, s)?;
         Ok(_sce_v)
     }
 }
@@ -335,13 +335,21 @@ impl<'a> CodecZenohInitBody<'a> {
     /// [`CodecZenohInitBodySource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohInitBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source(src, w, s, a)
+    pub fn encode_source<S: CodecZenohInitBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source(src, w, s)
+    }
+
+    /// The flag-input `A` that `src` says: set exactly when `cookie` is present.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_a<S: CodecZenohInitBodySource + ?Sized>(src: &S) -> bool {
+        CodecZenohInitBodySource::cookie(src).is_some()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohInitBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecZenohInitBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        let a: u8 = u8::from(CodecZenohInitBodySource::cookie(src).is_some());
         let _n_d_cbyte_zid_len_m1_0: usize = src.zid().len().checked_sub(1).ok_or(CodecError::LengthOutOfRange)?;
         let _n_d_cookie_len_0: usize = match src.cookie() {
             Some(_v) => _v.len(),
@@ -360,11 +368,7 @@ impl<'a> CodecZenohInitBody<'a> {
         if ((s & 0x1) != 0) != src.batch_size().is_some() {
             return Err(CodecError::PresentIfMismatch);
         }
-        if ((a & 0x1) != 0) != src.cookie().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
         let _ = s;
-        let _ = a;
         w.write_u8(src.version())?;
         w.write_u8(_c_cbyte)?;
         w.write_bytes(src.zid())?;
@@ -387,9 +391,9 @@ impl<'a> CodecZenohInitBody<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohInitBodySource + ?Sized>(src: &S, s: u8, a: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohInitBodySource + ?Sized>(src: &S, s: u8) -> Result<usize, CodecError> {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, s, a)?;
+        Self::write_source(src, &mut _c, s)?;
         Ok(_c.len())
     }
 }
@@ -550,18 +554,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInitBodyOwned<S> {
     /// view declares raises `CodecError::TooManyElements`, so an owned value the
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K, s: u8, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        CodecZenohInitBody::encode_source(self, w, s, a)
+    pub fn encode<K: SceSink>(&self, w: &mut K, s: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        CodecZenohInitBody::encode_source(self, w, s)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
     /// past the bound the borrowed view declares is refused, as is any value
     /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, s: u8, a: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self, s: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohInitBody::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, s, a)?;
+        self.encode(&mut _sce_sink, s)?;
         Ok(_sce_v)
     }
 }

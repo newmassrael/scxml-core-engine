@@ -321,8 +321,6 @@ pub enum CodecTransportEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Si
 #[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodecTransportEnvelopeOverrides {
-    /// The `A` flag of `header`, when a parent sets it.
-    pub header_a: Option<bool>,
     /// The `S` flag of `header`, when a parent sets it.
     pub header_s: Option<bool>,
     /// The `Z` flag of `header`, when a parent sets it.
@@ -331,12 +329,6 @@ pub struct CodecTransportEnvelopeOverrides {
 
 #[allow(dead_code)]
 impl CodecTransportEnvelopeOverrides {
-    /// Sets `A` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_a(value: bool) -> Self {
-        Self { header_a: Some(value), ..Self::default() }
-    }
-
     /// Sets `S` of `header` and nothing else.
     #[allow(clippy::needless_update)]
     pub fn header_s(value: bool) -> Self {
@@ -483,9 +475,15 @@ impl<'a> CodecTransportEnvelope<'a> {
             CodecTransportEnvelopeVariantSource::CodecZenohJoin(_) => 7,
             CodecTransportEnvelopeVariantSource::Default { tag, .. } => tag.get(),
         };
+        let _o_d_header_a_arm: Option<usize> = match src.body() {
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(CodecZenohInitBody::input_a(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => Some(usize::from(CodecZenohOpenBody::input_a(_b))),
+            _ => None,
+        };
+        let _f_d_header_a: Option<usize> = if _o_d_header_a_arm.is_some() { Some(_o_d_header_a_arm.unwrap_or(0)) } else { None };
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
-        if let Some(_o) = over.header_a {
-            _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
+        if let Some(_n) = _f_d_header_a {
+            _c_header = (_c_header & !0x20) | ((_n as u8) << 5);
         }
         if let Some(_o) = over.header_s {
             _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
@@ -495,8 +493,8 @@ impl<'a> CodecTransportEnvelope<'a> {
         }
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w, (_c_header >> 6) & 0x1, (_c_header >> 5) & 0x1)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => CodecZenohOpenBody::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => CodecZenohOpenBody::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohClose(_b) => CodecZenohClose::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b) => CodecZenohKeepAlive::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b) => CodecZenohFrame::write_source(_b, w)?,

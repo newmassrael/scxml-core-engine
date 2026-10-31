@@ -339,32 +339,16 @@ pub enum CodecZenohDeclarationVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Siz
 #[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodecZenohDeclarationOverrides {
-    /// The `N` flag of `header`, when a parent sets it.
-    pub header_n: Option<bool>,
     /// The `M` flag of `header`, when a parent sets it.
     pub header_m: Option<bool>,
-    /// The `Z` flag of `header`, when a parent sets it.
-    pub header_z: Option<bool>,
 }
 
 #[allow(dead_code)]
 impl CodecZenohDeclarationOverrides {
-    /// Sets `N` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_n(value: bool) -> Self {
-        Self { header_n: Some(value), ..Self::default() }
-    }
-
     /// Sets `M` of `header` and nothing else.
     #[allow(clippy::needless_update)]
     pub fn header_m(value: bool) -> Self {
         Self { header_m: Some(value), ..Self::default() }
-    }
-
-    /// Sets `Z` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_z(value: bool) -> Self {
-        Self { header_z: Some(value), ..Self::default() }
     }
 }
 
@@ -511,26 +495,41 @@ impl<'a> CodecZenohDeclaration<'a> {
             CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_) => 26,
             CodecZenohDeclarationVariantSource::Default { tag, .. } => tag.get(),
         };
+        let _o_d_header_n_arm: Option<usize> = match src.body() {
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => Some(usize::from(CodecZenohDeclKexpr::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => Some(usize::from(CodecZenohDeclSubscriber::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(CodecZenohDeclQueryable::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => Some(usize::from(CodecZenohDeclToken::input_n(_b))),
+            _ => None,
+        };
+        let _f_d_header_n: Option<usize> = if _o_d_header_n_arm.is_some() { Some(_o_d_header_n_arm.unwrap_or(0)) } else { None };
+        let _o_d_header_z_arm: Option<usize> = match src.body() {
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => Some(usize::from(CodecZenohUndeclSubscriber::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => Some(usize::from(CodecZenohUndeclQueryable::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => Some(usize::from(CodecZenohUndeclToken::input_z(_b))),
+            _ => None,
+        };
+        let _f_d_header_z: Option<usize> = if _o_d_header_z_arm.is_some() { Some(_o_d_header_z_arm.unwrap_or(0)) } else { None };
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
-        if let Some(_o) = over.header_n {
-            _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
+        if let Some(_n) = _f_d_header_n {
+            _c_header = (_c_header & !0x20) | ((_n as u8) << 5);
+        }
+        if let Some(_n) = _f_d_header_z {
+            _c_header = (_c_header & !0x80) | ((_n as u8) << 7);
         }
         if let Some(_o) = over.header_m {
             _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
         }
-        if let Some(_o) = over.header_z {
-            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
-        }
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => CodecZenohDeclKexpr::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => CodecZenohDeclKexpr::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b) => CodecZenohUndeclKexpr::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => CodecZenohDeclSubscriber::write_source(_b, w, (_c_header >> 5) & 0x1)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => CodecZenohUndeclSubscriber::write_source(_b, w, (_c_header >> 7) & 0x1)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w, (_c_header >> 5) & 0x1, (_c_header >> 7) & 0x1)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => CodecZenohUndeclQueryable::write_source(_b, w, (_c_header >> 7) & 0x1)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => CodecZenohDeclToken::write_source(_b, w, (_c_header >> 5) & 0x1)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => CodecZenohUndeclToken::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => CodecZenohDeclSubscriber::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => CodecZenohUndeclSubscriber::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => CodecZenohUndeclQueryable::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => CodecZenohDeclToken::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => CodecZenohUndeclToken::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b) => CodecZenohDeclFinal::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::Default { body: _b, .. } => CodecZenohDeclFinal::write_source(_b, w)?,
         }

@@ -293,11 +293,17 @@ impl CodecChainPrevGated {
         if let Some(_o) = over.head_t {
             _c_head = (_c_head & !0x1) | u8::from(_o);
         }
+        {
+            let _h: bool = (_c_head & 0x1) != 0;
+            if src.entries().is_some_and(|mut _l| _l.any(|_e| CodecChainPrevEntry::input_tagged(&_e) != _h)) {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        }
         w.write_u8(_c_head)?;
         if let Some(_v) = src.entries() {
             let mut _prev_after_marker: u8 = 0;
             for (_i, _e) in _v.enumerate() {
-                CodecChainPrevEntry::write_source_in(&_e, w, _prev_after_marker, _c_head & 0x1, &super::codec_chain_prev_entry::CodecChainPrevEntryOverrides::header_z(_i + 1 < _k_entries))?;
+                CodecChainPrevEntry::write_source_in(&_e, w, _prev_after_marker, &super::codec_chain_prev_entry::CodecChainPrevEntryOverrides::header_z(_i + 1 < _k_entries))?;
                 _prev_after_marker = u8::from((u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0x7F) == 4u64);
             }
         }

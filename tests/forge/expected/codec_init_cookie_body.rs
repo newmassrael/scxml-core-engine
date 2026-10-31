@@ -119,8 +119,8 @@ impl<'a> CodecInitCookieBody<'a> {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, a: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, a)
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -137,10 +137,10 @@ impl<'a> CodecInitCookieBody<'a> {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, a: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, a)?;
+        self.encode(&mut _sce_sink)?;
         Ok(_sce_v)
     }
 }
@@ -211,23 +211,27 @@ impl<'a> CodecInitCookieBody<'a> {
     /// [`CodecInitCookieBodySource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecInitCookieBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source(src, w, a)
+    pub fn encode_source<S: CodecInitCookieBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source(src, w)
+    }
+
+    /// The flag-input `A` that `src` says: set exactly when `cookie` is present.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_a<S: CodecInitCookieBodySource + ?Sized>(src: &S) -> bool {
+        CodecInitCookieBodySource::cookie(src).is_some()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecInitCookieBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecInitCookieBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        let a: u8 = u8::from(CodecInitCookieBodySource::cookie(src).is_some());
         let _n_d_cookie_size_0: usize = match src.cookie() {
             Some(_v) => _v.len(),
             None => 0,
         };
         let _f_d_cookie_size: Option<usize> = if src.cookie().is_some() { Some(_n_d_cookie_size_0) } else { None };
         let _d_cookie_size: u16 = u16::try_from(_f_d_cookie_size.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
-        if ((a & 0x1) != 0) != src.cookie().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        let _ = a;
         w.write_u8(src.version())?;
         if (a & 0x1) != 0 {
             w.write_vle_u16(_d_cookie_size)?;
@@ -241,10 +245,37 @@ impl<'a> CodecInitCookieBody<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecInitCookieBodySource + ?Sized>(src: &S, a: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecInitCookieBodySource + ?Sized>(src: &S) -> Result<usize, CodecError> {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, a)?;
+        Self::write_source(src, &mut _c)?;
         Ok(_c.len())
+    }
+}
+
+impl<'a, S: CodecInitCookieBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecInitCookieBody<'a> {
+    type Error<E> = CodecError;
+
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecInitCookieBody<'a> {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written, or the refusal that encode would give. The result
+    /// writes the frame into a window of exactly that size and cannot fail.
+    pub fn measure<S: CodecInitCookieBodySource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
+        ::sce_forge_runtime::codec::measure(src)
+    }
+
+    /// Write `src` into `window` in one pass and return the bytes it is, for a
+    /// window as large as the caller can spare. On an error the window holds a
+    /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].
+    pub fn write_window<S: CodecInitCookieBodySource + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+        let mut sink = ::sce_forge_runtime::codec::SliceSink::new(window);
+        Self::write_source(src, &mut sink)?;
+        Ok(sink.position())
     }
 }
 
@@ -375,18 +406,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecInitCookieBodyOwned<S> {
     /// view declares raises `CodecError::TooManyElements`, so an owned value the
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K, a: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        CodecInitCookieBody::encode_source(self, w, a)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        CodecInitCookieBody::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
     /// past the bound the borrowed view declares is refused, as is any value
     /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, a: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecInitCookieBody::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, a)?;
+        self.encode(&mut _sce_sink)?;
         Ok(_sce_v)
     }
 }

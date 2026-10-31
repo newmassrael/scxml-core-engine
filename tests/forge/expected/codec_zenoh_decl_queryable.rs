@@ -118,8 +118,8 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, n: u8, z: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, n, z)
+    pub fn encode<S: SceSink>(&self, w: &mut S, z: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        Self::encode_source(self, w, z)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -136,10 +136,10 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, n: u8, z: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self, z: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, n, z)?;
+        self.encode(&mut _sce_sink, z)?;
         Ok(_sce_v)
     }
 }
@@ -242,24 +242,29 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     /// [`CodecZenohDeclQueryableSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohDeclQueryableSource + ?Sized, K: SceSink>(src: &S, w: &mut K, n: u8, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src, n, z)?;
-        Self::write_source(src, w, n, z)
+    pub fn encode_source<S: CodecZenohDeclQueryableSource + ?Sized, K: SceSink>(src: &S, w: &mut K, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source(src, w, z)
+    }
+
+    /// The flag-input `N` that `src` says: the input `N` that the body `wireexpr` says.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_n<S: CodecZenohDeclQueryableSource + ?Sized>(src: &S) -> bool {
+        CodecZenohWireexpr::input_n(CodecZenohDeclQueryableSource::wireexpr(src))
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohDeclQueryableSource + ?Sized, K: SceSink>(src: &S, w: &mut K, n: u8, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecZenohDeclQueryableSource + ?Sized, K: SceSink>(src: &S, w: &mut K, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
         if ((z & 0x1) != 0) != src.ext_type().is_some() {
             return Err(CodecError::PresentIfMismatch);
         }
         if ((z & 0x1) != 0) != src.ext_value().is_some() {
             return Err(CodecError::PresentIfMismatch);
         }
-        let _ = n;
         let _ = z;
         w.write_vle_u32(src.id())?;
-        CodecZenohWireexpr::write_source(src.wireexpr(), w, n)?;
+        CodecZenohWireexpr::write_source(src.wireexpr(), w)?;
         if let Some(_v) = src.ext_type() {
             w.write_u8(_v)?;
         }
@@ -272,9 +277,9 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohDeclQueryableSource + ?Sized>(src: &S, n: u8, z: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohDeclQueryableSource + ?Sized>(src: &S, z: u8) -> Result<usize, CodecError> {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, n, z)?;
+        Self::write_source(src, &mut _c, z)?;
         Ok(_c.len())
     }
 }
@@ -410,18 +415,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclQueryableOwned<S
     /// view declares raises `CodecError::TooManyElements`, so an owned value the
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K, n: u8, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        CodecZenohDeclQueryable::encode_source(self, w, n, z)
+    pub fn encode<K: SceSink>(&self, w: &mut K, z: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        CodecZenohDeclQueryable::encode_source(self, w, z)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
     /// past the bound the borrowed view declares is refused, as is any value
     /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, n: u8, z: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self, z: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohDeclQueryable::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, n, z)?;
+        self.encode(&mut _sce_sink, z)?;
         Ok(_sce_v)
     }
 }

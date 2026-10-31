@@ -157,8 +157,8 @@ impl CodecChainPrevEntry {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, after_marker: u8, tagged: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, after_marker, tagged)
+    pub fn encode<S: SceSink>(&self, w: &mut S, after_marker: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
+        Self::encode_source(self, w, after_marker)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -175,10 +175,10 @@ impl CodecChainPrevEntry {
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, after_marker: u8, tagged: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self, after_marker: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, after_marker, tagged)?;
+        self.encode(&mut _sce_sink, after_marker)?;
         Ok(_sce_v)
     }
 }
@@ -285,20 +285,27 @@ impl CodecChainPrevEntry {
     /// [`CodecChainPrevEntrySource`]. A length, a count or a gate flag is computed from what
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
-    pub fn encode_source<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8, tagged: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source(src, w, after_marker, tagged)
+    pub fn encode_source<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source(src, w, after_marker)
+    }
+
+    /// The flag-input `tagged` that `src` says: set exactly when `tag` is present.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_tagged<S: CodecChainPrevEntrySource + ?Sized>(src: &S) -> bool {
+        CodecChainPrevEntrySource::tag(src).is_some()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8, tagged: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, after_marker, tagged, &CodecChainPrevEntryOverrides::default())
+    pub fn write_source<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        Self::write_source_in(src, w, after_marker, &CodecChainPrevEntryOverrides::default())
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
     /// ones `src` presents.
     #[doc(hidden)]
-    pub fn write_source_in<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8, tagged: u8, over: &CodecChainPrevEntryOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source_in<S: CodecChainPrevEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_marker: u8, over: &CodecChainPrevEntryOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let mut _c_header: u8 = src.header();
         if let Some(_o) = over.header_z {
             _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
@@ -309,11 +316,7 @@ impl CodecChainPrevEntry {
         if ((after_marker & 0x1) != 0) != src.long_value().is_some() {
             return Err(CodecError::PresentIfMismatch);
         }
-        if ((tagged & 0x1) != 0) != src.tag().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
         let _ = after_marker;
-        let _ = tagged;
         w.write_u8(_c_header)?;
         if let Some(_v) = src.short_value() {
             w.write_u8(_v)?;
@@ -331,9 +334,9 @@ impl CodecChainPrevEntry {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecChainPrevEntrySource + ?Sized>(src: &S, after_marker: u8, tagged: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecChainPrevEntrySource + ?Sized>(src: &S, after_marker: u8) -> Result<usize, CodecError> {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, after_marker, tagged)?;
+        Self::write_source(src, &mut _c, after_marker)?;
         Ok(_c.len())
     }
 }
