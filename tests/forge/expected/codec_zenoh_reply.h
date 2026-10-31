@@ -21,9 +21,9 @@ namespace SCE::Generated::CodecZenohReply {
 
 struct CodecZenohReply {
     uint8_t header{0x04u};
-    std::optional<uint8_t> consolidation;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
-    ::SCE::Generated::CodecZenohPushBody::CodecZenohPushBody body;
+    std::optional<uint8_t> consolidation{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
+    ::SCE::Generated::CodecZenohPushBody::CodecZenohPushBody body{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -38,11 +38,11 @@ using CodecZenohResponseVariant = std::variant<
 
 struct CodecZenohResponse {
     uint8_t header{0x1bu};
-    uint64_t request_id;
-    uint32_t key_id;
-    std::optional<uint64_t> suffix_len;
-    std::optional<std::string> suffix;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
+    uint64_t request_id{};
+    uint32_t key_id{};
+    std::optional<uint64_t> suffix_len{};
+    std::optional<std::string> suffix{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
     // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed

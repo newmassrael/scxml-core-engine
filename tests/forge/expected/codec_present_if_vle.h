@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecPresentIfVle {
 
 struct CodecPresentIfVle {
-    uint8_t flags;
-    std::optional<uint64_t> optional_id;
+    uint8_t flags{};
+    std::optional<uint64_t> optional_id{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

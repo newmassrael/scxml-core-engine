@@ -19,7 +19,7 @@
 namespace SCE::Generated::CodecUntilEofBasic {
 
 struct CodecUntilEofBasic {
-    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> msgs;
+    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> msgs{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

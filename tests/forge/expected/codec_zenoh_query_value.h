@@ -19,7 +19,7 @@
 namespace SCE::Generated::CodecZenohQueryValue {
 
 struct CodecZenohQueryValue {
-    std::vector<::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry> exts;
+    std::vector<::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry> exts{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

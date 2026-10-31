@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecPresentIfString {
 
 struct CodecPresentIfString {
-    uint8_t carrier;
-    std::optional<uint8_t> text_len;
-    std::optional<std::string> text;
+    uint8_t carrier{};
+    std::optional<uint8_t> text_len{};
+    std::optional<std::string> text{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohSourceInfoExt {
 
 struct CodecZenohSourceInfoExt {
-    uint64_t ext_size;
-    ::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo info;
+    uint64_t ext_size{};
+    ::SCE::Generated::CodecZenohSourceInfo::CodecZenohSourceInfo info{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecExtEncodingInfo {
 
 struct CodecExtEncodingInfo {
-    uint32_t combined_id;
-    uint8_t schema_size;
-    std::optional<std::vector<uint8_t>> schema;
+    uint32_t combined_id{};
+    uint8_t schema_size{};
+    std::optional<std::vector<uint8_t>> schema{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

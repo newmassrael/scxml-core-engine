@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecChainHasSlice {
 
 struct CodecChainHasSlice {
-    uint16_t kind;
-    uint64_t len;
-    std::vector<uint8_t> bytes;
+    uint16_t kind{};
+    uint64_t len{};
+    std::vector<uint8_t> bytes{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

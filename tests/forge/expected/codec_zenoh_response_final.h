@@ -20,8 +20,8 @@ namespace SCE::Generated::CodecZenohResponseFinal {
 
 struct CodecZenohResponseFinal {
     uint8_t header{0x1au};
-    uint64_t request_id;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
+    uint64_t request_id{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

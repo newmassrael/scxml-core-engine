@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecChainHasMarkerSlice {
 
 struct CodecChainHasMarkerSlice {
-    uint16_t kind;
-    uint64_t size;
-    std::vector<uint8_t> data;
+    uint16_t kind{};
+    uint64_t size{};
+    std::vector<uint8_t> data{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

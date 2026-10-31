@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecZenohUndeclKexpr {
 
 struct CodecZenohUndeclKexpr {
-    uint16_t id;
+    uint16_t id{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

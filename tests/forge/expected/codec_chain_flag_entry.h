@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecChainFlagEntry {
 
 struct CodecChainFlagEntry {
-    uint8_t header;
-    std::optional<uint8_t> short_value;
-    std::optional<uint16_t> long_value;
+    uint8_t header{};
+    std::optional<uint8_t> short_value{};
+    std::optional<uint16_t> long_value{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

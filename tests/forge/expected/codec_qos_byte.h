@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecQosByte {
 
 struct CodecQosByte {
-    uint8_t qos;
+    uint8_t qos{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

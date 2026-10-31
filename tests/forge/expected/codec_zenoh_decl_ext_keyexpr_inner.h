@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecZenohDeclExtKeyexprInner {
 
 struct CodecZenohDeclExtKeyexprInner {
-    uint8_t inner_header;
-    uint64_t id;
-    std::optional<std::vector<uint8_t>> suffix;
+    uint8_t inner_header{};
+    uint64_t id{};
+    std::optional<std::vector<uint8_t>> suffix{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

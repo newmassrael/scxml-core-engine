@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecTail {
 
 struct CodecTail {
-    uint8_t msgId;
-    uint8_t status;
-    std::vector<uint8_t> payload;
+    uint8_t msgId{};
+    uint8_t status{};
+    std::vector<uint8_t> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

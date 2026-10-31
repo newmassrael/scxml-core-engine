@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohDeclKexpr {
 
 struct CodecZenohDeclKexpr {
-    uint16_t id;
-    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr;
+    uint16_t id{};
+    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

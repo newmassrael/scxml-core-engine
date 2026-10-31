@@ -19,11 +19,11 @@
 namespace SCE::Generated::CodecNestedParent {
 
 struct CodecNestedParent {
-    uint8_t hdr;
-    uint8_t m;
-    ::SCE::Generated::CodecNestedBody::CodecNestedBody required_body;
-    std::optional<::SCE::Generated::CodecNestedBody::CodecNestedBody> optional_body;
-    std::vector<::SCE::Generated::CodecNestedBody::CodecNestedBody> body_list;
+    uint8_t hdr{};
+    uint8_t m{};
+    ::SCE::Generated::CodecNestedBody::CodecNestedBody required_body{};
+    std::optional<::SCE::Generated::CodecNestedBody::CodecNestedBody> optional_body{};
+    std::vector<::SCE::Generated::CodecNestedBody::CodecNestedBody> body_list{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

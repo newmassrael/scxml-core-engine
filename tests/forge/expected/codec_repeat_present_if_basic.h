@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecRepeatPresentIfBasic {
 
 struct CodecRepeatPresentIfBasic {
-    uint8_t carrier;
-    std::optional<uint8_t> num_elems;
-    std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> elems;
+    uint8_t carrier{};
+    std::optional<uint8_t> num_elems{};
+    std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> elems{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

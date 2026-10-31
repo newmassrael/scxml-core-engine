@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecEmbedBasic {
 
 struct CodecEmbedBasic {
-    uint8_t tag;
-    ::SCE::Generated::CodecZenohLocator::CodecZenohLocator locator;
+    uint8_t tag{};
+    ::SCE::Generated::CodecZenohLocator::CodecZenohLocator locator{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

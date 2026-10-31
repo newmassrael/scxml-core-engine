@@ -18,10 +18,10 @@
 namespace SCE::Generated::CodecChainPrevEntry {
 
 struct CodecChainPrevEntry {
-    uint8_t header;
-    std::optional<uint8_t> short_value;
-    std::optional<uint16_t> long_value;
-    std::optional<uint8_t> tag;
+    uint8_t header{};
+    std::optional<uint8_t> short_value{};
+    std::optional<uint16_t> long_value{};
+    std::optional<uint8_t> tag{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

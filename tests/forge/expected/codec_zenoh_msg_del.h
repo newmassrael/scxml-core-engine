@@ -21,8 +21,8 @@ namespace SCE::Generated::CodecZenohMsgDel {
 
 struct CodecZenohMsgDel {
     uint8_t header{0x02u};
-    std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
+    std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecPresentIfDisjunction {
 
 struct CodecPresentIfDisjunction {
-    uint8_t flags;
-    std::optional<uint16_t> seq;
+    uint8_t flags{};
+    std::optional<uint16_t> seq{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

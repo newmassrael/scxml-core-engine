@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecSubbyte {
 
 struct CodecSubbyte {
-    uint8_t priority;
-    uint8_t channel;
-    uint8_t direction;
+    uint8_t priority{};
+    uint8_t channel{};
+    uint8_t direction{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecChainHasTaggedEntry {
 
 struct CodecChainHasTaggedEntry {
-    uint8_t entry_type;
-    uint8_t ctl;
-    uint8_t body;
+    uint8_t entry_type{};
+    uint8_t ctl{};
+    uint8_t body{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

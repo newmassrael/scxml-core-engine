@@ -18,10 +18,10 @@
 namespace SCE::Generated::CodecZenohSourceInfo {
 
 struct CodecZenohSourceInfo {
-    uint8_t header;
-    std::vector<uint8_t> zid;
-    uint32_t eid;
-    uint32_t sn;
+    uint8_t header{};
+    std::vector<uint8_t> zid{};
+    uint32_t eid{};
+    uint32_t sn{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

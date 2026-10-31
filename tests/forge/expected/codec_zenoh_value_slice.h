@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecZenohValueSlice {
 
 struct CodecZenohValueSlice {
-    uint8_t kind;
-    uint64_t len;
-    std::vector<uint8_t> data;
+    uint8_t kind{};
+    uint64_t len{};
+    std::vector<uint8_t> data{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

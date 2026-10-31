@@ -20,12 +20,12 @@
 namespace SCE::Generated::CodecChainHasMarker {
 
 struct CodecChainHasMarker {
-    uint8_t header;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
-    std::optional<uint64_t> payload_len;
-    std::optional<std::vector<uint8_t>> payload;
-    std::optional<uint32_t> slice_count;
-    std::optional<std::vector<::SCE::Generated::CodecChainHasMarkerSlice::CodecChainHasMarkerSlice>> slices;
+    uint8_t header{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
+    std::optional<uint64_t> payload_len{};
+    std::optional<std::vector<uint8_t>> payload{};
+    std::optional<uint32_t> slice_count{};
+    std::optional<std::vector<::SCE::Generated::CodecChainHasMarkerSlice::CodecChainHasMarkerSlice>> slices{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

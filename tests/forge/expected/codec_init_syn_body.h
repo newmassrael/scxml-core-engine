@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecInitSynBody {
 
 struct CodecInitSynBody {
-    uint8_t version;
-    std::optional<uint8_t> sn_res;
-    std::optional<uint16_t> batch_size;
+    uint8_t version{};
+    std::optional<uint8_t> sn_res{};
+    std::optional<uint16_t> batch_size{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

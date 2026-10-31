@@ -19,10 +19,10 @@
 namespace SCE::Generated::CodecZenohDeclQueryable {
 
 struct CodecZenohDeclQueryable {
-    uint32_t id;
-    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr;
-    std::optional<uint8_t> ext_type;
-    std::optional<uint64_t> ext_value;
+    uint32_t id{};
+    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr wireexpr{};
+    std::optional<uint8_t> ext_type{};
+    std::optional<uint64_t> ext_value{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

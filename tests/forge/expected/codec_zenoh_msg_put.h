@@ -22,11 +22,11 @@ namespace SCE::Generated::CodecZenohMsgPut {
 
 struct CodecZenohMsgPut {
     uint8_t header{0x01u};
-    std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
-    std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
-    uint64_t payload_len;
-    std::vector<uint8_t> payload;
+    std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp{};
+    std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
+    uint64_t payload_len{};
+    std::vector<uint8_t> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

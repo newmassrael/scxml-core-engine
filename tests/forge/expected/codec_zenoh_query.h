@@ -20,10 +20,10 @@ namespace SCE::Generated::CodecZenohQuery {
 
 struct CodecZenohQuery {
     uint8_t header{0x03u};
-    std::optional<uint8_t> consolidation;
-    std::optional<uint64_t> parameters_len;
-    std::optional<std::vector<uint8_t>> parameters;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
+    std::optional<uint8_t> consolidation{};
+    std::optional<uint64_t> parameters_len{};
+    std::optional<std::vector<uint8_t>> parameters{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

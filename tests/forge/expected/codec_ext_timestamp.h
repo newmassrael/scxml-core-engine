@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecExtTimestamp {
 
 struct CodecExtTimestamp {
-    uint64_t time;
-    uint8_t zid_size;
-    std::vector<uint8_t> zid;
+    uint64_t time{};
+    uint8_t zid_size{};
+    std::vector<uint8_t> zid{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

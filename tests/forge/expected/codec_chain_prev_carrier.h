@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecChainPrevCarrier {
 
 struct CodecChainPrevCarrier {
-    uint8_t head;
-    std::vector<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry> entries;
+    uint8_t head{};
+    std::vector<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry> entries{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

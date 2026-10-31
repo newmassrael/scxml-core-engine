@@ -21,9 +21,9 @@ namespace SCE::Generated::CodecZenohDeclare {
 
 struct CodecZenohDeclare {
     uint8_t header{0x1eu};
-    std::optional<uint32_t> interest_id;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
-    ::SCE::Generated::CodecZenohDeclaration::CodecZenohDeclaration declaration;
+    std::optional<uint32_t> interest_id{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
+    ::SCE::Generated::CodecZenohDeclaration::CodecZenohDeclaration declaration{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

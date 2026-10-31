@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecTlvEntry {
 
 struct CodecTlvEntry {
-    uint8_t entry_type;
-    uint8_t entry_len;
-    std::vector<uint8_t> entry_body;
+    uint8_t entry_type{};
+    uint8_t entry_len{};
+    std::vector<uint8_t> entry_body{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

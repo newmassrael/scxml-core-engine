@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecLittleEndian {
 
 struct CodecLittleEndian {
-    uint8_t sensorId;
-    uint16_t value;
-    uint8_t status;
+    uint8_t sensorId{};
+    uint16_t value{};
+    uint8_t status{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

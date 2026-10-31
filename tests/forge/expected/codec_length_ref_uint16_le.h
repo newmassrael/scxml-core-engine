@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecLengthRefUint16Le {
 
 struct CodecLengthRefUint16Le {
-    uint16_t payload_len;
-    std::vector<uint8_t> payload;
+    uint16_t payload_len{};
+    std::vector<uint8_t> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecScoutZidBody {
 
 struct CodecScoutZidBody {
-    uint8_t zid_len_m1;
-    std::vector<uint8_t> zid;
+    uint8_t zid_len_m1{};
+    std::vector<uint8_t> zid{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

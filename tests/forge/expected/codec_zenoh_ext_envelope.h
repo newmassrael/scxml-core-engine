@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohExtEnvelope {
 
 struct CodecZenohExtEnvelope {
-    uint8_t header_flags;
-    std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> extensions;
+    uint8_t header_flags{};
+    std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> extensions{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecTlvChainPresentIfBasic {
 
 struct CodecTlvChainPresentIfBasic {
-    uint8_t carrier;
-    std::optional<std::vector<::SCE::Generated::CodecTlvEntry::CodecTlvEntry>> entries;
+    uint8_t carrier{};
+    std::optional<std::vector<::SCE::Generated::CodecTlvEntry::CodecTlvEntry>> entries{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

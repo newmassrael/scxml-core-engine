@@ -19,10 +19,10 @@
 namespace SCE::Generated::CodecRepeatUnconditionalCount {
 
 struct CodecRepeatUnconditionalCount {
-    uint8_t options;
-    uint8_t links_len;
-    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> links;
-    std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> weights;
+    uint8_t options{};
+    uint8_t links_len{};
+    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> links{};
+    std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> weights{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecZenohPut {
 
 struct CodecZenohPut {
-    uint8_t payload;
+    uint8_t payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

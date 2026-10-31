@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohUndeclSubscriber {
 
 struct CodecZenohUndeclSubscriber {
-    uint32_t id;
-    std::optional<::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr> ext_keyexpr;
+    uint32_t id{};
+    std::optional<::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr> ext_keyexpr{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

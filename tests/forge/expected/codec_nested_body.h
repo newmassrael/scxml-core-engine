@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecNestedBody {
 
 struct CodecNestedBody {
-    uint8_t n;
-    std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator> locs;
+    uint8_t n{};
+    std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator> locs{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

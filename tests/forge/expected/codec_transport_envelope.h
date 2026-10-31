@@ -45,7 +45,7 @@ using CodecTransportEnvelopeVariant = std::variant<
 >;
 
 struct CodecTransportEnvelope {
-    uint8_t header;
+    uint8_t header{};
     // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed

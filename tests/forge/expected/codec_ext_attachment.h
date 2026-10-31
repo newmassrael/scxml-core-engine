@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecExtAttachment {
 
 struct CodecExtAttachment {
-    uint8_t length;
-    std::vector<uint8_t> body;
+    uint8_t length{};
+    std::vector<uint8_t> body{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

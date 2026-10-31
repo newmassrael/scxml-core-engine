@@ -205,7 +205,7 @@ public:
 private:
     // ── Datamodel members ────────────────────────────────────────
     uint32_t ecuAddr_{};
-    std::vector<uint8_t> response_;
+    std::vector<uint8_t> response_{};
 
     // ── Imported kind members (cross-file composition) ──────────
     ::SCE::Generated::CodecSimpleFrame::CodecSimpleFrame frame_{};

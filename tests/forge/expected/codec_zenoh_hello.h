@@ -19,11 +19,11 @@
 namespace SCE::Generated::CodecZenohHello {
 
 struct CodecZenohHello {
-    uint8_t version;
-    uint8_t cbyte;
-    std::vector<uint8_t> zid;
-    std::optional<uint64_t> num_locators;
-    std::optional<std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator>> locators;
+    uint8_t version{};
+    uint8_t cbyte{};
+    std::vector<uint8_t> zid{};
+    std::optional<uint64_t> num_locators{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator>> locators{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

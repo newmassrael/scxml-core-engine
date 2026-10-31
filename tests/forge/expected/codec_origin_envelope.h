@@ -20,13 +20,13 @@
 namespace SCE::Generated::CodecOriginEnvelope {
 
 struct CodecOriginEnvelope {
-    uint8_t hdr;
-    uint8_t note_len;
-    std::string note;
-    uint8_t m;
-    ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf required;
-    std::optional<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> optional;
-    std::vector<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> items;
+    uint8_t hdr{};
+    uint8_t note_len{};
+    std::string note{};
+    uint8_t m{};
+    ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf required{};
+    std::optional<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> optional{};
+    std::vector<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> items{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

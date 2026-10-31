@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecSimpleFrame {
 
 struct CodecSimpleFrame {
-    uint8_t msgId;
-    uint8_t length;
-    uint16_t payload;
+    uint8_t msgId{};
+    uint8_t length{};
+    uint16_t payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

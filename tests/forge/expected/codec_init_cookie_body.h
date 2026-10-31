@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecInitCookieBody {
 
 struct CodecInitCookieBody {
-    uint8_t version;
-    std::optional<uint16_t> cookie_size;
-    std::optional<std::vector<uint8_t>> cookie;
+    uint8_t version{};
+    std::optional<uint16_t> cookie_size{};
+    std::optional<std::vector<uint8_t>> cookie{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

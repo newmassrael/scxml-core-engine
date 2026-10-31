@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecRepeatBasic {
 
 struct CodecRepeatBasic {
-    uint8_t num_frags;
-    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> frags;
+    uint8_t num_frags{};
+    std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> frags{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

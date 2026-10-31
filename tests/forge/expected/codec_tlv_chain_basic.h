@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecTlvChainBasic {
 
 struct CodecTlvChainBasic {
-    uint8_t header_flags;
-    std::vector<::SCE::Generated::CodecTlvEntry::CodecTlvEntry> extensions;
+    uint8_t header_flags{};
+    std::vector<::SCE::Generated::CodecTlvEntry::CodecTlvEntry> extensions{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

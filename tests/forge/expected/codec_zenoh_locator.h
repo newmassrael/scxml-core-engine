@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohLocator {
 
 struct CodecZenohLocator {
-    uint64_t locator_len;
-    std::string locator;
+    uint64_t locator_len{};
+    std::string locator{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

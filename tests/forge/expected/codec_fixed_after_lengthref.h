@@ -18,10 +18,10 @@
 namespace SCE::Generated::CodecFixedAfterLengthref {
 
 struct CodecFixedAfterLengthref {
-    uint8_t header;
-    uint16_t payload_len;
-    std::vector<uint8_t> payload;
-    uint32_t crc32;
+    uint8_t header{};
+    uint16_t payload_len{};
+    std::vector<uint8_t> payload{};
+    uint32_t crc32{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

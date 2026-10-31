@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecOriginScalar {
 
 struct CodecOriginScalar {
-    uint8_t value;
+    uint8_t value{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

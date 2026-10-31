@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecZenohDeclExtKeyexpr {
 
 struct CodecZenohDeclExtKeyexpr {
-    uint8_t outer_header;
-    uint64_t total_length;
-    ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner;
+    uint8_t outer_header{};
+    uint64_t total_length{};
+    ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

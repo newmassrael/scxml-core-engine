@@ -40,9 +40,9 @@ using CodecZenohRequestVariant = std::variant<
 
 struct CodecZenohRequest {
     uint8_t header{0x1cu};
-    uint64_t rid;
-    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr keyexpr;
-    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
+    uint64_t rid{};
+    ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr keyexpr{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions{};
     // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed

@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecZenohWireexpr {
 
 struct CodecZenohWireexpr {
-    uint64_t id;
-    std::optional<uint64_t> suffix_len;
-    std::optional<std::string> suffix;
+    uint64_t id{};
+    std::optional<uint64_t> suffix_len{};
+    std::optional<std::string> suffix{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecPresentIfTail {
 
 struct CodecPresentIfTail {
-    uint8_t flags;
-    std::optional<std::vector<uint8_t>> payload;
+    uint8_t flags{};
+    std::optional<std::vector<uint8_t>> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

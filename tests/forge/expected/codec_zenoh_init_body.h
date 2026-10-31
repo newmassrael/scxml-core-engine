@@ -18,13 +18,13 @@
 namespace SCE::Generated::CodecZenohInitBody {
 
 struct CodecZenohInitBody {
-    uint8_t version;
-    uint8_t cbyte;
-    std::vector<uint8_t> zid;
-    std::optional<uint8_t> sn_res;
-    std::optional<uint16_t> batch_size;
-    std::optional<uint64_t> cookie_len;
-    std::optional<std::vector<uint8_t>> cookie;
+    uint8_t version{};
+    uint8_t cbyte{};
+    std::vector<uint8_t> zid{};
+    std::optional<uint8_t> sn_res{};
+    std::optional<uint16_t> batch_size{};
+    std::optional<uint64_t> cookie_len{};
+    std::optional<std::vector<uint8_t>> cookie{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

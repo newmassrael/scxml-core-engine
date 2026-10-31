@@ -165,7 +165,7 @@ public:
 private:
     // ── Datamodel members ────────────────────────────────────────
     double rawSample_{};
-    double smoothed_;
+    double smoothed_{};
 
     // ── Imported kind members (cross-file composition) ──────────
     ::SCE::Generated::FilterLowPass::FilterLowPass smoother_{};

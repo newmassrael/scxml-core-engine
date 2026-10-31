@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecRepeatFlagCarrier {
 
 struct CodecRepeatFlagCarrier {
-    uint8_t head;
-    uint8_t count;
-    std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> entries;
+    uint8_t head{};
+    uint8_t count{};
+    std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> entries{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

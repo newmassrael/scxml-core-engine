@@ -19,11 +19,11 @@
 namespace SCE::Generated::CodecZenohValueZbuf {
 
 struct CodecZenohValueZbuf {
-    uint64_t value_len;
-    std::optional<std::vector<uint8_t>> value;
-    std::optional<uint64_t> encoding;
-    std::optional<uint64_t> slice_count;
-    std::optional<std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice>> slices;
+    uint64_t value_len{};
+    std::optional<std::vector<uint8_t>> value{};
+    std::optional<uint64_t> encoding{};
+    std::optional<uint64_t> slice_count{};
+    std::optional<std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice>> slices{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

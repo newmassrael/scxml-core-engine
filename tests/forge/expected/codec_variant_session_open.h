@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecVariantSessionOpen {
 
 struct CodecVariantSessionOpen {
-    uint16_t version;
+    uint16_t version{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

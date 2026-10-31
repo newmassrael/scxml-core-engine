@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecOriginLeaf {
 
 struct CodecOriginLeaf {
-    uint8_t len;
-    std::vector<uint8_t> data;
+    uint8_t len{};
+    std::vector<uint8_t> data{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohTimestampExt {
 
 struct CodecZenohTimestampExt {
-    uint64_t ext_size;
-    ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp ts;
+    uint64_t ext_size{};
+    ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp ts{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

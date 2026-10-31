@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecZenohClose {
 
 struct CodecZenohClose {
-    uint8_t reason;
+    uint8_t reason{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

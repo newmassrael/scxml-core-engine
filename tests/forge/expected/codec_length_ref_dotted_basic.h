@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecLengthRefDottedBasic {
 
 struct CodecLengthRefDottedBasic {
-    uint8_t carrier;
-    std::vector<uint8_t> payload;
+    uint8_t carrier{};
+    std::vector<uint8_t> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

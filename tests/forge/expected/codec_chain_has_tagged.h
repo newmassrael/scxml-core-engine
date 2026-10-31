@@ -19,10 +19,10 @@
 namespace SCE::Generated::CodecChainHasTagged {
 
 struct CodecChainHasTagged {
-    uint8_t header;
-    std::vector<::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry> entries;
-    std::optional<uint8_t> priority;
-    std::optional<uint16_t> checksum;
+    uint8_t header{};
+    std::vector<::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry> entries{};
+    std::optional<uint8_t> priority{};
+    std::optional<uint16_t> checksum{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

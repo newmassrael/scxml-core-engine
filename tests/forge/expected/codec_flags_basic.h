@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecFlagsBasic {
 
 struct CodecFlagsBasic {
-    uint8_t header;
+    uint8_t header{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

@@ -19,8 +19,8 @@
 namespace SCE::Generated::CodecZenohInterestBody {
 
 struct CodecZenohInterestBody {
-    uint8_t header;
-    std::optional<::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr> keyexpr;
+    uint8_t header{};
+    std::optional<::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr> keyexpr{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

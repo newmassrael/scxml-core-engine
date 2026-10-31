@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecZenohExtZint {
 
 struct CodecZenohExtZint {
-    uint64_t value;
+    uint64_t value{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

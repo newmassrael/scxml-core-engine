@@ -18,10 +18,10 @@
 namespace SCE::Generated::CodecZenohOpenBody {
 
 struct CodecZenohOpenBody {
-    uint64_t lease;
-    uint64_t initial_sn;
-    std::optional<uint64_t> cookie_len;
-    std::optional<std::vector<uint8_t>> cookie;
+    uint64_t lease{};
+    uint64_t initial_sn{};
+    std::optional<uint64_t> cookie_len{};
+    std::optional<std::vector<uint8_t>> cookie{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

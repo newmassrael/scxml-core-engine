@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecRepeatElem {
 
 struct CodecRepeatElem {
-    uint16_t seq;
+    uint16_t seq{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

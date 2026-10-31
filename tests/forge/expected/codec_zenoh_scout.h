@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecZenohScout {
 
 struct CodecZenohScout {
-    uint8_t version;
-    uint8_t cbyte;
-    std::optional<std::vector<uint8_t>> zid;
+    uint8_t version{};
+    uint8_t cbyte{};
+    std::optional<std::vector<uint8_t>> zid{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

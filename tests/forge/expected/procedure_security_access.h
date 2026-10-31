@@ -268,7 +268,7 @@ public:
 private:
     // ── Datamodel members ────────────────────────────────────────
     uint32_t ecuAddr_{};
-    std::vector<uint8_t> seed_;
+    std::vector<uint8_t> seed_{};
     int32_t maxRetries_ = 3;
     int32_t retryCount_ = 0;
 

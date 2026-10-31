@@ -18,8 +18,8 @@
 namespace SCE::Generated::CodecZenohFrame {
 
 struct CodecZenohFrame {
-    uint64_t sn;
-    std::vector<uint8_t> payload;
+    uint64_t sn{};
+    std::vector<uint8_t> payload{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

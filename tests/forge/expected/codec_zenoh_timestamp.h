@@ -18,9 +18,9 @@
 namespace SCE::Generated::CodecZenohTimestamp {
 
 struct CodecZenohTimestamp {
-    uint64_t time;
-    uint64_t zid_len;
-    std::vector<uint8_t> zid;
+    uint64_t time{};
+    uint64_t zid_len{};
+    std::vector<uint8_t> zid{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

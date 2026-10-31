@@ -19,9 +19,9 @@
 namespace SCE::Generated::CodecZenohEncoding {
 
 struct CodecZenohEncoding {
-    uint32_t packed_id;
-    std::optional<uint64_t> schema_len;
-    std::optional<std::string> schema;
+    uint32_t packed_id{};
+    std::optional<uint64_t> schema_len{};
+    std::optional<std::string> schema{};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
