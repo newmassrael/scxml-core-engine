@@ -117,11 +117,11 @@ for id in "${IDS[@]}"; do
             if [ "$status" = 0 ]; then
                 LOWERED+=("$id")
             else
-                printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170 >> "$REASONS_FILE"
+                { printf 'W3C %s: ' "$id"; printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170; } >> "$REASONS_FILE"
             fi
             ;;
         7)
-            printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170 >> "$REASONS_FILE"
+            { printf 'W3C %s: ' "$id"; printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170; } >> "$REASONS_FILE"
             ;;
         *)
             echo "error: sce-codegen generate -l swift $source failed with status $status" >&2
@@ -137,7 +137,7 @@ fi
 # A floor, not an equality: a construct Swift gains lowers more fixtures without touching this
 # number, but a document the generator stopped lowering must not read as a smaller suite that
 # passed. Raise it when a slice lands; measured 2026-10-31 at 62 of 157.
-FLOOR=155
+FLOOR=156
 if [ "${#LOWERED[@]}" -lt "$FLOOR" ]; then
     echo "error: the Swift backend lowers ${#LOWERED[@]} simple W3C fixture(s), under the floor of $FLOOR: a construct it lowered is refused again" >&2
     exit 1
@@ -193,6 +193,22 @@ for id in "${LOWERED[@]}"; do
         exit 1
     fi
     cp "$TMP/$id"/*_sm.swift "$GENERATED_DIR/"
+    # W3C SCXML 5.8: a document the processor must reject (W3C 301, a script it cannot download) is
+    # a successful run that wrote a stub with no machine in it. Rejecting it is the pass, so the
+    # test reads the constant that says it was.
+    if grep -q 'W3C SCXML 5.8: Document rejected' "$machine"; then
+        rejected="$(grep -o 'public let sceDocumentRejected[A-Za-z0-9_]*' "$machine" | head -n 1 | awk '{print $3}')"
+        if [ -z "$rejected" ]; then
+            echo "error: no rejection constant in $machine" >&2
+            exit 1
+        fi
+        {
+            printf '\n@Test("W3C %s is rejected, as W3C SCXML 5.8 requires")\n' "$id"
+            printf 'func w3c_%s() {\n' "$id"
+            printf '    #expect(%s)\n}\n' "$rejected"
+        } >> "$TEST_FILE"
+        continue
+    fi
     # The policy class is named from the document, so it is read from the file it was written
     # to rather than spelled again here.
     policy="$(grep -o 'public final class [A-Za-z0-9_]*Policy' "$machine" | head -n 1 | awk '{print $4}')"

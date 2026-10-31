@@ -6721,17 +6721,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // contradicting SCE_ERROR_CONTRACT.md §10.1, which defines the
         // field as every file written during the run.
         let stubs: Vec<(String, String)> = match lang {
-            // A backend with no emitter has no stub to write; the document is
-            // refused as an accepted one would be.
-            Language::Swift => error_format.emit_forge_and_exit(&Located::new(
-                ForgeError::from(sce_build::forge::codegen_matrix::emit_missing(
-                    sce_build::forge::model::ForgeKind::Statechart,
-                    lang,
-                )),
-                scxml_path,
-                None,
-                None,
-            )),
+            // The constant is what a test reads to know the document was rejected: the stub
+            // has no machine to run, and a comment alone would leave it nothing to assert.
+            Language::Swift => vec![(
+                format!("{input_stem}_sm.swift"),
+                format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     public let sceDocumentRejected{pascal} = true\n"
+                ),
+            )],
             Language::Cpp => {
                 let header = format!(
                     "// W3C SCXML 5.8: Document rejected\n\

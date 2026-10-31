@@ -883,6 +883,29 @@ fn a_typeexpr_is_checked_when_the_send_runs() {
     );
 }
 
+/// W3C SCXML 5.8: a `<script src>` that cannot be downloaded rejects the document. A rejected
+/// document is a successful run that wrote a stub, as it is for every other backend, so there is no
+/// machine, and the constant is what says the document was rejected.
+#[test]
+fn a_document_whose_script_cannot_be_downloaded_is_rejected_with_a_stub() {
+    let body = r#"<script src="/nonexistent_swift_test_script.js"/><state id="s0"/>"#;
+    let (status, machine, said) = generate(&document("", body), &[]);
+    assert_eq!(
+        status,
+        Some(0),
+        "a rejected document is not an error: {said}"
+    );
+    assert!(
+        machine.contains("Document rejected")
+            && machine.contains("public let sceDocumentRejectedProbe = true"),
+        "the stub says the document was rejected: {machine}"
+    );
+    assert!(
+        !machine.contains("class "),
+        "a rejected document has no machine: {machine}"
+    );
+}
+
 /// A BasicHTTP send's body is the form its `<param>`s make, so a `<content expr>` there has nowhere
 /// to go and is refused by name.
 #[test]
