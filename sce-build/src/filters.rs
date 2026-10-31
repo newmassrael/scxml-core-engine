@@ -186,6 +186,14 @@ fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     // existence, so the target is not resolved against what the document
     // declares. See [`crate::ecmascript::to_lua_location`].
     env.add_filter("to_lua_location", to_lua_location);
+    // Whether the document declares a name: a `<data>`, or a location something writes
+    // (`<assign>`, `<foreach item>`). A `<send namelist>` asks it of each name, because a name
+    // that is not declared is an argument that cannot be evaluated (W3C test 553), and
+    // `to_lua_expr` would refuse it at build time where every backend answers at run time.
+    let for_declared = Arc::clone(scope);
+    env.add_test("declared_name", move |name: String| {
+        for_declared.declares(&name)
+    });
     env.add_filter("escape_lua", escape_lua);
     let for_xml = Arc::clone(scope);
     env.add_filter("data_content_is_xml", move |content: String| {

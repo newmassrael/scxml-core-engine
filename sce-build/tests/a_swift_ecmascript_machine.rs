@@ -565,6 +565,39 @@ fn the_data_of_a_send_is_read_by_the_engine_and_keeps_its_type() {
     );
 }
 
+/// A namelist names variables, and a name the document does not declare is an argument that cannot be
+/// evaluated: the send is discarded with one `error.execution`, decided when the send runs as every
+/// backend decides it, and the name is never resolved at build time (so no refusal is embedded that
+/// the walker does not report).
+#[test]
+fn a_namelist_name_the_document_does_not_declare_discards_the_send() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry><send event="a" namelist="n missing"/></onentry>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("<send> namelist names 'missing', which is not declared"),
+        "the send is an argument error: {machine}"
+    );
+    assert!(
+        machine.contains(r#"PayloadPair.json("n", rawJSON: paramValue)"#),
+        "a declared name is still read: {machine}"
+    );
+    assert!(
+        !machine.contains(r#"PayloadPair.json("missing""#),
+        "an undeclared name is never read: {machine}"
+    );
+    assert!(
+        !machine.contains("is not declared by this document"),
+        "no build-time refusal is embedded for the name: {machine}"
+    );
+}
+
 /// What a `<send>` computes with an expression is still refused by name.
 #[test]
 fn a_send_that_an_expression_computes_is_refused_by_name() {

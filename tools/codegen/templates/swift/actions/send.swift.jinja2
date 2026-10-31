@@ -24,6 +24,18 @@
 {% set ecma_delay = ecmascript_datamodel and action.delayexpr %}
 {% set ecma_idlocation = ecmascript_datamodel and action.idlocation and not action.native_idlocation %}
 {% set ecma_namelist = ecmascript_datamodel and action.namelist and action.namelist | trim %}
+{# W3C SCXML 6.2 + B.2 (test 553): a namelist names variables, and one the document does not declare
+   is an argument that cannot be evaluated: one error however many of its names are bad, the message
+   discarded. Every backend answers it when the send runs, so it is decided in the prologue and
+   `to_lua_expr` is never asked to resolve the name. #}
+{% set namelist_bad = namespace(name='') %}
+{% if ecma_namelist %}
+{% for namelist_id in action.namelist | split %}
+{% if namelist_id is not declared_name and not namelist_bad.name %}
+{% set namelist_bad.name = namelist_id %}
+{% endif %}
+{% endfor %}
+{% endif %}
 {% set ecma_content = ecmascript_datamodel and action.contentexpr %}
 {# The data of one `<param>`, or of one name of a namelist, under `datamodel="ecmascript"`: the value
    of a Lua expression the engine computes (`evaluateJSON`, which keeps its type; over BasicHTTP
@@ -60,7 +72,7 @@
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 {% set computed_event = event_value %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
-{% set send_prologue = delay_value or event_value or computed_target %}
+{% set send_prologue = delay_value or event_value or computed_target or namelist_bad.name %}
 {# W3C SCXML 6.2: the wait, as a Duration, or none for an immediate send. A delay
    postpones a send and does not change where it goes, so each delivery below takes
    it. The build read a static delay once, by the grammar every engine shares
@@ -130,6 +142,9 @@
    was processed — the block ends (W3C SCXML 4.9). #}
 {% if send_prologue %}
                     var sendArgError = ""
+{% endif %}
+{% if namelist_bad.name %}
+                    sendArgError = "<send> namelist names '{{ namelist_bad.name | escape_swift }}', which is not declared"
 {% endif %}
 {% if event_value %}
                     // The event's name is a string computed from the machine's fields now. A
@@ -317,7 +332,9 @@
 {% if ecma_namelist %}
 {# W3C SCXML 6.2: each name of a namelist is a variable whose value goes by its own name. #}
 {% for namelist_id in action.namelist | split %}
+{% if namelist_id is declared_name %}
 {{ ecma_param(namelist_id, namelist_id, is_http) }}
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if not is_http %}
