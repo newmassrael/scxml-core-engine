@@ -46,8 +46,8 @@ mutation_targets tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2
 # 20-byte payload must be `Err` and `log.head()` must be 0, and the mutant answers `Ok(0)`.
 mutation_case "publish goes on after the codec refuses the element" <<'PY'
 edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
-     r'''    element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %})?;''',
-     r'''    let _ = element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %});''')
+     r'''    element.encode(&mut sink{% for flag in context.flags %}{% if not flag.said %}, u8::from(flags.{{ flag.snake }}){% endif %}{% endfor %})?;''',
+     r'''    let _ = element.encode(&mut sink{% for flag in context.flags %}{% if not flag.said %}, u8::from(flags.{{ flag.snake }}){% endif %}{% endfor %});''')
 PY
 
 # The length word holds what the encode wrote, which is what `read` cuts the bytes by. Stored as
