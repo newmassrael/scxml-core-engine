@@ -340,6 +340,8 @@ COST_MEASURED: dict[str, str] = {
     "swift-backend": "2026-10-28",
     # 76s, the lane script under the gate through bx (see the gate's own entry).
     "w3c-swift": "2026-11-01",
+    # 11s, the lane script under the gate through bx (see the gate's own entry).
+    "ecma262-lowered-swift": "2026-11-01",
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
@@ -1050,6 +1052,29 @@ GATES: dict[str, dict] = {
         # 156 tests run. Warm, like `swift-backend`'s figure: a runner starts from nothing.
         "cost_s": 76,
         "summary": "W3C conformance, Swift AOT",
+    },
+    # The Swift twin of `ecma262-lowered-kotlin`: one machine that asks every case of the shared
+    # ECMA-262 table, generated with the build-time lowering (the only route Swift has), compiled
+    # and run. A third step of the same job as `swift-backend` and `w3c-swift`, for the same
+    # reason: the generator built and the pinned toolchain installed are steps it shares.
+    #
+    # `ci_only` for the reason `swift-backend` is: the toolchain pin.
+    "ecma262-lowered-swift": {
+        "workflows": ["swift-backend.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+                   "in bx.toml) that not every build machine is verified to "
+                   "carry; the gate refuses without it, so a push that "
+                   "selected it there would be refused for a reason that says "
+                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "by its digest.",
+        # 11s, `scripts/test_swift_backend.sh ecma262-lowered` through `bx` on a build machine
+        # on 2026-11-01 (the script under the gate: a gate run is refused locally for this
+        # repository). 107 cases, one generated machine. Warm, like its siblings: a runner
+        # starts from nothing.
+        "cost_s": 11,
+        "summary": "ECMA-262 lowered artifact, Swift",
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs

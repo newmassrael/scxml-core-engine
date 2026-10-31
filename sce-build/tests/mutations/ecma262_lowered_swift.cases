@@ -1,0 +1,78 @@
+# Mutations for the Swift lowered-artifact lane.
+#
+# What these guard is the sentence `ecma262-lowered-swift` says about itself: that a Swift
+# artifact whose expressions reach the Lua session as the Lua the build-time frontend lowered was
+# COMPILED and RUN, and answered the shared ECMA-262 table.
+#
+# ⚠ The runner cannot regenerate the machine between mutants, so what is judged here is the half
+# that does not need it: the registry row that makes the gate reachable, and the gate script's own
+# structural claims, which `gate_registry_contract` holds. The Swift half of the lane (the suite's
+# verdicts) is bought by hand, as Kotlin's Gradle half is: a `mutation_swift` package builds its
+# test executable once, and this one's machine is written by the lane just before it is built.
+#
+# ⚠ Target selectors, never a bare filter: a filter reaches every binary the selector matched.
+mutation_tests -p sce-build --features cli \
+    --test gate_registry_contract --test ci_supersession_policy
+mutation_runtime_targets scripts/gates/ecma262-lowered-swift.sh \
+    .github/workflows/swift-backend.yml \
+    tools/git-hooks/gate_registry.py
+
+# ── The lane stops being reachable ─────────────────────────────────
+#
+# A gate nothing selects is a gate that never runs, and the failure is silent: `scripts/gate` would
+# refuse the slug, the pre-push hook would never choose it, and CI's own job would be the only
+# thing left measuring the artifact. `gate_registry_contract` holds every gate to having a workflow
+# that runs it.
+
+mutation_case "the lowered Swift gate loses the workflow that runs it" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '"ecma262-lowered-swift": {\n        "workflows": ["swift-backend.yml"],',
+     '"ecma262-lowered-swift": {\n        "workflows": [],')
+PY
+
+# ── The artifact stops being shown to be a lowered one ─────────────
+#
+# Swift has no source-passing control to compare the artifact with, so the claim that it was
+# generated from the shared table is made of its own source: a call site per value case. Dropping
+# the floor to zero lets a machine generated from an empty or truncated document answer every case
+# it carries, and every case it carries passes.
+
+mutation_case "the lowered artifact may carry no lowered call site at all" <<'PY'
+edit("scripts/gates/ecma262-lowered-swift.sh",
+     "if (( sites < 50 )); then",
+     "if (( sites < 0 )); then")
+PY
+
+# ── The census stops being required ────────────────────────────────
+#
+# The lane's verdict is read from the run's OUTPUT, and a run can be answered without producing any,
+# so the census is demanded and not only looked for.
+
+mutation_case "a run that produced no census is accepted" <<'PY'
+edit("scripts/gates/ecma262-lowered-swift.sh",
+     '[ -n "$census" ] \\',
+     '[ -n "$census" ] || true \\')
+PY
+
+# ── The exclusion list loses its second ceiling ────────────────────
+#
+# The suite holds `maxDefects` in the file that reads it, so raising the constant agrees with you.
+# The gate's ceiling is the one in another language, and it is the argument that has to be made
+# twice.
+
+mutation_case "the gate stops holding the exclusion list to a ceiling" <<'PY'
+edit("scripts/gates/ecma262-lowered-swift.sh",
+     "DEFECT_CEILING=3",
+     "DEFECT_CEILING=1000")
+PY
+
+# ── The probe control stops being held ─────────────────────────────
+#
+# A probe stuck on one answer decides the whole measurement. The suite asserts it distinguishes;
+# what it cannot assert is that it still asks, so the gate reads the controls off the census.
+
+mutation_case "the refusal control may read anything" <<'PY'
+edit("scripts/gates/ecma262-lowered-swift.sh",
+     '[ "$refused" = "<unevaluated>" ] \\',
+     '[ "$refused" = "$refused" ] \\')
+PY

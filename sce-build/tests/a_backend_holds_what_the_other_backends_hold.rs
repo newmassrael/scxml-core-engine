@@ -434,11 +434,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "artifact for the ecmascript engine",
         Why::Design("it lowers ECMAScript to Lua at build time, and the Lua is the only artifact"),
     ),
-    (
-        Language::Swift,
-        "ECMA-262 lowered-artifact gate",
-        Why::NotYet("the `ecma262-lowered-swift` gate is built after the Lua engine reaches the rest of the constructs it lowers in part"),
-    ),
     // The numerical conformance harness and its kind fragments.
     (Language::Swift, "conformance fragment `codec`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),

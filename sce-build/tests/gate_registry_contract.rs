@@ -1142,6 +1142,59 @@ fn the_kotlin_lowered_gate_proves_its_control_is_not_its_subject() {
     );
 }
 
+/// The Swift lowered-artifact gate holds the claims its run is read for.
+///
+/// The Swift half of the lane (the suite's verdicts) is a SwiftPM package whose machine is written
+/// by the lane just before it is built, which the mutation runner cannot regenerate between
+/// mutants; what it can judge is the gate script that reads the run, and this holds that script's
+/// claims from outside the file that makes them. Each check is held WITH its consequence, adjacent:
+/// asserting the failure message alone was measured blind on the Kotlin twin, where appending
+/// `|| true` to the test leaves the message in the file and the guard dead.
+///
+/// There is no source-passing control, so the claim that the artifact is a lowered one is made of
+/// its own source (a call site per value case), and the floor is what says so.
+#[test]
+fn the_swift_lowered_gate_holds_the_claims_its_run_is_read_for() {
+    let code: String =
+        std::fs::read_to_string(repo_root().join("scripts/gates/ecma262-lowered-swift.sh"))
+            .expect("the Swift lowered-artifact gate is readable")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+    assert!(
+        code.contains("if (( sites < 50 )); then"),
+        "the floor on the artifact's lowered call sites is gone. Without it a machine generated \
+         from an empty or truncated document answers every case it carries, and every case it \
+         carries passes."
+    );
+    assert!(
+        code.contains("DEFECT_CEILING=3\n"),
+        "the gate's ceiling on the exclusion list moved. It is the second ceiling, in another \
+         language, over the count the suite PRINTED; raising it needs the argument made twice."
+    );
+    assert!(
+        code.contains("if (( excused > DEFECT_CEILING )); then"),
+        "the exclusion list may now grow without limit: a list with no ceiling is a way to make \
+         this lane green over an artifact that answers nothing."
+    );
+    assert!(
+        code.contains(
+            "[ -n \"$census\" ] \\\n    || sce_gate_fail \"the suite printed no census line"
+        ),
+        "a run that produced no census is now accepted, which is the reading a run answered \
+         without output produces. This holds the TEST and its `sce_gate_fail` together."
+    );
+    assert!(
+        code.contains(
+            "[ \"$refused\" = \"<unevaluated>\" ] \\\n    || sce_gate_fail \"the refusal control read"
+        ),
+        "the refusal control may now read anything, so a probe stuck on one answer decides every \
+         condition verdict unnoticed."
+    );
+}
+
 /// Every gate that derives a JDK floor names a workflow that declares one.
 ///
 /// `sce_gate_require_jdk` reads its floor out of a workflow's `java-version:`

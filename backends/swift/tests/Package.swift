@@ -5,16 +5,40 @@
 import Foundation
 import PackageDescription
 
-// The W3C suite is written, and not committed, by `sce-codegen generate-w3c -l swift`
-// (`scripts/regen_swift_w3c.sh`), so a checkout that has not written it has no sources for
-// `W3cMachines` and SwiftPM refuses a target with none. The targets exist where the suite does:
-// the lane that judges the W3C suite writes it first (`scripts/test_swift_backend.sh w3c`), and
-// the lane that judges the packages does not need to.
-let w3cSuiteWritten = FileManager.default.fileExists(
-    atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("Sources/W3cMachines").path)
+// Two sets of machines are written, and not committed, by the lane that judges them: the W3C suite
+// by `sce-codegen generate-w3c -l swift` (`scripts/regen_swift_w3c.sh`) and the ECMA-262 artifact
+// by `scripts/regen_swift_ecma262_lowered.sh`. A checkout that has not written one has no sources
+// for its machines target, and SwiftPM refuses a target with none. So each pair of targets exists
+// where its machines do: `scripts/test_swift_backend.sh w3c` and `... ecma262-lowered` write them
+// first, and the lane that judges the packages does not need to.
+func machinesWritten(_ directory: String) -> Bool {
+    FileManager.default.fileExists(
+        atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Sources/\(directory)").path)
+}
+
+let ecma262LoweredTargets: [Target] =
+    machinesWritten("Ecma262LoweredMachines")
+    ? [
+        .target(
+            name: "Ecma262LoweredMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "Ecma262LoweredTests",
+            dependencies: [
+                "Ecma262LoweredMachines",
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+    ] : []
+
 let w3cTargets: [Target] =
-    w3cSuiteWritten
+    machinesWritten("W3cMachines")
     ? [
         .target(
             name: "W3cMachines",
@@ -97,5 +121,5 @@ let package = Package(
                 .product(name: "SceLua", package: "runtime"),
             ]
         ),
-    ] + w3cTargets
+    ] + w3cTargets + ecma262LoweredTargets
 )

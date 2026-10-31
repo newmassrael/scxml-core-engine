@@ -60,6 +60,10 @@ on:
       - 'scripts/install_swift_toolchain.sh'
       - 'scripts/gates/swift-backend.sh'
       - 'scripts/gates/w3c-swift.sh'
+      - 'scripts/gates/ecma262-lowered-swift.sh'
+      - 'scripts/regen_swift_ecma262_lowered.sh'
+      - 'tools/generate_lowered_ecma262_fixture.py'
+      - 'tests/ecmascript/**'
       - 'scripts/gates/lib.sh'
       - 'bx.toml'
       - '.github/workflows/swift-backend.yml'
@@ -156,3 +160,8 @@ jobs:
     # installed, which are the steps above, and a second job would repeat them.
     - name: Run the Swift W3C gate
       run: scripts/gate w3c-swift
+
+    # One machine that asks every case of the shared ECMA-262 table, generated with the
+    # build-time lowering, compiled and run. A step of this job for the same reason.
+    - name: Run the Swift ECMA-262 lowered-artifact gate
+      run: scripts/gate ecma262-lowered-swift

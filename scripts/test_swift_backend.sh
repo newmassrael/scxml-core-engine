@@ -15,10 +15,12 @@
 # rewritten files stay there, and `bx --action regen` is what brings them back.
 #
 # Usage (from repo root):
-#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, w3c
+#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, w3c,
+#                                                  # ecma262-lowered
 #
-# `w3c` is not one of the four packages: it writes the W3C suite into `backends/swift/tests` and
-# runs its tests alone, so it is not in the default list. `scripts/gate w3c-swift` runs it, and
+# `w3c` and `ecma262-lowered` are not among the four packages: each writes machines into
+# `backends/swift/tests` and runs its own tests alone, so neither is in the default list.
+# `scripts/gate w3c-swift` runs the first, `scripts/gate ecma262-lowered-swift` the second, and
 # `scripts/gate swift-backend` runs the four.
 #
 # Requires:
@@ -58,13 +60,21 @@ for package in "${PACKAGES[@]}"; do
             echo "== swift test: backends/swift/tests (W3C suite)"
             (cd backends/swift/tests && swift test --filter W3cMachinesTests)
             ;;
+        ecma262-lowered)
+            # The ECMA-262 artifact is a question of its own (`scripts/gate ecma262-lowered-swift`):
+            # one machine that asks every case of the shared table, compiled and run. Written here
+            # and not committed, and `tests` below neither writes nor runs it.
+            scripts/regen_swift_ecma262_lowered.sh
+            echo "== swift test: backends/swift/tests (ECMA-262 lowered artifact)"
+            (cd backends/swift/tests && swift test --filter Ecma262LoweredTests)
+            ;;
         tests)
             scripts/regen_swift_statecharts.sh
             scripts/regen_static_datamodel_swift.sh
             scripts/regen_swift_ecmascript.sh
             echo "== swift test: backends/swift/tests"
-            # A tree the W3C lane left on this machine is built with the rest, and not run here.
-            (cd backends/swift/tests && swift test --skip W3cMachinesTests)
+            # A tree another lane left on this machine is built with the rest, and not run here.
+            (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests)
             ;;
         *)
             echo "== swift test: backends/swift/$package"
