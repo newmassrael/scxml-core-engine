@@ -422,6 +422,10 @@ public final class StaticHostClockPolicy: InvocablePolicy {
     public var needsDataModelInit: Bool { false }
     public var hasInvokeSupport: Bool { true }
     public var hasChildTick: Bool { false }
+
+    /// The `<invoke>`s a host runs (W3C SCXML 6.4.1): their `done.invoke.<id>` is
+    /// accepted only through the engine's `completeHostInvoke`.
+    public var hostInvokeIDs: [String] { ["now", "zone"] }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { false }
 
