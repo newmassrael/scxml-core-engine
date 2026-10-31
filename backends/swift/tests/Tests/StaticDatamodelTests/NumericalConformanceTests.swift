@@ -835,6 +835,33 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "algorithm_checked_index")
     }}
 
+// MARK: - algorithm: algorithm_bytes_squeeze
+
+@Test func algorithmBytesSqueezeMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "algorithm_bytes_squeeze") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleBytes(args[0])
+        let outcome = Result { try AlgorithmBytesSqueeze.algorithmBytesSqueeze(arg0) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "algorithm_bytes_squeeze")
+            case .failure(let error):
+                Issue.record("algorithm_bytes_squeeze: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("algorithm_bytes_squeeze: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("algorithm_bytes_squeeze: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleBytes(testCase.member("expected"))
+        #expect(returned == expected, "algorithm_bytes_squeeze")
+    }}
+
 // MARK: - algorithm: algorithm_checked_narrow
 
 @Test func algorithmCheckedNarrowMatchesReference() throws {
@@ -1532,6 +1559,37 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned.counter == expectedCounter, "hlc_send.counter")
         let expectedNodeId = try oracleInteger(expected?.member("nodeId"), as: UInt64.self)
         #expect(returned.nodeId == expectedNodeId, "hlc_send.nodeId")
+    }}
+
+// MARK: - algorithm: hlc_text
+
+@Test func hlcTextMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "hlc_text") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = HlcTimestampPayload(
+            wallTime: try oracleInteger(args[0].member("wallTime"), as: Int64.self),
+            counter: try oracleInteger(args[0].member("counter"), as: UInt32.self),
+            nodeId: try oracleInteger(args[0].member("nodeId"), as: UInt64.self)
+        )
+        let outcome = Result { try HlcText.hlcText(arg0) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "hlc_text")
+            case .failure(let error):
+                Issue.record("hlc_text: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("hlc_text: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("hlc_text: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleBytes(testCase.member("expected"))
+        #expect(returned == expected, "hlc_text")
     }}
 
 // MARK: - algorithm: hlc_within_drift
