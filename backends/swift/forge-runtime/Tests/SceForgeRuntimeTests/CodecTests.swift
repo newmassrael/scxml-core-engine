@@ -87,6 +87,31 @@ import Testing
     #expect(try cursor.peekInteger(UInt64.self, at: 9, .little) == UInt64.max)
 }
 
+@Test func anIntegerStoredInAFrameLandsAtItsOffsetAndLeavesTheRestAlone() throws {
+    var frame = [UInt8](repeating: 0xEE, count: 8)
+    storeInteger(UInt16(0x1234), into: &frame, at: 1, .big)
+    storeInteger(UInt16(0x1234), into: &frame, at: 3, .little)
+    storeInteger(Int16(-2), into: &frame, at: 5, .big)
+    #expect(frame == [0xEE, 0x12, 0x34, 0x34, 0x12, 0xFF, 0xFE, 0xEE])
+
+    // What is stored reads back as itself, which is what a decode of an encode relies on.
+    let cursor = SceCursor(frame)
+    #expect(try cursor.peekInteger(UInt16.self, at: 1, .big) == 0x1234)
+    #expect(try cursor.peekInteger(UInt16.self, at: 3, .little) == 0x1234)
+    #expect(try cursor.peekInteger(Int16.self, at: 5, .big) == -2)
+}
+
+@Test func aFrameStoredWholeIsWrittenToABoundedSinkOrNotAtAll() throws {
+    var frame = [UInt8](repeating: 0, count: 4)
+    storeInteger(UInt32(0xDEAD_BEEF), into: &frame, at: 0, .big)
+    var tooSmall = BoundedSink(capacity: 3)
+    #expect(throws: CodecError.bufferOverflow) { try tooSmall.writeBytes(frame) }
+    #expect(tooSmall.written.isEmpty, "a frame that does not fit leaves no part of itself in the sink")
+    var fits = BoundedSink(capacity: 4)
+    try fits.writeBytes(frame)
+    #expect(fits.written == [0xDE, 0xAD, 0xBE, 0xEF])
+}
+
 @Test func aGrowableSinkNeverFailsAndCountsWhatItWrote() throws {
     var sink = BytesSink()
     #expect(sink.position == 0)

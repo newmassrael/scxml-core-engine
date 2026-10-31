@@ -80,6 +80,30 @@ public struct SceCursor: Sendable {
     }
 }
 
+/// Writes `value` into `buffer`, `offset` bytes from its start, in `order`: the counterpart of
+/// `SceCursor.peekInteger`, for an encode that lays a whole frame out and hands it to the sink in
+/// one write. A signed type is written as its two's-complement bytes.
+///
+/// The frame is sized by the generated code from its own fields, so a value that does not fit is a
+/// defect of the generator and not an input: it stops the program and does not corrupt a neighbour.
+public func storeInteger<T: FixedWidthInteger>(
+    _ value: T, into buffer: inout [UInt8], at offset: Int, _ order: SceByteOrder
+) {
+    let width = T.bitWidth / 8
+    precondition(
+        offset >= 0 && offset + width <= buffer.count,
+        "a \(width)-byte integer at \(offset) does not fit a frame of \(buffer.count) bytes")
+    for index in 0..<width {
+        let byte = UInt8(truncatingIfNeeded: value >> T(index * 8))
+        switch order {
+        case .big:
+            buffer[offset + width - 1 - index] = byte
+        case .little:
+            buffer[offset + index] = byte
+        }
+    }
+}
+
 /// The write-side of an encode: the destination of the bytes, owned by the caller.
 public protocol SceSink {
     /// Appends `data`. A bounded sink answers `bufferOverflow` and writes nothing when `data` does

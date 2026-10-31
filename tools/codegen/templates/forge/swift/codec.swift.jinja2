@@ -1,0 +1,53 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+/// The frame this codec lays on the wire: {{ fields | length }} field(s) of integers, each at its
+/// byte offset and in its byte order. A value, so a host that reads one holds a copy.
+public struct {{ struct_name }}: Equatable, Sendable {
+    /// The bytes of one frame.
+    public static let frameLength = {{ frame_length }}
+{% for f in fields %}
+
+    /// The field at byte {{ f.offset }}, {{ f.order }}-endian.
+    public var {{ f.id }}: {{ f.swift_type }}
+{% endfor %}
+
+    public init({% for f in fields %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for f in fields %}
+        self.{{ f.id }} = {{ f.id }}
+{% endfor %}
+    }
+
+    /// Decodes the frame at the cursor and moves the cursor past it. A cursor with fewer than
+    /// `frameLength` bytes left answers `needMoreBytes` and is left where it was (RFC §synth-5-B
+    /// L494-519).
+    public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> {{ struct_name }} {
+        _ = try cursor.peekSlice(frameLength)
+        let frame = {{ struct_name }}(
+{% for f in fields %}
+            {{ f.id }}: try cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }}){{ "," if not loop.last }}
+{% endfor %}
+        )
+        try cursor.advance(frameLength)
+        return frame
+    }
+
+    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// `bufferOverflow` and holds none of it.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        var frame = [UInt8](repeating: 0, count: Self.frameLength)
+{% for f in fields %}
+        storeInteger({{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
+{% endfor %}
+        try sink.writeBytes(frame)
+    }
+}

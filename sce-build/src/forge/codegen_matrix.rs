@@ -426,7 +426,9 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// those), and its event schema a struct of scalar fields
 /// (`forge::generator::swift_event_schema_unlowered` names each field past those), and
 /// its enum a closed one (`forge::generator::swift_enum_unlowered` names an open enum
-/// and a variant named for a reserved word).
+/// and a variant named for a reserved word), and its codec a positional one of
+/// native-width integers at byte offsets (`forge::generator::swift_codec::unlowered` names
+/// each shape past that).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
     matches!(
         (kind, lang),
@@ -434,6 +436,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Algorithm, Language::Swift)
             | (ForgeKind::EventSchema, Language::Swift)
             | (ForgeKind::Enum, Language::Swift)
+            | (ForgeKind::Codec, Language::Swift)
             | (ForgeKind::Condition, Language::Swift)
             | (ForgeKind::Lookup, Language::Swift)
             | (ForgeKind::Interpolation, Language::Swift)

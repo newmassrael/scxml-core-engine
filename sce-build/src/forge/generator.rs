@@ -23,6 +23,7 @@ use std::path::Path;
 
 mod rust_source;
 mod rust_view;
+mod swift_codec;
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
@@ -25735,6 +25736,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Validator(m) => {
             swift_validator_unlowered(imports).map(|c| swift_validator_refusal(m, &c))
         }
+        ForgeDocument::Codec(m) => {
+            swift_codec::unlowered(m).map(|construct| swift_codec::refusal(m, &construct))
+        }
         // A timer is a period, a fire event and two optional hooks over the runtime's
         // clock, none of which depends on a type Swift has yet to spell.
         ForgeDocument::Timer(_) => None,
@@ -25769,6 +25773,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, Language::Swift)?,
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Codec(m) => swift_codec::render(&env, m, imports)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };

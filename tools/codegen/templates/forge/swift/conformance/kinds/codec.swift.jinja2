@@ -1,0 +1,37 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Codec kind: round-trip { decoded, encoded } cases of the oracle. The unit is a struct with a
+   memberwise initializer, `encode(into:)` over a sink and `decode(_:)` over a cursor, so each
+   case builds the value from its decoded fields, encodes it and holds the bytes to the oracle's,
+   then decodes those bytes and holds the value to the one it started from. The cursor must have
+   moved past exactly the frame: a decode that read too little or too much is a different frame.
+
+   A fixture whose fields the oracle cannot express (`oracle_eligible` false) is held to the
+   compiler alone: the unit's own type is named, which is what the generated file is imported for. #}
+{% if not f.oracle_eligible %}
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = {{ f.name | to_pascal_case }}.frameLength
+{% else %}
+    let cases = try oracleCases("{{ f.ref_section }}", "{{ f.name }}")
+    #expect(!cases.isEmpty, "{{ f.name }}: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "{{ f.name }} case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = {{ f.name | to_pascal_case }}(
+{% for field in f.fields %}
+            {{ field.name }}: {{ ("decoded.member(\"" ~ field.name ~ "\")") | swift_unmarshal(field.type) }}{{ "," if not loop.last }}
+{% endfor %}
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "{{ f.name }} case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try {{ f.name | to_pascal_case }}.decode(&cursor)
+        #expect(roundTripped == value, "{{ f.name }} case \(index) decode")
+        #expect(cursor.remaining == 0, "{{ f.name }} case \(index) decode consumed the frame and nothing else")
+    }
+{% endif %}

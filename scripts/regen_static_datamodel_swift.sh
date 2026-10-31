@@ -136,13 +136,14 @@ for source in "${SOURCES[@]}"; do
     done < <(algorithms_of "$source")
 done
 # The documents of the kinds the Swift backend writes as a unit of one file (an algorithm,
-# a condition, a lookup, an interpolation and a filter), which the fixture directory, the
+# a condition, a lookup, an interpolation, a filter, a transform, a validator, a timer and a
+# codec), which the fixture directory, the
 # standard library and the conformance catalog declare, whether or not a machine the Swift
 # backend lowers calls one: a unit is compiled for what it is, not for who happens to call
 # it, so a construct Swift gains the lowering of is held to the compiler before a machine
 # reaches it. A kind Swift gains is added here, to the one list. Derived, and a refusal by
 # name (status 7) is listed, as the machines' are.
-UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer)'
+UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer|codec)'
 mapfile -t ALGORITHM_CANDIDATES < <(
     {
         grep -lE "sce:kind=\"$UNIT_KINDS\"" "$INPUT_ROOT"/*.scxml

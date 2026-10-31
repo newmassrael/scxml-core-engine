@@ -435,7 +435,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Why::Design("it lowers ECMAScript to Lua at build time, and the Lua is the only artifact"),
     ),
     // The numerical conformance harness and its kind fragments.
-    (Language::Swift, "conformance fragment `codec`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
@@ -466,8 +465,9 @@ const SWIFT_STATIC_IN_PART: &str =
 
 /// Swift writes the Forge kinds in part (`codegen_matrix::ships_in_part`).
 const SWIFT_NO_FORGE: &str =
-    "Swift writes each Forge kind in part and refuses the rest of it by name; the codecs, the \
-     procedure and observer kinds and the numerical conformance harness are built after them";
+    "Swift writes each Forge kind in part and refuses the rest of it by name; the codec shapes beyond \
+     fixed-width integer frames, the procedure and observer kinds and the Forge conformance gate are \
+     built after them";
 
 /// Swift has no host Mesh core, as Go, Python and C11 have none.
 const SWIFT_NO_MESH: &str =
