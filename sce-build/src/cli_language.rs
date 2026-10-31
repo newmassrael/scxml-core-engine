@@ -175,10 +175,7 @@ impl LanguageRoute {
                         // different emitter and does work — which is why
                         // the refusal below has to say so rather than
                         // leave the caller reading a five-name menu.
-                        //
-                        // Swift's statecharts carry no ECMAScript datamodel
-                        // yet, and every W3C test is written in one.
-                        .filter(|language| !matches!(language, Language::C11 | Language::Swift))
+                        .filter(|language| !matches!(language, Language::C11))
                         .collect()
                 });
                 SERVED.as_slice()
@@ -211,9 +208,7 @@ impl LanguageRoute {
         match self {
             LanguageRoute::GenerateW3c => Some(format!(
                 "C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); \
-                 single-document `generate -l c11` uses a different emitter and does work. \
-                 swift is absent because its statecharts carry no ECMAScript datamodel yet, \
-                 which every W3C test is written in{}",
+                 single-document `generate -l c11` uses a different emitter and does work{}",
                 emitless_sentence(". ", " too"),
             )),
             LanguageRoute::GenerateIntegration => Some(format!(

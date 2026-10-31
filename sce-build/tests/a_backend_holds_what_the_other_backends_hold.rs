@@ -390,7 +390,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // stale check removes it then; the list is what is left of the backend.
     //
     // The CLI routes that write files serve the backends that write something.
-    (Language::Swift, "`generate-w3c` route", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "`generate-integration` route", Why::NotYet(SWIFT_NO_EMITTER)),
     // The kind matrix.
     (Language::Swift, "forge kind `statechart`", Why::NotYet(SWIFT_NO_EMITTER)),
@@ -457,11 +456,11 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
-    "Swift writes a statechart in part, a datamodel null one, a sce-static one or an ecmascript one \
-     whose only uses of the Lua engine are `<data>` initialisers and guards, and refuses the rest \
-     by name (`generator::reject_swift_unsupported_features`); the emitters for the W3C, \
-     integration and conformance suites are built after it, and most W3C documents also use \
-     `<assign>`, `<script>`, `<if>` or `<log>`, which it does not lower yet";
+    "Swift writes a statechart in part, a datamodel null one, a sce-static one or an ecmascript \
+     one, and refuses by name what it does not lower yet \
+     (`generator::reject_swift_unsupported_features`); its W3C suite is written by `generate-w3c` \
+     for the `simple` harness, and the integration suite, the conformance suites and the gate \
+     that holds the W3C suite are built after it";
 
 /// Swift lowers a sce-static machine in part and refuses the rest by name
 /// (`generator::lowers_static_datamodel_in_part`).

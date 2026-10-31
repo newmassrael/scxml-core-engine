@@ -32,12 +32,12 @@ mutation_targets sce-build/src/cli_language.rs \
                  sce-build/tests/cli_language_surface.rs \
                  sce-build/src/bin/sce_codegen.rs
 
-# Re-aimed 2026-10-23: the filter now leaves out Swift beside C11; the mutant
-# still lets C11 back into the batch suite while its reason stays written.
+# Re-aimed 2026-11-01: Swift is served by the batch suite now, so the filter leaves out C11 alone;
+# the mutant still lets C11 back into the batch suite while its reason stays written.
 mutation_case "the batch suite documents the backend it has no emitter for" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     "                        .filter(|language| !matches!(language, Language::C11 | Language::Swift))\n",
-     "                        .filter(|language| !matches!(language, Language::Swift))\n")
+     "                        .filter(|language| !matches!(language, Language::C11))\n",
+     "                        .filter(|_language| true)\n")
 PY
 
 # Re-aimed 2026-10-23: `generate-conformance` now has an arm of its own, which

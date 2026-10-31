@@ -8071,7 +8071,8 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         // it: `actual` on the wire then means the same kind of value
         // here as on every other language refusal, and the reason the
         // route excludes it rides the route's own exclusion note.
-        Language::C11 | Language::Swift => cli_exit(CliError::UnsupportedLanguage {
+        Language::Swift => Box::new(SwiftBackend::new(&output_root)),
+        Language::C11 => cli_exit(CliError::UnsupportedLanguage {
             lang: lang.canonical_name().to_string(),
             route: LanguageRoute::GenerateW3c,
         }),
@@ -8525,6 +8526,21 @@ trait W3cBackend {
         true
     }
 
+    /// Whether this backend writes the fixtures of the harness `test_type` names. The registry is
+    /// language-neutral, and a backend that has built some of its harnesses and not the rest says
+    /// which: a fixture of another harness is skipped and named in the summary, not written into
+    /// a test that has nothing to run it with.
+    fn serves_harness(&self, _test_type: &str) -> bool {
+        true
+    }
+
+    /// Whether `refusal` is this backend declining a document by name, which a backend that
+    /// lowers a document in part reports as the document it does not lower yet, and not as a
+    /// failed run. The default is that every refusal is a failure.
+    fn is_a_named_refusal(&self, _refusal: &ForgeError) -> bool {
+        false
+    }
+
     /// Files that make the emitted tree a package in its own right:
     /// the build manifest, the module root, the harness the generated
     /// tests call into.
@@ -8850,6 +8866,20 @@ fn generate_w3c_unified(
             }
         };
 
+        if let Some(info) = registered.get(test_id.as_str()) {
+            if !backend.serves_harness(&info.test_type) {
+                skipped.push((
+                    test_id.clone(),
+                    format!(
+                        "the `{}` harness is not built for {} yet",
+                        info.test_type,
+                        backend.language_name()
+                    ),
+                ));
+                continue;
+            }
+        }
+
         let mut parser = SCXMLParser::new();
         let scxml_str = scxml_path.to_str().unwrap_or("");
         match parser.parse_file(scxml_str) {
@@ -9054,6 +9084,9 @@ fn generate_w3c_unified(
                                 generated_static.push(test_id.clone());
                             }
                         }
+                    }
+                    Err(e) if backend.is_a_named_refusal(&e) => {
+                        skipped.push((test_id.clone(), format!("not lowered yet: {e}")));
                     }
                     Err(e) => {
                         // Codegen produces bare `ForgeError` (minijinja
@@ -9849,6 +9882,174 @@ impl W3cBackend for GoBackend {
             remove_generated(&self.sm_base);
             outln!("Cleaned: {}", self.sm_base.display());
         }
+    }
+}
+
+// ── SwiftBackend ───────────────────────────────────────────────
+
+/// The Swift W3C suite: a machine for each document the backend lowers, in a directory of its
+/// own per test, and a Swift Testing file for each in the test target beside it.
+///
+/// Swift lowers a document in part, so it is the one backend of this route that is allowed to
+/// leave fixtures out. A document it refuses by name is skipped and named in the summary, and
+/// only the `simple` harness is built (the others need a clock the test advances and an echo
+/// endpoint). A child a parent starts that Swift refuses is not covered: the parent would be
+/// written without it. No fixture of the suite has one, and the package is built from what is
+/// written, so one would show there.
+struct SwiftBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl SwiftBackend {
+    const RELATIVE_ROOT: &'static str = "backends/swift/tests";
+
+    fn new(output_root: &Path) -> Self {
+        let package = output_root.join(Self::RELATIVE_ROOT);
+        Self {
+            sm_base: package.join("Sources/W3cMachines"),
+            test_dir: package.join("Tests/W3cMachinesTests"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Swift),
+        }
+    }
+}
+
+impl W3cBackend for SwiftBackend {
+    fn language_name(&self) -> &str {
+        "Swift"
+    }
+
+    fn language(&self) -> Language {
+        Language::Swift
+    }
+
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = sce_build::generator::generate_swift(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}_sm.swift"), code)])
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        // One module holds every machine of the suite, and a child's policy is named after the
+        // child, so it sits beside its parent as it is.
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.swift"));
+        write_if_changed_drift_aware(&child_file, &code, drift_ctx);
+    }
+
+    fn serves_harness(&self, test_type: &str) -> bool {
+        test_type == "simple"
+    }
+
+    fn is_a_named_refusal(&self, refusal: &ForgeError) -> bool {
+        matches!(refusal, ForgeError::Generate(_))
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            metadata,
+            ..
+        } = *spec;
+        let marker =
+            sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // {marker}\n\
+             \n\
+             import SceRuntime\n\
+             import Testing\n\
+             import W3cMachines\n\
+             \n\
+             // W3C SCXML {specnum}: {description}\n\
+             @Test(\"W3C {test_id} settles in its {pass_state} state\")\n\
+             func w3c_{test_id}() {{\n\
+             \x20   let policy = {machine_name}Policy()\n\
+             \x20   let run = w3cSettled(policy)\n\
+             \x20   #expect(run.completed, \"W3C {test_id} did not run to a final state\")\n\
+             \x20   #expect(\n\
+             \x20       w3cIsState(policy.getStateName(run.engine.getCurrentState()), named: \"{pass_state}\"),\n\
+             \x20       \"W3C {test_id} settled in another state\")\n\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("Test{}Tests.swift", to_pascal_case(test_id))
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            remove_generated(&self.sm_base);
+            outln!("Cleaned: {}", self.sm_base.display());
+        }
+        // The generated tests are the files named for a test; `W3cSupport.swift`, which the
+        // tests call and nobody generates, is not among them.
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test") && name.ends_with("Tests.swift") {
+                remove_generated(&entry.path());
+            }
+        }
+        outln!("Cleaned tests in: {}", self.test_dir.display());
+    }
+
+    fn clean_stale(&self, valid_ids: &BTreeSet<String>) -> usize {
+        let mut removed = 0;
+        if self.sm_base.exists() {
+            for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let Some(id) = name.strip_prefix("test") else {
+                    continue;
+                };
+                if !valid_ids.contains(id) && remove_generated(&entry.path()) {
+                    outln!("  Removed stale machines: {name}");
+                    removed += 1;
+                }
+            }
+        }
+        let valid_files: BTreeSet<String> = valid_ids
+            .iter()
+            .map(|id| self.test_filename(id, ""))
+            .collect();
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test")
+                && name.ends_with("Tests.swift")
+                && !valid_files.contains(&name)
+                && remove_generated(&entry.path())
+            {
+                outln!("  Removed stale test: {name}");
+                removed += 1;
+            }
+        }
+        removed
     }
 }
 
