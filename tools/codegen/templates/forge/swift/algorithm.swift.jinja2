@@ -19,6 +19,9 @@ import SceForgeRuntime
 {% endif %}
 
 public enum {{ struct_name }} {
+{% if consts_prelude %}
+{{ consts_prelude }}
+{% endif %}
     public static func {{ primary_symbol }}({{ params_str }}){% if may_fail %} throws{% endif %}{% if has_return %} -> {{ return_type }}{% endif %} {
 {% if may_fail %}
         // A failure a checked operation records, thrown once the statement is done

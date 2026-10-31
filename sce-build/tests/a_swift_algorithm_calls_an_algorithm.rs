@@ -67,22 +67,40 @@ const DOCUMENT_HEAD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 #[test]
 fn a_caller_is_refused_for_what_its_callee_holds() {
-    // The callee carries a `<sce:test-vector>`, which Swift does not write yet, so no
-    // unit is written for it: the caller would name a unit that does not exist.
+    // The callee imports an enum with an open set of variants, which Swift does not write,
+    // so no unit is written for the callee: the caller would name a unit that does not
+    // exist.
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
-        repo_root().join("tests/forge/resources/algorithm_crc16.scxml"),
-        dir.path().join("crc16.scxml"),
+        repo_root().join("tests/forge/resources/enum_uds_nrc.scxml"),
+        dir.path().join("enum_uds_nrc.scxml"),
     )
-    .expect("copy the callee");
+    .expect("copy the enum");
+    std::fs::write(
+        dir.path().join("reserved_callee.scxml"),
+        format!(
+            r#"{DOCUMENT_HEAD} name="reserved_callee" version="1.0">
+  <sce:import kind="enum" src="enum_uds_nrc.scxml" as="Nrc"/>
+  <sce:signature>
+    <sce:param name="code" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="code"/>
+  </sce:body>
+</scxml>
+"#
+        ),
+    )
+    .expect("write the callee");
     std::fs::write(
         dir.path().join("calls_crc16.scxml"),
         format!(
             r#"{DOCUMENT_HEAD} name="calls_crc16" version="1.0">
-  <sce:import kind="algorithm" src="crc16.scxml" as="crc"/>
+  <sce:import kind="algorithm" src="reserved_callee.scxml" as="crc"/>
   <sce:signature>
-    <sce:param name="data" type="bytes"/>
-    <sce:return type="uint16"/>
+    <sce:param name="data" type="uint8"/>
+    <sce:return type="uint8"/>
   </sce:signature>
   <sce:body>
     <sce:return expr="crc(data)"/>

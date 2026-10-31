@@ -25263,12 +25263,10 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             }
         }
     }
-    if let Some(c) = m.consts.first() {
-        return Some(format!("the <sce:const name=\"{}\">", c.name));
-    }
-    if !m.test_vectors.is_empty() {
-        return Some("a <sce:test-vector>".to_string());
-    }
+    // A `<sce:const>` is a `static let` member of the unit's enum, folded where the unit
+    // is generated, and a `<sce:test-vector>` is the oracle's to hold: the sidecar the other
+    // backends write beside the unit has no Swift test target to receive it, and the
+    // conformance harness runs the same vectors against the unit.
     if let Some(p) = m
         .signature
         .params
@@ -37728,7 +37726,12 @@ fn emit_array_const(
         ),
         Language::Go => format!("var {name} = [{len}]{elem_name}{{ {body} }}\n\n"),
         Language::Python => format!("{name}: tuple = ({body},)\n\n"),
-        Language::Swift => no_swift_emitter("emit_array_const"),
+        // A member of the unit's caseless enum, typed so that a literal list of a few
+        // hundred entries is not left to inference; a function of the unit reads it
+        // unqualified.
+        Language::Swift => {
+            format!("    public static let {name}: [{elem_name}] = [{body}]\n\n")
+        }
     }
 }
 
@@ -37750,7 +37753,7 @@ fn emit_scalar_const(
         Language::Kotlin => format!("const val {name}: {ty_name} = {lit}\n\n"),
         Language::Go => format!("const {name} {ty_name} = {lit}\n\n"),
         Language::Python => format!("{name}: {ty_name} = {lit}\n\n"),
-        Language::Swift => no_swift_emitter("emit_scalar_const"),
+        Language::Swift => format!("    public static let {name}: {ty_name} = {lit}\n\n"),
     }
 }
 
