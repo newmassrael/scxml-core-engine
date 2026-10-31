@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c3b3f09229bcfcffe4afdc41c261800854f6a41d8a9f25220c95d6d18c042c5c
+// source-hash: 176a6206549df33c9e49af0bd2932906fb8db7b72adcc3bca99a93224fc10a8a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: ecma_guard_error.scxml:7 :: _machine
+// SCE-MAP: ecma_guard_error.scxml:9 :: _machine
 
 import SceRuntime
 import SceLua
@@ -353,6 +353,7 @@ public final class EcmaGuardErrorPolicy: InvocablePolicy {
     public func initializeDataModel(engine: Engine<EcmaGuardErrorPolicy>) {
         lua = nil
         pendingEventMetadata = EventMetadata()
+        defineData("holder", as: nil, engine: engine)
     }
 
     /// Keeps the metadata of the event about to be selected on (§scxml-5.10).
@@ -445,8 +446,8 @@ public final class EcmaGuardErrorPolicy: InvocablePolicy {
         switch state {
         case .s0:
             if event == .null {
-                // W3C SCXML 5.9: cond="missing.field.deep" lowered to Lua at build time, run by the engine
-                if (evaluateGuard("error(\"SCXML cond is not valid ECMAScript: missing.field.deep: missing is not declared by this document\")", engine: engine)) {
+                // W3C SCXML 5.9: cond="holder.field.deep" lowered to Lua at build time, run by the engine
+                if (evaluateGuard("_scxml_truthy(holder.field.deep)", engine: engine)) {
                     return EnabledTransition(
                         source: state,
                         targets: [.state(.wrong)],
