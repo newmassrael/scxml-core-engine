@@ -4434,24 +4434,33 @@ fn swift_hybrid_invoke_unlowered(
 /// expr>`, a `<cancel sendidexpr>`) is a cause the analyzer names, and
 /// [`swift_ecmascript_cause_unlowered`] refuses each by name for an `ecmascript` document; a
 /// `null` one has no expression language to write them in.
-fn swift_lowers_action_type(action_type: &str) -> bool {
-    matches!(action_type, "raise" | "send" | "cancel")
+///
+/// An `<assign>` too, for an `ecmascript` document: its location and its expression are lowered to
+/// Lua and run by the engine. A `null` document has no location language to name a variable in, so
+/// the assign it could not write is not one the template is asked to drop.
+fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
+    match action_type {
+        "raise" | "send" | "cancel" => true,
+        "assign" => is_ecma,
+        _ => false,
+    }
 }
 
 /// Whether `actions` hold, at any depth, an executable element the Swift
 /// templates do not lower: the first one's type and position.
 fn first_unlowered_swift_action(
     actions: &[crate::model::Action],
+    is_ecma: bool,
 ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
     for action in actions {
-        if !swift_lowers_action_type(&action.action_type) {
+        if !swift_lowers_action_type(&action.action_type, is_ecma) {
             return Some((
                 format!("<{}>", action.action_type.replace('_', ":")),
                 action.source_location.clone(),
             ));
         }
         for block in action.nested_blocks() {
-            if let Some(hit) = first_unlowered_swift_action(block.actions) {
+            if let Some(hit) = first_unlowered_swift_action(block.actions, is_ecma) {
                 return Some(hit);
             }
         }
@@ -4529,7 +4538,7 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
                     ));
                 }
             }
-            if let Some((what, at)) = first_unlowered_swift_action(&transition.actions) {
+            if let Some((what, at)) = first_unlowered_swift_action(&transition.actions, is_ecma) {
                 return Err(swift_unsupported(
                     format!("{what} in a transition of state '{}'", state.id),
                     at.or_else(|| transition.source_location.clone()),
@@ -4543,7 +4552,7 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
             .map(Vec::as_slice)
             .chain(std::iter::once(state.initial_transition_actions.as_slice()));
         for block in blocks {
-            if let Some((what, at)) = first_unlowered_swift_action(block) {
+            if let Some((what, at)) = first_unlowered_swift_action(block, is_ecma) {
                 return Err(swift_unsupported(
                     format!("{what} in state '{}'", state.id),
                     at.or_else(|| state.source_location.clone()),
@@ -4571,7 +4580,7 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
 /// named, and where the document wrote it; `None` for a document the engine can run whole.
 ///
 /// What is lowered is the `<data>` initialiser that is an expression, top level or in a state
-/// under early binding, and the `cond` of a transition. Every other reason a document needs the
+/// under early binding, the `cond` of a transition, and an `<assign>`. Every other reason a document needs the
 /// engine is a [`crate::script_engine_analyzer::ScriptEngineCauseKind`], and each is decided by
 /// [`swift_ecmascript_cause_unlowered`], which has no default arm: a cause added there is a
 /// compile error here before it is a construct that quietly runs without its engine call.
@@ -4632,7 +4641,9 @@ fn swift_ecmascript_cause_unlowered(
     use crate::script_engine_analyzer::ScriptEngineCauseKind as Cause;
     let named = |what: &str, at: &str| Some(format!("{what} in '{at}'"));
     match kind {
-        Cause::DatamodelVariableInit { .. } | Cause::TransitionGuard { .. } => None,
+        Cause::DatamodelVariableInit { .. }
+        | Cause::TransitionGuard { .. }
+        | Cause::AssignAction { .. } => None,
         Cause::GlobalScript | Cause::UnresolvedExternalScript => {
             Some("a top-level <script>".to_string())
         }
@@ -4643,7 +4654,6 @@ fn swift_ecmascript_cause_unlowered(
         }
         Cause::IfCondition { state_id } => named("an <if> cond", state_id),
         Cause::ElseIfCondition { state_id } => named("an <elseif> cond", state_id),
-        Cause::AssignAction { state_id } => named("an <assign>", state_id),
         Cause::LogExpr { state_id } => named("a <log> expression", state_id),
         Cause::InlineScriptAction { state_id } => named("a <script>", state_id),
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),

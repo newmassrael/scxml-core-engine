@@ -1814,11 +1814,25 @@ public final class Engine<Policy: StatePolicy> {
         sceLog("Engine.completeMacrostep: macrostep still going after \(maxMacrostepMicrosteps) microsteps; stopped")
     }
 
+    /// The metadata the policy reads `_event` from: the event's own, typed by the queue it was
+    /// taken from (§scxml-5.10.1). What a producer put in `eventType` is not read here, so a
+    /// `<raise>` is "internal", a host's event "external" and `error.*` or `done.*` "platform"
+    /// whoever built the metadata.
+    private func typedAtDequeue(
+        _ eventWithMeta: EventWithMetadata<Event>,
+        fromExternalQueue: Bool
+    ) -> EventMetadata {
+        var metadata = eventWithMeta.metadata
+        let name = metadata.name.isEmpty ? policy.getEventName(eventWithMeta.event) : metadata.name
+        metadata.eventType = EventType.classify(eventName: name, fromExternalQueue: fromExternalQueue)
+        return metadata
+    }
+
     /// Binds one event taken off the internal queue as `_event`, selects, and takes the
     /// microstep it selects (§scxml-D-mainEventLoop).
     private func takeInternalEvent(_ eventWithMeta: EventWithMetadata<Event>) {
         // §scxml-5.10: Populate policy metadata from event
-        policy.populateEventMetadata(eventWithMeta.metadata)
+        policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: false))
         liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
         // §scxml-3.12.2: the processor raises error.* into this queue and the clause
         // says they "are ignored if no transition is found that matches them". Ignoring
@@ -1928,7 +1942,7 @@ public final class Engine<Policy: StatePolicy> {
             policy.forwardToAutoforwardChildren(eventName: name, metadata: eventWithMeta.metadata, engine: self)
         }
         // §scxml-5.10: Populate policy metadata from event
-        policy.populateEventMetadata(eventWithMeta.metadata)
+        policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: true))
         liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
         // §scxml-3.1.2: "If no transition matches in any state, the event is
         // discarded." Discarding it is the rule; being unable to say so is not part of

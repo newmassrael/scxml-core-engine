@@ -267,6 +267,49 @@ fn a_send_to_an_invoked_child_is_routed_and_not_kept_by_the_sender() {
     assert!(machine.contains("engine.sendToTarget("), "{machine}");
 }
 
+/// An `<assign>` of an `ecmascript` document is lowered to Lua: its location and its value are
+/// lowered at build time and the engine runs the assignment, an error of which is
+/// `error.execution` and ends the block.
+#[test]
+fn an_assign_is_lowered_to_lua_for_the_engine() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry><assign location="n" expr="n + 1"/></onentry>
+    <transition cond="n == 2" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(machine.contains(r#"assignData("n", "#), "{machine}");
+    assert!(
+        machine.contains("<assign> to 'n' failed"),
+        "a failed assignment is an error.execution: {machine}"
+    );
+}
+
+/// The system variables are read-only, decided once for every backend: an assign to one is an
+/// `error.execution` at the point it is reached and reaches no engine.
+#[test]
+fn an_assign_to_a_system_variable_is_an_error_and_reaches_no_engine() {
+    let body = r#"
+  <state id="s0">
+    <onentry><assign location="_sessionid" expr="1"/></onentry>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("invalid or read-only location '_sessionid'"),
+        "{machine}"
+    );
+    assert!(
+        !machine.contains(r#"assignData("_sessionid""#),
+        "no assignment is written: {machine}"
+    );
+}
+
 /// What a `<send>` computes with an expression is still refused by name.
 #[test]
 fn a_send_that_an_expression_computes_is_refused_by_name() {
@@ -318,12 +361,12 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
     }
     let refusals = [
         Refusal {
-            what: "an <assign>",
+            what: "an <if>",
             attributes: r#"datamodel="ecmascript""#,
             body: r#"<datamodel><data id="n" expr="1"/></datamodel>
-  <state id="s0"><onentry><assign location="n" expr="2"/></onentry></state>"#,
+  <state id="s0"><onentry><if cond="n == 1"><raise event="e"/></if></onentry></state>"#,
             extra: &[],
-            named: "<assign>",
+            named: "<if>",
         },
         Refusal {
             what: "a <log expr>",

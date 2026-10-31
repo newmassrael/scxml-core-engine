@@ -1,6 +1,37 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 5.3/5.4: Variable assignment. Only a `datamodel="sce-static"` document
-   has a variable, and its whole statement was lowered to Swift. #}
+{# W3C SCXML 5.3/5.4: Variable assignment. Under `datamodel="sce-static"` the whole statement
+   was lowered to Swift. Under `datamodel="ecmascript"` the location and the value are lowered
+   to Lua at build time and the engine runs the assignment (`assignData`, in
+   `script_engine.swift.jinja2`). #}
+{% if action.native_code %}
 {% include 'actions/_native_statement.swift.jinja2' %}
+{% elif model.needs_script_engine %}
+{% set loc = action.location | default('') %}
+{% set in_block = in_action_block is defined and in_action_block %}
+{# W3C SCXML B.2: the system variables are read-only, decided once for every backend
+   (`read_only_location`, filters::READ_ONLY_LOCATIONS). #}
+{% if not loc or loc is read_only_location %}
+                // W3C SCXML 5.3/B.2: invalid or read-only location "{{ loc | replace("\n", " ") }}"
+                raiseExecutionError("<assign> has an invalid or read-only location '{{ loc | escape_swift }}'", engine: engine)
+{% if in_block %}
+                break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif action.content or action.expr %}
+{# W3C SCXML 5.4.2: inline children specify the same legal data value `expr` would, read by the
+   filter `<data>` content goes through: quoting the text made `21` the string "21". #}
+{% if action.content %}
+{% set lua_value = action.content | to_lua_assign_content %}
+{% else %}
+{% set lua_value = action.expr | to_lua_expr %}
+{% endif %}
+                // W3C SCXML 5.4: <assign location="{{ loc | replace("\n", " ") }}">
+                if !assignData("{{ loc | to_lua_location | escape_swift }}", "{{ lua_value | escape_swift }}") {
+                    raiseExecutionError("<assign> to '{{ loc | escape_swift }}' failed", engine: engine)
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                }
+{% endif %}
+{% endif %}
