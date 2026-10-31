@@ -23,7 +23,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror
-mutation_targets tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2
+mutation_targets tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2 tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2
 
 # A map with no mirror is the one that has no bound on a string or a byte string, or none to
 # copy. With the gate read the other way the mirror is written for the maps that have none and
@@ -115,4 +115,59 @@ mutation_case "the owned encode writes nothing" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
      r'''        {{ struct_name }}::encode_source(self, w)''',
      r'''        Ok(())''')
+PY
+
+# With `--owned-origin` the mirror gains `try_into_owned_in_origin`, written by the template
+# `codec_cbor_origin.rs.jinja2` after the source interface. Its profile must be an
+# `OriginStorage`, the trait that has the constructors a container is made from. Bounded by the
+# copying projection's `CodecStorage` the constructors are not callable, and a profile that
+# shares its origin is not asked for one. Killed by
+# `the_origin_projection_has_the_signature_every_other_owned_form_has`
+# (`<S: ::sce_forge_runtime::codec::OriginStorage>(self, origin: ...`).
+mutation_case "the origin projection asks for a profile that is not an origin storage" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2",
+     r'''{{ owned_in_origin_fn }}{{ origin_generics_impl }}(self,''',
+     r'''{{ owned_in_origin_fn }}{{ owned_generics_impl }}(self,''')
+PY
+
+# The projection is given the origin the view was decoded from, which is what a profile that
+# shares it builds its containers from. Given none, it is the copying projection under another
+# name. Killed by `the_origin_projection_has_the_signature_every_other_owned_form_has`
+# (`(self, origin: &<S as ...>::Origin)`).
+mutation_case "the origin projection takes no origin" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2",
+     r'''(self, {{ origin_param }}: {{ origin_ref_type }}) ->''',
+     r'''(self) ->''')
+PY
+
+# The projection makes the mirror for the profile it is given. Made for the default profile it
+# returns a type the caller did not ask for. Killed by
+# `the_origin_projection_has_the_signature_every_other_owned_form_has`
+# (`-> Result<ProbeCborOwned<S>, CodecError>`).
+mutation_case "the origin projection returns the mirror of the default profile" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2",
+     r'''-> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {''',
+     r'''-> Result<{{ struct_name }}Owned, CodecError> {''')
+PY
+
+# Each field of the mirror is built by the expression the generator wrote for its entry: a string
+# or a byte string through the profile and the origin, at its capacity. Built as the copying
+# projection builds it, the origin is never used and nothing is shared. Killed by
+# `the_origin_projection_builds_text_and_bytes_through_the_profile_at_each_capacity`
+# (`note: <S as ...>::str_from::<8>(origin, self.note)?,`).
+mutation_case "a field of the origin projection is moved as the view holds it" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2",
+     r'''            {{ e.name }}: {{ e.owned_origin_expr }},''',
+     r'''            {{ e.name }}: self.{{ e.name }},''')
+PY
+
+# The module with the option on starts with the module without it, and the projection is
+# written under the header the template gives it. Written under another, or by a template that
+# is not this one, the text the option adds is not the projection. Killed by
+# `the_option_only_appends_the_projection_to_a_map_with_a_mirror`
+# (`// ── Owned projection with an origin (`--owned-origin`)`).
+mutation_case "the origin projection is written under another header" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor_origin.rs.jinja2",
+     r'''// ── Owned projection with an origin (`--owned-origin`) ''',
+     r'''// ── Owned projection by origin ''')
 PY
