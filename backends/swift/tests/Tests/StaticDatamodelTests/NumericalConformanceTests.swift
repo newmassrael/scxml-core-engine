@@ -700,6 +700,18 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(result.reason == expectedReason, "crossfile_validator_interpolation step \(i) reason")
     }}
 
+// MARK: - lookup: lookup_engine_status
+
+@Test func lookupEngineStatusMatchesReference() throws {
+
+    for testCase in try oracleCases("string_lookups", "lookup_engine_status") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let expected = try oracleText(testCase.member("expected"))
+        let actual = LookupEngineStatus.lookupStatus(arg0)
+        #expect(actual.rawValue == expected, "lookup_engine_status")
+    }}
+
 // MARK: - algorithm: algorithm_single_sum
 
 @Test func algorithmSingleSumMatchesReference() throws {
@@ -4093,6 +4105,43 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "weekday_from_days")
     }}
 
+// MARK: - enum: enum_content_line_class
+
+@Test func enumContentLineClassMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "enum_content_line_class")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 3, "enum_content_line_class: oracle variant count")
+    guard variants.count == 3 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "unclassified", "enum_content_line_class variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(EnumContentLineClass.unclassified.rawValue),
+        "enum_content_line_class.unclassified"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumContentLineClass.unclassified.declaredName == "unclassified", "enum_content_line_class.unclassified declared name")
+    #expect(try oracleText(variants[1].member("name")) == "restricted", "enum_content_line_class variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(EnumContentLineClass.restricted.rawValue),
+        "enum_content_line_class.restricted"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumContentLineClass.restricted.declaredName == "restricted", "enum_content_line_class.restricted declared name")
+    #expect(try oracleText(variants[2].member("name")) == "secret", "enum_content_line_class variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(EnumContentLineClass.secret.rawValue),
+        "enum_content_line_class.secret"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumContentLineClass.secret.declaredName == "secret", "enum_content_line_class.secret declared name")
+}
+
 // MARK: - enum: enum_content_line_role
 
 @Test func enumContentLineRoleMatchesReference() throws {
@@ -4172,6 +4221,57 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(EnumContentLineStatus.cancelled.declaredName == "cancelled", "enum_content_line_status.cancelled declared name")
+}
+
+// MARK: - enum: enum_uds_nrc
+
+@Test func enumUdsNrcMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "enum_uds_nrc")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 5, "enum_uds_nrc: oracle variant count")
+    guard variants.count == 5 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "generalReject", "enum_uds_nrc variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(EnumUdsNrc.generalReject.rawValue),
+        "enum_uds_nrc.generalReject"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumUdsNrc.generalReject.declaredName == "generalReject", "enum_uds_nrc.generalReject declared name")
+    #expect(try oracleText(variants[1].member("name")) == "serviceNotSupported", "enum_uds_nrc variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(EnumUdsNrc.serviceNotSupported.rawValue),
+        "enum_uds_nrc.serviceNotSupported"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumUdsNrc.serviceNotSupported.declaredName == "serviceNotSupported", "enum_uds_nrc.serviceNotSupported declared name")
+    #expect(try oracleText(variants[2].member("name")) == "conditionsNotCorrect", "enum_uds_nrc variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(EnumUdsNrc.conditionsNotCorrect.rawValue),
+        "enum_uds_nrc.conditionsNotCorrect"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumUdsNrc.conditionsNotCorrect.declaredName == "conditionsNotCorrect", "enum_uds_nrc.conditionsNotCorrect declared name")
+    #expect(try oracleText(variants[3].member("name")) == "requestOutOfRange", "enum_uds_nrc variant 3 name")
+    #expect(
+        try oracleNumberText(variants[3].member("value")) == String(EnumUdsNrc.requestOutOfRange.rawValue),
+        "enum_uds_nrc.requestOutOfRange"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumUdsNrc.requestOutOfRange.declaredName == "requestOutOfRange", "enum_uds_nrc.requestOutOfRange declared name")
+    #expect(try oracleText(variants[4].member("name")) == "responsePending", "enum_uds_nrc variant 4 name")
+    #expect(
+        try oracleNumberText(variants[4].member("value")) == String(EnumUdsNrc.responsePending.rawValue),
+        "enum_uds_nrc.responsePending"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumUdsNrc.responsePending.declaredName == "responsePending", "enum_uds_nrc.responsePending declared name")
 }
 
 // MARK: - enum: pattern_kind
