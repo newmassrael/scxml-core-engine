@@ -453,7 +453,8 @@ public final class Test444Policy: InvocablePolicy {
     }
 
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
-    /// `<data>` here, at document load, before the state that holds it is visited.
+    /// `<data>` here, at document load, before the state that holds it is visited; late binding
+    /// declares a state's own on its first entry (`executeEntryActions`).
     public func initializeDataModel(engine: Engine<Test444Policy>) {
         lua = nil
         pendingEventMetadata = EventMetadata()
