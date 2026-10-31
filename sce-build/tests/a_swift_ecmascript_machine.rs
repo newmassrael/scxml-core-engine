@@ -625,6 +625,35 @@ fn the_inline_text_of_a_data_is_an_expression_or_the_string_it_spells() {
     );
 }
 
+/// W3C SCXML 5.3.1: the text a `<data src>` names is read when the machine is generated and is then
+/// inline text, read by the same ordered readings. The machine carries the text and not the path, so
+/// it opens no file and runs where the file does not exist.
+#[test]
+fn the_text_a_data_src_names_is_read_when_the_machine_is_generated() {
+    let body = r#"
+  <datamodel><data id="list" src="file:probe.json"/><data id="note" src="probe.txt"/></datamodel>
+  <state id="s0"><transition cond="list[1] == 2" target="done"/></state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(
+        &document(r#"datamodel="ecmascript""#, body),
+        &[("probe.json", "[1, 2, 3]"), ("probe.txt", "  two   words ")],
+    );
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"defineData("list", as: ""#)
+            && machine.contains(r#"orText: "[1, 2, 3]""#),
+        "the JSON the file holds is the inline text of the variable: {machine}"
+    );
+    assert!(
+        machine.contains(r#"orText: "two words""#),
+        "the string the file holds is whitespace-normalized: {machine}"
+    );
+    assert!(
+        !machine.contains("probe.json") && !machine.contains("probe.txt"),
+        "the machine carries a path to the file it was generated from: {machine}"
+    );
+}
+
 /// Under late binding a state's own `<data>` is declared on the state's first entry, before its
 /// `<onentry>`, and not at document load; the data of the document itself is still declared at load.
 /// The engine owns the first-entry rule, so a state entered twice binds once.
@@ -864,22 +893,13 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
         extra: &'static [(&'static str, &'static str)],
         named: &'static str,
     }
-    let refusals = [
-        Refusal {
-            what: "a <data src>",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="x" src="probe.json"/></datamodel><state id="s0"/>"#,
-            extra: &[("probe.json", r#"{"a":1}"#)],
-            named: "a <data src>",
-        },
-        Refusal {
-            what: "a function expression as an initialiser",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="f" expr="function() { return 1; }"/></datamodel><state id="s0"/>"#,
-            extra: &[],
-            named: "a function expression",
-        },
-    ];
+    let refusals = [Refusal {
+        what: "a function expression as an initialiser",
+        attributes: r#"datamodel="ecmascript""#,
+        body: r#"<datamodel><data id="f" expr="function() { return 1; }"/></datamodel><state id="s0"/>"#,
+        extra: &[],
+        named: "a function expression",
+    }];
     for refusal in refusals {
         let (status, machine, said) =
             generate(&document(refusal.attributes, refusal.body), refusal.extra);

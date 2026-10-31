@@ -194,13 +194,13 @@
         lua = nil
         pendingEventMetadata = EventMetadata()
 {% for var in model.variables %}
-        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
+        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)
 {% endfor %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.datamodel and model.binding != 'late' %}
         // W3C SCXML 5.3: early binding, the data of state {{ state_id }}
 {% for var in state.datamodel %}
-        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
+        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)
 {% endfor %}
 {% endif %}
 {% endfor %}

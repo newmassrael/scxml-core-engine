@@ -1177,6 +1177,9 @@ pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<Docu
     env.add_filter("data_content_is_xml", move |content: String| {
         data_content_is_xml(content, &for_xml)
     });
+    // §scxml-5.3.1: the text a `<data src>` names, read when the machine is generated, so the
+    // machine carries no path and opens no file (the C11 and Python backends do the same).
+    env.add_filter("read_data_src", read_data_src);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
 }

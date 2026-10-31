@@ -46,7 +46,7 @@
             // before its <onentry>. The engine owns the first-entry rule; this is what binding means here.
             if engine.claimLateBindingFirstEntry(state) {
 {% for var in state.datamodel %}
-                defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
+                defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)
 {% endfor %}
             }
 {% endif %}
