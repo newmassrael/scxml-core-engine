@@ -137,6 +137,122 @@ class TestRowContract(unittest.TestCase):
         self.assertEqual(Empty(), read(log, reader)[0])
 
 
+class TestDeferredReader(unittest.TestCase):
+    """The deferred reader of ADR 0062 section 2, as the Rust row's unit tests and
+    the consumer ring's late-reader vector state it."""
+
+    def test_a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing(self) -> None:
+        log = make()
+        publisher = log.publisher()
+        assert publisher is not None
+        # Both readers open on the empty log, one at the oldest of that moment and one
+        # deferred; then five entries (0 to 4) are published. Three slots retain two,
+        # so the oldest retained is entry 3.
+        eager = log.reader_oldest()
+        deferred = log.reader_deferred()
+        self.assertTrue(eager.is_bound)
+        self.assertFalse(deferred.is_bound)
+        for n in range(5):
+            publisher.publish(entry(n))
+        # The eager reader holds 0, outside the window [3, 5): it is told it missed 3.
+        self.assertEqual(Lagged(3), read(log, eager)[0])
+        # The deferred reader binds at this read, at the oldest retained entry, so its
+        # first answer is that entry and it has lost nothing.
+        self.assertEqual((Item(3), entry(3)), read(log, deferred))
+        self.assertTrue(deferred.is_bound)
+        self.assertEqual(0, deferred.lost)
+        self.assertEqual(4, deferred.cursor)
+        self.assertEqual((Item(4), entry(4)), read(log, deferred))
+        self.assertEqual(Empty(), read(log, deferred)[0])
+
+    def test_a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start(self) -> None:
+        log = make()
+        publisher = log.publisher()
+        assert publisher is not None
+        reader = log.reader_deferred()
+        self.assertEqual(Empty(), read(log, reader)[0])
+        self.assertTrue(reader.is_bound)
+        self.assertEqual(0, reader.cursor)
+        publisher.publish(entry(0))
+        self.assertEqual((Item(0), entry(0)), read(log, reader))
+        self.assertEqual(0, reader.lost)
+
+    def test_an_unbound_reader_reports_cursor_zero_and_not_bound_until_its_first_read(self) -> None:
+        log = make()
+        publisher = log.publisher()
+        assert publisher is not None
+        for n in range(3):
+            publisher.publish(entry(n))
+        # Opening loads nothing: the head is 3 and the oldest retained is 1, and the
+        # reader holds neither.
+        deferred = log.reader_deferred()
+        self.assertFalse(deferred.is_bound)
+        self.assertEqual(0, deferred.cursor)
+        self.assertEqual(0, deferred.lost)
+        # The other three ways to open are bound at once.
+        self.assertTrue(log.reader_oldest().is_bound)
+        self.assertTrue(log.reader_head().is_bound)
+        self.assertTrue(log.reader_at(0).is_bound)
+        # The first read binds to the oldest retained entry, 1, and reads it.
+        self.assertEqual((Item(1), entry(1)), read(log, deferred))
+        self.assertTrue(deferred.is_bound)
+        self.assertEqual(2, deferred.cursor)
+
+    def test_a_read_that_is_refused_does_not_bind_a_deferred_reader(self) -> None:
+        log = make()
+        publisher = log.publisher()
+        assert publisher is not None
+        publisher.publish(entry(0))
+        reader = log.reader_deferred()
+        with self.assertRaises(ValueError):
+            log.read(reader, [0])
+        with self.assertRaises(ValueError):
+            make().read(reader, [0] * WORDS)
+        self.assertFalse(reader.is_bound)
+        self.assertEqual(0, reader.cursor)
+
+    def test_a_deferred_reader_that_falls_behind_later_is_told_as_any_reader_is(self) -> None:
+        log = make()
+        publisher = log.publisher()
+        assert publisher is not None
+        for n in range(10):
+            publisher.publish(entry(n))
+        reader = log.reader_deferred()
+        # h = 10: the window is [8, 10), and the bind took 8 with no loss.
+        self.assertEqual((Item(8), entry(8)), read(log, reader))
+        self.assertEqual(0, reader.lost)
+        for n in range(10, 13):
+            publisher.publish(entry(n))
+        # h = 13: the window is [11, 13) and the reader holds 9, so it missed 2.
+        self.assertEqual(Lagged(2), read(log, reader)[0])
+        self.assertEqual(2, reader.lost)
+        self.assertEqual(11, reader.cursor)
+        self.assertEqual((Item(11), entry(11)), read(log, reader))
+
+    def test_a_deferred_reader_is_the_rings_late_reader_told_of_nothing_however_much_was_written(self) -> None:
+        # A ring of four retained entries: three are published, a reader is opened
+        # deferred, ten more are published, and 13 have been published in all.
+        log = BroadcastLog(WORDS, 5)
+        self.assertEqual(4, log.retention)
+        publisher = log.publisher()
+        assert publisher is not None
+        for n in range(3):
+            publisher.publish(entry(n))
+        late = log.reader_deferred()
+        for n in range(3, 13):
+            publisher.publish(entry(n))
+        # The oldest retained is 9, and the reader is told of nothing.
+        seen: list[int] = []
+        while True:
+            answer, _ = read(log, late)
+            if not isinstance(answer, Item):
+                self.assertEqual(Empty(), answer)
+                break
+            seen.append(answer.seq)
+        self.assertEqual([9, 10, 11, 12], seen)
+        self.assertEqual(0, late.lost)
+
+
 class TestRuntimeProperties(unittest.TestCase):
     def test_this_row_gives_blocking(self) -> None:
         self.assertIs(Progress.BLOCKING, PROGRESS)
