@@ -348,6 +348,49 @@ fn an_if_chain_is_lowered_to_lua_and_a_failed_cond_ends_the_block() {
     );
 }
 
+/// An inline `<script>` is lowered to Lua and run by the engine; a body that fails is an
+/// `error.execution` and ends the block.
+#[test]
+fn an_inline_script_is_lowered_to_lua_for_the_engine() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <onentry><script>n = n + 1;</script></onentry>
+    <transition cond="n == 2" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(machine.contains(r#"executeScript(""#), "{machine}");
+    assert!(
+        machine.contains("<script> failed to execute"),
+        "a failed script is an error.execution: {machine}"
+    );
+    assert!(
+        machine.contains("break sceBlock"),
+        "the error ends the block: {machine}"
+    );
+}
+
+/// A top-level `<script>` runs once, at document load, after the data is declared.
+#[test]
+fn a_top_level_script_runs_at_load_after_the_data() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <script>n = n + 10;</script>
+  <state id="s0"><transition cond="n == 11" target="done"/></state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    let data = machine
+        .find(r#"defineData("n""#)
+        .expect("the data is declared");
+    let script = machine
+        .find("a top-level <script> failed to execute")
+        .expect("the top-level script is run");
+    assert!(data < script, "the script runs after the data: {machine}");
+}
+
 /// A cond the build decided is not sent to the engine, so an `<if>` on one has no flag to keep.
 #[test]
 fn an_if_on_a_cond_the_build_decided_keeps_no_flag() {
@@ -428,13 +471,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
             body: r#"<state id="s0"><onentry><log expr="'x'"/></onentry></state>"#,
             extra: &[],
             named: "<log>",
-        },
-        Refusal {
-            what: "a top-level <script>",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<script>var x = 1;</script><state id="s0"/>"#,
-            extra: &[],
-            named: "a top-level <script>",
         },
         Refusal {
             what: "a <data src>",

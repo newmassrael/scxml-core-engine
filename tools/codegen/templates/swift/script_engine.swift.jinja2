@@ -16,6 +16,7 @@
     - populateEventMetadata / bindCurrentEvent   `_event`, before the first guard of a selection
     - evaluateGuard(_:engine:)          a `cond`, which raises error.execution when it cannot be run
     - evaluateIfCond(_:failed:engine:)  the same for an `<if>`, which also sets its caller's flag
+    - assignData / executeScript        an `<assign>` and a `<script>`, run as the Lua they were lowered to
 #}
 
     // ------------------------------------------------------------------
@@ -84,8 +85,14 @@
     /// the assignment ran. A location that cannot be written, or a value that cannot be computed, is
     /// the caller's `error.execution`.
     private func assignData(_ location: String, _ value: String) -> Bool {
+        executeScript("\(location) = \(value)", name: "=assign")
+    }
+
+    /// W3C SCXML 5.8: runs a chunk already lowered to Lua in the session, and answers whether it ran.
+    /// A chunk that raises is the caller's `error.execution`.
+    private func executeScript(_ source: String, name: String) -> Bool {
         do {
-            try ensureLua().execute("\(location) = \(value)", name: "=assign")
+            try ensureLua().execute(source, name: name)
             return true
         } catch {
             return false
@@ -108,6 +115,14 @@
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% if model.global_scripts %}
+        // W3C SCXML 5.8: the top-level scripts run at document load, after the data is declared
+{% for script in model.global_scripts %}
+        if !executeScript("{{ script.content | to_lua_script | escape_swift }}", name: "=script") {
+            raiseExecutionError("a top-level <script> failed to execute", engine: engine)
+        }
+{% endfor %}
+{% endif %}
     }
 
     /// Keeps the metadata of the event about to be selected on (§scxml-5.10).

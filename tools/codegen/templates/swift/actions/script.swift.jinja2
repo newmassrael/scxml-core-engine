@@ -1,0 +1,16 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 5.8: Inline script. The body is lowered to Lua at build time and the engine runs it
+   (`executeScript`, in `script_engine.swift.jinja2`). A script that fails has raised
+   error.execution, and the error ends the block. #}
+{% if action.content %}
+{% set in_block = in_action_block is defined and in_action_block %}
+                // W3C SCXML 5.8: <script>
+                if !executeScript("{{ action.content | to_lua_script | escape_swift }}", name: "=script") {
+                    raiseExecutionError("<script> failed to execute", engine: engine)
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                }
+{% endif %}

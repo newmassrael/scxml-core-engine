@@ -4442,10 +4442,13 @@ fn swift_hybrid_invoke_unlowered(
 /// An `<if>` too, for the same documents: each `cond` of the chain is lowered to Lua and run by the
 /// engine, and a branch it cannot run is false and ends the block. A `null` document has no
 /// condition language, so a cond the build could not decide is not one the template can print.
+///
+/// An inline `<script>` too: its body is lowered to Lua and run by the engine, and a body that fails
+/// raises `error.execution` and ends the block. A `null` document has no language to write one in.
 fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
     match action_type {
         "raise" | "send" | "cancel" => true,
-        "assign" | "if" => is_ecma,
+        "assign" | "if" | "script" => is_ecma,
         _ => false,
     }
 }
@@ -4649,9 +4652,11 @@ fn swift_ecmascript_cause_unlowered(
         | Cause::TransitionGuard { .. }
         | Cause::AssignAction { .. }
         | Cause::IfCondition { .. }
-        | Cause::ElseIfCondition { .. } => None,
-        Cause::GlobalScript | Cause::UnresolvedExternalScript => {
-            Some("a top-level <script>".to_string())
+        | Cause::ElseIfCondition { .. }
+        | Cause::InlineScriptAction { .. }
+        | Cause::GlobalScript => None,
+        Cause::UnresolvedExternalScript => {
+            Some("a top-level <script src> it could not read".to_string())
         }
         Cause::SendNamelist { state_id } => named("a <send namelist>", state_id),
         Cause::SendParamExpr { state_id, .. } => named("a <send> <param> expression", state_id),
@@ -4659,7 +4664,6 @@ fn swift_ecmascript_cause_unlowered(
             named("a <send> attribute computed by an expression", state_id)
         }
         Cause::LogExpr { state_id } => named("a <log> expression", state_id),
-        Cause::InlineScriptAction { state_id } => named("a <script>", state_id),
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
         Cause::ForeachAction { state_id } => named("a <foreach>", state_id),
         Cause::HybridInvoke { invoke_id } => {
