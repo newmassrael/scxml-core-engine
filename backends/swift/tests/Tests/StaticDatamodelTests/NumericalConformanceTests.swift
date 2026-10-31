@@ -637,6 +637,24 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(result.reason == expectedReason, "validator_signed_roc step \(i) reason")
     }}
 
+// MARK: - validator: crossfile_validator_codec
+
+@Test func crossfileValidatorCodecMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_codec")
+    let validator = CrossfileValidatorCodec()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let arg1 = try oracleInteger(args[1], as: UInt16.self)
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0, arg1)
+        #expect(result.valid == expectedValid, "crossfile_validator_codec step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_codec step \(i) reason")
+    }}
+
 // MARK: - validator: crossfile_validator_filter
 
 @Test func crossfileValidatorFilterMatchesReference() throws {

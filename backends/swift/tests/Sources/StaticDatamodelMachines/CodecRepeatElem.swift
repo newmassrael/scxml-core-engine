@@ -15,7 +15,11 @@ public struct CodecRepeatElem: Equatable, Sendable {
     public static let frameLength = 2
 
     /// The field at byte 0, big-endian.
-    public var seq: UInt16
+    public var seq: UInt16 = 0
+
+    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
+    /// composes this codec does until it is given one.
+    public init() {}
 
     public init(seq: UInt16) {
         self.seq = seq

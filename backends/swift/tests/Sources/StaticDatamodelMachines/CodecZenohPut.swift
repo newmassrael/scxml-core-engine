@@ -15,7 +15,11 @@ public struct CodecZenohPut: Equatable, Sendable {
     public static let frameLength = 1
 
     /// The field at byte 0, big-endian.
-    public var payload: UInt8
+    public var payload: UInt8 = 0
+
+    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
+    /// composes this codec does until it is given one.
+    public init() {}
 
     public init(payload: UInt8) {
         self.payload = payload

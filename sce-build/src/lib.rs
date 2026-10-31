@@ -6266,14 +6266,18 @@ fn validate_and_enrich_imports(
                     ctx.swift_unlowered = forge::generator::swift_enum_unlowered(em);
                 }
             }
-            // A Swift validator calls the unit a transform or a lookup is written as,
-            // which exists only when Swift writes that document: a value a transform
+            // A Swift validator calls the unit a transform or a lookup is written as, and
+            // holds the unit of a codec, which exist only when Swift writes that document: a
+            // codec past fixed-width frames has none, and a value a transform
             // reads through `previous()` has no unit, and a table that answers an
             // optional on a miss, or a name, has one a comparison cannot read.
             if *language == generator::Language::Swift {
                 match &doc {
                     forge::model::ForgeDocument::Transform(tm) => {
                         ctx.swift_unlowered = forge::generator::swift_transform_unlowered(tm);
+                    }
+                    forge::model::ForgeDocument::Codec(cm) => {
+                        ctx.swift_unlowered = forge::generator::swift_codec_unlowered(cm);
                     }
                     forge::model::ForgeDocument::Lookup(lm) => {
                         // The unit of a table of names is written (it answers a case of

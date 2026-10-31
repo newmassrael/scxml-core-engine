@@ -6,8 +6,8 @@
 // `ValidationResult`, named by its module, and keeps the last value of each input a
 // rate-of-change rule reads.
 //
-// A validator that imports another kind composes its unit or holds a member of it, which a Swift
-// validator has not spelled: it is refused by name, never written without it.
+// A validator that imports another kind composes its unit or holds a member of it; one whose
+// import Swift does not write (`swift_unlowered`) is refused by name, never written without it.
 
 use std::path::{Path, PathBuf};
 
@@ -119,18 +119,18 @@ fn a_validator_holds_the_unit_of_a_filter_it_imports_as_a_member() {
     );
 }
 
-/// A kind Swift does not write as a unit, and a document of one it does that Swift does not
-/// write, are named in a refusal and not called.
+/// A validator holds the unit of a codec it imports as a member, a frame of zeros until it is
+/// given one, and reads a field of it by the member's name in its plausibility.
 #[test]
-fn an_import_of_a_unit_swift_does_not_write_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/crossfile_validator_codec.scxml")
-        .expect_err("an import of a codec is not written");
-    // The codec the validator imports has no Swift template, so it is the codec's own
-    // generation that refuses, by the kind and the language.
+fn a_validator_holds_the_unit_of_a_codec_it_imports_as_a_member() {
+    let code = swift_of("tests/forge/resources/crossfile_validator_codec.scxml")
+        .expect("an import of a codec is written");
     assert!(
-        refusal.contains("CodegenGenericKindBackendEmitMissing")
-            && refusal.contains("\"codec\"")
-            && refusal.contains("\"swift\""),
-        "the refusal names the codec and the language: {refusal}"
+        code.contains("private let frame = CodecSimpleFrame()"),
+        "the codec is a member of the validator: {code}"
+    );
+    assert!(
+        code.contains("frame.msgId == msgId") && code.contains("frame.payload == payload"),
+        "a field of the member is read by the member's name: {code}"
     );
 }

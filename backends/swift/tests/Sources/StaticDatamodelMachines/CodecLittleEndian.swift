@@ -15,13 +15,17 @@ public struct CodecLittleEndian: Equatable, Sendable {
     public static let frameLength = 4
 
     /// The field at byte 0, little-endian.
-    public var sensorId: UInt8
+    public var sensorId: UInt8 = 0
 
     /// The field at byte 1, little-endian.
-    public var value: UInt16
+    public var value: UInt16 = 0
 
     /// The field at byte 3, little-endian.
-    public var status: UInt8
+    public var status: UInt8 = 0
+
+    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
+    /// composes this codec does until it is given one.
+    public init() {}
 
     public init(sensorId: UInt8, value: UInt16, status: UInt8) {
         self.sensorId = sensorId

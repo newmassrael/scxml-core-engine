@@ -15,13 +15,17 @@ public struct CodecSimpleFrame: Equatable, Sendable {
     public static let frameLength = 4
 
     /// The field at byte 0, big-endian.
-    public var msgId: UInt8
+    public var msgId: UInt8 = 0
 
     /// The field at byte 1, big-endian.
-    public var length: UInt8
+    public var length: UInt8 = 0
 
     /// The field at byte 2, big-endian.
-    public var payload: UInt16
+    public var payload: UInt16 = 0
+
+    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
+    /// composes this codec does until it is given one.
+    public init() {}
 
     public init(msgId: UInt8, length: UInt8, payload: UInt16) {
         self.msgId = msgId

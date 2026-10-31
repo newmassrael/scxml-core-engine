@@ -26091,17 +26091,25 @@ pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
     None
 }
 
+/// What of the codec `m` the Swift backend does not lower yet, described for a refusal by name
+/// (`generate/unsupported-feature`); `None` for a codec it writes. A validator that imports a
+/// codec is refused for it, since the unit its member names is not written.
+pub(crate) fn swift_codec_unlowered(m: &CodecModel) -> Option<String> {
+    swift_codec::unlowered(m)
+}
+
 /// What of a validator the Swift backend does not lower yet, described for a refusal by name
 /// (`generate/unsupported-feature`): an import of a kind Swift does not write as a unit, or
 /// of a document of a kind it writes that Swift does not write itself. A validator calls the
 /// unit of a condition, a lookup, a transform or an interpolation it imports, and holds a
-/// member of the unit of a filter, which keeps state. A validator over its own inputs, with
-/// range, rate-of-change and plausibility rules, is lowered.
+/// member of the unit of a filter, which keeps state, or of a codec, whose fields its
+/// plausibility reads. A validator over its own inputs, with range, rate-of-change and
+/// plausibility rules, is lowered.
 pub(crate) fn swift_validator_unlowered(imports: &[ImportContext]) -> Option<String> {
     imports
         .iter()
         .find_map(|import| match import.kind.as_str() {
-            "condition" | "filter" | "interpolation" | "lookup" | "transform" => {
+            "codec" | "condition" | "filter" | "interpolation" | "lookup" | "transform" => {
                 import.swift_unlowered.as_ref().map(|why| {
                     format!(
                         "the <sce:import as=\"{}\">, a {} with {why}, which a validator composes",
