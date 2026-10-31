@@ -99,6 +99,7 @@ static void a_lag_from_a_wrapped_head_is_counted_a_lap_on_in_64_bits(void) {
     CHECK(sce_blogn_init(&log, storage, 4u, 1u), "four slots");
     reader.cursor = 10u;
     reader.lost = 0u;
+    reader.unbound = 0u;
     /* 1 + 2^32 behind, less the retention 3: the head says the reader is 1 behind, which
      * is inside the window of 4 slots and so cannot be what a lag is answered from. */
     result = sce_blogn_lagged(&reader, &log, 1u);
@@ -109,12 +110,14 @@ static void a_lag_from_a_wrapped_head_is_counted_a_lap_on_in_64_bits(void) {
      * fewest it can be, 2^32 + 3 - 3. */
     reader.cursor = 10u;
     reader.lost = 0u;
+    reader.unbound = 0u;
     result = sce_blogn_lagged(&reader, &log, 3u);
     CHECK(result.skipped == UINT64_C(4294967296), "2^32 itself, which 32 bits cannot hold");
     CHECK(reader.cursor == 10u, "and the cursor is where it was");
     /* 4 behind is outside the window of 3 and is taken as it is: 4 - 3. */
     reader.cursor = 10u;
     reader.lost = 0u;
+    reader.unbound = 0u;
     result = sce_blogn_lagged(&reader, &log, 4u);
     CHECK(result.skipped == 1u && reader.cursor == 11u, "a distance of the slot count is a lag of 1");
 }
@@ -174,6 +177,57 @@ static void a_new_log_is_stamped_unwritten_and_empty(void) {
     oldest = sce_blogn_reader_oldest(&log);
     CHECK(oldest.cursor == 0u && sce_blogn_read(&log, &oldest, out).status == SCE_BLOGN_EMPTY,
           "the oldest reader of a new log is at its head");
+}
+
+/* ---- The deferred reader ---- */
+
+/* A deferred reader of the 32-bit row: no cursor and not bound until its first read, which
+ * binds the oldest retained entry of the head it loads, as the oldest reader of the same
+ * moment would, and tells a reader that waited nothing. Four slots retain three. */
+static void a_deferred_reader_binds_at_its_first_read_in_the_32_bit_row(void) {
+    uint32_t storage[SCE_BLOGN_STORAGE_WORDS(4u, WORDS)];
+    sce_blogn_t log;
+    sce_blogn_publisher_t publisher = {0};
+    sce_blogn_reader_t deferred;
+    sce_blogn_reader_t eager;
+    sce_blogn_read_t result;
+    uint32_t out[WORDS];
+    uint32_t n;
+    CHECK(sce_blogn_init(&log, storage, 4u, WORDS), "four slots");
+    CHECK(sce_blogn_split(&log, &publisher), "the publisher");
+    deferred = sce_blogn_reader_deferred(&log);
+    CHECK(!sce_blogn_reader_is_bound(&deferred), "not bound before its first read");
+    CHECK(deferred.cursor == 0u && deferred.lost == 0u, "no cursor reads as 0, with no loss");
+    result = sce_blogn_read(&log, &deferred, out);
+    CHECK(result.status == SCE_BLOGN_EMPTY && sce_blogn_reader_is_bound(&deferred) && deferred.cursor == 0u,
+          "an empty log is empty, and the read bound the reader at the start");
+    /* A young log, last slot never written: three entries published, the oldest is 0. */
+    for (n = 0; n < 3u; n++) {
+        const entry_t e = entry_of(n);
+        CHECK(sce_blogn_publish(&publisher, e.words) == n, "publish %u", (unsigned)n);
+    }
+    deferred = sce_blogn_reader_deferred(&log);
+    result = sce_blogn_read(&log, &deferred, out);
+    CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 0u && is_whole_entry(out, 0u),
+          "a young log binds to entry 0 by its last slot");
+    /* Ten more: the head is 13, and a reader that waited is told of nothing, where the
+     * oldest reader opened before them is told it missed 13 - 3 = 10. */
+    eager = sce_blogn_reader_oldest(&log);
+    for (n = 3u; n < 13u; n++) {
+        const entry_t e = entry_of(n);
+        CHECK(sce_blogn_publish(&publisher, e.words) == n, "publish %u", (unsigned)n);
+    }
+    deferred = sce_blogn_reader_deferred(&log);
+    for (n = 10u; n < 13u; n++) {
+        result = sce_blogn_read(&log, &deferred, out);
+        CHECK(result.status == SCE_BLOGN_ITEM && result.seq == n && is_whole_entry(out, n),
+              "the deferred reader reads %u", (unsigned)n);
+    }
+    CHECK(deferred.lost == 0u, "with nothing lost");
+    CHECK(sce_blogn_read(&log, &deferred, out).status == SCE_BLOGN_EMPTY, "then the head");
+    result = sce_blogn_read(&log, &eager, out);
+    CHECK(result.status == SCE_BLOGN_LAGGED && result.skipped == 10u, "the eager reader is told it missed 10");
+    sce_blogn_publisher_release(&publisher);
 }
 
 /* ---- The publisher ---- */
@@ -352,6 +406,7 @@ int main(void) {
     a_word_keeps_all_of_its_32_bits();
     the_constructor_refuses_a_shape_it_cannot_run();
     a_new_log_is_stamped_unwritten_and_empty();
+    a_deferred_reader_binds_at_its_first_read_in_the_32_bit_row();
     the_publishers_forms_are_one_place();
     real_threads_see_whole_entries_and_lose_only_what_they_are_told();
     (void)printf("broadcast log narrow runtime (C11, 32-bit stamp): %u check(s), %u failure(s)\n", g_checks,

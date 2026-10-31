@@ -253,6 +253,7 @@ static void a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_
     open_log(&f, 2u);
     reader.cursor = 5u;
     reader.lost = 0u;
+    reader.unbound = 0u;
     result = sce_blogn_lagged(&reader, &f.log, 1u);
     CHECK(result.status == SCE_BLOGN_LAGGED && result.skipped == 8u, "a lag is never reported as skipping nothing");
     CHECK(reader.cursor == 5u, "the cursor is where it was");
@@ -260,6 +261,7 @@ static void a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_
     /* A head that already says `slots` or more is taken as it is: 3 - 1 = 2. */
     reader.cursor = 5u;
     reader.lost = 0u;
+    reader.unbound = 0u;
     result = sce_blogn_lagged(&reader, &f.log, 3u);
     CHECK(result.status == SCE_BLOGN_LAGGED && result.skipped == 2u, "a distance of 3 less the retention 1");
     CHECK(reader.cursor == 7u, "(5 + 2) mod 8");
@@ -306,6 +308,132 @@ static void the_oldest_reader_knows_a_young_log_from_one_that_wrapped(void) {
     CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 0u && word == 8u, "entry 8, by its residue");
 }
 
+/* ---- The deferred reader ---- */
+
+/* Both readers are opened on the empty log, one at the oldest now and one deferred; then
+ * three entries (0, 1, 2) are published. Retention is 1, so the oldest retained is
+ * entry 2. */
+static void a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing(void) {
+    fixture_t f;
+    sce_blogn_reader_t eager;
+    sce_blogn_reader_t deferred;
+    sce_blogn_read_t result;
+    uint32_t word;
+    open_log(&f, 2u);
+    eager = sce_blogn_reader_oldest(&f.log);
+    deferred = sce_blogn_reader_deferred(&f.log);
+    CHECK(sce_blogn_reader_is_bound(&eager), "a reader opened at the oldest is bound");
+    CHECK(!sce_blogn_reader_is_bound(&deferred), "a deferred reader is not bound before its first read");
+    CHECK(deferred.cursor == 0u && deferred.lost == 0u, "no cursor yet reads as 0, with no loss");
+    publish_all(&f, 0u, 3u);
+    /* The eager reader holds 0, which is 3 behind: it is told it missed 2. */
+    result = read_into(&f, &eager, &word);
+    CHECK(result.status == SCE_BLOGN_LAGGED && result.skipped == 2u, "the eager reader is told of the lag");
+    /* The deferred reader binds at this read, at the oldest retained entry. */
+    result = read_into(&f, &deferred, &word);
+    CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 2u && word == 2u,
+          "the first read of a deferred reader is the oldest retained entry");
+    CHECK(sce_blogn_reader_is_bound(&deferred), "the first read binds it");
+    CHECK(deferred.lost == 0u, "a reader that waited is told of nothing");
+    CHECK(deferred.cursor == 3u, "and holds the entry after the one it read");
+    result = read_into(&f, &deferred, &word);
+    CHECK(result.status == SCE_BLOGN_EMPTY, "then the head");
+}
+
+static void the_other_constructors_give_bound_readers(void) {
+    fixture_t f;
+    sce_blogn_reader_t reader;
+    open_log(&f, 2u);
+    reader = sce_blogn_reader_oldest(&f.log);
+    CHECK(sce_blogn_reader_is_bound(&reader), "oldest is bound");
+    reader = sce_blogn_reader_head(&f.log);
+    CHECK(sce_blogn_reader_is_bound(&reader), "head is bound");
+    reader = sce_blogn_reader_at(&f.log, 0u);
+    CHECK(sce_blogn_reader_is_bound(&reader), "at is bound");
+}
+
+static void a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start(void) {
+    fixture_t f;
+    sce_blogn_reader_t reader;
+    sce_blogn_read_t result;
+    uint32_t word;
+    open_log(&f, 2u);
+    reader = sce_blogn_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &word);
+    CHECK(result.status == SCE_BLOGN_EMPTY, "nothing published is empty");
+    CHECK(sce_blogn_reader_is_bound(&reader), "the empty read bound it");
+    CHECK(reader.cursor == 0u, "at the start of the log");
+    publish_all(&f, 0u, 1u);
+    result = read_into(&f, &reader, &word);
+    CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 0u && word == 0u, "the first entry is read from the start");
+    CHECK(reader.lost == 0u, "with nothing lost");
+}
+
+/* Ten entries cross the head's wrap at 8, so the head is 2 and the last slot is written.
+ * The oldest retained is entry 9, cursor 9 mod 8 = 1. */
+static void a_deferred_reader_across_the_wrap_binds_to_the_oldest_by_the_last_slot(void) {
+    fixture_t f;
+    sce_blogn_reader_t reader;
+    sce_blogn_read_t result;
+    uint32_t word;
+    open_log(&f, 2u);
+    publish_all(&f, 0u, 10u);
+    CHECK(sce_blogn_head(&f.log) == 2u, "ten publishes leave the head at 2 modulo 8");
+    reader = sce_blogn_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &word);
+    CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 1u && word == 9u, "the oldest retained is entry 9");
+    CHECK(reader.lost == 0u, "and nothing is lost");
+    /* A reader that falls behind later is told as any reader is: three more entries leave
+     * the head at 5, the reader holding 2 is 3 behind, and misses 3 - 1 = 2. */
+    publish_all(&f, 10u, 13u);
+    result = read_into(&f, &reader, &word);
+    CHECK(result.status == SCE_BLOGN_LAGGED && result.skipped == 2u, "a later lag is told");
+    CHECK(reader.lost == 2u && reader.cursor == 4u, "and counted, at the residue of entry 12");
+}
+
+/* Three entries of a log that retains three: its last slot was never written, so the
+ * oldest is entry 0 though the head is 3. */
+static void a_deferred_reader_on_a_young_log_binds_to_entry_zero_by_the_last_slot(void) {
+    fixture_t f;
+    sce_blogn_reader_t reader;
+    sce_blogn_read_t result;
+    uint32_t word;
+    open_log(&f, 4u);
+    publish_all(&f, 0u, 3u);
+    CHECK(f.storage[3u * (WORDS + 1u)] == SCE_BLOGN_UNWRITTEN, "the last slot is still unwritten");
+    reader = sce_blogn_reader_deferred(&f.log);
+    result = read_into(&f, &reader, &word);
+    CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 0u && word == 0u, "the oldest is entry 0");
+    CHECK(reader.lost == 0u, "and nothing is lost");
+}
+
+/* The bind and sce_blogn_reader_oldest give one cursor, whatever the log has published
+ * and whichever side of the wrap the head is. */
+static void a_deferred_reader_binds_where_the_oldest_reader_opens(void) {
+    uint32_t slots;
+    for (slots = 2u; slots <= 4u; slots += 2u) {
+        fixture_t f;
+        uint32_t count;
+        uint32_t word;
+        open_log(&f, slots);
+        for (count = 0; count < 20u; count++) {
+            sce_blogn_reader_t deferred = sce_blogn_reader_deferred(&f.log);
+            const sce_blogn_reader_t oldest = sce_blogn_reader_oldest(&f.log);
+            const sce_blogn_read_t result = read_into(&f, &deferred, &word);
+            if (count == 0u) {
+                CHECK(result.status == SCE_BLOGN_EMPTY, "%u slots: an empty log is empty to a deferred reader",
+                      (unsigned)slots);
+            } else {
+                CHECK(result.status == SCE_BLOGN_ITEM && result.seq == oldest.cursor, "%u slots, %u publishes",
+                      (unsigned)slots, (unsigned)count);
+            }
+            CHECK(deferred.lost == 0u && sce_blogn_reader_is_bound(&deferred),
+                  "%u slots, %u publishes: bound, none lost", (unsigned)slots, (unsigned)count);
+            publish_all(&f, count, count + 1u);
+        }
+    }
+}
+
 /* The head is 6; K = 4. A position fewer than 4 behind is taken as it is. */
 static void a_position_is_read_modulo_the_stamp_space_and_one_ahead_is_the_head(void) {
     fixture_t f;
@@ -348,6 +476,7 @@ static void a_log_with_as_many_slots_as_half_the_stamp_space_keeps_its_window_ac
     CHECK(held.cursor == 13u % 8u, "the head is 13 modulo 8");
     behind.cursor = 10u % 8u;
     behind.lost = 0u;
+    behind.unbound = 0u;
     result = read_into(&f, &behind, &word);
     CHECK(result.status == SCE_BLOGN_ITEM && result.seq == 2u && word == 10u,
           "(5 - 2) mod 8 = 3 behind: in the window");
@@ -456,6 +585,12 @@ int main(void) {
     a_reader_a_stamp_space_and_one_behind_is_handed_a_later_lap_as_its_own();
     a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_one();
     the_oldest_reader_knows_a_young_log_from_one_that_wrapped();
+    a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing();
+    the_other_constructors_give_bound_readers();
+    a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start();
+    a_deferred_reader_across_the_wrap_binds_to_the_oldest_by_the_last_slot();
+    a_deferred_reader_on_a_young_log_binds_to_entry_zero_by_the_last_slot();
+    a_deferred_reader_binds_where_the_oldest_reader_opens();
     a_position_is_read_modulo_the_stamp_space_and_one_ahead_is_the_head();
     a_log_with_as_many_slots_as_half_the_stamp_space_keeps_its_window_across_the_wrap();
     the_constructor_refuses_a_slot_count_the_stamp_cannot_number();
