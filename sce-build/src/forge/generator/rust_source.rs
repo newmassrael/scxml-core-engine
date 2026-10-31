@@ -399,11 +399,22 @@ pub(crate) fn group_accessor(group: &GateGroup) -> String {
     filters::to_snake_case(gate_words(group))
 }
 
+/// `words` as a Rust type or variant name, each word in Pascal case: a flag
+/// the document spells in capitals (`CURRENT`) is a word (`Current`), not an
+/// acronym.
+fn pascal_words(words: &str) -> String {
+    words
+        .split('_')
+        .filter(|w| !w.is_empty())
+        .map(|w| filters::to_rust_variant(w.to_string()))
+        .collect()
+}
+
 /// The type a group of the codec `codec` is held as: an enum of its arms, or a
 /// struct of its one arm, named after the gates; a struct of the arm present
 /// while one gate does not hold says so in its name.
 pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
-    let pascal = filters::to_pascal_case(gate_words(group));
+    let pascal = pascal_words(&gate_words(group));
     match group.arms.as_slice() {
         [arm] if arm.values == [false] => format!("{codec}Not{pascal}"),
         _ => format!("{codec}{pascal}"),
@@ -416,8 +427,8 @@ pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
 /// already, so an arm names the flags alone.
 pub(crate) fn group_arm_name(group: &GateGroup, arm: &GroupArm) -> String {
     let flag_of = |gate: &GateVar| match gate {
-        GateVar::Input(name) => filters::to_pascal_case(name.clone()),
-        GateVar::Flag { flag, .. } => filters::to_pascal_case(flag.clone()),
+        GateVar::Input(name) => pascal_words(name),
+        GateVar::Flag { flag, .. } => pascal_words(flag),
     };
     if let ([gate], [value]) = (group.gates.as_slice(), arm.values.as_slice()) {
         return if *value {

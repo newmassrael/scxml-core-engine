@@ -35,7 +35,7 @@ use super::codec_zenoh_interest_body::CodecZenohInterestBody;
 pub struct CodecZenohInterest<'a> {
     pub header: u8,
     pub id: u64,
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCURRENTOrFUTURE<CodecZenohInterestBody<'a>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBody<'a>>>,
     pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 4>>,
 }
 
@@ -140,7 +140,7 @@ impl<'a> CodecZenohInterest<'a> {
         }
         _out.header = header;
         _out.id = id;
-        _out.header_current_or_future = match ((header & 0x20u8) != 0, (header & 0x40u8) != 0) { (true, false) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: body.unwrap_or_default() }), (false, true) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: body.unwrap_or_default() }), (true, true) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: body.unwrap_or_default() }), _ => None, };
+        _out.header_current_or_future = match ((header & 0x20u8) != 0, (header & 0x40u8) != 0) { (true, false) => Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: body.unwrap_or_default() }), (false, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: body.unwrap_or_default() }), (true, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: body.unwrap_or_default() }), _ => None, };
         Ok(())
     }
 
@@ -233,19 +233,19 @@ impl<'a> CodecZenohInterest<'a> {
 /// ones of one arm, and `CodecZenohInterest` derives the gates from which. A value holds no arm while `header.CURRENT` does not hold and `header.FUTURE` does not hold.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CodecZenohInterestHeaderCURRENTOrFUTURE<Body> {
+pub enum CodecZenohInterestHeaderCurrentOrFuture<Body> {
     /// While `header.CURRENT` holds and `header.FUTURE` does not hold.
-    CURRENT {
+    Current {
         /// The `body` field.
         body: Body,
     },
     /// While `header.CURRENT` does not hold and `header.FUTURE` holds.
-    FUTURE {
+    Future {
         /// The `body` field.
         body: Body,
     },
     /// While `header.CURRENT` holds and `header.FUTURE` holds.
-    CURRENTFUTURE {
+    CurrentFuture {
         /// The `body` field.
         body: Body,
     },
@@ -263,7 +263,7 @@ pub trait CodecZenohInterestSource {
     /// The `extensions` field.
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>>;
     /// The fields `header.CURRENT || header.FUTURE` decides, held together (docs/adr/0065 §6 R4).
-    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>>;
+    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>>;
 }
 
 impl<T: CodecZenohInterestSource + ?Sized> CodecZenohInterestSource for &T {
@@ -276,7 +276,7 @@ impl<T: CodecZenohInterestSource + ?Sized> CodecZenohInterestSource for &T {
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
         (**self).extensions()
     }
-    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
+    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         (**self).header_current_or_future()
     }
 }
@@ -294,15 +294,15 @@ pub struct CodecZenohInterestParts<'a> {
     /// The `extensions` field.
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4>>,
     /// The fields `header.CURRENT || header.FUTURE` decides, held together (docs/adr/0065 §6 R4).
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&'a super::codec_zenoh_interest_body::CodecZenohInterestBodyParts<'a>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<&'a super::codec_zenoh_interest_body::CodecZenohInterestBodyParts<'a>>>,
 }
 
 impl<'a> CodecZenohInterestSource for CodecZenohInterestParts<'a> {
-    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
+    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: *body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: *body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: *body },
+            CodecZenohInterestHeaderCurrentOrFuture::Current { body } => CodecZenohInterestHeaderCurrentOrFuture::Current { body: *body },
+            CodecZenohInterestHeaderCurrentOrFuture::Future { body } => CodecZenohInterestHeaderCurrentOrFuture::Future { body: *body },
+            CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body } => CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: *body },
         })
     }
     fn header(&self) -> u8 {
@@ -317,11 +317,11 @@ impl<'a> CodecZenohInterestSource for CodecZenohInterestParts<'a> {
 }
 
 impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
-    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
+    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body },
+            CodecZenohInterestHeaderCurrentOrFuture::Current { body } => CodecZenohInterestHeaderCurrentOrFuture::Current { body },
+            CodecZenohInterestHeaderCurrentOrFuture::Future { body } => CodecZenohInterestHeaderCurrentOrFuture::Future { body },
+            CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body } => CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body },
         })
     }
     fn header(&self) -> u8 {
@@ -336,11 +336,11 @@ impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestSource for CodecZenohInterestOwned<S> {
-    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCURRENTOrFUTURE<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
+    fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body },
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body },
+            CodecZenohInterestHeaderCurrentOrFuture::Current { body } => CodecZenohInterestHeaderCurrentOrFuture::Current { body },
+            CodecZenohInterestHeaderCurrentOrFuture::Future { body } => CodecZenohInterestHeaderCurrentOrFuture::Future { body },
+            CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body } => CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body },
         })
     }
     fn header(&self) -> u8 {
@@ -369,11 +369,11 @@ impl<'a> CodecZenohInterest<'a> {
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohInterestSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _m_body = src.header_current_or_future().map(|_g| match _g {
-            CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body } | CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body } | CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body } => body,
+            CodecZenohInterestHeaderCurrentOrFuture::Current { body } | CodecZenohInterestHeaderCurrentOrFuture::Future { body } | CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body } => body,
         });
         let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
-        let _d_header_current: bool = matches!(src.header_current_or_future(), Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { .. } | CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { .. }));
-        let _d_header_future: bool = matches!(src.header_current_or_future(), Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { .. } | CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { .. }));
+        let _d_header_current: bool = matches!(src.header_current_or_future(), Some(CodecZenohInterestHeaderCurrentOrFuture::Current { .. } | CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { .. }));
+        let _d_header_future: bool = matches!(src.header_current_or_future(), Some(CodecZenohInterestHeaderCurrentOrFuture::Future { .. } | CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { .. }));
         let _p_header_z_0: bool = src.extensions().is_some();
         let _c_header: u8 = (((((src.header() & !0x20) | (u8::from(_d_header_current) << 5)) & !0x40) | (u8::from(_d_header_future) << 6)) & !0x80) | (u8::from(_p_header_z_0) << 7);
         w.write_u8(_c_header)?;
@@ -470,7 +470,7 @@ use super::codec_zenoh_interest_body::CodecZenohInterestBodyOwned;
 pub struct CodecZenohInterestOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub id: u64,
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCURRENTOrFUTURE<CodecZenohInterestBodyOwned<S>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBodyOwned<S>>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4>>,
 }
 
@@ -516,7 +516,7 @@ impl<'a> CodecZenohInterest<'a> {
         Ok(CodecZenohInterestOwned {
             header: self.header,
             id: self.id,
-            header_current_or_future: match self.header_current_or_future { Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body }) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: body.try_into_owned_in::<S>()? }), Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body }) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: body.try_into_owned_in::<S>()? }), Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body }) => Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: body.try_into_owned_in::<S>()? }), None => None },
+            header_current_or_future: match self.header_current_or_future { Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body }) => Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: body.try_into_owned_in::<S>()? }), Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body }) => Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: body.try_into_owned_in::<S>()? }), Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body }) => Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: body.try_into_owned_in::<S>()? }), None => None },
             extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
@@ -559,20 +559,20 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestOwned<S> {
         _out.header = self.header;
         _out.id = self.id;
         match &self.header_current_or_future {
-            Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body }) => {
+            Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body }) => {
                 let mut _o_body: CodecZenohInterestBody<'o> = Default::default();
                 body.as_borrowed_into(&mut _o_body);
-                _out.header_current_or_future = Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENT { body: _o_body });
+                _out.header_current_or_future = Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: _o_body });
             }
-            Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body }) => {
+            Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body }) => {
                 let mut _o_body: CodecZenohInterestBody<'o> = Default::default();
                 body.as_borrowed_into(&mut _o_body);
-                _out.header_current_or_future = Some(CodecZenohInterestHeaderCURRENTOrFUTURE::FUTURE { body: _o_body });
+                _out.header_current_or_future = Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: _o_body });
             }
-            Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body }) => {
+            Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body }) => {
                 let mut _o_body: CodecZenohInterestBody<'o> = Default::default();
                 body.as_borrowed_into(&mut _o_body);
-                _out.header_current_or_future = Some(CodecZenohInterestHeaderCURRENTOrFUTURE::CURRENTFUTURE { body: _o_body });
+                _out.header_current_or_future = Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: _o_body });
             }
             None => _out.header_current_or_future = None,
         }
