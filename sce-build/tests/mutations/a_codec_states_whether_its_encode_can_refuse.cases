@@ -19,13 +19,11 @@ mutation_tests -p sce-build --features cli --lib --test codec_totality
 mutation_targets sce-build/src/forge/codec_totality.rs
 mutation_oracles sce-build/src/forge/codec_totality.rs sce-build/tests/codec_totality.rs
 
-mutation_case "a list past its bound is not a refusal" <<'PY'
-edit("sce-build/src/forge/codec_totality.rs",
-     r'''        .filter(|f| f.is_repeat() || f.is_tlv_chain())
-    {''',
-     r'''        .filter(|f| f.is_repeat() && f.is_tlv_chain())
-    {''')
-PY
+# There is no case for "a list past its bound is a refusal": the refusal went away with the
+# type that holds the list within its bound (`BoundedIter`), so the encode refuses no list and
+# there is no analysis of one to break (docs/adr/0065 §6 R2). A mutation of what no longer exists
+# would read as INCONCLUSIVE forever. What replaced the refusal, that a list is held within its
+# bound by type, is mutated in a_list_holds_no_more_entries_than_its_bound.cases.
 
 mutation_case "a held codec's refusal is not passed on" <<'PY'
 edit("sce-build/src/forge/codec_totality.rs",
