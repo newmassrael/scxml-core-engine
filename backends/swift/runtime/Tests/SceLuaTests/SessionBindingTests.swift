@@ -97,8 +97,12 @@ private func boundState(_ session: LuaSession) throws -> LuaState {
         asked.append($0)
         return false
     }
-    _ = try lua.evaluate("In('한글') or In('a b') or In(42)")
-    #expect(asked == ["한글", "a b", "42"])
+    // Two characters of three UTF-8 bytes each, as escapes: the id must reach the host as the bytes
+    // that were written, and the width is asserted so the fixture cannot become an ASCII one.
+    let multibyte = "\u{D55C}\u{AE00}"
+    #expect(multibyte.utf8.count == 6)
+    _ = try lua.evaluate("In('\(multibyte)') or In('a b') or In(42)")
+    #expect(asked == [multibyte, "a b", "42"])
 }
 
 // A state id is a string. An argument that is not one raises in Lua before the host is asked, and

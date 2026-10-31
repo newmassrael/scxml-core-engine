@@ -40,9 +40,14 @@ import Testing
 
 @Test func aGlobalKeepsEveryKindOfValueItWasGiven() throws {
     let lua = try LuaState()
+    // Two characters of three UTF-8 bytes each, written as escapes: the test needs a value that is
+    // several bytes wide, not a particular script, and the width is asserted so the fixture cannot
+    // be swapped for an ASCII one and leave the test green.
+    let multibyte = "\u{D55C}\u{AE00} text"
+    #expect(multibyte.utf8.count == 11)
     let values: [LuaValue] = [
         .nilValue, .boolean(true), .boolean(false), .integer(0), .integer(Int64.min),
-        .integer(Int64.max), .number(1.5), .number(-0.0), .string(""), .string("한글 text"),
+        .integer(Int64.max), .number(1.5), .number(-0.0), .string(""), .string(multibyte),
     ]
     for (index, value) in values.enumerated() {
         let name = "g\(index)"
