@@ -150,6 +150,46 @@ mod models {
         (log, ghost)
     }
 
+    /// The first read of a deferred reader, held to what it may answer
+    /// (`BroadcastLogWrapped.tla`, `DeferredStart` and `OpenRefines`). The reader has no
+    /// cursor before it. The count it binds to is the oldest retained entry of the head
+    /// the read loaded, a head somewhere in `lo..=hi`, so an item is the entry of one of
+    /// those windows, `Empty` happens only on a log with nothing published, and a lag
+    /// lands on the oldest retained of some head in the range; nothing it was told it
+    /// lost lies before where it started. Returns the reader and its full count.
+    fn first_read_and_check(log: &Log, ghost: &AtomicUsize) -> (Reader, u64) {
+        let mut reader = log.reader_deferred();
+        assert!(!reader.is_bound(), "a deferred reader has no cursor yet");
+        let lo = ghost.load(Ordering::SeqCst) as u64;
+        let mut out = [u32::MAX; 2];
+        let answer = log.read(&mut reader, &mut out);
+        let hi = ghost.load(Ordering::SeqCst) as u64 + 1;
+        assert!(reader.is_bound(), "the first read binds the cursor");
+        let first = lo.saturating_sub(Log::RETENTION);
+        let last = hi.saturating_sub(Log::RETENTION);
+        match answer {
+            Read::Item { seq } => {
+                let abs = recover(seq, first, last);
+                assert_eq!(out, entry(abs), "a first item is the whole entry it names");
+                assert_eq!(reader.cursor(), (abs + 1) & MASK);
+                assert_eq!(reader.lost(), 0);
+                (reader, abs + 1)
+            }
+            Read::Empty => {
+                assert_eq!(lo, 0, "a first read is empty only on an empty log");
+                assert_eq!(reader.cursor(), 0);
+                assert_eq!(reader.lost(), 0);
+                (reader, 0)
+            }
+            Read::Lagged { skipped } => {
+                assert!(skipped >= 1, "a lag skips at least one entry");
+                assert_eq!(reader.lost(), skipped);
+                let abs = recover(reader.cursor(), first, last);
+                (reader, abs)
+            }
+        }
+    }
+
     /// One reader against the publisher while the log's head, its stamps and its
     /// second slot's laps wrap.
     #[test]
@@ -268,6 +308,45 @@ mod models {
             let mut reader = log.reader_oldest();
             let hi = ghost.load(Ordering::SeqCst) as u64 + 1;
             let mut abs = recover(reader.cursor(), lo - Log::RETENTION, hi - Log::RETENTION);
+            for _ in 0..2 {
+                read_and_check(&log, &mut reader, &mut abs, &ghost);
+            }
+            publisher.join().unwrap();
+        });
+    }
+
+    /// A deferred reader whose first read begins while a young log is being written:
+    /// the stamp of the last slot may or may not be written when the read looks, which
+    /// is how the read tells a count that has not reached the retention from one that
+    /// has, and it is the first of the read's two loads.
+    #[test]
+    fn a_narrow_deferred_reader_on_a_young_log_binds_by_the_last_slot() {
+        model(|| {
+            let log = Arc::new(Log::new());
+            let ghost = Arc::new(AtomicUsize::new(0));
+            let far = log.clone();
+            let counted = ghost.clone();
+            let publisher = thread::spawn(move || publish_entries(&far, 0, 3, &counted));
+
+            let (mut reader, mut abs) = first_read_and_check(&log, &ghost);
+            for _ in 0..2 {
+                read_and_check(&log, &mut reader, &mut abs, &ghost);
+            }
+            publisher.join().unwrap();
+        });
+    }
+
+    /// The same first read after the head has wrapped, when the head's residue is below
+    /// the retention and a log that merely counted would take it for a young one.
+    #[test]
+    fn a_narrow_deferred_reader_after_the_wrap_binds_to_the_last_entry_held() {
+        model(|| {
+            let (log, ghost) = warmed(7);
+            let far = log.clone();
+            let counted = ghost.clone();
+            let publisher = thread::spawn(move || publish_entries(&far, 7, 9, &counted));
+
+            let (mut reader, mut abs) = first_read_and_check(&log, &ghost);
             for _ in 0..2 {
                 read_and_check(&log, &mut reader, &mut abs, &ghost);
             }

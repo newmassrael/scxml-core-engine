@@ -173,4 +173,91 @@ mod models {
             publisher.join().unwrap();
         });
     }
+
+    /// The first read of a deferred reader, held to what it may answer
+    /// (`BroadcastLog.tla`, `DeferredStart` and `FirstLagIsOvertaken`): it binds at the
+    /// oldest retained entry of the head it loaded, so it is an entry the window of some
+    /// head holds, `Empty` only for a log with nothing published, or a lag only if the
+    /// publisher completed an entry since the read began; and it has lost nothing before
+    /// it was bound.
+    fn first_read_and_check(log: &Log, reader: &mut Reader) -> Read {
+        assert!(!reader.is_bound(), "a deferred reader has no cursor yet");
+        let head_before = log.head();
+        let mut out = [u64::MAX; 2];
+        let answer = log.read(reader, &mut out);
+        assert!(reader.is_bound(), "the first read binds the cursor");
+        match answer {
+            Read::Item { seq } => {
+                assert!(
+                    seq + Log::RETENTION >= head_before,
+                    "a first item is one the window holds: entry {seq}, head {head_before}"
+                );
+                assert_eq!(out, entry(seq), "a first item is one whole entry");
+                assert_eq!(reader.cursor(), seq + 1);
+                assert_eq!(reader.lost(), 0);
+            }
+            Read::Empty => {
+                assert_eq!(head_before, 0, "a first read is empty only on an empty log");
+                assert_eq!(reader.cursor(), 0);
+                assert_eq!(reader.lost(), 0);
+            }
+            Read::Lagged { skipped } => {
+                assert!(skipped >= 1, "a lag skips at least one entry");
+                assert!(
+                    log.head() > head_before,
+                    "a first read is told of a loss only if an entry was completed since it began"
+                );
+                assert_eq!(reader.lost(), skipped);
+            }
+        }
+        answer
+    }
+
+    /// A deferred reader against the publisher while the second slot is reused: its
+    /// first read binds somewhere in the run, and what it answers is held to the
+    /// specification, then it reads on as any reader does.
+    #[test]
+    fn a_deferred_reader_binds_at_its_first_read_while_the_publisher_laps() {
+        model(|| {
+            let log = Arc::new(Log::new());
+            let far = log.clone();
+            let publisher = thread::spawn(move || {
+                let mut publisher = far.publisher().expect("the only publisher");
+                for n in 0..3 {
+                    assert_eq!(publisher.publish(&entry(n)), n);
+                }
+            });
+
+            let mut reader = log.reader_deferred();
+            first_read_and_check(&log, &mut reader);
+            read_and_check(&log, &mut reader);
+            publisher.join().unwrap();
+        });
+    }
+
+    /// Two deferred readers bind on their own first reads and do not disturb each other.
+    #[test]
+    fn two_deferred_readers_each_bind_at_their_own_first_read() {
+        model(|| {
+            let log = Arc::new(Log::new());
+            let far = log.clone();
+            let publisher = thread::spawn(move || {
+                let mut publisher = far.publisher().expect("the only publisher");
+                for n in 0..3 {
+                    publisher.publish(&entry(n));
+                }
+            });
+
+            let other = log.clone();
+            let second = thread::spawn(move || {
+                let mut reader = other.reader_deferred();
+                first_read_and_check(&other, &mut reader);
+            });
+
+            let mut reader = log.reader_deferred();
+            first_read_and_check(&log, &mut reader);
+            second.join().unwrap();
+            publisher.join().unwrap();
+        });
+    }
 }

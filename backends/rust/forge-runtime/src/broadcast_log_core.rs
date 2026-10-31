@@ -273,12 +273,22 @@ pub enum Read {
 pub struct Reader {
     cursor: u64,
     lost: u64,
+    /// A reader opened by [`BroadcastLog::reader_deferred`] has no cursor until
+    /// its first read binds one.
+    unbound: bool,
 }
 
 impl Reader {
-    /// The sequence number this reader reads next, modulo `2^w`.
+    /// The sequence number this reader reads next, modulo `2^w`. A deferred reader
+    /// that has not read yet has none: this is 0 and [`Reader::is_bound`] is false.
     pub const fn cursor(&self) -> u64 {
         self.cursor
+    }
+
+    /// Whether the reader has a cursor: false only for a deferred reader that has
+    /// not read yet.
+    pub const fn is_bound(&self) -> bool {
+        !self.unbound
     }
 
     /// The entries this reader has been told it missed, summed over its reads.
@@ -489,6 +499,7 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
             return Reader {
                 cursor: self.head().saturating_sub(Self::RETENTION),
                 lost: 0,
+                unbound: false,
             };
         }
         let untouched = L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) == L::UNWRITTEN;
@@ -497,7 +508,33 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
         } else {
             Self::distance(self.head(), Self::RETENTION)
         };
-        Reader { cursor, lost: 0 }
+        Reader {
+            cursor,
+            lost: 0,
+            unbound: false,
+        }
+    }
+
+    /// A reader whose start is the oldest retained entry **at its first read**, and
+    /// not at this call: it has no cursor until that read binds one, from the head
+    /// that read loads, so a reader that waited is told of nothing the publisher did
+    /// meanwhile, where [`BroadcastLog::reader_oldest`] would tell it of the lag.
+    /// Opening it loads nothing and costs the log nothing.
+    ///
+    /// The first read binds as `reader_oldest` does, its loads being part of the
+    /// read, and then goes on as any read does: the answer is an item, `Empty` for
+    /// a log with nothing published, or `Lagged` if the publisher overtook the
+    /// cursor inside that read, which takes the slot beyond the retention (ADR 0062
+    /// section 2; `BroadcastLog_deferred.cfg`). In a narrow row the bind is two loads,
+    /// the stamp of the last slot and the head, and the deploy's pause bound covers
+    /// them as it covers the loads of a read, counted from the first of them
+    /// (`BroadcastLogWrapped_deferred.cfg`).
+    pub const fn reader_deferred(&self) -> Reader {
+        Reader {
+            cursor: 0,
+            lost: 0,
+            unbound: true,
+        }
     }
 
     /// A reader at the head: it sees only what is published after this call.
@@ -505,6 +542,7 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
         Reader {
             cursor: self.head(),
             lost: 0,
+            unbound: false,
         }
     }
 
@@ -529,7 +567,11 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
                 head
             }
         };
-        Reader { cursor, lost: 0 }
+        Reader {
+            cursor,
+            lost: 0,
+            unbound: false,
+        }
     }
 
     /// Read the entry at `reader`'s cursor into `out`. A bounded number of
@@ -556,12 +598,18 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
     /// The deploy states the bound it relies on, and the generator refuses a log
     /// whose bound does not cover it.
     pub fn read(&self, reader: &mut Reader, out: &mut [L::Word; W]) -> Read {
+        // The first read of a deferred reader binds its cursor at the head it loads
+        // here, and then goes on as every read does.
+        let head = if reader.unbound {
+            self.bind(reader)
+        } else {
+            L::load(&self.head.0, Ordering::Acquire)
+        };
         let r = reader.cursor;
         debug_assert!(
             r <= Self::MASK,
             "a cursor is a count modulo the stamp space"
         );
-        let head = L::load(&self.head.0, Ordering::Acquire);
         let behind = Self::distance(head, r);
         if behind == 0 {
             return Read::Empty;
@@ -596,6 +644,26 @@ impl<const W: usize, const SLOTS: usize, L: Lane> BroadcastLog<W, SLOTS, L> {
         // published through `r + RETENTION` and `head` shows it.
         let head = L::load(&self.head.0, Ordering::Acquire);
         Self::lagged(reader, Self::distance(head, r))
+    }
+
+    /// Bind a deferred reader's cursor to the oldest retained entry, as
+    /// [`BroadcastLog::reader_oldest`] does, and return the head the cursor was taken
+    /// from, which is the load the read goes on with. A 64-bit count does not wrap,
+    /// so one load of the head is all it needs; a narrow count asks the last slot
+    /// first, then loads the head (the order the models have: `RDStart`, `RDHead`).
+    fn bind(&self, reader: &mut Reader) -> u64 {
+        let untouched = L::BITS < 64
+            && L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) == L::UNWRITTEN;
+        let head = L::load(&self.head.0, Ordering::Acquire);
+        reader.cursor = if L::BITS >= 64 {
+            head.saturating_sub(Self::RETENTION)
+        } else if untouched {
+            0
+        } else {
+            Self::distance(head, Self::RETENTION)
+        };
+        reader.unbound = false;
+        head
     }
 
     /// Move `reader` to the oldest entry retained and say how far that was, from
@@ -820,6 +888,73 @@ mod tests {
     }
 
     #[test]
+    fn a_deferred_reader_starts_at_the_oldest_of_its_first_read_and_is_told_of_nothing() {
+        let mut log = Log::new();
+        let (mut publisher, log) = log.split();
+        // Both readers are opened on the empty log, one at the oldest now and one
+        // deferred; then three entries (0, 1, 2) are published. Retention is 1, so the
+        // oldest retained is entry 2.
+        let mut eager = log.reader_oldest();
+        let mut deferred = log.reader_deferred();
+        assert!(eager.is_bound());
+        assert!(!deferred.is_bound());
+        assert_eq!(deferred.cursor(), 0, "no cursor yet reads as 0");
+        publish_all(&mut publisher, 0..3);
+        // The eager reader holds 0, which is 3 behind: it is told it missed 2.
+        assert_eq!(read(log, &mut eager).0, Read::Lagged { skipped: 2 });
+        // The deferred reader binds at this read, at the oldest retained entry, so its
+        // first answer is that entry and it has lost nothing.
+        assert_eq!(read(log, &mut deferred), (Read::Item { seq: 2 }, 2));
+        assert!(deferred.is_bound());
+        assert_eq!(deferred.lost(), 0);
+        assert_eq!(read(log, &mut deferred).0, Read::Empty);
+    }
+
+    #[test]
+    fn a_deferred_reader_on_a_log_with_nothing_published_is_empty_and_then_reads_from_the_start() {
+        let mut log = Log::new();
+        let (mut publisher, log) = log.split();
+        let mut reader = log.reader_deferred();
+        assert_eq!(read(log, &mut reader).0, Read::Empty);
+        assert!(reader.is_bound());
+        assert_eq!(reader.cursor(), 0);
+        publisher.publish(&[0]);
+        assert_eq!(read(log, &mut reader), (Read::Item { seq: 0 }, 0));
+    }
+
+    #[test]
+    fn a_deferred_reader_across_the_wrap_binds_to_the_oldest_by_the_last_slot() {
+        let mut log = Log::new();
+        let (mut publisher, log) = log.split();
+        // Ten entries cross the head's wrap at 8, so the head is 2 and the last slot
+        // is written. The oldest retained is entry 9, cursor 9 mod 8 = 1.
+        publish_all(&mut publisher, 0..10);
+        let mut reader = log.reader_deferred();
+        assert_eq!(read(log, &mut reader), (Read::Item { seq: 1 }, 9));
+        assert_eq!(reader.lost(), 0);
+        // A reader that falls behind later is told as any reader is.
+        publish_all(&mut publisher, 10..13);
+        assert_eq!(read(log, &mut reader).0, Read::Lagged { skipped: 2 });
+        assert_eq!(reader.lost(), 2);
+    }
+
+    #[test]
+    fn a_deferred_reader_on_a_young_log_binds_to_entry_zero_by_the_last_slot() {
+        let mut log = Log4::new();
+        let (mut publisher, log) = log.split();
+        // Three entries, retention 3: the last slot was never written, so the oldest is
+        // entry 0 though the head is 3.
+        for count in 0..3u32 {
+            publisher.publish(&[count]);
+        }
+        let mut reader = log.reader_deferred();
+        let mut out = [u32::MAX; 1];
+        assert_eq!(log.read(&mut reader, &mut out), Read::Item { seq: 0 });
+        assert_eq!(out[0], 0);
+        assert_eq!(reader.lost(), 0);
+    }
+
+    #[test]
     fn a_reader_lapped_across_the_wrap_is_told_the_exact_count() {
         let mut log = Log::new();
         let (mut publisher, log) = log.split();
@@ -897,12 +1032,20 @@ mod tests {
         // says the reader is only 1 behind is a head one lap round: 1 + 8 = 9 behind,
         // less the retention 1, is 8 skipped, and the cursor (5 + 8) mod 8 = 5 is
         // where it was.
-        let mut reader = Reader { cursor: 5, lost: 0 };
+        let mut reader = Reader {
+            cursor: 5,
+            lost: 0,
+            unbound: false,
+        };
         assert_eq!(Log::lagged(&mut reader, 1), Read::Lagged { skipped: 8 });
         assert_eq!(reader.cursor(), 5);
         assert_eq!(reader.lost(), 8);
         // A head that already says `SLOTS` or more is taken as it is: 3 - 1 = 2.
-        let mut reader = Reader { cursor: 5, lost: 0 };
+        let mut reader = Reader {
+            cursor: 5,
+            lost: 0,
+            unbound: false,
+        };
         assert_eq!(Log::lagged(&mut reader, 3), Read::Lagged { skipped: 2 });
         assert_eq!(reader.cursor(), 7, "(5 + 2) mod 8");
     }
@@ -984,6 +1127,7 @@ mod tests {
         let mut behind = Reader {
             cursor: 10 % 8,
             lost: 0,
+            unbound: false,
         };
         assert_eq!(
             log.read(&mut behind, &mut out),

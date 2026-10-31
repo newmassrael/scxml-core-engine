@@ -15,7 +15,9 @@
 //!
 //! Where the two differ, a test says so and pins the behaviour of the log, so a
 //! change to either side is seen here. The differences found are three, listed
-//! at the end of this file as `deviation:` tests.
+//! at the end of this file as `deviation:` tests. The first, a reader that binds
+//! at its first poll, is answered by `reader_deferred()`, which is the ring's own
+//! `reader()`, and the generated test runs here for both kinds of reader.
 //!
 //! What this file does not do: it does not link the consumer's crate, and it does
 //! not step through the middle of a publish (the log's `publish` is one call; the
@@ -145,6 +147,9 @@ struct Watch {
 
 impl Watch {
     fn read<const S: usize>(&mut self, log: &BroadcastLog<WORDS, S>, reader: &mut Reader) -> Read {
+        // A deferred reader has no cursor before its first read, so there is nothing to
+        // hold the first answer against: its start is what that read bound it to.
+        let held = reader.is_bound();
         let before = reader.cursor();
         let mut out = [0u64; WORDS];
         let answer = log.read(reader, &mut out);
@@ -152,19 +157,25 @@ impl Watch {
         match answer {
             Read::Item { seq } => {
                 assert_eq!(out, entry(seq), "entry {seq} is not one write");
-                assert_eq!(seq, before, "a reader sees the sequence in order");
+                if held {
+                    assert_eq!(seq, before, "a reader sees the sequence in order");
+                }
                 assert_eq!(after, seq + 1);
                 self.start.get_or_insert(seq);
                 self.seen += 1;
             }
             Read::Lagged { skipped } => {
                 assert!(skipped >= 1);
-                assert_eq!(after, before + skipped, "a lag is exactly what was skipped");
+                if held {
+                    assert_eq!(after, before + skipped, "a lag is exactly what was skipped");
+                }
                 self.start.get_or_insert(after - skipped);
                 self.lost += skipped;
             }
             Read::Empty => {
-                assert_eq!(after, before, "nothing read, nothing moved");
+                if held {
+                    assert_eq!(after, before, "nothing read, nothing moved");
+                }
                 self.start.get_or_insert(after);
             }
         }
@@ -176,15 +187,34 @@ impl Watch {
 /// order, 200 records, seeds 1 to 300, a ring of 5 slots. Whatever the order, a reader sees
 /// entries in sequence, each whole, and a lag exactly where entries were overwritten. The
 /// producer's three micro-steps (open, fill, close) are kept as three random draws and only the
-/// third publishes, so the reader-to-writer ratio and the stream are the consumer's.
+/// third publishes, so the reader-to-writer ratio and the stream are the consumer's. It runs
+/// twice: with readers opened by `reader_oldest()`, and with readers opened by
+/// `reader_deferred()`, which is the ring's own `reader()` (no cursor until the first poll).
 #[test]
 fn whatever_the_interleaving_a_reader_sees_whole_entries_in_order_with_lags_where_they_were_lost() {
+    whatever_the_interleaving(false);
+}
+
+#[test]
+fn whatever_the_interleaving_a_deferred_reader_sees_whole_entries_in_order_with_lags_where_they_were_lost(
+) {
+    whatever_the_interleaving(true);
+}
+
+fn whatever_the_interleaving(deferred: bool) {
     for seed in 1..=300u64 {
         let mut rng = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D) | 1);
         let log = Ring5::new();
         let mut publisher = log.publisher().expect("the only publisher");
         let mut readers: Vec<(Reader, Watch)> = (0..3)
-            .map(|_| (log.reader_oldest(), Watch::default()))
+            .map(|_| {
+                let reader = if deferred {
+                    log.reader_deferred()
+                } else {
+                    log.reader_oldest()
+                };
+                (reader, Watch::default())
+            })
             .collect();
         let mut written = 0u64;
         // 0 = idle, 1 = open, 2 = filled
@@ -227,12 +257,23 @@ fn whatever_the_interleaving_a_reader_sees_whole_entries_in_order_with_lags_wher
 
 // ---- deviation: where the log and the consumer's ring differ --------------------------------
 
-/// deviation: a late reader. The ring's `reader()` has no cursor until its first poll, and
-/// takes the oldest record alive at that moment, so it is told of no gap however much was
-/// written between its creation and its first poll. The log's `reader_oldest()` takes the
-/// oldest retained entry at the moment it is called, so a reader that waits is told of the
-/// lag on its first read. A consumer that wants the ring's behaviour opens the reader at its
-/// first poll.
+/// The ring's `reader()` has no cursor until its first poll, and takes the oldest record alive
+/// at that moment, so it is told of no gap however much was written between its creation and
+/// its first poll. The log's `reader_deferred()` is that reader: it binds at its first read.
+#[test]
+fn a_deferred_reader_is_the_rings_late_reader() {
+    let log = Ring4::new();
+    publish_n(&log, 3);
+    let mut late = log.reader_deferred();
+    publish_n(&log, 10);
+    // 13 published, retention 4: the oldest retained is 9, and the reader is told of nothing.
+    assert_eq!(drain(&log, &mut late), [9, 10, 11, 12]);
+    assert_eq!(late.lost(), 0);
+}
+
+/// deviation: `reader_oldest()` is not the ring's `reader()`. It takes the oldest retained
+/// entry at the moment it is called, so a reader that waits is told of the lag on its first
+/// read. A consumer that wants the ring's behaviour opens its reader with `reader_deferred()`.
 #[test]
 fn deviation_a_reader_opened_early_is_told_of_the_lag_on_its_first_read() {
     let log = Ring4::new();
