@@ -488,9 +488,7 @@ fn the_zenoh_request_and_response_are_decoded_as_views() {
         CodecZenohResponse,
         CodecZenohResponseView,
         &pool,
-        vec![CodecZenohResponse::default()
-            .encode_to_vec()
-            .expect("the default response encodes")],
+        vec![CodecZenohResponse::default().encode_to_vec()],
         4000,
         24
     );

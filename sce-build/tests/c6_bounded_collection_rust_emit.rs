@@ -566,15 +566,20 @@ fn fixed_body_doc(name: &str) -> String {
     )
 }
 
-/// An element codec whose only complex field is a bounded list of `body`. A list
-/// can be given more entries than its `max-count`, so its encode can refuse and
-/// the codec declares so, whatever `body` is.
-fn list_element_doc(name: &str, body: &str) -> String {
+/// An element codec whose only complex field is a bounded list of `body`. The list
+/// holds no more entries than its `max-count` (docs/adr/0065 §6 R2), so its encode
+/// refuses exactly when `body`'s does, which `body_may_fail` says.
+fn list_element_doc(name: &str, body: &str, body_may_fail: bool) -> String {
+    let declared = if body_may_fail {
+        r#" sce:encode-may-fail="true""#
+    } else {
+        ""
+    };
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="{name}" version="1.0">
+       sce:kind="codec"{declared} sce:default-endian="big" name="{name}" version="1.0">
   <sce:import src="{body}.scxml" kind="codec" as="{body}"/>
   <datamodel>
     <sce:field id="hop_count" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -621,7 +626,7 @@ fn compile_triple(body_xml: &str, element_xml: &str, bc_xml: &str) -> String {
 fn composite_element_is_stored_as_the_inline_owned_mirror() {
     let code = compile_triple(
         &borrowed_body_doc("route_body"),
-        &list_element_doc("route_entry", "route_body"),
+        &list_element_doc("route_entry", "route_body", true),
         &bc_doc("route_table", "route_entry", 4, ""),
     );
     assert_parses("composite element BC", &code);
@@ -651,7 +656,7 @@ fn composite_element_is_stored_as_the_inline_owned_mirror() {
 fn list_of_fixed_width_bodies_is_stored_directly() {
     let code = compile_triple(
         &fixed_body_doc("route_body"),
-        &list_element_doc("route_entry", "route_body"),
+        &list_element_doc("route_entry", "route_body", false),
         &bc_doc("route_table", "route_entry", 4, ""),
     );
     assert_parses("fixed-body list BC", &code);
@@ -715,7 +720,7 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
     let element = write_doc(
         dir.path(),
         "route_entry.scxml",
-        &list_element_doc("route_entry", "route_body"),
+        &list_element_doc("route_entry", "route_body", true),
     );
     let bc = write_doc(
         dir.path(),

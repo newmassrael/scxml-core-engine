@@ -39,9 +39,9 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 
 /// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
 /// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
-/// takes.
-pub(super) fn list_type(walk: &str, inputs: usize, gated: bool) -> String {
-    let list = format!("ListView<'a, {walk}, {inputs}>");
+/// takes, held as a list of at most `bound` entries (docs/adr/0065 §6 R2).
+pub(super) fn list_type(walk: &str, inputs: usize, bound: u64, gated: bool) -> String {
+    let list = format!("Bounded<ListView<'a, {walk}, {inputs}>, {bound}>");
     if gated {
         format!("Option<{list}>")
     } else {
@@ -122,6 +122,11 @@ impl ViewList<'_> {
     /// next, which is 0 before the first entry (`ChainEntryBinds::decls`). How an
     /// entry is read is the field's marker type ([`walk_item`]), which the
     /// list's type names.
+    ///
+    /// The list is held as a `Bounded` (docs/adr/0065 §6 R2), made by its one
+    /// constructor. The scan has refused an entry past the bound already, with
+    /// the error the eager decode gives, so the constructor's refusal is the same
+    /// error and is never reached.
     fn build(&self) -> String {
         let args = self
             .inputs
@@ -129,7 +134,14 @@ impl ViewList<'_> {
             .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
             .collect::<Vec<_>>()
             .join(", ");
-        format!("ListView::new(_rest, _count, [{args}])")
+        let refusal = if self.field.is_tlv_chain() {
+            "TlvChainOverflow"
+        } else {
+            "TooManyElements"
+        };
+        format!(
+            "Bounded::new(ListView::new(_rest, _count, [{args}])).ok_or(CodecError::{refusal})?"
+        )
     }
 
     /// The field's value, from `build`, as the field holds it.

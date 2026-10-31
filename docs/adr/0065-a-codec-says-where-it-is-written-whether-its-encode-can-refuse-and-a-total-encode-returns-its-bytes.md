@@ -189,6 +189,22 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   totally when `N <= MAX`, which the generator asserts at compile time. A slice or an iterator converts through the
   checked constructor. A list that is shorter or longer on its second walk is the impure source of ADR 0061 §3 and
   panics; it is not refused.
+  *Landed 2026-10-31, after R3.* The bound is a property of the wire, not of where the entries are kept, so it is a
+  runtime type of its own. The storage profiles stay as they are: the heap profile's containers grow past their
+  declared capacity by design, for text and bytes as for lists.
+  - `Bounded<L, MAX>` holds a list `L` (a slice, a `heapless::Vec`, a profile's list, a view's list over bytes), and
+    `new` checks it once. Arrays within the bound and `heapless::Vec<_, N>` with `N <= MAX` convert without a check,
+    which the build asserts. It reads as its list through `Deref` and has no mutable access.
+  - The source trait returns `BoundedIter<I, MAX>`. It carries the entries and their count, and it is an
+    `ExactSizeIterator` whose walk panics when the entries differ from the count. Its `map` keeps the count, so a
+    foreign source writes `self.list.iter().map(Entry)`.
+  - Each form of a value holds a list whose type proves the bound. The decoded value's `heapless::Vec` is sized to
+    the bound and converts as it is. `Parts`, the owned form and the view hold a `Bounded`.
+  - The owned form's capacity for a chain was 16 against a `max-depth` of 8. It is now the list's bound.
+  - The decode builds the view's list through the constructor, after its scan has refused an entry past the bound
+    with the error it gave before.
+  - 14 documents became total and lost their declaration, among them the Zenoh `put`, `del`, `err`, `query`,
+    `reply`, `response` and the extension envelope.
 - **R3, the default arm's tag.** A codec emits `XUnknownTag`, a newtype whose constructor admits a value inside the
   tag's bits and outside every known arm's tag. That also closes the case of a default arm that carries a known tag,
   which a decode would read back as the known arm, a break of ADR 0058 §5 law 1.

@@ -50,7 +50,7 @@
      fields match upstream wire 1:1. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_zenoh_query">
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_query">
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">

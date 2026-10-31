@@ -175,7 +175,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "repeat_count",
         imports: SLICE_SET,
-        encode_may_fail: true,
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="NAME" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:repeat id="items" type="codec_chain_has_marker_slice" sce:byte="1"
@@ -186,7 +186,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "repeat_named",
         imports: SLICE_SET,
-        encode_may_fail: true,
+        encode_may_fail: false,
         datamodel: r#"
     <sce:field id="n" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:repeat id="NAME" type="codec_chain_has_marker_slice" sce:byte="1"
@@ -197,7 +197,7 @@ const SHAPES: &[Shape] = &[
     Shape {
         id: "chain_named",
         imports: ENTRY_SET,
-        encode_may_fail: true,
+        encode_may_fail: false,
         datamodel: r#"
     <sce:tlv-chain id="NAME" type="codec_zenoh_ext_entry" sce:byte="0"
                    max-depth="4" on-overflow="reject"

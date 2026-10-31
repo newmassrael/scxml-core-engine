@@ -299,7 +299,7 @@ include!(concat!(env!("OUT_DIR"), "/source_sweeps.rs"));
 mod foreign {
     use super::codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicSource};
     use super::codecs::codec_repeat_elem::CodecRepeatElemSource;
-    use sce_forge_runtime::codec::{CodecError, VecSink};
+    use sce_forge_runtime::codec::{Bounded, BoundedIter, VecSink};
 
     struct Seq(u16);
 
@@ -309,29 +309,31 @@ mod foreign {
         }
     }
 
-    struct Fragments(Vec<u16>);
+    /// The sender's own list, held within the codec's bound of 32 entries.
+    struct Fragments(Bounded<Vec<u16>, 32>);
 
     impl CodecRepeatBasicSource for Fragments {
-        fn frags(&self) -> impl Iterator<Item = impl CodecRepeatElemSource> + Clone {
+        fn frags(
+            &self,
+        ) -> BoundedIter<impl Iterator<Item = impl CodecRepeatElemSource> + Clone, 32> {
             self.0.iter().map(|&s| Seq(s))
         }
     }
 
     #[test]
     fn a_foreign_source_is_encoded_with_its_count_derived() {
+        let frags = Bounded::new(vec![1, 2, 3]).expect("within 32");
         let mut bytes = Vec::new();
-        CodecRepeatBasic::encode_source(&Fragments(vec![1, 2, 3]), &mut VecSink::new(&mut bytes))
-            .unwrap();
+        CodecRepeatBasic::encode_source(&Fragments(frags), &mut VecSink::new(&mut bytes)).unwrap();
         assert_eq!(bytes, [3, 0, 1, 0, 2, 0, 3]);
     }
 
+    // The list past the bound has no source at all, so the encode, which used to
+    // refuse it, has nothing to refuse (docs/adr/0065 §6 R2).
     #[test]
-    fn a_list_past_its_bound_is_refused_before_the_first_byte() {
-        let mut bytes = Vec::new();
-        let refused =
-            CodecRepeatBasic::encode_source(&Fragments(vec![0; 33]), &mut VecSink::new(&mut bytes));
-        assert_eq!(refused, Err(CodecError::TooManyElements));
-        assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
+    fn a_list_past_its_bound_has_no_source() {
+        assert!(Bounded::<Vec<u16>, 32>::new(vec![0; 32]).is_some());
+        assert!(Bounded::<Vec<u16>, 32>::new(vec![0; 33]).is_none());
     }
 }
 
@@ -349,7 +351,7 @@ mod parts {
     use super::codecs::codec_variant_session_close::CodecVariantSessionCloseParts;
     use super::codecs::codec_variant_session_open::CodecVariantSessionOpenParts;
     use super::codecs::codec_zenoh_locator::CodecZenohLocatorParts;
-    use sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
+    use sce_forge_runtime::codec::{Bounded, SceCursor, VecSink};
 
     #[test]
     fn a_list_held_as_a_slice_is_written_with_its_count_derived() {
@@ -360,23 +362,22 @@ mod parts {
         ];
         let mut bytes = Vec::new();
         CodecRepeatBasic::encode_source(
-            &CodecRepeatBasicParts { frags: &entries },
+            &CodecRepeatBasicParts {
+                frags: (&entries).into(),
+            },
             &mut VecSink::new(&mut bytes),
         )
         .unwrap();
         assert_eq!(bytes, [3, 0, 1, 0, 2, 0, 3]);
     }
 
+    // A slice past the bound is not a list the parts can hold; an array within it
+    // converts with no check, and a slice is checked once (docs/adr/0065 §6 R2).
     #[test]
-    fn a_slice_past_the_bound_is_refused_before_the_first_byte() {
+    fn a_slice_past_the_bound_is_no_list_of_the_parts() {
         let entries = [CodecRepeatElemParts { seq: 0 }; 33];
-        let mut bytes = Vec::new();
-        let refused = CodecRepeatBasic::encode_source(
-            &CodecRepeatBasicParts { frags: &entries },
-            &mut VecSink::new(&mut bytes),
-        );
-        assert_eq!(refused, Err(CodecError::TooManyElements));
-        assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
+        assert!(Bounded::<&[CodecRepeatElemParts], 32>::new(&entries[..32]).is_some());
+        assert!(Bounded::<&[CodecRepeatElemParts], 32>::new(&entries[..]).is_none());
     }
 
     // The window encoder (docs/adr/0061) on the types a caller already has and no
@@ -388,22 +389,14 @@ mod parts {
             CodecRepeatElemParts { seq: 2 },
             CodecRepeatElemParts { seq: 3 },
         ];
-        let source = CodecRepeatBasicParts { frags: &entries };
-        let measured = CodecRepeatBasic::measure(&source).unwrap();
+        let source = CodecRepeatBasicParts {
+            frags: (&entries).into(),
+        };
+        let measured = CodecRepeatBasic::measure(&source);
         assert_eq!(measured.len(), 7);
         let mut slot = [0xEEu8; 9];
         measured.write_into(&mut slot[1..8]);
         assert_eq!(slot, [0xEE, 3, 0, 1, 0, 2, 0, 3, 0xEE]);
-    }
-
-    #[test]
-    fn a_slice_past_the_bound_has_no_length() {
-        let entries = [CodecRepeatElemParts { seq: 0 }; 33];
-        let source = CodecRepeatBasicParts { frags: &entries };
-        assert_eq!(
-            CodecRepeatBasic::measure(&source).err(),
-            Some(CodecError::TooManyElements)
-        );
     }
 
     #[test]

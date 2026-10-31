@@ -7103,14 +7103,20 @@ fn rust_owned_field_keys(
         }
         .expect("parser sets the body alias for every repeat / tlv-chain field");
         let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
-        let max_count = crate::forge::limits::resolve_max_count(f.max_count);
+        // The list's bound, which the profile's container holds as its declared
+        // capacity and a `Bounded` around it holds as a fact (docs/adr/0065 §6
+        // R2): a growable profile's container is not bounded by its capacity.
+        let bound = crate::forge::codec_totality::list_bound(f);
+        let bounded = |entry: &str| {
+            format!("{RUNTIME_CODEC}::Bounded<{STORAGE_PARAM}::List<{entry}, {bound}>, {bound}>")
+        };
         // A borrowed body has its own storage-generic mirror and threads the
         // parent's profile into it; a non-borrowed body is already owned and
         // moves through element-wise unchanged (`Ok` as the projection, not a
         // closure — `clippy::redundant_closure`).
         if import_codec_borrowed(imports, alias) {
             (
-                format!("{STORAGE_PARAM}::List<{body_type}Owned<{STORAGE_PARAM}>, {max_count}>"),
+                bounded(&format!("{body_type}Owned<{STORAGE_PARAM}>")),
                 Conv::List(if origin {
                     format!("|_e| _e.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})")
                 } else {
@@ -7118,10 +7124,7 @@ fn rust_owned_field_keys(
                 }),
             )
         } else {
-            (
-                format!("{STORAGE_PARAM}::List<{body_type}, {max_count}>"),
-                Conv::List("Ok".to_string()),
-            )
+            (bounded(&body_type), Conv::List("Ok".to_string()))
         }
     } else if f.is_embed() {
         let alias = f
@@ -7203,11 +7206,12 @@ fn rust_owned_field_keys(
             // The destination list container is the storage profile's, so the
             // collect goes through the runtime projector rather than
             // `FromIterator` (which the profile's container is not required to
-            // implement). Uniformly fallible: on a fixed-capacity profile an
+            // implement). It keeps the decoded list's bound, which its capacity
+            // proves. Uniformly fallible: on a fixed-capacity profile an
             // over-long run is `TooManyElements`, on a growable one it cannot
             // fail — one call shape, no per-profile branch.
             Conv::List(elem) => (
-                format!("{RUNTIME_CODEC}::try_collect_list({e}, {elem})"),
+                format!("{RUNTIME_CODEC}::try_collect_bounded({e}, {elem})"),
                 true,
             ),
             Conv::Qualified => {
@@ -7319,12 +7323,15 @@ fn rust_as_borrowed_field_into_stmt(
                      Some(_l) => {},\n            \
                      None => {out_ref} = None,\n        \
                  }}",
-                project(&format!("{out_ref}.insert(Default::default())"), "_l")
+                project(
+                    &format!("{out_ref}.insert(Default::default())"),
+                    "_l.inner()"
+                )
             )
         } else {
             format!(
                 "{};",
-                project(&format!("&mut {out_ref}"), &format!("&{self_ref}"))
+                project(&format!("&mut {out_ref}"), &format!("{self_ref}.inner()"))
             )
         };
         return Ok(stmt);
@@ -7971,6 +7978,7 @@ fn render_codec(
                             rust_view::list_type(
                                 &walk,
                                 repeat_thread.inputs.len(),
+                                crate::forge::codec_totality::list_bound(f),
                                 f.present_if.is_some(),
                             )
                             .into(),
@@ -8200,7 +8208,13 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_rs_type".into(),
-                            rust_view::list_type(&walk, entry_thread.inputs.len(), gated).into(),
+                            rust_view::list_type(
+                                &walk,
+                                entry_thread.inputs.len(),
+                                crate::forge::codec_totality::list_bound(f),
+                                gated,
+                            )
+                            .into(),
                         );
                         let view_stmt = rust_view::tlv_chain_decode_stmt(
                             &view_list,

@@ -7,8 +7,8 @@
 //! presents, docs/adr/0058 §1) it is total exactly when every value the
 //! abstract syntax admits has a frame. Where the abstract syntax is wider than
 //! the encodable set, the encode refuses the difference: a length past the
-//! field that carries it, a list past its bound, a flag that disagrees with the
-//! presence it announces. This module names each of
+//! field that carries it, a flag that disagrees with the presence it announces.
+//! This module names each of
 //! those places, element by element, from the codec model and its roles alone,
 //! so it is the one statement of when an encode can refuse. A codec's
 //! declaration (`sce:encode-may-fail`) is held to it before any backend renders
@@ -19,7 +19,9 @@
 //! into a 64-bit field on every target (docs/adr/0065 §5), a count bounded by
 //! its list's `max-count` fits a field that holds the bound, and a tag fits the
 //! bits it is written into: an arm's is declared there, and a default arm holds
-//! an [`UnknownTag`] (docs/adr/0065 §6 R3).
+//! an [`UnknownTag`] (docs/adr/0065 §6 R3). A list is no refusal either: its
+//! source presents it as a `BoundedIter`, which holds no more entries than the
+//! list's bound ([`list_bound`], docs/adr/0065 §6 R2).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -37,10 +39,6 @@ use crate::forge::model::{
 /// it holds refusing first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RefusalKind {
-    /// A list longer than its `sce:max-count`.
-    TooManyElements,
-    /// A chain longer than its `max-depth`.
-    TlvChainOverflow,
     /// A length or a count past the field or bits that carry it, or a
     /// length the wire holds less an offset (`sce:length-arith`) that would be
     /// negative.
@@ -69,8 +67,6 @@ impl RefusalKind {
     /// a child returns itself.
     pub fn error_variant(self) -> Option<&'static str> {
         Some(match self {
-            RefusalKind::TooManyElements => "TooManyElements",
-            RefusalKind::TlvChainOverflow => "TlvChainOverflow",
             RefusalKind::LengthOutOfRange => "LengthOutOfRange",
             RefusalKind::PresentIfMismatch => "PresentIfMismatch",
             RefusalKind::InconsistentSource => "InconsistentSource",
@@ -525,28 +521,8 @@ fn positional(m: &CodecModel, imports: &mut dyn Imports, out: &mut Vec<Refusal>)
         });
     };
 
-    // Each list is counted against its bound before anything is derived.
-    for field in m
-        .fields
-        .iter()
-        .filter(|f| f.is_repeat() || f.is_tlv_chain())
-    {
-        let (kind, what) = if field.is_tlv_chain() {
-            (RefusalKind::TlvChainOverflow, "its max-depth")
-        } else {
-            (RefusalKind::TooManyElements, "its max-count")
-        };
-        push(
-            out,
-            kind,
-            &field.id,
-            format!(
-                "the list may hold more than {} entries, {what}",
-                list_bound(field)
-            ),
-        );
-    }
-
+    // A list is no refusal: its source holds no more entries than its bound
+    // (docs/adr/0065 §6 R2, `list_bound`).
     for (id, by) in roles.derived() {
         for derivation in by {
             derived(m, &roles, id, derivation, out);

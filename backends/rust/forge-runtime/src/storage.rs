@@ -98,8 +98,14 @@ pub trait SceByteBuf: Sized {
 /// derived impl reasons about the *field* types, not about `Self`.
 pub trait CodecStorage: core::fmt::Debug + Clone + PartialEq {
     /// Owned list storage for a `<sce:repeat>` / `<sce:tlv-chain>` field whose
-    /// declared `sce:max-count` is `N`.
-    type List<T, const N: usize>: SceList<T> + core::fmt::Debug + Clone + PartialEq
+    /// declared `sce:max-count` is `N`. It reads as [`crate::bounded::Entries`],
+    /// so an owned list held as a [`crate::bounded::Bounded`] presents its
+    /// entries with their count.
+    type List<T, const N: usize>: SceList<T>
+        + crate::bounded::Entries
+        + core::fmt::Debug
+        + Clone
+        + PartialEq
     where
         T: core::fmt::Debug + Clone + PartialEq;
 

@@ -270,6 +270,8 @@ where
 pub use crate::storage::*;
 // The list of a generated view, spelled from the same path as the rest.
 pub use crate::view::{ListIter, ListView, ListWalk};
+// A list of at most its bound (docs/adr/0065 §6 R2), spelled from the same path.
+pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Entries};
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     /// A fixed-capacity `from_slice` past its bound is the same

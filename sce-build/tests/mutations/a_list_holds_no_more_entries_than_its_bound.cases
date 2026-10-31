@@ -1,0 +1,48 @@
+# Mutation cases for "a list holds no more entries than its bound".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_holds_no_more_entries_than_its_bound.cases`.
+#
+# A codec's list is a `Bounded<L, MAX>`, which holds at most its bound, and its
+# source presents the entries as a `BoundedIter`, whose count the codec writes
+# without counting again (docs/adr/0065 §6 R2). The encode no longer refuses a
+# list, so these types are the only place the bound is kept. Each case lets a
+# list past its bound in, or lets a walk disagree with its count unnoticed. The
+# runtime's `bounded` tests refuse each.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/bounded.rs
+mutation_oracles backends/rust/forge-runtime/src/bounded.rs
+
+mutation_case "a list one past its bound is held" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''    pub fn new(list: L) -> Option<Self> {
+        if list.entry_count() <= MAX {''',
+     r'''    pub fn new(list: L) -> Option<Self> {
+        if list.entry_count() <= MAX + 1 {''')
+PY
+
+mutation_case "entries counted from an iterator are not held to the bound" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''        let count = entries.clone().count();
+        if count <= MAX {''',
+     r'''        let count = entries.clone().count();
+        if count <= usize::MAX {''')
+PY
+
+mutation_case "a walk longer than its count is written" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''            if self.iter.next().is_some() {
+                entries_changed();
+            }''',
+     r'''            let _ = self.iter.next();''')
+PY
+
+mutation_case "a walk shorter than its count is written" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''            None => entries_changed(),''',
+     r'''            None => None,''')
+PY

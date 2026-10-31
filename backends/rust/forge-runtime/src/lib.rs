@@ -21,6 +21,8 @@
 extern crate alloc;
 
 pub mod algorithm;
+/// Lists of at most a bound (docs/adr/0065 §6 R2), re-exported from [`codec`].
+pub mod bounded;
 /// The bounded broadcast log (ADR 0062), 64-bit row: one publisher, any number of
 /// readers, the oldest entry forgotten when full. Its stamps are 64-bit atomics, so
 /// a target without them has no such module, as it has no SCQ; the row for those

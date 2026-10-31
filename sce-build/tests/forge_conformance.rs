@@ -21874,7 +21874,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let repeat_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
   <datamodel>
     <sce:field  id="lenN"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>

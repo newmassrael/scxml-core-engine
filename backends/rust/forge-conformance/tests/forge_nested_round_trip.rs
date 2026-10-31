@@ -44,7 +44,7 @@ mod nested_codecs {
 use nested_codecs::codec_nested_body::{CodecNestedBody, CodecNestedBodyOwned};
 use nested_codecs::codec_nested_parent::{CodecNestedParent, CodecNestedParentOwned};
 use nested_codecs::codec_zenoh_locator::{CodecZenohLocator, CodecZenohLocatorOwned};
-use sce_forge_runtime::codec::{CodecError, Heap, HeapStr, Inline, SceCursor, SceList};
+use sce_forge_runtime::codec::{Bounded, CodecError, Heap, HeapStr, Inline, SceCursor, SceList};
 use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 /// A borrowed body holding two locators (well under the max-count of 4).
@@ -83,7 +83,7 @@ fn parent() -> CodecNestedParent<'static> {
 #[test]
 fn nested_fallible_projection_round_trips() {
     let parent = parent();
-    let wire = parent.encode_to_vec().expect("the parent encodes");
+    let wire = parent.encode_to_vec();
 
     // borrowed -> owned -> (fallible) borrowed -> re-encode == original wire.
     let owned = parent
@@ -93,9 +93,7 @@ fn nested_fallible_projection_round_trips() {
         .try_as_borrowed()
         .expect("every list is within max-count, so projection must succeed");
     assert_eq!(
-        reborrowed
-            .encode_to_vec()
-            .expect("the reborrowed parent encodes"),
+        reborrowed.encode_to_vec(),
         wire,
         "try_as_borrowed re-encode must reproduce the original wire bytes",
     );
@@ -134,7 +132,7 @@ fn default_profile_is_the_growable_one_under_alloc() {
 /// allocate has no type to name.
 #[test]
 fn both_storage_profiles_coexist_and_agree_on_the_wire() {
-    let wire = parent().encode_to_vec().expect("the parent encodes");
+    let wire = parent().encode_to_vec();
     let mut cursor = SceCursor::new(&wire);
     let view = CodecNestedParent::decode(&mut cursor).expect("self-produced wire decodes");
 
@@ -159,8 +157,7 @@ fn both_storage_profiles_coexist_and_agree_on_the_wire() {
         growable
             .try_as_borrowed()
             .expect("within max-count")
-            .encode_to_vec()
-            .expect("within max-count"),
+            .encode_to_vec(),
         wire,
         "the growable profile must re-encode to the original wire",
     );
@@ -168,8 +165,7 @@ fn both_storage_profiles_coexist_and_agree_on_the_wire() {
         inline
             .try_as_borrowed()
             .expect("within max-count")
-            .encode_to_vec()
-            .expect("within max-count"),
+            .encode_to_vec(),
         wire,
         "the non-allocating profile must re-encode to the identical wire",
     );
@@ -177,7 +173,7 @@ fn both_storage_profiles_coexist_and_agree_on_the_wire() {
     // The inline profile really is the fixed-capacity container: its list
     // reports the declared bound rather than a grown length.
     assert_eq!(
-        SceList::as_slice(&inline.body_list).len(),
+        SceList::as_slice(inline.body_list.inner()).len(),
         1,
         "one body was encoded, so one must survive the inline projection",
     );
@@ -217,7 +213,10 @@ fn transcode_to_inline_rejects_a_value_past_its_declared_capacity() {
         locator_len: oversized.len() as u64,
         locator: HeapStr::from_text(&oversized).expect("the growable profile has no ceiling"),
     }];
-    let body = CodecNestedBodyOwned::<Heap> { n: 1, locs };
+    let body = CodecNestedBodyOwned::<Heap> {
+        n: 1,
+        locs: Bounded::new(locs).expect("one entry is within the bound"),
+    };
 
     assert!(
         matches!(
@@ -229,39 +228,49 @@ fn transcode_to_inline_rejects_a_value_past_its_declared_capacity() {
     );
 }
 
-/// An owned `body_list` longer than the borrowed view's `max-count` (4) is a
-/// representable owned value with no legal wire form. `try_as_borrowed` must
-/// reject it with the same `TooManyElements` the decoder raises — never panic,
-/// never truncate.
+/// An owned `body_list` holds no more than the codec's `max-count` (4): it is a
+/// `Bounded`, so a list of 5, which has no frame, is no owned value at all
+/// (docs/adr/0065 §6 R2). A growable profile's list grows past its declared
+/// capacity; the bound is the type around it, not the profile.
 #[test]
-fn nested_projection_rejects_overflowing_list() {
+fn an_owned_list_past_its_bound_is_no_owned_value() {
     fn owned_body() -> CodecNestedBodyOwned {
         CodecNestedBodyOwned {
             n: 1,
-            locs: vec![CodecZenohLocatorOwned {
+            locs: Bounded::new(vec![CodecZenohLocatorOwned {
                 locator_len: 1,
                 // Owned `locator` is the profile's text storage — build it
                 // through the same SSOT ctor codegen emits. `N` infers from
                 // the field type (`String` on the growable profile,
                 // `heapless::String<128>` on the inline one).
                 locator: sce_forge_runtime::codec::SceString::from_text("a").unwrap(),
-            }],
+            }])
+            .expect("one entry is within the bound"),
         }
     }
+    assert!(
+        Bounded::<Vec<CodecNestedBodyOwned>, 4>::new((0..5).map(|_| owned_body()).collect())
+            .is_none(),
+        "body_list of 5 exceeds max-count 4",
+    );
     let owned = CodecNestedParentOwned {
         hdr: 0,
-        m: 5,
+        m: 4,
         required_body: owned_body(),
         optional_body: None,
-        // 5 elements exceed the borrowed `heapless::Vec<_, 4>` capacity.
-        body_list: (0..5).map(|_| owned_body()).collect(),
+        body_list: Bounded::new((0..4).map(|_| owned_body()).collect())
+            .expect("4 entries are within the bound"),
     };
     // Owned text storage compares against a `&str` literal directly (no
     // `.as_str()`) — exercises the runtime's `SceStr: PartialEq<&str>` parity.
     assert_eq!(owned.required_body.locs[0].locator, "a");
-    assert!(
-        matches!(owned.try_as_borrowed(), Err(CodecError::TooManyElements)),
-        "body_list of 5 exceeds max-count 4 -> try_as_borrowed must reject",
+    assert_eq!(
+        owned.encode_to_vec(),
+        owned
+            .try_as_borrowed()
+            .expect("within max-count")
+            .encode_to_vec(),
+        "a list at its bound is written alike from the owned form and its projection",
     );
 }
 
@@ -272,7 +281,7 @@ fn nested_projection_rejects_overflowing_list() {
 /// optional embed, a list of embeds, text) goes through it.
 #[test]
 fn owned_encode_writes_what_the_projection_writes() {
-    let wire = parent().encode_to_vec().expect("the parent encodes");
+    let wire = parent().encode_to_vec();
     let view = CodecNestedParent::decode(&mut SceCursor::new(&wire)).expect("decodes");
 
     let growable: CodecNestedParentOwned<Heap> = view
@@ -289,18 +298,16 @@ fn owned_encode_writes_what_the_projection_writes() {
             growable
                 .try_as_borrowed()
                 .expect("within max-count")
-                .encode_to_vec()
-                .expect("within max-count"),
-            growable.encode_to_vec().expect("within max-count"),
+                .encode_to_vec(),
+            growable.encode_to_vec(),
         ),
         (
             "Inline",
             inline
                 .try_as_borrowed()
                 .expect("within max-count")
-                .encode_to_vec()
-                .expect("within max-count"),
-            inline.encode_to_vec().expect("within max-count"),
+                .encode_to_vec(),
+            inline.encode_to_vec(),
         ),
     ] {
         assert_eq!(
@@ -323,10 +330,9 @@ fn owned_encode_agrees_with_an_absent_optional_and_a_bounded_sink() {
     let projected = owned
         .try_as_borrowed()
         .expect("within max-count")
-        .encode_to_vec()
-        .expect("within max-count");
+        .encode_to_vec();
     assert_eq!(
-        owned.encode_to_vec().expect("within max-count"),
+        owned.encode_to_vec(),
         projected,
         "an absent optional embed must encode alike on both forms",
     );
@@ -339,40 +345,5 @@ fn owned_encode_agrees_with_an_absent_optional_and_a_bounded_sink() {
         &storage[..written],
         projected.as_slice(),
         "a caller-owned sink receives the same bytes"
-    );
-}
-
-/// An owned list past the borrowed view's bound is refused by `encode` with
-/// the error `try_as_borrowed` gives, at both profiles. Without it a value the
-/// borrowed form cannot carry would be written as a frame its own decoder
-/// rejects, because the projection that used to refuse it is no longer in the
-/// path.
-#[test]
-fn owned_encode_refuses_a_list_past_the_bound_like_the_projection() {
-    fn locator() -> CodecZenohLocatorOwned {
-        CodecZenohLocatorOwned {
-            locator_len: 1,
-            locator: sce_forge_runtime::codec::SceString::from_text("a").unwrap(),
-        }
-    }
-    fn body() -> CodecNestedBodyOwned {
-        CodecNestedBodyOwned {
-            n: 1,
-            locs: vec![locator()],
-        }
-    }
-    let owned = CodecNestedParentOwned {
-        hdr: 0,
-        m: 5,
-        required_body: body(),
-        optional_body: None,
-        body_list: (0..5).map(|_| body()).collect(),
-    };
-    let projected = owned.try_as_borrowed().map(|_| ()).unwrap_err();
-    let direct = owned.encode_to_vec().unwrap_err();
-    assert_eq!(projected, CodecError::TooManyElements);
-    assert_eq!(
-        direct, projected,
-        "owned encode must raise the projection's error"
     );
 }

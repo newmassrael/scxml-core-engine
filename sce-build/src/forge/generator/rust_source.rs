@@ -884,11 +884,16 @@ impl<'a> Plan<'a> {
     fn value_type(&self, field: &CodecField) -> String {
         if let Some(child) = self.child(field) {
             // An embedded body is read by reference, a list as the entries it
-            // holds in order: any iterator over values that say an entry.
+            // holds in order, with their count, no more than its bound
+            // (docs/adr/0065 §6 R2): any iterator over values that say an entry.
             return if field.is_embed() {
                 format!("&impl {}", child.trait_path)
             } else {
-                format!("impl Iterator<Item = impl {}> + Clone", child.trait_path)
+                format!(
+                    "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
+                    child.trait_path,
+                    codec_totality::list_bound(field)
+                )
             };
         }
         match &field.sce_type {
@@ -1099,10 +1104,17 @@ impl<'a> Plan<'a> {
     /// for the value the accessor says, borrowed for the life of the parts.
     fn parts_value_type(&self, field: &CodecField) -> String {
         if let Some(child) = self.child(field) {
+            // A list is a slice no longer than its bound (docs/adr/0065 §6 R2):
+            // `Bounded::new` checks a slice once, and an array within the bound
+            // converts without a check.
             return if field.is_embed() {
                 format!("&'a {}", child.parts_type)
             } else {
-                format!("&'a [{}]", child.parts_type)
+                format!(
+                    "{RUNTIME_CODEC}::Bounded<&'a [{}], {}>",
+                    child.parts_type,
+                    codec_totality::list_bound(field)
+                )
             };
         }
         match &field.sce_type {
@@ -1174,7 +1186,8 @@ impl<'a> Plan<'a> {
         }
         out.push_str(&format!(
             "/// A value of `{name}` held in the types a caller already has: a source\n\
-             /// ([`{trait_name}`]) whose lists are slices and whose bodies are references.\n\
+             /// ([`{trait_name}`]) whose lists are slices within their bounds and whose\n\
+             /// bodies are references.\n\
              #[allow(dead_code)]\n\
              #[derive(Debug, Clone, Copy)]\n\
              pub struct {parts}{lt} {{\n{members}}}\n\n",
@@ -1195,7 +1208,7 @@ impl<'a> Plan<'a> {
             let accessor = self.accessor(field);
             let read = if self.child(field).is_some() && !field.is_embed() {
                 if field.present_if.is_some() {
-                    format!("self.{accessor}.map(<[_]>::iter)")
+                    format!("self.{accessor}.as_ref().map(|_l| _l.iter())")
                 } else {
                     format!("self.{accessor}.iter()")
                 }
@@ -1345,13 +1358,21 @@ impl<'a> Plan<'a> {
                     format!("&self.{accessor}")
                 }
             } else if self.child(field).is_some() {
+                // A list's entries with their count (docs/adr/0065 §6 R2). The
+                // builder's `heapless::Vec` is sized to the bound, which its type
+                // proves; the view and the owned form hold a `Bounded`, the owned
+                // one around its profile's list, read as a slice.
                 match (form, gated) {
-                    (Form::Owned, true) => format!(
-                        "self.{accessor}.as_ref().map(|_l| {storage}::SceList::as_slice(_l).iter())"
-                    ),
-                    (Form::Owned, false) => {
-                        format!("{storage}::SceList::as_slice(&self.{accessor}).iter()")
+                    (Form::Builder, true) => {
+                        format!("self.{accessor}.as_ref().map({storage}::BoundedIter::from)")
                     }
+                    (Form::Builder, false) => {
+                        format!("{storage}::BoundedIter::from(&self.{accessor})")
+                    }
+                    (Form::Owned, true) => {
+                        format!("self.{accessor}.as_ref().map(|_l| _l.list_iter())")
+                    }
+                    (Form::Owned, false) => format!("self.{accessor}.list_iter()"),
                     (_, true) => format!("self.{accessor}.as_ref().map(|_l| _l.iter())"),
                     (_, false) => format!("self.{accessor}.iter()"),
                 }
@@ -1709,7 +1730,7 @@ impl<'a> Plan<'a> {
         for (carrier, _) in self.overridable() {
             derived.flags.entry(carrier.id.clone()).or_default();
         }
-        self.bound_lists(lines);
+        self.count_lists(lines);
         for (id, by) in self.roles.derived() {
             for derivation in by {
                 match derivation {
@@ -1810,31 +1831,22 @@ impl<'a> Plan<'a> {
         format!("_k_{}", self.accessor(field))
     }
 
-    /// Each list's entry count, checked against the bound the list declares: a
-    /// list the codec could not decode back is not a frame.
-    fn bound_lists(&self, lines: &mut Vec<String>) {
+    /// Each list's entry count, as its source counted it. The source's type holds
+    /// no more entries than the list's bound (docs/adr/0065 §6 R2), so the count
+    /// is not checked here and no list is refused.
+    fn count_lists(&self, lines: &mut Vec<String>) {
         for field in &self.m().fields {
             if !(field.is_repeat() || field.is_tlv_chain()) {
                 continue;
             }
             let accessor = self.accessor(field);
             let count = if field.present_if.is_some() {
-                format!("src.{accessor}().map_or(0, |_l| _l.count())")
+                format!("src.{accessor}().map_or(0, |_l| _l.len())")
             } else {
-                format!("src.{accessor}().count()")
+                format!("src.{accessor}().len()")
             };
             let local = self.count_local(field);
             lines.push(format!("let {local}: usize = {count};"));
-            let kind = if field.is_tlv_chain() {
-                RefusalKind::TlvChainOverflow
-            } else {
-                RefusalKind::TooManyElements
-            };
-            lines.push(format!(
-                "if {local} > {bound} {{\n    return Err({refusal});\n}}",
-                bound = codec_totality::list_bound(field),
-                refusal = self.refuse(kind, &field.id),
-            ));
         }
     }
 

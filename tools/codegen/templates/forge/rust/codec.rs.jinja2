@@ -45,7 +45,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 {% if emit_views %}
 
 {% if has_view_lists %}
-use sce_forge_runtime::codec::{ListView, ListWalk};
+use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
 {% endif %}
 {% for stmt in view_imports %}
 {{ stmt }}
