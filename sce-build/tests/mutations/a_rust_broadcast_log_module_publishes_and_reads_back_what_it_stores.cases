@@ -1,0 +1,203 @@
+# Mutation cases for "a Rust broadcast log module publishes and reads back what it stores".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_rust_broadcast_log_module_publishes_and_reads_back_what_it_stores.cases`.
+#
+# The text tests of `sce-build/tests/broadcast_log_kind.rs` hold the lines the Rust template
+# prints; they cannot show that the module those lines make does what a log must. The conformance
+# crate `sce-forge-conformance` generates the module of six logs at build time (`build.rs`,
+# Step 8), compiles them into one test binary over the element codecs they name, and
+# `forge_broadcast_log_generated` publishes and reads on one thread. A line of the template that
+# no text test holds, or that a text test holds in a way a wrong module also satisfies, is
+# observed here and nowhere else:
+#
+# - the answer `publish` gives (the sequence number the entry took) and what it does with a codec
+#   that refuses the element (publish nothing);
+# - the length word, which `read` cuts the bytes by, and where `read` finds it;
+# - the order of the length check and the slice it guards;
+# - the four answers `read` maps the runtime's three to (`Item` with its `seq`, `Empty`, `Lagged`
+#   with the number it missed);
+# - the packing of the bytes into words.
+#
+# Every mutant below still compiles: the module is built into the test binary, and a mutant that
+# the compiler refuses is reported INCONCLUSIVE and not as a pass. Each is an edit of the template
+# shared by all the modules, so it reaches the 64-bit row, the narrow row and the logs that store
+# a context alike, unless the case says it is the 64-bit row's own line.
+#
+# The oracle is `backends/rust/forge-conformance/tests/forge_broadcast_log_generated.rs`, a cargo
+# target of its own, which is why these cases are a casefile of their own: the harness shards by
+# case count, and the selector below builds the conformance crate and not `sce-build`'s test.
+# The templates reach it through the build script, which runs the generator in process.
+#
+# What a case needs a test for and has none is at the end of the file.
+#
+# Anchors are literal slices of the template; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_broadcast_log_generated
+mutation_targets tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2
+
+# --- publish ---
+
+# An element past `MAX_ENCODED_BYTES` is refused by the codec (the bounded sink answers
+# `BufferOverflow`) and nothing is published: an entry is never a truncated element. With the
+# answer dropped, `publish` goes on and publishes the bytes that fitted. Killed by
+# `an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated`: its
+# 20-byte payload must be `Err` and `log.head()` must be 0, and the mutant answers `Ok(0)`.
+mutation_case "publish goes on after the codec refuses the element" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''    element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %})?;''',
+     r'''    let _ = element.encode(&mut sink{% for flag in context.flags %}, u8::from(flags.{{ flag.snake }}){% endfor %});''')
+PY
+
+# The length word holds what the encode wrote, which is what `read` cuts the bytes by. Stored as
+# the bound, an element shorter than the largest comes back with zero bytes after it. Killed by
+# `an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated`: the record with
+# a 3-byte payload is stored with a length of 9 and comes back as a record of 8 payload bytes,
+# which does not encode to `[0x5B, 7, 7, 7]`.
+mutation_case "publish stores the bound as the length of every element" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''    let length = sink.position();''',
+     r'''    let length = MAX_ENCODED_BYTES;''')
+PY
+
+# `publish` answers the sequence number the entry took, which a publisher uses to say which entry
+# it wrote. Answering 0 for every entry loses it. Killed by
+# `entries_come_back_whole_and_in_order_through_the_typed_functions`
+# (`literal::publish(..)` must be `Ok(n as u64)` for each of three entries) and by
+# `a_narrow_log_hands_entries_back_whole_and_in_order` and `a_log_for_a_target_with_loads_and_stores_only_takes_its_publisher_by_ownership`,
+# which hold the same answer for the narrow row.
+mutation_case "publish answers zero whatever sequence number the entry took" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''    Ok(publisher.publish(&entry))''',
+     r'''    publisher.publish(&entry);
+    Ok(0)''')
+PY
+
+# Every byte is packed at the low end of its word, so an element of more than one byte reads back
+# as its bytes or-ed together. Killed by `entries_come_back_whole_and_in_order_through_the_typed_functions`
+# (`event(1, 0x0102)` comes back as a different value) and by the narrow and ownership logs' tests.
+mutation_case "publish packs every byte at the low end of its word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''<< (8 * (index % {{ word_bytes }}));''',
+     r'''<< 0;''')
+PY
+
+# --- read ---
+
+# The 64-bit row reads the length from the first word of its entry. Read from the second, the
+# length is the first bytes of the element and is out of range or wrong. Killed by
+# `entries_come_back_whole_and_in_order_through_the_typed_functions` and the other tests of the
+# 64-bit logs, which read what they published. (The narrow row's `let stored = u64::from(entry[0]);`
+# is a line of its own and is held as text.)
+mutation_case "the 64-bit row reads the length from the first word of the bytes" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''            let stored = entry[0];''',
+     r'''            let stored = entry[1];''')
+PY
+
+# The stored length is checked against the bound before it cuts a slice, and a length this log
+# did not write is `CodecError::LengthOutOfRange` and never an out-of-bounds slice. Without the
+# check the slice panics. Killed by `a_stored_length_above_the_bound_is_a_codec_error_and_never_a_slice`
+# (`MAX_ENCODED_BYTES + 1` and `u64::MAX` must be `Err(LengthOutOfRange)`) and by
+# `a_stored_length_above_the_bound_is_a_codec_error_in_the_narrow_log_too`.
+mutation_case "read does not check the stored length against the bound" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''            if stored > MAX_ENCODED_BYTES as u64 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let length = stored as usize;''',
+     r'''            let length = stored as usize;''')
+PY
+
+# The check is there and comes after the slice it guards: the bytes are cut by a length that was
+# not yet judged. The text test that holds the order finds the later `bytes[..length]` and does
+# not notice (see the end of the file); the module notices, because the loop that cuts the bytes
+# panics on a length past the array before the check is reached. Killed by
+# `a_stored_length_above_the_bound_is_a_codec_error_and_never_a_slice`.
+mutation_case "read checks the stored length after it has cut the bytes by it" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''            if stored > MAX_ENCODED_BYTES as u64 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let length = stored as usize;''',
+     r'''            let length = stored as usize;''')
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''                *byte = (entry[{{ context.payload_start }} + index / {{ word_bytes }}] >> (8 * (index % {{ word_bytes }}))) as u8;
+            }''',
+     r'''                *byte = (entry[{{ context.payload_start }} + index / {{ word_bytes }}] >> (8 * (index % {{ word_bytes }}))) as u8;
+            }
+            if stored > MAX_ENCODED_BYTES as u64 {
+                return Err(CodecError::LengthOutOfRange);
+            }''')
+PY
+
+# A reader at the head is told there is nothing new. Told it missed an entry instead, it resumes
+# at the oldest and never reports `Empty`. Killed by
+# `entries_come_back_whole_and_in_order_through_the_typed_functions`: its first read of the empty
+# log must be `Ok(Read::Empty)`.
+mutation_case "read answers lagged for a reader at the head" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''        runtime::Read::Empty => Ok({{ pascal }}Read::Empty),''',
+     r'''        runtime::Read::Empty => Ok({{ pascal }}Read::Lagged { skipped: 1 }),''')
+PY
+
+# A lapped reader is told how many entries it missed. Told one more, its `lost()` and the answer
+# disagree. Killed by `a_reader_the_publisher_laps_is_told_how_many_it_missed_and_resumes_at_the_oldest`:
+# six entries into a log that retains three leave a reader at 0 having missed 3, and the mutant
+# says 4. The narrow log's `a_narrow_reader_the_publisher_laps_is_told_how_many_it_missed` fails alike.
+mutation_case "read tells a lapped reader it missed one more entry than it did" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''        runtime::Read::Lagged { skipped } => Ok({{ pascal }}Read::Lagged { skipped }),''',
+     r'''        runtime::Read::Lagged { skipped } => Ok({{ pascal }}Read::Lagged { skipped: skipped + 1 }),''')
+PY
+
+# The item carries the sequence number the runtime gave. Carrying the next one, every entry is
+# said to be the one after it. Killed by `entries_come_back_whole_and_in_order_through_the_typed_functions`
+# (`Ok(Read::Item { seq: n as u64, .. })`) and, for the logs that store a context, by the separate
+# case below.
+mutation_case "read gives an item the sequence number after its own" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''            Ok({{ pascal }}Read::Item { seq, element })''',
+     r'''            Ok({{ pascal }}Read::Item { seq: seq + 1, element })''')
+PY
+
+# The same for the item of a log that stores a context. Killed by
+# `a_reader_gets_back_the_flag_an_entry_was_published_under` (`seq: seq as u64` for each entry of
+# the flagged log) and `a_reader_gets_back_the_tag_an_entry_was_published_under`.
+mutation_case "read gives a context item the sequence number after its own" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''                seq,
+                element,
+{% if context.flags %}
+                flags,''',
+     r'''                seq: seq + 1,
+                element,
+{% if context.flags %}
+                flags,''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# The owned form a borrowing element is returned in (`.try_into_owned_in::<Inline>()?`), removed. The
+# module no longer compiles (the element borrows `bytes`, which does not outlive the call), so the
+# round would report INCONCLUSIVE and not a verdict. The text test that holds the line is
+# `an_element_that_borrows_its_buffer_is_stored_as_its_owned_form`, and its mutant is in
+# `a_rust_broadcast_log_template_prints_the_slot_the_runtime_has.cases`.
+#
+# `#[derive(.. Copy ..)]` of the flags struct, removed. The module does not compile either (the
+# conformance test copies the flags it publishes), so the round would report INCONCLUSIVE, and no
+# text test holds a needle for the derive. It needs a test first: a line that holds
+# `#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]`.
+#
+# The order of the length check and the slice, as a text assertion. The case above shows the module
+# is the observer; the text test (`rust_generates_a_log_over_the_runtime_sized_from_its_element`)
+# finds `bytes[..length]` after the check, and the first one after it is the one of the `SceCursor`
+# further down, so it passes for a check placed after the loop. It needs a stricter text test first:
+# the refusal must come before the `for` loop that cuts the bytes.
+#
+# Where a slot count of `RETENTION` is unsafe: a reader that meets the slot being overwritten. No
+# test runs the generated module under two threads (`forge_broadcast_log.rs` runs the runtime row,
+# and `forge_broadcast_log_generated.rs` is one thread by its own header), so a module whose
+# `SLOTS` is the retention is observed here only through the constant `literal::SLOTS`, which is a
+# text-level check in disguise. It is a case of the sibling casefile.
