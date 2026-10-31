@@ -1471,6 +1471,54 @@ no arm (a state `publish` can no longer reach), are replaced by tests that the s
 for each arm and that the element read back reports the same. A codec's error for a tag that selects no arm is now reached
 only through `decode`, which a caller still gives a tag.
 
+### What the deferred reader landed (2026-10-31)
+
+`reader_deferred()` (section 2) is in all six rows: `Reader { cursor, lost, unbound }` in Rust, `readerDeferred()` and `isBound` in
+Kotlin, `reader_deferred()` and `is_bound` in Python and C++, `ReaderDeferred()` and `IsBound()` in Go, `sce_blog_reader_deferred`
+and `sce_blogn_reader_deferred` in C11, wrapped by `<snake>_reader_deferred` in the typed C headers. It loads nothing when
+opened. The first read binds the cursor to the oldest retained entry of the head that read loads (one load in the 64-bit
+row; the last slot's stamp, then the head, in the narrow row) and goes on with that same head, so it answers an item, `Empty`
+for a log with nothing published, or `Lagged` only if the publisher overtook the cursor inside that read. The Rust bind is
+`BroadcastLog::bind`; the others are one function each, copied from it line for line.
+
+Results. TLC over `BroadcastLog.tla` with `DeferredReaders` holds `DeferredStart` and `FirstLagIsOvertaken` over 13,658,347
+distinct states, and the configuration without the extra slot violates `FirstLagIsOvertaken`; over `BroadcastLogWrapped.tla`
+with `OpenMode = "deferred"` the model holds over 528,936 states and the configuration without the pause bound violates
+`AnswerRefines`. The loom models of the 64-bit row gained two deferred models and of the narrow row two more; the Rust lane
+runs 12 loom models. The model found one assumption the proofs had not stated: in a narrow row the deploy's pause bound
+`P` must also cover the open's two loads, counted from the first, or a stamp space that wraps between them lets the open
+answer `Empty` for a head an entry ahead of what it saw. The same is true of the eager `reader_oldest()`, which had been
+masked. The bound is in the TLA+ `PBusy` gate and in "What a deploy states".
+
+Found while building the C++ narrow row: `sce_blogn_reader_at` of the C11 narrow runtime never set `unbound`, so a reader
+opened at a sequence number held stack bytes in the flag and read as deferred or bound by luck. Every other constructor of
+both C rows sets it; this one now does.
+
+### What the C++ narrow row landed (2026-10-31)
+
+The C++ log is one class over a stamp lane, as Rust's is: `BroadcastLog<W, Slots, L = Wide>` in `sce/forge/broadcast_log.h`,
+with `Wide` (a 64-bit stamp) as the default so every use of the 64-bit row is unchanged, and `Narrow<Bits>` in
+`sce/forge/broadcast_log_narrow.h` (32-bit cells, a stamp holding the count modulo `2^Bits`), with
+`NarrowBroadcastLog<W, Slots, Bits>` as the alias. `detail::StampArith<Bits>` holds the arithmetic (`busy`, `done`, `distance`,
+`advance`, `missed`, `slots_fit`), and a slot count that is not a power of two of at most `K` is a compile error. The memory
+orders are those of `broadcast_log_core.rs`, written as literal `std::memory_order_*` at each site because the GenMC mutants
+rewrite them. `split()` and `publisher_unchecked()` are added for a target with no exchange, as C11 has. The renderer chooses
+its row through the shared `judged_broadcast_log_row`, and the typed header `broadcast_log_narrow.h.jinja2` is a second
+template, not a branch of the first: the rows differ in the include, the constants, the word type and the packing, which is
+most of `publish` and `read`, and the 64-bit template is quoted by casefiles and text pins. It has the deferred reader and the
+tag taken from the element from the start, and stores the context in 32-bit words.
+
+Results on build machines: the C++ lane runs 23 tests (five of them the narrow row's: a 3-bit runtime test of 23 cases that
+crosses the wrap, a 32-bit one with a thread stress of 200000 entries, the generated header over a thumbv7em record log and
+a thumbv6m event log through `split()` and `publisher_unchecked()`, the context fixtures generated narrow, and the refusal of
+an unstated pause); `broadcast_log_kind` runs 156; the GenMC gate runs 15 harnesses, including the two C++ log ones over the
+refactored class, each passing its baseline with every required mutant caught; clippy, the C11 lane (33 tests), the
+regeneration (no tree moved) and the ledger gate pass; `embed/MANIFEST.json` was regenerated for the new public types. There is no
+mutation casefile for the C++ narrow runtime: every `mutation_ctest` oracle in the repository runs in the main CMake build
+directory and the C++ forge runtime is a separate project built in a throwaway one, so there is no oracle to declare, and none
+is invented. A GenMC scenario of the narrow C++ row is not written; `broadcast_log_narrow.h` includes `broadcast_log.h` by a
+quoted relative path, so a mutated copy placed in the `-I` directory would not be the one compiled.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1482,12 +1530,16 @@ generation and conformance runs and their ARMv6-M and ARMv7-M builds (see their 
 
 What is left:
 
-- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a log row. Its runtime already imports
-  `Synchronization` (`Atomic<T>` with explicit orderings) and a build machine has a Swift toolchain, so the row can be verified
-  there as the rest of the Swift backend is; it is not started. It is written without `InlineArray`, which needs a newer
-  toolchain than the package's tools version and carries an availability annotation on Apple platforms.
-- **The narrow row of C++**, which keeps one 64-bit row. Rust's and C11's are built. Kotlin, Go and Python have no narrow row: the
-  targets they run on offer 64-bit atomics, and a target that did not would take the row of the other two.
+- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a log row, and the row is blocked on something
+  outside the log: the element of a log names a codec document (`broadcast-log/element-type-not-a-kind`), and the Swift
+  backend has no codec emitter (`ForgeKind::Codec` and `ForgeKind::Queue` are not emitted for Swift, and its forge runtime has
+  no codec, queue or log support). A runtime core alone would leave no typed header
+  to refuse or accept, so the row waits for a Swift codec. When it exists the row is mechanical: its runtime already imports
+  `Synchronization` (`Atomic<T>` with explicit orderings), a build machine has a Swift toolchain, and the Rust core, the two C
+  headers and the C++ class are the four texts to copy. It is written without `InlineArray`, which needs a newer toolchain than
+  the package's tools version and carries an availability annotation on Apple platforms.
+- **Narrow rows for Kotlin, Go and Python** do not exist: the targets they run on offer 64-bit atomics, and a target that did
+  not would take the row of Rust, C11 and C++.
 - **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry, whose decoded form borrows
   its input. The remedy is an owned form bounded by `sce:max-size`, in the Rust CBOR generator; not started. (A codec that takes flag
   inputs or a variant tag from its caller is stored with the entry by every template that ships, section 4; a typed diagnostic
