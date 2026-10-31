@@ -404,10 +404,27 @@ public final class Test444Policy: InvocablePolicy {
 
     /// W3C SCXML 5.9.1: a `cond` that cannot be evaluated is false, and raises `error.execution`.
     private func evaluateGuard(_ condition: String, engine: Engine<Test444Policy>) -> Bool {
+        var failed = false
+        return evaluateCond(condition, of: "<transition>", failed: &failed, engine: engine)
+    }
+
+    /// W3C SCXML 4.3, 5.9.1: the same for the `cond` of an `<if>` or `<elseif>`, which also says that
+    /// it failed, because the element that held it ends its block once the chain has run (§scxml-4.9).
+    private func evaluateIfCond(_ condition: String, failed: inout Bool, engine: Engine<Test444Policy>) -> Bool {
+        evaluateCond(condition, of: "<if>", failed: &failed, engine: engine)
+    }
+
+    private func evaluateCond(
+        _ condition: String,
+        of element: String,
+        failed: inout Bool,
+        engine: Engine<Test444Policy>
+    ) -> Bool {
         do {
             return try ensureLua().evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a <transition> cond failed to evaluate", engine: engine)
+            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            failed = true
             return false
         }
     }
