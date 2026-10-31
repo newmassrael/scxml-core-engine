@@ -5,18 +5,21 @@
 // wire form does not carry (ADR 0062 section 4, "Caller inputs are part of the
 // element"), compiled and used.
 //
-// The log stores each of those in the entry beside the bytes, `publish` takes it and
-// the item `read` returns holds it, so that a reader decodes an entry under what it
-// was published under and not under whatever it happens to hold. Two logs, each
+// The log stores each of those in the entry beside the bytes, so that a reader decodes
+// an entry under what it was published under and not under whatever it happens to
+// hold: `publish` takes the flags and the item `read` returns holds them, and the tag
+// is taken from the element (`element.tag()`), which the element `read` returns
+// reports again. Two logs, each
 // generated from the documents of tests/forge/conformance/broadcast_log_context/ by
 // `sce-codegen orchestrate` (every backend's conformance lane reads the same files):
 //
 //   broadcast_log_conformance_flagged  an element with one flag input that gates its
 //                                      16-bit value: one byte, or three
 //   broadcast_log_conformance_chosen   a variant whose wire form carries no tag: the
-//                                      caller gives the tag that selects the arm (tag
-//                                      1 the one-byte arm, any other tag the two-byte
-//                                      default arm)
+//                                      caller gives the tag that selects the arm on
+//                                      decode (tag 1 the one-byte arm, tag 0 the
+//                                      two-byte arm), and the log takes it back from
+//                                      the element's `tag()`
 //
 // What the header adds is the context word between the length and the bytes, so the
 // words of an entry are read through the runtime and not through the typed read, and
@@ -82,7 +85,7 @@ static_assert(FlaggedLog::kRetention == flagged::RETENTION, "the runtime's reten
 
 // The choice is the larger of its arms, two bytes; the tag is one context word.
 static_assert(chosen::MAX_ENCODED_BYTES == 2, "the choice encodes to at most the larger arm: 2 bytes");
-static_assert(chosen::CONTEXT_WORDS == 1, "a tag the caller gives is one context word");
+static_assert(chosen::CONTEXT_WORDS == 1, "a tag the entry stores is one context word");
 static_assert(chosen::WORDS == 3, "a length word, a context word and one word of bytes");
 static_assert(chosen::RETENTION == 3 && chosen::SLOTS == 4, "the document's retention of three, and one more slot");
 static_assert(ChosenLog::kRetention == chosen::RETENTION, "the runtime's retention is the header's");
@@ -271,19 +274,18 @@ std::vector<std::uint8_t> choice_bytes(const ChoiceElement &element) {
     return std::vector<std::uint8_t>(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(sink.position()));
 }
 
-std::uint64_t publish_chosen(chosen::BroadcastLogConformanceChosenPublisher &publisher, const ChoiceElement &element,
-                             std::uint8_t tag) {
-    const chosen::BroadcastLogConformanceChosenPublished published = chosen::publish(publisher, element, tag);
+std::uint64_t publish_chosen(chosen::BroadcastLogConformanceChosenPublisher &publisher, const ChoiceElement &element) {
+    const chosen::BroadcastLogConformanceChosenPublished published = chosen::publish(publisher, element);
     CHECK(published.published() && !published.error.has_value(),
-          "an element within its bound is published under its tag");
+          "an element within its bound is published under the tag of its arm");
     return published.seq;
 }
 
 /// Whether `got` is the entry `seq`: an element that encodes to the same bytes as `want`,
-/// which for these arms is the same arm, with the tag it was published with.
+/// which for these arms is the same arm, and that reports `tag` as its own.
 bool is_chosen_item(const ChosenRead &got, std::uint64_t seq, const std::vector<std::uint8_t> &want, std::uint8_t tag) {
     const ChosenItem *item = std::get_if<ChosenItem>(&got);
-    return item != nullptr && item->seq == seq && item->tag == tag && choice_bytes(item->element) == want;
+    return item != nullptr && item->seq == seq && item->element.tag() == tag && choice_bytes(item->element) == want;
 }
 
 void the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold() {
@@ -292,8 +294,8 @@ void the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hol
     CHECK(publisher.has_value(), "the first publisher");
     const ChoiceElement small = choice_from({9}, 1);
     const ChoiceElement large = choice_from({0x02, 0x01}, 0);
-    CHECK(publish_chosen(*publisher, small, 1) == 0, "the first entry takes sequence 0");
-    CHECK(publish_chosen(*publisher, large, 0) == 1, "the second entry takes sequence 1");
+    CHECK(publish_chosen(*publisher, small) == 0, "the first entry takes sequence 0");
+    CHECK(publish_chosen(*publisher, large) == 1, "the second entry takes sequence 1");
 
     auto reader = log.reader_oldest();
     ChosenLog::Entry entry{};
@@ -314,13 +316,14 @@ void a_reader_gets_back_the_tag_an_entry_was_published_under() {
     CHECK(std::holds_alternative<ChosenEmpty>(chosen::read(log, reader)), "a new log has nothing to read");
 
     // The wire form of an arm carries no tag, so the two arms' bytes are the arm's own and
-    // which arm a frame is comes from the tag stored beside it.
+    // which arm a frame is comes from the tag stored beside it, which `publish` took from
+    // the element.
     const std::vector<std::uint8_t> small_nine{9};
     const std::vector<std::uint8_t> large_bytes{0x02, 0x01};
     const std::vector<std::uint8_t> small_max{255};
-    CHECK(publish_chosen(*publisher, choice_from(small_nine, 1), 1) == 0, "publish 0 takes sequence number 0");
-    CHECK(publish_chosen(*publisher, choice_from(large_bytes, 0), 0) == 1, "publish 1 takes sequence number 1");
-    CHECK(publish_chosen(*publisher, choice_from(small_max, 1), 1) == 2, "publish 2 takes sequence number 2");
+    CHECK(publish_chosen(*publisher, choice_from(small_nine, 1)) == 0, "publish 0 takes sequence number 0");
+    CHECK(publish_chosen(*publisher, choice_from(large_bytes, 0)) == 1, "publish 1 takes sequence number 1");
+    CHECK(publish_chosen(*publisher, choice_from(small_max, 1)) == 2, "publish 2 takes sequence number 2");
     CHECK(is_chosen_item(chosen::read(log, reader), 0, small_nine, 1),
           "entry 0 comes back as the small arm under tag 1");
     CHECK(is_chosen_item(chosen::read(log, reader), 1, large_bytes, 0),
@@ -328,6 +331,36 @@ void a_reader_gets_back_the_tag_an_entry_was_published_under() {
     CHECK(is_chosen_item(chosen::read(log, reader), 2, small_max, 1),
           "entry 2 comes back as the small arm under tag 1");
     CHECK(std::holds_alternative<ChosenEmpty>(chosen::read(log, reader)), "all three were read");
+}
+
+void the_stored_tag_is_the_tag_of_the_arm_the_element_holds() {
+    // `publish` takes no tag: the context word it stores is `element.tag()`, so a publisher
+    // cannot give a tag that disagrees with the element (a tag that selects no arm cannot be
+    // provoked through `publish`). The element read back reports the same tag.
+    ChosenLog log;
+    auto publisher = log.publisher();
+    CHECK(publisher.has_value(), "the first publisher");
+    const ChoiceElement small = choice_from({9}, 1);
+    const ChoiceElement large = choice_from({0x02, 0x01}, 0);
+    CHECK(small.tag() == 1 && large.tag() == 0, "the arms' tags are 1 and 0");
+    (void)publish_chosen(*publisher, small);
+    (void)publish_chosen(*publisher, large);
+
+    auto raw = log.reader_oldest();
+    const ChoiceElement *sent[2] = {&small, &large};
+    for (std::uint64_t n = 0; n < 2; ++n) {
+        ChosenLog::Entry entry{};
+        const broadcast::Read answer = log.read(raw, entry);
+        CHECK(answer.kind == broadcast::ReadKind::Item && answer.seq == n, "the runtime returns the entry");
+        CHECK(entry[1] == static_cast<std::uint64_t>(sent[n]->tag()), "the context word is the element's tag");
+    }
+
+    auto reader = log.reader_oldest();
+    for (std::uint64_t n = 0; n < 2; ++n) {
+        const ChosenRead got = chosen::read(log, reader);
+        const ChosenItem *item = std::get_if<ChosenItem>(&got);
+        CHECK(item != nullptr && item->element.tag() == sent[n]->tag(), "the element read back reports the same tag");
+    }
 }
 
 }  // namespace
@@ -341,6 +374,7 @@ int main() {
     a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
+    the_stored_tag_is_the_tag_of_the_arm_the_element_holds();
 
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

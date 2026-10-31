@@ -3795,22 +3795,26 @@ fn cpp_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own(
             "inline constexpr std::size_t CONTEXT_WORDS = 2;",
             "inline constexpr std::size_t WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8;",
             "struct EventRingFlags {\n    bool s = false;\n    bool t = false;\n};",
-            "    EventRecordType element;\n    EventRingFlags flags;\n    std::uint8_t tag;\n};",
+            "    EventRecordType element;\n    EventRingFlags flags;\n};",
             "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
-             const EventRecordType &element, const EventRingFlags &flags, std::uint8_t tag) \
-             noexcept {",
+             const EventRecordType &element, const EventRingFlags &flags) noexcept {",
             "element.encode(sink, flag_input(flags.s), flag_input(flags.t))",
             "if (flags.s) {\n        entry[1 + 0] |= std::uint64_t{1} << 0;\n    }",
             "if (flags.t) {\n        entry[1 + 0] |= std::uint64_t{1} << 1;\n    }",
-            "entry[1 + 1] = static_cast<std::uint64_t>(tag);",
+            "entry[1 + 1] = static_cast<std::uint64_t>(element.tag());",
             "entry[3 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
             "bytes[index] = static_cast<std::uint8_t>(entry[3 + index / 8] >> (8 * (index % 8)));",
             "flags.s = ((entry[1 + 0] >> 0) & std::uint64_t{1}) != 0;",
             "flags.t = ((entry[1 + 0] >> 1) & std::uint64_t{1}) != 0;",
             "const auto tag = static_cast<std::uint8_t>(entry[1 + 1] & std::uint64_t{0xFF});",
             "EventRecordType::decode(cursor, flag_input(flags.s), flag_input(flags.t), tag)",
-            "return EventRingItem{answer.seq, std::move(*element), flags, tag};",
+            "return EventRingItem{answer.seq, std::move(*element), flags};",
         ],
+    );
+    // The tag is the element's own: neither a parameter of `publish` nor a field of the item.
+    assert!(
+        !code.contains("std::uint8_t tag)") && !code.contains("    std::uint8_t tag;\n"),
+        "neither `publish` nor the item carries a tag:\n{code}"
     );
 }
 
@@ -3826,16 +3830,20 @@ fn cpp_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() 
         &code,
         &[
             "inline constexpr std::size_t CONTEXT_WORDS = 1;",
-            "    EventRecordType element;\n    std::uint8_t tag;\n};",
+            "    std::uint64_t seq;\n    EventRecordType element;\n};",
             "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
-             const EventRecordType &element, std::uint8_t tag) noexcept {",
+             const EventRecordType &element) noexcept {",
             "element.encode(sink)",
-            "entry[1 + 0] = static_cast<std::uint64_t>(tag);",
+            "entry[1 + 0] = static_cast<std::uint64_t>(element.tag());",
             "entry[2 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
             "const auto tag = static_cast<std::uint8_t>(entry[1 + 0] & std::uint64_t{0xFF});",
             "EventRecordType::decode(cursor, tag)",
-            "return EventRingItem{answer.seq, std::move(*element), tag};",
+            "return EventRingItem{answer.seq, std::move(*element)};",
         ],
+    );
+    assert!(
+        !code.contains("std::uint8_t tag)") && !code.contains("    std::uint8_t tag;\n"),
+        "neither `publish` nor the item carries a tag:\n{code}"
     );
     assert!(
         !code.contains("Flags") && !code.contains("flag_input"),
