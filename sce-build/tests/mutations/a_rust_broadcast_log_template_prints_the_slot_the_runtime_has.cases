@@ -1,0 +1,207 @@
+# Mutation cases for "a Rust broadcast log template prints the slot the runtime has".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_rust_broadcast_log_template_prints_the_slot_the_runtime_has.cases`.
+#
+# The bounded broadcast log of ADR 0062 stores the wire bytes of an element in a slot of
+# `WORDS` words, `[length][context words][payload words]`, over a ring of `SLOTS` slots, and
+# the Rust template `tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2` writes the
+# module that packs an element into a slot on `publish` and unpacks it on `read`. The context
+# words are the business of `a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases`;
+# the numbers the renderer chooses are that of `a_rust_broadcast_log_is_rendered_over_the_row_its_target_has.cases`.
+# What this file keeps is the rest of what the template prints, where a defect is a module that
+# compiles and names the runtime that exists and does not do what its contract says:
+#
+# - the constants of the slot (`SLOTS`, `WORDS`) and the guard that refuses a target the runtime
+#   module is not built for (`compile_error!` under the cfg of the runtime's own gate);
+# - `publish`: the length word that `read` bounds the bytes by;
+# - `read`: the check of the stored length before any slice is cut by it, the unpacking of the
+#   bytes, the read-back of the flags, and the owned form a borrowing element is returned in;
+# - the narrow row's sentence about who holds its publisher (`split`, `publisher_unchecked`).
+#
+# The oracle is `sce-build/tests/broadcast_log_kind.rs`, which renders the module from facts it
+# states and holds the lines it prints. The templates are embedded in the test binary by the
+# `sce-build` build script, so a case that edits one reaches the test with nothing else declared.
+# What a mutant changes is a line a test holds, and each case names the test.
+#
+# Mutants that are not cases, each with its reason, are at the end of the file. The three that
+# `a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases` lists as needing
+# a test first (the read-back of a flag in its shift and in its word, and the offset the bytes
+# are read from) are cases here, because `rust_carries_flags_past_a_64_bit_word_into_the_next_context_word`
+# and `the_narrow_row_stores_the_context_in_32_bit_words` now hold the lines that read them.
+#
+# Anchors are literal slices of the template; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test broadcast_log_kind
+mutation_targets tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2
+
+# --- The constants of the slot, and the guard on the target ---
+
+# The runtime keeps one slot more than the retention, because the slot being overwritten is in
+# flux and cannot be promised to a reader. With `SLOTS` equal to the retention a reader that is
+# promised the last `RETENTION` entries can be handed a slot that is being written. Killed by
+# `rust_generates_a_log_over_the_runtime_sized_from_its_element`
+# (`pub const SLOTS: usize = RETENTION + 1;`) and by
+# `a_resolved_retention_and_size_become_the_modules_constants`.
+mutation_case "the log keeps as many slots as it retains entries" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''pub const SLOTS: usize = RETENTION + 1;''',
+     r'''pub const SLOTS: usize = RETENTION;''')
+PY
+
+# A slot is a length word and the words the bytes take. Without the length word the module
+# sizes a slot one word short of what `publish` writes. Killed by
+# `an_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had`
+# (`pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil(8);`, which the mutant prints
+# without the `1 + `) and by `rust_generates_a_log_over_the_runtime_sized_from_its_element`.
+mutation_case "a slot has no word for the length of its element" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''pub const WORDS: usize = 1 + MAX_ENCODED_BYTES.div_ceil({{ word_bytes }});''',
+     r'''pub const WORDS: usize = MAX_ENCODED_BYTES.div_ceil({{ word_bytes }});''')
+PY
+
+# The module refuses a target the runtime module is not built for, under the cfg the runtime
+# gates the module with. A guard that names another atomic is silent on a target that lacks the
+# one the runtime needs, and the build finds an import that is not there. Killed by
+# `the_compile_error_is_gated_by_the_cfg_the_runtime_module_is`: it reads the gate from the
+# runtime's `lib.rs` and holds `#[cfg(not({gate}))]\ncompile_error!(`.
+mutation_case "the 64-bit module guards a target on a 16-bit swap" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''#[cfg(not(all(target_has_atomic = "64", target_has_atomic = "8")))]''',
+     r'''#[cfg(not(all(target_has_atomic = "64", target_has_atomic = "16")))]''')
+PY
+
+# The same for the narrow row, whose runtime module is built for pointers of 32 and 64 bits.
+# Killed by `the_narrow_compile_error_is_gated_by_the_cfg_the_narrow_runtime_module_is`.
+mutation_case "the narrow module guards a target on a 16-bit pointer" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]''',
+     r'''#[cfg(not(any(target_pointer_width = "16", target_pointer_width = "64")))]''')
+PY
+
+# The module imports the runtime module of the row it was generated over. Importing the 64-bit
+# one for every row names a module that has the wrong stamp and words for a 32-bit slot. Killed
+# by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`
+# (`use sce_forge_runtime::broadcast_log_narrow as runtime;`).
+mutation_case "the module imports the 64-bit runtime whatever its row" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''use sce_forge_runtime::{{ runtime_module }} as runtime;''',
+     r'''use sce_forge_runtime::broadcast_log as runtime;''')
+PY
+
+# --- publish ---
+
+# The length word is what `read` bounds the bytes by. A `publish` that stores no length makes
+# every entry an empty one. Killed by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`
+# (`entry[0] = length as u32;`, which the mutant prints as `entry[0] = 0;`).
+mutation_case "publish stores no length word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''    entry[0] = length as {{ word_type }};''',
+     r'''    entry[0] = 0;''')
+PY
+
+# --- read ---
+
+# A stored length of exactly `MAX_ENCODED_BYTES` is a length this log wrote: the largest element
+# fills the slot. Refused at the bound, the largest element a log accepts is the one it cannot
+# read back. Killed by `rust_generates_a_log_over_the_runtime_sized_from_its_element`, which
+# finds `if stored > MAX_ENCODED_BYTES as u64 {` in the module.
+mutation_case "a stored length equal to the bound is refused" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''            if stored > MAX_ENCODED_BYTES as u64 {''',
+     r'''            if stored >= MAX_ENCODED_BYTES as u64 {''')
+PY
+
+# The bytes of an entry start after the length word and every context word, on the read as on the
+# write. Read from the first context word, an element that stores flags or a tag is decoded from
+# the words that hold them. Killed by `rust_carries_flags_past_a_64_bit_word_into_the_next_context_word`
+# (`*byte = (entry[4 + index / 8] >> (8 * (index % 8))) as u8;`, which the mutant prints as
+# `entry[1 + index / 8]`) and by `the_narrow_row_stores_the_context_in_32_bit_words`.
+mutation_case "read unpacks the bytes from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''*byte = (entry[{{ context.payload_start }} + index / {{ word_bytes }}] >>''',
+     r'''*byte = (entry[1 + index / {{ word_bytes }}] >>''')
+PY
+
+# Every flag is read back from bit 0 of its word, though `publish` wrote each at its own bit.
+# Killed by `rust_carries_flags_past_a_64_bit_word_into_the_next_context_word`:
+# `f63: ((entry[1 + 0] >> 63) & 1) == 1,` is printed `>> 0`; and by
+# `the_narrow_row_stores_the_context_in_32_bit_words` (`f31: ((entry[1 + 0] >> 31) & 1) == 1,`).
+mutation_case "rust reads every flag back from bit zero of its word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''>> {{ flag.shift }}) & 1) == 1,''',
+     r'''>> 0) & 1) == 1,''')
+PY
+
+# Every flag is read back from the first context word, though the 65th was written in the second.
+# Killed by the same two tests: `f64: ((entry[1 + 1] >> 0) & 1) == 1,` is printed `entry[1 + 0]`,
+# and `f32: ((entry[1 + 1] >> 0) & 1) == 1,` of the narrow row.
+mutation_case "rust reads every flag back from the first context word" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''((entry[1 + {{ flag.word }}] >>''',
+     r'''((entry[1 + 0] >>''')
+PY
+
+# An element whose decoded form borrows the buffer it was decoded from is returned as its owned
+# form, because `bytes` does not outlive the call. With the branch read the other way a borrowing
+# element is returned as it was decoded. Killed by `an_element_that_borrows_its_buffer_is_stored_as_its_owned_form`
+# (`.try_into_owned_in::<::sce_forge_runtime::codec::Inline>()?;`).
+mutation_case "an element that borrows its buffer is returned as it was decoded" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''{% if element_borrowed %}
+            // The decoded form borrows''',
+     r'''{% if not element_borrowed %}
+            // The decoded form borrows''')
+PY
+
+# --- The publisher of the narrow row ---
+
+# The narrow row says who holds its publisher: `log.split()` and the `unsafe`
+# `publisher_unchecked()` for a target with no read-modify-write atomic, an 8-bit swap or `split`
+# for one that has it. With the sentence chosen the other way each target is told the other's.
+# Killed by `a_target_with_loads_and_stores_only_is_generated_with_an_ownership_publisher`
+# (`// The publisher is `log.split()`, which takes an exclusive borrow of the log and`) and by
+# `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`
+# (`The publisher is `log.publisher()`, taken once by an 8-bit swap, or`).
+mutation_case "the narrow row tells each target the other's way to a publisher" <<'PY'
+edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+     r'''{% if ownership_only %}
+// The publisher is `log.split()`''',
+     r'''{% if not ownership_only %}
+// The publisher is `log.split()`''')
+PY
+
+# --- Mutants that are not cases ---
+#
+# The line that bounds the length cut before the copy, moved after it. The test that holds the
+# order, `rust_generates_a_log_over_the_runtime_sized_from_its_element`, finds the first
+# `bytes[..length]` after the check, and that is the one of `SceCursor::new(&bytes[..length])`
+# further down, so a module that checks the length after it has cut the bytes by it passes. The
+# order is observed by running the module, which is the next casefile's
+# (`a_rust_broadcast_log_module_publishes_and_reads_back_what_it_stores.cases`, the case that
+# moves the check). It needs a stricter text test first, to be a case here: one that finds the
+# refusal before the `for` loop that cuts the bytes.
+#
+# The wide row's read of the length word (`let stored = entry[0];`). No text test holds that line
+# for the 64-bit row; the narrow row's `let stored = u64::from(entry[0]);` is held. The wide one is
+# the next casefile's, which runs the module.
+#
+# `for (index, byte) in bytes[..length]` of `publish` read as `bytes`. Equivalent: the bytes past
+# `length` are zero, and or-ing a zero byte into a word changes nothing.
+#
+# The `<<` of the packing in `publish` (`<< (8 * (index % {{ word_bytes }}))`), as a mutant of its
+# own. The narrow tests hold it (`u32::from(*byte) << (8 * (index % 4));`) and a mutant would be
+# killed by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row`; it is the write
+# half of the offset that `a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases`
+# mutates, and is not written to keep the round short.
+#
+# The doc comments of the template (the paragraphs that name the contract, the words the context
+# is stored in, `eight to a word`). No test holds the words of a comment but the lines that quote
+# the publisher; a mutant of a comment is observed by nothing and is not a case. A test that held
+# `word_bytes_word` would need to be written first.
+#
+# `const _: () = assert!(MAX_ENCODED_BYTES <= u32::MAX as usize);` of the narrow row, read as `<`.
+# Held by `a_target_with_32_bit_atomics_is_generated_over_the_narrow_row` as text, so a mutant
+# would turn it red. It is not written to keep the round short: the boundary is a size no element
+# reaches, so the case shows a test reads the line and not that a module is wrong.
