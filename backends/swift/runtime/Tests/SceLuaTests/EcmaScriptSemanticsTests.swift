@@ -16,47 +16,6 @@ import Testing
 // Every case gets a state of its own, so a case that assumed an undeclared name sees the library and
 // nothing an earlier case left behind.
 
-/// The repository root, found from this file's own path: the tables every engine reads live under
-/// `tests/` at the root, and the tests read them where they are and do not copy them.
-private func repositoryRoot(file: String = #filePath) -> URL {
-    // <root>/backends/swift/runtime/Tests/SceLuaTests/<this file>
-    var url = URL(fileURLWithPath: file)
-    for _ in 0..<6 {
-        url.deleteLastPathComponent()
-    }
-    return url
-}
-
-private func cases(of table: String) throws -> [[String: Any]] {
-    let url = repositoryRoot().appendingPathComponent("tests/ecmascript").appendingPathComponent(table)
-    let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-    return try #require(object?["cases"] as? [[String: Any]])
-}
-
-/// Whether `actual` is the answer `expect` names. An engine may hold a whole number as an integer or
-/// as a double, and ECMA-262 has one Number type, so both spellings answer a `number` case. A case
-/// whose expectation names no answer is not a case that passes: reading it as "no answer" would let a
-/// typo in a key retire a case silently.
-private func answers(_ actual: LuaValue, _ expect: [String: Any]) throws -> Bool {
-    if let want = expect["bool"] as? Bool {
-        return actual == .boolean(want)
-    }
-    if let want = expect["number"] as? Double {
-        switch actual {
-        case .integer(let value): return abs(Double(value) - want) < 1e-9
-        case .number(let value): return abs(value - want) < 1e-9
-        default: return false
-        }
-    }
-    if let want = expect["string"] as? String {
-        return actual == .string(want)
-    }
-    if expect["empty"] != nil {
-        return actual == .nilValue
-    }
-    throw LuaError.runtime("an expectation that names no answer: \(expect)")
-}
-
 @Test func everyCaseOfTheSharedTableIsAnsweredAsEcmaScriptAnswers() throws {
     let table = try cases(of: "ecma262_semantics.json")
     let emitted = try cases(of: "ecma262_emitted_lua.json")
