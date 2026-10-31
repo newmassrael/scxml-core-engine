@@ -1561,6 +1561,20 @@ targets; the regeneration moved one file, the envelope, and a second one moved n
 passes. The 14 mutation cases of the mirror and its projection (nine on the mirror's template, five on the origin block) have
 the text-pin tests as oracle and no run has judged them.
 
+### What the longer recordings landed (2026-11-01)
+
+The six recorders no longer keep a history to a few dozen operations. That limit came from the general search, which is
+exponential in the readers' operations; `check` runs the specialised procedure first, which is `O(n log n)` and declines
+only a history that is not well formed or has an operation it has no row for, and a recording of this log is neither. A run now
+publishes 400 to 800 entries in Rust (500, with 900 reads a reader), C and C++ (500, 800 and 400 by shape), Go (500, 900
+reads), Kotlin (400 to 500) and Python (400 to 600); the number of runs a shape is recorded and the lanes' minimum counts are
+unchanged. Measured on build machines, every history of every lane is judged linearizable: the five Rust files have 1401 to
+2302 operations (they had 61 to 98), and the sizes printed first by the other lanes are 3664 operations in Go, about 1300 to
+1500 in Kotlin and about 600 in Python, over 100 histories in Go and Kotlin and 50 in Python; the C and C++ lanes pass their
+check over 100 histories each and their sizes are not printed.
+Each recorded history still passes the checker's own well-formedness test, so a recorder that wrote a malformed history would
+have been refused, not judged.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1591,8 +1605,10 @@ What is left:
   of a stated width that is not 0, 32 or 64; the line numbers of the two refusals of `rust_broadcast_log_row`; the `Copy` derive
   of the flags struct. Checked and closed: the size check of the Kotlin renderer does not need to count the context words, since
   `(MAX_ENCODED_BYTES + 7) / 8` fitting an `Int` leaves no sum that can wrap.
-- **The stress runs of the six rows** still write short histories, a limit the general search imposed and the specialised
-  checker does not; lengthening them is a change to each recorder, with a round of CI to read after it.
+- **A recorder over the narrow rows on real threads** does not exist, and the reason is not cost: a narrow row is correct only
+  under the deploy's pause bound `P`, which a preempted thread on a machine may exceed at will, so a recording over a stamp
+  of a few bits would fail by design and prove nothing about the row. The narrow rows are held by the loom and TLC models, whose
+  schedules respect the bound, and by the 32-bit stress that crosses no wrap.
 - **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the
   strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; the casefiles written
   on 2026-10-31 for the caller-input context (41 cases) and for the Rust template and renderer (43 cases); the two cases
