@@ -21,7 +21,7 @@ use sce_build::forge::codegen_matrix::{
     awaits_runtime, broadcast_log_progress_ceiling, check, emitting, language_wire_name, lookup,
     template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS,
 };
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::diagnostic::{DiagnosticCode, Fix, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use sce_build::forge::generator::judge_broadcast_log_stamp;
 use sce_build::forge::kind_catalog::{ExampleRecord, KindCatalog};
@@ -609,16 +609,56 @@ fn a_limit_the_machine_does_not_declare_is_refused_with_the_limits_it_does() {
         row_text(&located, &xml).contains("<sce:retention"),
         "the refusal is placed on the retention row"
     );
-    match generate_error(located) {
-        GenerateError::InvalidConfig(detail) => {
-            assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
-            assert!(
-                detail.contains("machines.mcu_node.limits.event_retention"),
-                "{detail}"
-            );
-            assert!(detail.contains("alpha, beta"), "{detail}");
+    let diagnostics = located.error.to_diagnostics();
+    let [diagnostic] = diagnostics.as_slice() else {
+        panic!("one refusal is one record, got {diagnostics:?}");
+    };
+    assert!(
+        matches!(
+            diagnostic.code,
+            DiagnosticCode::BroadcastLogDeployLimitUnresolved
+        ),
+        "{:?}",
+        diagnostic.code
+    );
+    assert_eq!(format!("{:?}", diagnostic.stage), "Validation");
+    assert_eq!(
+        diagnostic.actual.as_deref(),
+        Some("machines.mcu_node.limits.event_retention"),
+        "the key as authored"
+    );
+    assert!(
+        matches!(&diagnostic.fix, Some(Fix::ReplaceOneOf { candidates }) if candidates == &["alpha", "beta"]),
+        "the declared limits, sorted: {:?}",
+        diagnostic.fix
+    );
+    let message = &diagnostic.message;
+    assert!(message.contains("broadcast-log 'event_ring'"), "{message}");
+    assert!(
+        message.contains("machines.mcu_node.limits.event_retention"),
+        "{message}"
+    );
+    assert!(message.contains("does not declare"), "{message}");
+    assert!(
+        message.contains("declared limits today: alpha, beta"),
+        "{message}"
+    );
+    assert!(message.contains("entries=\"N\""), "{message}");
+    match validation(located).0 {
+        ValidationError::BroadcastLogDeployLimitUnresolved {
+            log_name,
+            key,
+            machine,
+            limit,
+            candidates,
+        } => {
+            assert_eq!(log_name, "event_ring");
+            assert_eq!(key, "machines.mcu_node.limits.event_retention");
+            assert_eq!(machine, "mcu_node");
+            assert_eq!(limit, "event_retention");
+            assert_eq!(candidates, ["alpha", "beta"]);
         }
-        other => panic!("expected InvalidConfig, got {other:?}"),
+        other => panic!("expected BroadcastLogDeployLimitUnresolved, got {other:?}"),
     }
 }
 
@@ -3333,10 +3373,30 @@ fn a_deploy_key_naming_an_undeclared_limit_is_refused_with_the_limits_there_are(
     )
     .err()
     .unwrap_or_else(|| panic!("the key names a limit the machine does not declare"));
-    let detail = invalid_config(located);
     assert!(
-        detail.contains("declared limits today: other_limit"),
-        "{detail}"
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    let message = located.error.to_string();
+    assert!(
+        message.contains("declared limits today: other_limit"),
+        "{message}"
+    );
+    let (error, codes) = validation(located);
+    assert!(
+        matches!(
+            codes.as_slice(),
+            [DiagnosticCode::BroadcastLogDeployLimitUnresolved]
+        ),
+        "{codes:?}"
+    );
+    assert!(
+        matches!(
+            error,
+            ValidationError::BroadcastLogDeployLimitUnresolved { ref limit, ref candidates, .. }
+                if limit == "event_retention" && candidates == &["other_limit"]
+        ),
+        "{error:?}"
     );
 }
 
