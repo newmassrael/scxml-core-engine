@@ -595,6 +595,111 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(result.reason == expectedReason, "validator_signed_roc step \(i) reason")
     }}
 
+// MARK: - validator: crossfile_validator_filter
+
+@Test func crossfileValidatorFilterMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_filter")
+    let validator = CrossfileValidatorFilter()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleReal(args[0])
+        let arg1 = try oracleReal(args[1])
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0, arg1)
+        #expect(result.valid == expectedValid, "crossfile_validator_filter step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_filter step \(i) reason")
+    }}
+
+// MARK: - validator: crossfile_validator_transform
+
+@Test func crossfileValidatorTransformMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_transform")
+    let validator = CrossfileValidatorTransform()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt16.self)
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0)
+        #expect(result.valid == expectedValid, "crossfile_validator_transform step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_transform step \(i) reason")
+    }}
+
+// MARK: - validator: crossfile_validator_transform_widening
+
+@Test func crossfileValidatorTransformWideningMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_transform_widening")
+    let validator = CrossfileValidatorTransformWidening()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0)
+        #expect(result.valid == expectedValid, "crossfile_validator_transform_widening step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_transform_widening step \(i) reason")
+    }}
+
+// MARK: - validator: crossfile_validator_condition
+
+@Test func crossfileValidatorConditionMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_condition")
+    let validator = CrossfileValidatorCondition()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleReal(args[0])
+        let arg1 = try oracleReal(args[1])
+        let arg2 = try oracleReal(args[2])
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0, arg1, arg2)
+        #expect(result.valid == expectedValid, "crossfile_validator_condition step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_condition step \(i) reason")
+    }}
+
+// MARK: - validator: crossfile_validator_lookup
+
+@Test func crossfileValidatorLookupMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_lookup")
+    let validator = CrossfileValidatorLookup()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleInteger(args[0], as: Int32.self)
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0)
+        #expect(result.valid == expectedValid, "crossfile_validator_lookup step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_lookup step \(i) reason")
+    }}
+
+// MARK: - validator: crossfile_validator_interpolation
+
+@Test func crossfileValidatorInterpolationMatchesReference() throws {
+
+    let spec = try oracleSpec("validators", "crossfile_validator_interpolation")
+    let validator = CrossfileValidatorInterpolation()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let args = try oracleArray(step.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt16.self)
+        let expected = step.member("expected")
+        let expectedValid = try oracleTruth(expected?.member("valid"))
+        let expectedReason = try oracleText(expected?.member("reason"))
+        let result = validator.validate(arg0)
+        #expect(result.valid == expectedValid, "crossfile_validator_interpolation step \(i) valid")
+        #expect(result.reason == expectedReason, "crossfile_validator_interpolation step \(i) reason")
+    }}
+
 // MARK: - algorithm: algorithm_single_sum
 
 @Test func algorithmSingleSumMatchesReference() throws {
