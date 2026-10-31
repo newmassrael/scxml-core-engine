@@ -267,6 +267,74 @@ fn a_send_to_an_invoked_child_is_routed_and_not_kept_by_the_sender() {
     assert!(machine.contains("engine.sendToTarget("), "{machine}");
 }
 
+/// What an `<invoke>` hands a child that runs a script engine: each `<param>` and each namelist name
+/// is read by the parent's engine as JSON and given to the child by name, and the child's `<data>` of
+/// that name takes it. The id of the invocation goes to the `idlocation` before the child starts. A
+/// namelist name the document does not declare is an error and is never resolved at build time.
+#[test]
+fn an_invoke_hands_its_child_the_values_it_names_as_json() {
+    let body = r##"
+  <datamodel><data id="n" expr="1"/><data id="m" expr="2"/><data id="where"/></datamodel>
+  <state id="s0">
+    <invoke type="scxml" idlocation="where" namelist="n missing">
+      <param name="p" expr="m + 1"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0" datamodel="ecmascript">
+          <datamodel><data id="p" expr="0"/><data id="n" expr="0"/></datamodel>
+          <state id="c0"><transition target="cdone"/></state>
+          <final id="cdone"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke" target="done"/>
+  </state>
+  <final id="done"/>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"seeds["p"] = seedValue"#)
+            && machine.contains(r#"seeds["n"] = seedValue"#),
+        "a param and a namelist name are handed by name: {machine}"
+    );
+    assert!(machine.contains("acceptSeeds(seeds)"), "{machine}");
+    assert!(
+        machine.contains(r#"assignData("where", ""#),
+        "the id of the invocation is written to the idlocation: {machine}"
+    );
+    assert!(
+        machine.contains("<invoke> namelist names 'missing', which is not declared"),
+        "an undeclared name is an error: {machine}"
+    );
+    assert!(
+        !machine.contains("is not declared by this document"),
+        "no build-time refusal is embedded for the name: {machine}"
+    );
+}
+
+/// A child that runs no script engine has no variable to take a value, so what is handed to it is
+/// refused by name.
+#[test]
+fn values_handed_to_a_child_without_an_engine_are_refused_by_name() {
+    let body = r##"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <invoke type="scxml" namelist="n">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0">
+          <state id="c0"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(7), "{said}");
+    assert!(machine.is_empty(), "no machine is written");
+    assert!(
+        said.contains("an <invoke> with a <param> or a namelist"),
+        "{said}"
+    );
+}
+
 /// An `<assign>` of an `ecmascript` document is lowered to Lua: its location and its value are
 /// lowered at build time and the engine runs the assignment, an error of which is
 /// `error.execution` and ends the block.

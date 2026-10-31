@@ -4262,6 +4262,7 @@ fn swift_unsupported(
 pub(crate) fn swift_invoke_unlowered(
     invoke: &crate::model::Invoke,
     statically_lowered: bool,
+    is_ecma: bool,
 ) -> Option<String> {
     let info = match invoke {
         crate::model::Invoke::Scxml(info) => info,
@@ -4277,17 +4278,25 @@ pub(crate) fn swift_invoke_unlowered(
         return Some("an <invoke> of a Mesh peer".to_string());
     }
     // What the invocation hands the child is a value the static lowering writes
-    // (`Param::native_seed`); a document under another data model has none to give.
-    if !statically_lowered && (!info.common.base.params.is_empty() || !info.namelist.is_empty()) {
+    // (`Param::native_seed`). An `ecmascript` parent hands a child that runs a script engine
+    // each value as JSON, which the child's `<data>` of that name takes in place of its own;
+    // a child that runs none has no variable to take it.
+    let hands_values = !info.common.base.params.is_empty() || !info.namelist.is_empty();
+    let child_takes_values = is_ecma && info.common.child_needs_script_engine;
+    if !statically_lowered && hands_values && !child_takes_values {
         return Some("an <invoke> with a <param> or a namelist".to_string());
     }
-    if !info.common.base.idlocation.is_empty() {
+    // An `ecmascript` parent writes the id of the invocation to the location `idlocation`
+    // names when the invocation starts.
+    if !is_ecma && !info.common.base.idlocation.is_empty() {
         return Some("an <invoke idlocation>".to_string());
     }
     if !info.finalize_content.is_empty() {
         return Some("an <invoke> with a <finalize>".to_string());
     }
-    if info.common.child_needs_script_engine {
+    // A child that runs a script engine links the engine of its own, which is only the
+    // machine an `ecmascript` parent is.
+    if !is_ecma && info.common.child_needs_script_engine {
         return Some("an <invoke> of a child that runs a script engine".to_string());
     }
     // A child that declares acts is built with the host its parent's host answers
@@ -4533,7 +4542,7 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
     states.sort_by_key(|state| state.document_order);
     for state in states {
         for invoke in &state.invokes {
-            if let Some(what) = swift_invoke_unlowered(invoke, is_static) {
+            if let Some(what) = swift_invoke_unlowered(invoke, is_static, is_ecma) {
                 return Err(swift_unsupported(
                     format!("{what} in state '{}'", state.id),
                     invoke.base().source_location.clone(),
@@ -4704,6 +4713,11 @@ fn swift_ecmascript_cause_unlowered(
         // the engine reads as the state is entered (`evaluateJSON`).
         | Cause::DonedataParam { .. }
         | Cause::DonedataContent { .. }
+        // What an invocation hands its child, and a child that runs an engine of its own, are
+        // decided where the invoke is read (`swift_invoke_unlowered`), which knows the data
+        // model of the parent: an `ecmascript` one hands each value to the child as JSON.
+        | Cause::StaticInvokeNamelist { .. }
+        | Cause::ChildInvokeNeedsScriptEngine { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
@@ -4712,17 +4726,12 @@ fn swift_ecmascript_cause_unlowered(
         Cause::HybridInvoke { invoke_id } => {
             named("an <invoke> resolved by an expression", invoke_id)
         }
-        Cause::StaticInvokeNamelist { invoke_id } => named("an <invoke namelist>", invoke_id),
         Cause::MeshRpcSrcExpr { invoke_id } | Cause::MeshRpcRequestExpr { invoke_id } => {
             named("a Mesh <invoke> evaluated at its start", invoke_id)
         }
         Cause::HostInvokeExpr { invoke_id } => {
             named("a host <invoke> whose request is evaluated", invoke_id)
         }
-        Cause::ChildInvokeNeedsScriptEngine { invoke_id } => named(
-            "an <invoke> of a child that runs a script engine",
-            invoke_id,
-        ),
     }
 }
 

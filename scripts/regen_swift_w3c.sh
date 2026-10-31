@@ -72,6 +72,13 @@ document_of() {
     printf 'resources/%s/test%s.scxml\n' "$number" "$id"
 }
 
+# The files an `<invoke src>` of `document` names, as they sit beside it: `src="file:x.scxml"` and
+# `src="x.scxml"` both name `x.scxml`.
+children_of() {
+    local document="$1"
+    grep -o 'src="[^"]*\.scxml"' "$document" | sed 's/^src="//; s/"$//; s#^file:##' | LC_ALL=C sort -u || true
+}
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -88,7 +95,30 @@ for id in "${IDS[@]}"; do
     verdict="$("$CODEGEN" generate "$source" -l swift --error-format=json -o "$TMP/$id/" 2>&1)" || status=$?
     case "$status" in
         0)
-            LOWERED+=("$id")
+            # A child an `<invoke src>` names is a document of its own, beside its parent, and the
+            # machine of the parent names the policy of the child. It is generated into the same
+            # directory, and a parent whose child is refused is a document not lowered.
+            for child in $(children_of "$source"); do
+                child_status=0
+                child_verdict="$("$CODEGEN" generate "$(dirname "$source")/$child" -l swift --error-format=json -o "$TMP/$id/" 2>&1)" || child_status=$?
+                case "$child_status" in
+                    0) ;;
+                    7)
+                        status=7
+                        verdict="$child_verdict"
+                        ;;
+                    *)
+                        echo "error: sce-codegen generate -l swift $child (a child of $source) failed with status $child_status" >&2
+                        printf '%s\n' "$child_verdict" >&2
+                        exit 1
+                        ;;
+                esac
+            done
+            if [ "$status" = 0 ]; then
+                LOWERED+=("$id")
+            else
+                printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170 >> "$REASONS_FILE"
+            fi
             ;;
         7)
             printf '%s\n' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c12-170 >> "$REASONS_FILE"
@@ -107,7 +137,7 @@ fi
 # A floor, not an equality: a construct Swift gains lowers more fixtures without touching this
 # number, but a document the generator stopped lowering must not read as a smaller suite that
 # passed. Raise it when a slice lands; measured 2026-10-31 at 62 of 157.
-FLOOR=129
+FLOOR=136
 if [ "${#LOWERED[@]}" -lt "$FLOOR" ]; then
     echo "error: the Swift backend lowers ${#LOWERED[@]} simple W3C fixture(s), under the floor of $FLOOR: a construct it lowered is refused again" >&2
     exit 1

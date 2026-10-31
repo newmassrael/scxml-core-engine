@@ -70,6 +70,40 @@
 {% endif %}
 {% endfor %}
 {% endmacro %}
+{# W3C SCXML 6.4.1 + 6.4.3, under `datamodel="ecmascript"`: the same hand-over, with each value
+   read by the engine as JSON (`evaluateJSON`) and given to the child's `acceptSeeds` by the name of
+   the `<param>` or of the namelist entry. The child's `<data>` of that name takes it in place of its
+   own value, and one the child declares no variable for is dropped there. A value that cannot be read
+   is reported and left out (5.7.1), and a namelist name the document does not declare is the same
+   (its name is never resolved at build time, as `<send namelist>`'s is not). #}
+{% macro ecma_seed_child(invoke_info, model, machine_name, indent) %}
+{% if invoke_info.params or (invoke_info.namelist and invoke_info.namelist | trim) %}
+{{ indent }}var seeds: [String: String] = [:]
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+{{ indent }}seeds["{{ param.name | escape_swift }}"] = WireValue.text("{{ param.static_value | escape_swift }}").json
+{% elif param.expr or param.location %}
+{{ indent }}if let seedValue = evaluateJSON("{{ (param.expr or param.location) | to_lua_expr | escape_swift }}") {
+{{ indent }}    seeds["{{ param.name | escape_swift }}"] = seedValue
+{{ indent }}} else {
+{{ indent }}    raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> could not be read", engine: engine)
+{{ indent }}}
+{% endif %}
+{% endfor %}
+{% for namelist_id in (invoke_info.namelist or '') | split %}
+{% if namelist_id is declared_name %}
+{{ indent }}if let seedValue = evaluateJSON("{{ namelist_id | to_lua_expr | escape_swift }}") {
+{{ indent }}    seeds["{{ namelist_id | escape_swift }}"] = seedValue
+{{ indent }}} else {
+{{ indent }}    raiseExecutionError("<invoke> namelist entry '{{ namelist_id | escape_swift }}' could not be read", engine: engine)
+{{ indent }}}
+{% else %}
+{{ indent }}raiseExecutionError("<invoke> namelist names '{{ namelist_id | escape_swift }}', which is not declared", engine: engine)
+{% endif %}
+{% endfor %}
+{{ indent }}childPolicy.acceptSeeds(seeds)
+{% endif %}
+{% endmacro %}
 {# The invokes are read off the states, not off `model.invokes`: the static lowering
    writes what an invoke hands its child (`native_seed`) on the state's own copy, and
    the model's list was made before it ran. #}
@@ -152,9 +186,20 @@
    once for each start (`native_action::lower_child_hosts`, W3C SCXML 6.4: the child is a
    session of its own, so what the host answers for one start is not carried into the next). #}
         let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy({{ 'actions: ' ~ invoke_info.child_host_call if invoke_info.child_host_call else '' }})
+{% if ecmascript_datamodel and invoke_info.idlocation %}
+        // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names, the id
+        // every event of the child carries as `_event.invokeid`, before the child starts.
+        if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
+            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+        }
+{% endif %}
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
+{% if ecmascript_datamodel %}
+{{ ecma_seed_child(invoke_info, model, machine_name, '        ') }}
+{% else %}
 {{ seed_child(invoke_info.child_name | to_pascal_case ~ 'Policy', invoke_info.params, [], model, machine_name, '        ') }}
+{% endif %}
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
