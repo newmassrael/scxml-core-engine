@@ -3688,6 +3688,16 @@ pub struct BroadcastLogElementFacts {
     /// The element is a CBOR map with a string or byte-string entry: the one
     /// shape whose decoded form can hold a view into the buffer it was read from.
     pub cbor_text_or_bytes_entry: bool,
+    /// A string or byte-string entry of the CBOR map states neither `sce:max-size`
+    /// nor `sce:length` ([`forge::cbor_codec::has_unbounded_text_or_bytes`]): no
+    /// container of a declared capacity holds it, so the Rust form of the map has
+    /// no owned mirror to copy a decoded value into. Read together with
+    /// [`Self::cbor_text_or_bytes_entry`]. A document set never reaches a log with
+    /// such an element, since a slot is sized from the element's largest encoded
+    /// size and `broadcast-log/element-size-unbounded` refuses one that has none;
+    /// the fact is what keeps the verdict of a render that is handed its numbers
+    /// by hand the same.
+    pub cbor_entry_unbounded: bool,
 }
 
 impl BroadcastLogElementFacts {
@@ -3713,8 +3723,9 @@ impl BroadcastLogElementFacts {
     /// ([`Self::context_words`]). The one fact left is each language's own: a
     /// language whose decode of a CBOR text or byte-string entry yields a value
     /// that owns its bytes (a copy into the value) holds the element, and one
-    /// whose value borrows the buffer does not unless it has an owned form to
-    /// copy into. Every arm is written out, so that a language added to
+    /// whose value borrows the buffer holds it when it has an owned form to
+    /// copy into (Rust's `{Name}Owned<S>`, which every entry that states a bound
+    /// has). Every arm is written out, so that a language added to
     /// [`generator::Language`] is decided here and does not inherit another's
     /// answer, and the change that gives a language its template states, in its
     /// arm, which it is and why.
@@ -3740,9 +3751,18 @@ impl BroadcastLogElementFacts {
             }
         }
         let borrows = match language {
-            // The decoded form is `<'a>` over the cursor's buffer and has no
-            // `Owned` mirror for a string or byte-string entry.
-            Language::Rust => self.cbor_text_or_bytes_entry,
+            // The decoded form is `<'a>` over the cursor's buffer: a string entry
+            // is a `&str` and a byte-string entry a `&[u8]` of it. The map has an
+            // owned mirror, `{Name}Owned<S>`, that copies each of them into the
+            // profile's `Str<N>` or `Bytes<N>` of the entry's declared bound
+            // (`codec_cbor.rs.jinja2`), and a log's `read` hands back that form,
+            // built by `try_into_owned_in::<Inline>()` from the decode that
+            // borrowed its stack buffer. So the map is held, as the other
+            // languages' are. What has no mirror is a map with an entry that
+            // states no bound, for there is no capacity to declare a container
+            // at; a document set refuses such an element for its size before a
+            // render, and a render given its numbers by hand refuses it here.
+            Language::Rust => self.cbor_text_or_bytes_entry && self.cbor_entry_unbounded,
             // Every value a Python decode returns owns what it holds, so a CBOR
             // text or byte-string entry is held and never refused. The log gives
             // the decode a `bytes` (not a `memoryview`), and the generated CBOR
@@ -3792,8 +3812,10 @@ impl BroadcastLogElementFacts {
             Language::Swift => false,
         };
         borrows.then(|| {
-            "a CBOR map with a string or byte string entry decodes to a value that borrows \
-             the buffer it was read from, and has no owned form to copy it into"
+            "a CBOR map with a string or byte string entry that states neither sce:max-size \
+             nor sce:length decodes to a value that borrows the buffer it was read from, and \
+             has no owned form to copy it into: the owned form holds each entry in a \
+             container of its declared bound"
                 .to_string()
         })
     }
@@ -5482,6 +5504,14 @@ fn compute_codec_recursive_max_bytes(
 /// over-approximation: an unused lifetime parameter is a hard compile
 /// error (E0392), so the inference must not claim `<'a>` for a codec
 /// that holds no borrow.
+///
+/// A CBOR codec has no positional field for the scalar rule to read: it holds its
+/// strings and byte strings as entries. What this answers for one is whether it
+/// has an owned mirror, `{Codec}Owned`, which is what a container that stores the
+/// element names in place of the view
+/// ([`forge::cbor_codec::rust_owned_mirror`]: a map that borrows and bounds every
+/// string and byte string). A map with an unbounded one has a view and no mirror,
+/// and is answered `false` as it was.
 fn codec_is_borrowed_recursive(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
@@ -5504,7 +5534,7 @@ fn codec_is_borrowed_recursive(
             ))
         })
         .unwrap_or(false)
-    })
+    }) || forge::cbor_codec::rust_owned_mirror(cm)
 }
 
 /// Whether a codec's Rust view (`{Codec}View`, ADR 0049) carries a `<'a>`
@@ -7027,6 +7057,8 @@ fn broadcast_log_element_facts(
                     forge::model::SceType::String | forge::model::SceType::Bytes
                 )
             }),
+        cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
+            && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
     }
 }
 
