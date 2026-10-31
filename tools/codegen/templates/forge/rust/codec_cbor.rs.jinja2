@@ -24,6 +24,16 @@ cbor::read_uint(&mut c)?
 cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }}
 {%- endif -%}
 {%- endmacro %}
+{#- The runtime's copy of a string or a byte string into the profile's container
+    for it, as a function the value is given to. A container of a declared
+    capacity refuses a value past it (`CodecError::TooManyElements`). #}
+{% macro owned_copy(e) -%}
+{%- if e.kind == "text" -%}
+<{{ e.owned_type }} as ::sce_forge_runtime::codec::SceStr>::from_view
+{%- else -%}
+<{{ e.owned_type }} as ::sce_forge_runtime::codec::SceByteBuf>::from_slice
+{%- endif -%}
+{%- endmacro %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -145,3 +155,123 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
     }
 {% endif %}
 }
+{% if emit_owned %}
+
+// ── Owned projection (storage-parameterised native form) ─────────────
+// `{{ struct_name }}<'a>` above decodes a string or a byte string to a view of
+// the buffer it was read from. A consumer that keeps a decoded map past that
+// buffer, as a broadcast log does when it hands a read back, calls
+// `try_into_owned_in` for this lifetime-free `{{ struct_name }}Owned`, which copies
+// each string and byte string into the storage profile's container for it.
+//
+// The profile is the one a positional codec's owned form takes:
+// `{{ struct_name }}Owned<Heap>` grows its containers and treats each declared
+// `sce:max-size` as advisory, `{{ struct_name }}Owned<Inline>` holds every entry
+// inline at its declared capacity and never allocates, and
+// `{{ struct_name }}Owned` alone is the build's default profile. This form exists
+// because every string and byte string of the map states a bound (`sce:max-size`,
+// or the `sce:length` of an exact byte string): a container needs a capacity to be
+// declared at, and an entry with none has no owned form.
+//
+// `try_into_owned_in` enforces each declared bound on the inline profile
+// (`CodecError::TooManyElements`); `as_borrowed` re-borrows any profile back into
+// the view; `transcode_in` moves a value between profiles as a checked
+// projection; and `encode` writes the owned value through the source interface,
+// without the view.
+//
+// Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
+// Hand-assembling a value names the profile on the value or its binding, because
+// the fields reach it through its associated container types.
+// Same pub-API policy as the view above: the owned form and its projections are
+// cross-crate surface, and which of them a given in-repo fixture calls says
+// nothing about their value.
+#[allow(dead_code)]
+{{ codec_owned_derives_attr }}
+pub struct {{ struct_name }}Owned{{ owned_generics_decl }} {
+{% for e in entries %}
+    /// Map key {{ e.key }}{% if e.required %}, required{% endif %}.
+    pub {{ e.name }}: {{ e.owned_field_type }},
+{% endfor %}
+}
+
+#[allow(dead_code)]
+impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
+    /// Deep-copy this view into an owned, lifetime-free [`{{ struct_name }}Owned`]
+    /// held in the given storage profile. Call at a decode boundary when the
+    /// decoded value must outlive the input buffer.
+    ///
+    /// Fallible for profile uniformity: on the inline profile a string or byte
+    /// string longer than its declared capacity raises
+    /// `CodecError::TooManyElements`, on the growable profile the copy cannot
+    /// fail. Decode has already held each entry to its bound, so a value that
+    /// was decoded fits.
+    pub fn try_into_owned_in{{ owned_generics_impl }}(self) -> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {
+        Ok({{ struct_name }}Owned {
+{% for e in entries %}
+{% if e.kind == "text" or e.kind == "bytes" or e.kind == "bytes_exact" %}
+{% if e.required %}
+            {{ e.name }}: {{ owned_copy(e) }}(self.{{ e.name }})?,
+{% else %}
+            {{ e.name }}: self.{{ e.name }}.map({{ owned_copy(e) }}).transpose()?,
+{% endif %}
+{% else %}
+            {{ e.name }}: self.{{ e.name }},
+{% endif %}
+{% endfor %}
+        })
+    }
+
+    /// The same projection at the build's default storage profile: growable
+    /// where an allocator exists, inline on the heap-free tier.
+    pub fn try_into_owned(self) -> Result<{{ struct_name }}Owned, CodecError> {
+        self.try_into_owned_in()
+    }
+}
+
+#[allow(dead_code)]
+impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
+    /// Re-borrow this owned value back into the view: the inverse of
+    /// `try_into_owned_in`. Each entry is read through
+    /// [`{{ struct_name }}Source`], so a string or a byte string is a re-borrow of
+    /// the container that holds it and not a copy.
+    pub fn as_borrowed(&self) -> {{ struct_name }}<'_> {
+        {{ struct_name }} {
+{% for e in entries %}
+            {{ e.name }}: <Self as {{ struct_name }}Source>::{{ e.name }}(self),
+{% endfor %}
+        }
+    }
+
+    /// Move this value to a different storage profile: growable to inline when
+    /// handing it to a path that must not allocate, or inline to growable when it
+    /// is leaving that path.
+    ///
+    /// A checked projection through the view, not a re-decode: the bytes are
+    /// copied once and every destination capacity is enforced, so a value that
+    /// cannot fit the target profile is rejected here rather than truncated.
+    pub fn transcode_in<D: {{ codec_storage_path }}>(&self) -> Result<{{ struct_name }}Owned<D>, CodecError> {
+        self.as_borrowed().try_into_owned_in::<D>()
+    }
+
+    // Every string and byte string of an owned form has a declared bound, so the
+    // encode can refuse a value (`CodecError::CborOutOfRange`, or
+    // `CodecError::CborWrongLength` for an exact byte string): the growable
+    // profile holds a value past a bound, which the encode then refuses.
+
+    /// Encode `self` into the caller-owned sink, straight from the owned fields:
+    /// the bytes [`{{ struct_name }}::encode`] writes for the value
+    /// [`Self::as_borrowed`] gives, without the projection. An entry past its
+    /// declared bound is refused, not written.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        {{ struct_name }}::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut out: Vec<u8> = Vec::new();
+        self.encode(&mut VecSink::new(&mut out))?;
+        Ok(out)
+    }
+}
+{% endif %}

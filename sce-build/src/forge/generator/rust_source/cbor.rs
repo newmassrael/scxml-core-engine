@@ -51,6 +51,26 @@ fn accessor_type(input: &Input<'_>, e: &CborEntry) -> String {
     }
 }
 
+/// The expression that reads the entry `acc` of `e` out of the owned mirror as the
+/// type [`accessor_type`] gives: the container a string or a byte string is held in
+/// read back as a `&str` or a `&[u8]`, and any other entry as it is held. The
+/// containers' own read, which the mirror's `as_borrowed` reaches through the
+/// interface.
+fn owned_read(input: &Input<'_>, e: &CborEntry, acc: &str) -> String {
+    let container = cbor_codec::rust_owned_value_type(input.l, e);
+    let runtime = cbor_codec::RUST_RUNTIME_CODEC;
+    let read = match e.present_type() {
+        SceType::String => Some(format!("<{container} as {runtime}::SceStr>::as_str")),
+        SceType::Bytes => Some(format!("<{container} as {runtime}::SceByteBuf>::as_slice")),
+        _ => None,
+    };
+    match (read, e.is_required()) {
+        (Some(read), true) => format!("{read}(&self.{acc})"),
+        (Some(read), false) => format!("self.{acc}.as_ref().map({read})"),
+        (None, _) => format!("self.{acc}"),
+    }
+}
+
 /// The statements that write the value `v` of `e`, after its key. A refusal is
 /// written where `totality` names one, and only there.
 fn write_value(input: &Input<'_>, totality: &Totality, e: &CborEntry) -> Vec<String> {
@@ -211,6 +231,28 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
     };
     let result = super::write_result(may_fail, "K");
 
+    // The owned mirror (`{name}Owned<S>`, generated when every string and byte
+    // string of the map states a bound) says what it holds through the same
+    // interface, so `encode_source` writes it as it writes the view, and the
+    // mirror's `as_borrowed` reads each entry from here.
+    let owned_impl = if cbor_codec::rust_owned_mirror(m) {
+        let mut items = String::new();
+        for e in &m.cbor_entries {
+            let (acc, ty) = (accessor(e), accessor_type(input, e));
+            let read = owned_read(input, e, &acc);
+            items.push_str(&format!(
+                "    fn {acc}(&self) -> {ty} {{\n        {read}\n    }}\n"
+            ));
+        }
+        format!(
+            "impl<{param}: {runtime}::CodecStorage> {trait_name} for {name}Owned<{param}> {{\n{items}}}\n\n",
+            param = cbor_codec::RUST_STORAGE_PARAM,
+            runtime = cbor_codec::RUST_RUNTIME_CODEC,
+        )
+    } else {
+        String::new()
+    };
+
     format!(
         "// ── Source (ADR 0058) ────────────────────────────────────────────────\n\
          /// What a value of `{name}` says: its entries. The count the map head holds\n\
@@ -219,6 +261,7 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
          pub trait {trait_name} {{\n{trait_items}}}\n\n\
          impl<T: {trait_name} + ?Sized> {trait_name} for &T {{\n{ref_items}}}\n\n\
          impl{lt} {trait_name} for {name}{lt} {{\n{builder_items}}}\n\n\
+         {owned_impl}\
          #[allow(dead_code)]\n\
          impl{lt} {name}{lt} {{\n\
          \x20   /// Encode what `src` says as one CBOR map into `w`: the entries present in\n\

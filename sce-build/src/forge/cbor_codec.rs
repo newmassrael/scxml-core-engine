@@ -127,6 +127,65 @@ fn int_max(ty: &SceType) -> Option<u64> {
     })
 }
 
+/// Whether a string or byte-string entry of the CBOR codec `m` states neither
+/// `sce:max-size` nor `sce:length`: an entry no container of a declared capacity
+/// can hold.
+///
+/// The one place that says it for the Rust owned mirror. The mirror
+/// ([`rust_owned_mirror`]), the answer a queue, a bounded collection or a
+/// broadcast log is given for whether the element has one, and the broadcast-log
+/// fact [`crate::BroadcastLogElementFacts::cbor_entry_unbounded`] are all read
+/// from it, so the type they name exists exactly when it is generated.
+pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
+    m.cbor_entries.iter().any(|e| {
+        matches!(e.present_type(), SceType::String | SceType::Bytes)
+            && e.length.or(e.max_size).is_none()
+    })
+}
+
+/// Whether the Rust form of the CBOR codec `m` has an owned mirror,
+/// `{Name}Owned<S>` (SCE_FORGE.md §4.6.1): it decodes a string or a byte string to
+/// a view of the buffer, so the map borrows, and a mirror is what a consumer that
+/// keeps a decoded value past its buffer copies it into. The mirror holds each
+/// such entry in a container of the entry's declared capacity (`Str<N>`,
+/// `Bytes<N>`), so it exists only when every one of them has a capacity to declare
+/// ([`has_unbounded_text_or_bytes`]); a map of scalars borrows nothing and is its
+/// own owned form.
+pub fn rust_owned_mirror(m: &CodecModel) -> bool {
+    !has_unbounded_text_or_bytes(m)
+        && m.cbor_entries
+            .iter()
+            .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes))
+}
+
+/// The storage-profile parameter of the Rust owned mirror: the generic parameter
+/// every `{Name}Owned<S>` is declared over, the one the positional codec's mirror
+/// uses (`STORAGE_PARAM` in the generator).
+pub(crate) const RUST_STORAGE_PARAM: &str = "S";
+
+/// The module path the generated Rust codec reaches the runtime's storage policy
+/// through, spelled as the positional codec's mirror spells it (`RUNTIME_CODEC` in
+/// the generator).
+pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
+
+/// The type the Rust owned mirror holds the present value of `e` as: a string in
+/// the profile's text container and a byte string in its byte container, each at
+/// the entry's declared capacity, and any other entry as the view holds it. Only
+/// asked of a codec that has a mirror, whose every string and byte string has a
+/// capacity ([`rust_owned_mirror`]).
+pub(crate) fn rust_owned_value_type(l: &LangCtx, e: &CborEntry) -> String {
+    let capacity = || {
+        e.length
+            .or(e.max_size)
+            .expect("a codec with an owned mirror bounds every string and byte string entry")
+    };
+    match e.present_type() {
+        SceType::String => format!("{RUST_STORAGE_PARAM}::Str<{}>", capacity()),
+        SceType::Bytes => format!("{RUST_STORAGE_PARAM}::Bytes<{}>", capacity()),
+        other => l.type_name(other).into_owned(),
+    }
+}
+
 /// The carrier type of the enum `alias` names, as the import resolved it.
 pub(crate) fn enum_carrier(imports: &[ImportContext], alias: &str) -> Option<SceType> {
     imports
@@ -503,5 +562,45 @@ fn render_rust(
         )
         .into(),
     );
+    // The owned mirror: only a map that borrows and can name a capacity for each
+    // string and byte string it holds has one (`rust_owned_mirror`). The names are
+    // the positional codec's, so a consumer reaches either mirror the same way.
+    let mirror = rust_owned_mirror(m);
+    ctx.insert("emit_owned".into(), mirror.into());
+    if mirror {
+        let storage = format!("{RUST_RUNTIME_CODEC}::CodecStorage");
+        ctx.insert(
+            "owned_generics_decl".into(),
+            format!("<{RUST_STORAGE_PARAM}: {storage} = {RUST_RUNTIME_CODEC}::DefaultStorage>")
+                .into(),
+        );
+        ctx.insert(
+            "owned_generics_impl".into(),
+            format!("<{RUST_STORAGE_PARAM}: {storage}>").into(),
+        );
+        ctx.insert(
+            "owned_generics_args".into(),
+            format!("<{RUST_STORAGE_PARAM}>").into(),
+        );
+        ctx.insert("codec_storage_path".into(), storage.into());
+        ctx.insert(
+            "codec_owned_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::CodecStruct
+                .derives_attr()
+                .into(),
+        );
+        if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+            for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+                let owned = rust_owned_value_type(&l, e);
+                entry["owned_field_type"] = if e.is_required() {
+                    owned.clone()
+                } else {
+                    l.codec_optional_of(&owned)
+                }
+                .into();
+                entry["owned_type"] = owned.into();
+            }
+        }
+    }
     render_in_key_order(&l, env, ctx)
 }
