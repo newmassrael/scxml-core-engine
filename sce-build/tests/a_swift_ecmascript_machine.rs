@@ -407,6 +407,44 @@ fn a_log_expression_is_lowered_to_lua_and_shown_as_a_string() {
     );
 }
 
+/// A `<foreach>` reads its array once through the engine and walks a native loop, binding the item and
+/// the index to each element; a nested one keeps its own array, and an array the engine cannot walk
+/// is an `error.execution` that ends the block holding the loop.
+#[test]
+fn a_foreach_walks_an_array_the_engine_read_once() {
+    let body = r#"
+  <datamodel><data id="outer" expr="[1, 2]"/><data id="inner" expr="[3]"/><data id="i"/><data id="j"/><data id="k"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <foreach array="outer" item="i" index="k">
+        <foreach array="inner" item="j"><raise event="e"/></foreach>
+      </foreach>
+    </onentry>
+    <transition event="e" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"if let foreachCount1 = beginForeach(1, ""#),
+        "the outer loop reads its array once: {machine}"
+    );
+    assert!(
+        machine.contains(r#"if let foreachCount2 = beginForeach(2, ""#),
+        "a nested loop keeps its own array: {machine}"
+    );
+    assert!(
+        machine.contains("bindForeach(1, at: foreachPosition1, item: ")
+            && machine.contains(", index: \""),
+        "the item and the index are bound to each element: {machine}"
+    );
+    assert!(
+        machine.contains("is not an array it can walk"),
+        "an array the engine cannot walk is an error.execution: {machine}"
+    );
+    assert!(machine.contains("break sceBlock"), "{machine}");
+}
+
 /// A top-level `<script>` runs once, at document load, after the data is declared.
 #[test]
 fn a_top_level_script_runs_at_load_after_the_data() {
@@ -567,14 +605,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
         named: &'static str,
     }
     let refusals = [
-        Refusal {
-            what: "a <foreach>",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="l" expr="[1]"/><data id="i"/></datamodel>
-  <state id="s0"><onentry><foreach array="l" item="i"><raise event="e"/></foreach></onentry></state>"#,
-            extra: &[],
-            named: "<foreach>",
-        },
         Refusal {
             what: "a <data src>",
             attributes: r#"datamodel="ecmascript""#,

@@ -4448,10 +4448,14 @@ fn swift_hybrid_invoke_unlowered(
 ///
 /// A `<log>` too: its expression is lowered to Lua and shown as ECMAScript converts it to a string,
 /// and an expression that fails raises `error.execution` and ends the block.
+///
+/// A `<foreach>` too: the engine reads its array once, and a native loop binds the item and the
+/// index to each element in turn; a body element that raised its own error, and an array the engine
+/// cannot walk, end the block that holds the loop.
 fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
     match action_type {
         "raise" | "send" | "cancel" => true,
-        "assign" | "if" | "script" | "log" => is_ecma,
+        "assign" | "if" | "script" | "log" | "foreach" => is_ecma,
         _ => false,
     }
 }
@@ -4694,12 +4698,12 @@ fn swift_ecmascript_cause_unlowered(
         // reads and the pair carries with its type (`evaluateJSON`).
         | Cause::SendNamelist { .. }
         | Cause::SendParamExpr { .. }
+        | Cause::ForeachAction { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
         }
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
-        Cause::ForeachAction { state_id } => named("a <foreach>", state_id),
         Cause::HybridInvoke { invoke_id } => {
             named("an <invoke> resolved by an expression", invoke_id)
         }

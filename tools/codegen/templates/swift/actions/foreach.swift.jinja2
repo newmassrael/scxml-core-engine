@@ -1,13 +1,16 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 4.6: Foreach loop over a list variable of a `datamodel="sce-static"`
-   document: a native `for` over the typed elements, lowered ahead of the template by
-   `forge::static_lowering`. "If the evaluation of any child element of foreach
+{# W3C SCXML 4.6: Foreach loop. Under `datamodel="sce-static"` a native `for` over the typed
+   elements of a list variable, lowered ahead of the template by `forge::static_lowering`. Under
+   `datamodel="ecmascript"` a native `for` over the items of an array the engine read once
+   (`beginForeach` and `bindForeach`, in `script_engine.swift.jinja2`). Either way
+   "If the evaluation of any child element of foreach
    causes an error, the processor MUST cease execution of the foreach element and the
    block that contains it": a body element that raised its own error leaves the
    enclosing block from inside the loop with `break sceBlock`, which ends the block
    that holds the <foreach> as W3C SCXML 4.9 asks. #}
+{% if action.native_loop %}
                 // W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}">, a native loop over a sce-static list
                 {{ action.native_loop }} {
 {% if action.native_loop_prologue %}
@@ -18,3 +21,39 @@
 
 {% endfor %}
                 }
+{%- elif model.needs_script_engine %}
+{% set in_block = in_action_block is defined and in_action_block %}
+{# A nested <foreach> keeps its array under the depth it is at, so the loop outside is not
+   overwritten by the one inside. #}
+{% set foreach_slot = (foreach_depth | default(0)) + 1 %}
+{% if not action.array or not action.item %}
+                // W3C SCXML 4.6: a <foreach> with no `array` or no `item` has nothing to walk
+                raiseExecutionError("<foreach> is missing its 'array' or 'item' attribute", engine: engine)
+{% if in_block %}
+                break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% else %}
+                // W3C SCXML 4.6: <foreach array="{{ action.array | replace("\n", " ") }}" item="{{ action.item }}">
+                if let foreachCount{{ foreach_slot }} = beginForeach({{ foreach_slot }}, "{{ action.array | to_lua_expr | escape_swift }}") {
+                    for foreachPosition{{ foreach_slot }} in 0..<foreachCount{{ foreach_slot }} {
+                        if !bindForeach({{ foreach_slot }}, at: foreachPosition{{ foreach_slot }}, item: "{{ action.item | to_lua_location | escape_swift }}", index: {% if action.index %}"{{ action.index | to_lua_location | escape_swift }}"{% else %}nil{% endif %}) {
+                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+{% if in_block %}
+                            break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% else %}
+                            break
+{% endif %}
+                        }
+{% for body_action in action.actions %}
+                        {% with action=body_action, foreach_depth=foreach_slot %}{% include 'actions/' ~ body_action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+                    }
+                } else {
+                    raiseExecutionError("<foreach array='{{ action.array | escape_swift }}'> is not an array it can walk", engine: engine)
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                }
+{% endif %}
+{% endif %}
