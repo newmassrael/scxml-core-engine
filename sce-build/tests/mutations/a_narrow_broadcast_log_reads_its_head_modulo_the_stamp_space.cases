@@ -112,8 +112,8 @@ PY
 # the reader opened at the oldest is put R behind a head of 0.
 mutation_case "the oldest reader takes a written last slot for an unwritten one" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''== L::UNWRITTEN;''',
-     r'''!= L::UNWRITTEN;''')
+     r'''        let untouched = L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) == L::UNWRITTEN;''',
+     r'''        let untouched = L::load(&self.slots[SLOTS - 1].stamp, Ordering::Acquire) != L::UNWRITTEN;''')
 PY
 
 # Unwritten as 0 is a stamp the protocol writes: done(n) of the entry 3 mod 4 is 0

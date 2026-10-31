@@ -77,10 +77,12 @@ PY
 
 mutation_case "a reader loads the head without acquiring the slot behind it" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
-     r'''        let head = L::load(&self.head.0, Ordering::Acquire);
-        let behind = Self::distance(head, r);''',
-     r'''        let head = L::load(&self.head.0, Ordering::Relaxed);
-        let behind = Self::distance(head, r);''')
+     r'''        } else {
+            L::load(&self.head.0, Ordering::Acquire)
+        };''',
+     r'''        } else {
+            L::load(&self.head.0, Ordering::Relaxed)
+        };''')
 PY
 
 mutation_case "a reader loads the first stamp without acquiring" <<'PY'
