@@ -17,6 +17,9 @@
 {{ sce_map.source_marker(model.source_location, "swift", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 import SceRuntime
+{% if model.needs_script_engine %}
+import SceLua
+{% endif %}
 {% if static_fields %}
 import SceForgeRuntime
 {% endif %}
@@ -527,8 +530,8 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 {% endif %}
 
     public var hasParallelStates: Bool { {{ 'true' if model.has_parallel_states else 'false' }} }
-    public var needsScriptEngine: Bool { false }
-    public var needsDataModelInit: Bool { false }
+    public var needsScriptEngine: Bool { {{ 'true' if model.needs_script_engine else 'false' }} }
+    public var needsDataModelInit: Bool { {{ 'true' if model.needs_script_engine else 'false' }} }
     public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker else 'false' }} }
     public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
 {% set host_invoke_list = model.invokes | host_invoker %}
@@ -541,9 +544,14 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { {{ 'true' if (model.invokes | scxml | selectattr('autoforward') | list) or (model.invokes | hybrid | selectattr('autoforward') | list) else 'false' }} }
 
+{% if model.needs_script_engine %}
+
+{% include 'script_engine.swift.jinja2' %}
+{% else %}
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: {{ machine_name }}Event, engine: Engine<{{ machine_name }}Policy>) {}
+{% endif %}
 {% if event_payload_active %}
 
     /// Binds the typed `_event.data` view an inject seam carried (§scxml-5.10).

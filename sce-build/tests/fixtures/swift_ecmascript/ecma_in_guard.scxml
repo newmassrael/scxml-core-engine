@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A guard that mixes In() with an ECMAScript comparison. A guard that is nothing but In() is native
+  code and needs no engine; this one is lowered to Lua and run by the engine, which answers In()
+  from the machine's own configuration. `check` takes its transition only once region one has
+  moved to r1b and the variable still holds 2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="p" name="ecma_in_guard">
+  <datamodel>
+    <data id="n" expr="2"/>
+  </datamodel>
+  <parallel id="p">
+    <state id="r1" initial="r1a">
+      <state id="r1a">
+        <transition event="go" target="r1b"/>
+      </state>
+      <state id="r1b"/>
+    </state>
+    <state id="r2" initial="r2a">
+      <state id="r2a">
+        <transition event="check" cond="In('r1b') &amp;&amp; n == 2" target="r2done"/>
+      </state>
+      <state id="r2done"/>
+    </state>
+  </parallel>
+</scxml>

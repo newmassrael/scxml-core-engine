@@ -132,6 +132,10 @@ scripts/regen_swift_statecharts.sh
 # the same package.
 stage "Static datamodel Swift tree"
 scripts/regen_static_datamodel_swift.sh
+# ... and the `datamodel="ecmascript"` machines it lowers to Lua, a third target of the
+# same package: the one that links the `SceLua` engine.
+stage "ECMAScript Swift tree"
+scripts/regen_swift_ecmascript.sh
 
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
 # regen script like the EventSchema gates above.

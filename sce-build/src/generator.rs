@@ -463,9 +463,10 @@ impl Language {
     /// Without one there is no second arm to be asked for: both lists above are
     /// empty because there is nothing to list, and reading that as "every site
     /// migrated" would give a backend whose templates lower no expression a
-    /// choice between two engines it has no site for. Swift's statecharts are
-    /// `datamodel="null"` so far, and it stays on the side of the seam with no
-    /// lowering until a template of its own carries one.
+    /// choice between two engines it has no site for. Swift's templates carry
+    /// a site now (a guard and a `<data>` initialiser, both lowered to Lua for
+    /// the `SceLua` engine), which is what puts it on the lowering side of the
+    /// seam.
     fn has_an_expression_site(self) -> bool {
         !self.expression_sites().is_empty()
     }
@@ -4454,20 +4455,14 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
     // A `sce-static` document's expressions and executable content are the static
     // lowering's to judge ([`crate::forge::static_lowering::SwiftTarget`]), which
     // names what it does not spell yet; a `null` one has none, and the guards and
-    // content its templates read are the ones below.
-    let is_static = match model.datamodel {
-        crate::model::Datamodel::Null => false,
-        crate::model::Datamodel::SceStatic => true,
-        _ => {
-            return Err(swift_unsupported(
-                format!(
-                    "datamodel=\"{}\" in '{}'",
-                    model.datamodel.as_str(),
-                    model.name
-                ),
-                model.source_location.clone(),
-            ));
-        }
+    // content its templates read are the ones below. An `ecmascript` one is lowered
+    // to Lua at build time and run by the `SceLua` engine
+    // (docs/SCE_LUA_TRANSLATION_SEAM.md), for the constructs
+    // [`swift_ecmascript_unlowered`] does not name.
+    let (is_static, is_ecma) = match model.datamodel {
+        crate::model::Datamodel::Null => (false, false),
+        crate::model::Datamodel::SceStatic => (true, false),
+        crate::model::Datamodel::EcmaScript => (false, true),
     };
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|state| state.document_order);
@@ -4498,14 +4493,27 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
         }
         for transition in &state.transitions {
             if !transition.cond.is_empty() && !transition.is_pure_in_predicate {
-                return Err(swift_unsupported(
-                    format!(
-                        "cond=\"{}\" in state '{}' (only an In() predicate is a guard of a \
-                         datamodel=\"null\" document)",
-                        transition.cond, state.id
-                    ),
-                    transition.source_location.clone(),
-                ));
+                if !is_ecma {
+                    return Err(swift_unsupported(
+                        format!(
+                            "cond=\"{}\" in state '{}' (only an In() predicate is a guard of a \
+                             datamodel=\"null\" document)",
+                            transition.cond, state.id
+                        ),
+                        transition.source_location.clone(),
+                    ));
+                }
+                // The engine runs ECMAScript lowered to Lua; a guard written in another
+                // language is not lowered by anything here.
+                if transition.is_cpp_condition || transition.is_kt_condition {
+                    return Err(swift_unsupported(
+                        format!(
+                            "cond=\"{}\" in state '{}' (a native guard of another language)",
+                            transition.cond, state.id
+                        ),
+                        transition.source_location.clone(),
+                    ));
+                }
             }
             if let Some((what, at)) = first_unlowered_swift_action(&transition.actions) {
                 return Err(swift_unsupported(
@@ -4537,7 +4545,112 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
             ));
         }
     }
+    if is_ecma {
+        if let Some((what, at)) = swift_ecmascript_unlowered(model) {
+            return Err(swift_unsupported(what, at));
+        }
+    }
     Ok(())
+}
+
+/// What a `datamodel="ecmascript"` document holds that the Swift templates do not lower yet,
+/// named, and where the document wrote it; `None` for a document the engine can run whole.
+///
+/// What is lowered is the `<data>` initialiser that is an expression, top level or in a state
+/// under early binding, and the `cond` of a transition. Every other reason a document needs the
+/// engine is a [`crate::script_engine_analyzer::ScriptEngineCauseKind`], and each is decided by
+/// [`swift_ecmascript_cause_unlowered`], which has no default arm: a cause added there is a
+/// compile error here before it is a construct that quietly runs without its engine call.
+/// What the analyzer counts as one `<data>` cause it does not tell apart, so the shapes of an
+/// initialiser the templates have no arm for (`src`, inline content, a function expression) and
+/// the bindings that would move it are named from the variable itself.
+fn swift_ecmascript_unlowered(
+    model: &SCXMLModel,
+) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
+    let mut states: Vec<&crate::model::State> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    let late = model.binding == "late";
+    let locals = states.iter().flat_map(|state| {
+        state
+            .datamodel
+            .iter()
+            .map(move |var| (Some(state.id.as_str()), var))
+    });
+    let globals = model.variables.iter().map(|var| (None, var));
+    for (state, var) in globals.chain(locals) {
+        let what = if !var.src.is_empty() {
+            Some("a <data src>")
+        } else if !var.content.is_empty() {
+            Some("an inline <data> content")
+        } else if var.expr.trim_start().starts_with("function") {
+            Some("a <data> whose initialiser is a function expression")
+        } else {
+            None
+        };
+        if let Some(what) = what {
+            return Some((
+                format!("{what} (<data id='{}'>)", var.id),
+                var.source_location.clone(),
+            ));
+        }
+        if let (true, Some(state)) = (late, state) {
+            return Some((
+                format!(
+                    "binding=\"late\" for the <data id='{}'> of state '{state}'",
+                    var.id
+                ),
+                var.source_location.clone(),
+            ));
+        }
+    }
+    crate::script_engine_analyzer::analyze(model)
+        .into_iter()
+        .find_map(|cause| {
+            swift_ecmascript_cause_unlowered(&cause.kind).map(|what| (what, cause.location))
+        })
+}
+
+/// The words a refusal names one reason a document needs the engine by, or `None` for a reason
+/// the Swift templates lower. Exhaustive on purpose.
+fn swift_ecmascript_cause_unlowered(
+    kind: &crate::script_engine_analyzer::ScriptEngineCauseKind,
+) -> Option<String> {
+    use crate::script_engine_analyzer::ScriptEngineCauseKind as Cause;
+    let named = |what: &str, at: &str| Some(format!("{what} in '{at}'"));
+    match kind {
+        Cause::DatamodelVariableInit { .. } | Cause::TransitionGuard { .. } => None,
+        Cause::GlobalScript | Cause::UnresolvedExternalScript => {
+            Some("a top-level <script>".to_string())
+        }
+        Cause::SendNamelist { state_id } => named("a <send namelist>", state_id),
+        Cause::SendParamExpr { state_id, .. } => named("a <send> <param> expression", state_id),
+        Cause::SendDynamicAttr { state_id } => {
+            named("a <send> attribute computed by an expression", state_id)
+        }
+        Cause::IfCondition { state_id } => named("an <if> cond", state_id),
+        Cause::ElseIfCondition { state_id } => named("an <elseif> cond", state_id),
+        Cause::AssignAction { state_id } => named("an <assign>", state_id),
+        Cause::LogExpr { state_id } => named("a <log> expression", state_id),
+        Cause::InlineScriptAction { state_id } => named("a <script>", state_id),
+        Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
+        Cause::ForeachAction { state_id } => named("a <foreach>", state_id),
+        Cause::HybridInvoke { invoke_id } => {
+            named("an <invoke> resolved by an expression", invoke_id)
+        }
+        Cause::StaticInvokeNamelist { invoke_id } => named("an <invoke namelist>", invoke_id),
+        Cause::MeshRpcSrcExpr { invoke_id } | Cause::MeshRpcRequestExpr { invoke_id } => {
+            named("a Mesh <invoke> evaluated at its start", invoke_id)
+        }
+        Cause::HostInvokeExpr { invoke_id } => {
+            named("a host <invoke> whose request is evaluated", invoke_id)
+        }
+        Cause::DonedataParam { state_id } => named("a <donedata> <param>", state_id),
+        Cause::DonedataContent { state_id } => named("a <donedata> <content>", state_id),
+        Cause::ChildInvokeNeedsScriptEngine { invoke_id } => named(
+            "an <invoke> of a child that runs a script engine",
+            invoke_id,
+        ),
+    }
 }
 
 fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {

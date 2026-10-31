@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The system variables a session is bound to (§scxml-5.10): `_name` is the name attribute of the
+  document and `_sessionid` is the id of this session, which a host may give before the machine
+  starts. Both guards read them, and only a session bound to both reaches match.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s0" name="sessionProbe">
+  <state id="s0">
+    <transition cond="_sessionid == 'probe-1' &amp;&amp; _name == 'sessionProbe'" target="match"/>
+    <transition target="other"/>
+  </state>
+  <state id="match"/>
+  <state id="other"/>
+</scxml>

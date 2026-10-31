@@ -20,11 +20,14 @@
 {%- import '_macros/swift_entry_target.jinja2' as et %}
 
 {# The guard a transition is taken under, in the one form this machine can
-   evaluate it: a pure In() predicate, or a value decided at build time (W3C
-   SCXML 5.9). #}
+   evaluate it: a pure In() predicate, a condition lowered to Lua and run by the
+   script engine (`script_engine.swift.jinja2`), or a value decided at build time
+   (W3C SCXML 5.9). A cond the frontend could not decide has no `cond_constant`,
+   and printing it as `false` would leave its transition dead and say nothing. #}
 {% macro guard_expr(trans) -%}
 {%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | to_in_predicate_swift }}
 {%- elif trans.native_guard -%}{{ trans.native_guard }}
+{%- elif model.needs_script_engine and trans.cond_constant is none -%}evaluateGuard("{{ trans.cond | to_lua_guard | escape_swift }}", engine: engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
 {%- endmacro %}
@@ -61,6 +64,8 @@
 {% if trans.cond %}
 {% if trans.native_guard and not trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9: cond="{{ trans.cond }}" lowered to Swift at build time
+{% elif model.needs_script_engine and trans.cond_constant is none and not trans.is_pure_in_predicate %}
+                // W3C SCXML 5.9: cond="{{ trans.cond | replace("\n", " ") }}" lowered to Lua at build time, run by the engine
 {% elif not trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
 {% endif %}

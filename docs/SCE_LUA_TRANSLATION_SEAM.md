@@ -69,6 +69,15 @@ Two other facts the table would otherwise hide:
   (`invoke_methods.jinja2:240`), not a use. C++ templates live at the template
   tree root, so a per-directory count misses them — count from the root.
 
+**Swift is on the translating side, in part, and has no row yet.** Its templates hand the engine
+translated Lua for the two sites they lower, a transition `cond` (`to_lua_guard`, in
+`process_transition.swift.jinja2`) and a `<data>` initialiser (`to_lua_expr`, in
+`script_engine.swift.jinja2`), and the `SceLua` module runs it on the same Lua 5.4.6 and the same two
+shared sources (`ecma_semantics.lua`, `json_builtins.lua`) as the other Lua backends. The table above
+holds the backends that write a statechart in whole (`emitting(Statechart)`, which the row-count check
+compares it with); Swift writes one in part (`codegen_matrix::ships_in_part`) and refuses every other use
+of an engine by name, so its row is added in the commit that moves it to `template_ships`.
+
 ### Re-deriving this table
 
 ```sh

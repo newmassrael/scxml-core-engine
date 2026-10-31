@@ -418,8 +418,9 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// ([`emitting_in_part`]), and a backend moves to [`template_ships`] when nothing
 /// it refuses is left.
 ///
-/// Swift's statechart lowers `datamodel="null"` documents so far
-/// (`generator::reject_swift_unsupported_features` names each construct it does
+/// Swift's statechart lowers `datamodel="null"` and `sce-static` documents and the
+/// `ecmascript` ones whose only uses of the Lua engine are `<data>` initialisers and
+/// guards (`generator::reject_swift_unsupported_features` names each construct it does
 /// not yet), its algorithm a body of scalars
 /// (`forge::generator::swift_algorithm_unlowered` names each construct past
 /// those), and its event schema a struct of scalar fields

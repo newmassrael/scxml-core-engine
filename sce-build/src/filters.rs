@@ -1149,6 +1149,9 @@ pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<Documen
 /// every backend at once (`validation/reserved-code-identifier`,
 /// [`crate::reader_names`]), so no id reaches a template as one.
 pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    // The build-time ECMAScript to Lua lowering, which the `SceLua` module's engine runs
+    // (docs/SCE_LUA_TRANSLATION_SEAM.md): the same family every other Lua backend registers.
+    register_ecmascript_filters(env, scope);
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     register_event_wire_filters(env);

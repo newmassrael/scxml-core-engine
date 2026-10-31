@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A guard that cannot be evaluated (§scxml-5.9.1): it is false, and error.execution is raised.
+  The first transition reads a field off a variable nobody declared, which is an error at run
+  time, so it is not taken and the error event moves the machine to raised.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s0" name="ecma_guard_error">
+  <state id="s0">
+    <transition cond="missing.field.deep" target="wrong"/>
+    <transition event="error.execution" target="raised"/>
+  </state>
+  <state id="wrong"/>
+  <state id="raised"/>
+</scxml>

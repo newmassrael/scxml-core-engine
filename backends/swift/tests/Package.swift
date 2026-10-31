@@ -10,7 +10,10 @@ import PackageDescription
 // (`scripts/regen_swift_statecharts.sh`, `scripts/regen_static_datamodel_swift.sh`);
 // what drives them is written by hand beside them. The second is the machines of
 // `datamodel="sce-static"` (docs/SCE_ACCEPTED_SUBSET.md §2.15), which the shared
-// replay scenarios drive.
+// replay scenarios drive. `EcmaScriptMachines` (`scripts/regen_swift_ecmascript.sh`) holds the
+// machines of `datamodel="ecmascript"`, whose expressions are lowered to Lua and run by the
+// `SceLua` engine; it is a target of its own so that a machine that needs no engine does not
+// link Lua.
 let package = Package(
     name: "SceSwiftTests",
     platforms: [.macOS(.v15), .iOS(.v18)],
@@ -48,6 +51,21 @@ let package = Package(
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
                 .product(name: "SceHostFeatures", package: "host-features"),
+            ]
+        ),
+        .target(
+            name: "EcmaScriptMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "EcmaScriptMachinesTests",
+            dependencies: [
+                "EcmaScriptMachines",
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
             ]
         ),
     ]

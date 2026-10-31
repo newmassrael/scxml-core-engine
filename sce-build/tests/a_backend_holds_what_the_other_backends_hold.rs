@@ -427,16 +427,18 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "save and restore",
         Why::NotYet("the saved-state surface is built for Swift after its machine emitter and runtime"),
     ),
-    // The script engine.
+    // The script engine. Swift lowers a guard and a `<data>` initialiser to Lua (so it is entered
+    // beside the other lowering backends above, as Design); the gate that reads the lowered
+    // artifact is not built for it yet.
     (
         Language::Swift,
-        "artifact for the lua engine",
-        Why::NotYet("no Swift template hands an expression to an engine yet; its Lua target is built with the W3C lane"),
+        "artifact for the ecmascript engine",
+        Why::Design("it lowers ECMAScript to Lua at build time, and the Lua is the only artifact"),
     ),
     (
         Language::Swift,
         "ECMA-262 lowered-artifact gate",
-        Why::NotYet("it lowers no expression yet, so no lowered artifact for the gate to read"),
+        Why::NotYet("the `ecma262-lowered-swift` gate is built after the Lua engine reaches the rest of the constructs it lowers in part"),
     ),
     // The numerical conformance harness and its kind fragments.
     (Language::Swift, "conformance fragment `codec`", Why::NotYet(SWIFT_NO_FORGE)),
@@ -455,10 +457,11 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
-    "Swift writes a statechart in part, a datamodel null one or a sce-static one whose constructs it \
-     lowers, and refuses the rest by name (`generator::reject_swift_unsupported_features`); the \
-     emitters for the W3C, integration and conformance suites are built after it, and the W3C \
-     documents need a script engine Swift has not got";
+    "Swift writes a statechart in part, a datamodel null one, a sce-static one or an ecmascript one \
+     whose only uses of the Lua engine are `<data>` initialisers and guards, and refuses the rest \
+     by name (`generator::reject_swift_unsupported_features`); the emitters for the W3C, \
+     integration and conformance suites are built after it, and most W3C documents also use \
+     `<assign>`, `<script>`, `<if>` or `<log>`, which it does not lower yet";
 
 /// Swift lowers a sce-static machine in part and refuses the rest by name
 /// (`generator::lowers_static_datamodel_in_part`).

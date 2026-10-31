@@ -175,6 +175,7 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> Option<String> {
                     .join("\n")
             }),
         Language::Kotlin => sce_build::generator::generate_kotlin(model, &dir, None).ok(),
+        Language::Swift => sce_build::generator::generate_swift(model, &dir).ok(),
         // ⚠ NOT `_ => None`, and the difference is the whole point of the
         // derived population above. Two of the three callers read this as
         // `let Some(x) = render(..) else { continue }`, so a backend this arm
@@ -189,10 +190,9 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> Option<String> {
         // this file cannot check the very claim it exists for.
         //
         // The arm names the backends it stands for (C++ hands the author's
-        // source to its engine and lowers nothing, and Swift has no template
-        // to lower into), so a backend added to `Language` is a compile error
-        // here before it is a panic.
-        other @ (Language::Cpp | Language::Swift) => panic!(
+        // source to its engine and lowers nothing), so a backend added to
+        // `Language` is a compile error here before it is a panic.
+        other @ Language::Cpp => panic!(
             "{other:?} is in the lowering population and this test cannot \
              render it. Add its arm — skipping it would leave the population \
              larger than the coverage, which is the shape a `_ => None` hides."
@@ -328,27 +328,57 @@ fn a_refused_builtin_reaches_the_artifact_of_every_lowering_backend() {
   <final id="done"/>
 </scxml>
 "#;
+    // The same reach, written where a backend that lowers only `<data>` initialisers and guards
+    // can carry it. Swift refuses an `<assign>` by name until it lowers one, and leaving it out of
+    // the population would leave the population larger than the coverage, so it is asked the same
+    // question of a document it lowers: the builtin is reached through a transition `cond`.
+    const GUARDED_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="words" expr="['b','a']"/>
+  </datamodel>
+  <state id="s0">
+    <transition cond="words.map(function(w) { return w; }).length == 2" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    /// The backends that lower no `<assign>` yet, and so carry their reach in a guard.
+    const LOWERS_GUARDS_NOT_ASSIGNS: &[Language] = &[Language::Swift];
+
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("builtin-parity");
     std::fs::create_dir_all(&dir).expect("create scratch dir");
-    let path = dir.join("reaching.scxml");
-    std::fs::write(&path, DOCUMENT).expect("write document");
-
-    let model = parse(&path).expect("the document parses");
-    let reported: BTreeSet<String> = refusals(&model, &path.display().to_string())
-        .iter()
-        .map(refusal_key)
-        .collect();
-    assert_eq!(
-        reported.len(),
-        1,
-        "the walker should report exactly the one reach: {reported:?}"
-    );
+    let mut documents = Vec::new();
+    for (stem, text) in [
+        ("reaching", DOCUMENT),
+        ("reaching_guarded", GUARDED_DOCUMENT),
+    ] {
+        let path = dir.join(format!("{stem}.scxml"));
+        std::fs::write(&path, text).expect("write document");
+        let model = parse(&path).expect("the document parses");
+        let reported: BTreeSet<String> = refusals(&model, &path.display().to_string())
+            .iter()
+            .map(refusal_key)
+            .collect();
+        assert_eq!(
+            reported.len(),
+            1,
+            "the walker should report exactly the one reach in {stem}: {reported:?}"
+        );
+        documents.push((stem, model, reported));
+    }
 
     for lang in &lowering_backends() {
-        let rendered = render(&model, *lang, "reaching")
-            .unwrap_or_else(|| panic!("{lang:?} renders the document"));
+        let (stem, model, reported) = if LOWERS_GUARDS_NOT_ASSIGNS.contains(lang) {
+            &documents[1]
+        } else {
+            &documents[0]
+        };
+        let rendered = render(model, *lang, stem)
+            .unwrap_or_else(|| panic!("{lang:?} renders the document {stem}"));
         assert_eq!(
-            refusals_in_artifact(&rendered),
+            &refusals_in_artifact(&rendered),
             reported,
             "{lang:?} embeds a refusal the walker does not report, or vice versa"
         );

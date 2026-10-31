@@ -1,0 +1,138 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    The script engine of a `datamodel="ecmascript"` document (Swift Jinja2)
+
+    The build lowers every ECMAScript expression to Lua (`to_lua_guard`, `to_lua_expr`), and the
+    `SceLua` module's `LuaState` runs it: the engine every other Lua backend runs the same Lua on,
+    over the same library, so one document answers one way on every backend
+    (docs/SCE_LUA_TRANSLATION_SEAM.md). `SceRuntime` does not import `SceLua`; this machine does,
+    and only a document that needs an engine links Lua.
+
+    Included inside the policy class, and only when the model needs a script engine:
+    - the session, made on first use and again whenever the datamodel is initialised
+    - initializeDataModel(engine:)      each `<data>` initialiser, in document order
+    - populateEventMetadata / bindCurrentEvent   `_event`, before the first guard of a selection
+    - evaluateGuard(_:engine:)          a `cond`, which raises error.execution when it cannot be run
+#}
+
+    // ------------------------------------------------------------------
+    // Script engine (W3C SCXML 5.3, 5.9, 5.10; SceLua)
+    // ------------------------------------------------------------------
+
+    /// The Lua session this machine's expressions run in. Made on first use, and made again
+    /// whenever the datamodel is initialised: a restore reaches `initializeDataModel` again and
+    /// starts from the document's own values.
+    private var lua: LuaState?
+
+    /// The metadata of the event being handled, kept by `populateEventMetadata` until
+    /// `bindCurrentEvent` hands it to the session (§scxml-5.10).
+    private var pendingEventMetadata = EventMetadata()
+
+    /// The session, with the ECMAScript library loaded and `_sessionid`, `_name` and
+    /// `_ioprocessors` bound (§scxml-5.10).
+    private func ensureLua() throws -> LuaState {
+        if let lua {
+            return lua
+        }
+        let session = try LuaState()
+        try session.loadEcmaScriptLibrary()
+        try session.bindSession(
+            LuaSession(
+                sessionID: sessionID,
+                name: "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_swift }}",
+                scxmlLocation: scxmlProcessorLocation(sessionID: sessionID)
+            ))
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: `In()` asks this machine's own configuration. The session is owned by
+        // the machine, so the closure does not own it back.
+        try session.setStateQuery { [unowned self] in self.isStateActive($0) }
+{% endif %}
+        lua = session
+        return session
+    }
+
+    /// Says what went wrong where the document can see it: `error.execution` on the internal
+    /// queue (§scxml-5.9.1, 5.3).
+    private func raiseExecutionError(_ message: String, engine: Engine<{{ machine_name }}Policy>) {
+{% if 'error.execution' in model.events %}
+        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: message))
+{% endif %}
+    }
+
+    /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
+    /// declares none. The name crosses as a string and never as source: an XML name is not always
+    /// a Lua identifier. An initialiser that fails raises `error.execution` and leaves the
+    /// variable nil.
+    private func defineData(_ id: String, as expression: String?, engine: Engine<{{ machine_name }}Policy>) {
+        do {
+            let session = try ensureLua()
+            if let expression {
+                try session.defineGlobal(id, as: expression, chunkName: "=data")
+            } else {
+                try session.setGlobal(id, .nilValue)
+            }
+        } catch {
+            raiseExecutionError("<data id='\(id)'> expr failed to evaluate", engine: engine)
+            _ = try? lua?.setGlobal(id, .nilValue)
+        }
+    }
+
+    /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
+    /// `<data>` here, at document load, before the state that holds it is visited.
+    public func initializeDataModel(engine: Engine<{{ machine_name }}Policy>) {
+        lua = nil
+        pendingEventMetadata = EventMetadata()
+{% for var in model.variables %}
+        defineData("{{ var.id | escape_swift }}", as: {% if var.expr %}"{{ var.expr | to_lua_expr | escape_swift }}"{% else %}nil{% endif %}, engine: engine)
+{% endfor %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.datamodel %}
+        // W3C SCXML 5.3: early binding, the data of state {{ state_id }}
+{% for var in state.datamodel %}
+        defineData("{{ var.id | escape_swift }}", as: {% if var.expr %}"{{ var.expr | to_lua_expr | escape_swift }}"{% else %}nil{% endif %}, engine: engine)
+{% endfor %}
+{% endif %}
+{% endfor %}
+    }
+
+    /// Keeps the metadata of the event about to be selected on (§scxml-5.10).
+    public func populateEventMetadata(_ metadata: EventMetadata) {
+        pendingEventMetadata = metadata
+    }
+
+    /// W3C SCXML 5.10: binds the event whose transitions are about to be selected as the `_event`
+    /// their guards read, whole, so a field it does not carry is absent. The null event is an
+    /// eventless selection, which has no event of its own, so `_event` stays what it was.
+    public func bindCurrentEvent(_ event: {{ machine_name }}Event, engine: Engine<{{ machine_name }}Policy>) {
+        guard event != .null else {
+            return
+        }
+        let metadata = pendingEventMetadata
+        let name = metadata.name.isEmpty ? getEventName(event) : metadata.name
+        do {
+            try ensureLua().bindCurrentEvent(
+                LuaEvent(
+                    name: name,
+                    type: metadata.eventType.description,
+                    sendID: metadata.sendID,
+                    origin: metadata.origin,
+                    originType: metadata.originType,
+                    invokeID: metadata.invokeID,
+                    data: metadata.data
+                ))
+        } catch {
+            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+        }
+    }
+
+    /// W3C SCXML 5.9.1: a `cond` that cannot be evaluated is false, and raises `error.execution`.
+    private func evaluateGuard(_ condition: String, engine: Engine<{{ machine_name }}Policy>) -> Bool {
+        do {
+            return try ensureLua().evaluateCondition(condition, chunkName: "=cond")
+        } catch {
+            raiseExecutionError("a <transition> cond failed to evaluate", engine: engine)
+            return false
+        }
+    }

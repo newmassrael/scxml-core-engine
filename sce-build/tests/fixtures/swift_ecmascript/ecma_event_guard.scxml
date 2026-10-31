@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Guards that read the event being handled (§scxml-5.10): its payload, its name and its type.
+  A reading above the limit goes to alarm and any other to calm, and an event that carries no
+  payload cannot be read at all, which makes the first guard an error and the second the answer.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="idle" name="ecma_event_guard">
+  <datamodel>
+    <data id="limit" expr="5"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="reading" cond="_event.data.level &gt; limit" target="alarm"/>
+    <transition event="reading" cond="_event.name == 'reading' &amp;&amp; _event.type == 'external'" target="calm"/>
+  </state>
+  <state id="alarm"/>
+  <state id="calm"/>
+</scxml>
