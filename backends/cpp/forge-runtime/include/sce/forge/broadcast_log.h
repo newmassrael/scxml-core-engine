@@ -57,9 +57,10 @@
 //                                destroyed, and its successor continues the
 //                                sequence.
 //   publish(entry) -> seq        never fails and never waits.
-//   reader_oldest() / reader_head() / reader_at(seq)
+//   reader_oldest() / reader_head() / reader_at(seq) / reader_deferred()
 //                                a Reader value that owns a cursor and a total of
-//                                the entries it has been told it missed.
+//                                the entries it has been told it missed. The
+//                                deferred one has no cursor until its first read.
 //   read(reader, out) -> Read    Item{seq}, Empty or Lagged{skipped >= 1}.
 //   head()                       the number of entries published.
 
@@ -154,9 +155,16 @@ template <std::size_t W, std::size_t Slots> class BroadcastLog;
 /// readers exist, which is what keeps publishing wait-free.
 class Reader {
 public:
-    /// The sequence number this reader reads next.
+    /// The sequence number this reader reads next. A deferred reader that has not
+    /// read yet has none: this is 0 and `is_bound` is false.
     constexpr std::uint64_t cursor() const noexcept {
         return cursor_;
+    }
+
+    /// Whether the reader has a cursor: false only for a deferred reader that has
+    /// not read yet.
+    constexpr bool is_bound() const noexcept {
+        return !unbound_;
     }
 
     /// The entries this reader has been told it missed, summed over its reads.
@@ -167,10 +175,15 @@ public:
 private:
     template <std::size_t W, std::size_t Slots> friend class BroadcastLog;
 
-    constexpr explicit Reader(std::uint64_t cursor) noexcept : cursor_(cursor), lost_(0) {}
+    constexpr explicit Reader(std::uint64_t cursor) noexcept : cursor_(cursor), lost_(0), unbound_(false) {}
+
+    /// A reader with no cursor: its first `read` binds one.
+    constexpr Reader() noexcept : cursor_(0), lost_(0), unbound_(true) {}
 
     std::uint64_t cursor_;
     std::uint64_t lost_;
+    /// Set on a reader opened by `reader_deferred`, until its first read.
+    bool unbound_;
 };
 
 /// A bounded log whose entries are `W` 64-bit words, kept in `Slots` slots and
@@ -284,6 +297,21 @@ public:
         return Reader(h > kRetention ? h - kRetention : 0);
     }
 
+    /// A reader whose start is the oldest retained entry at its first read, and
+    /// not at this call: it has no cursor until that read binds one, from the head
+    /// that read loads, so a reader that waited is told of nothing the publisher
+    /// did meanwhile, where `reader_oldest` would tell it of the lag. Opening it
+    /// loads nothing and costs the log nothing.
+    ///
+    /// The first read binds as `reader_oldest` does, its load of `head` being the
+    /// read's own, and then goes on as any read does: the answer is an item,
+    /// `Empty` for a log with nothing published, or `Lagged` if the publisher
+    /// overtook the cursor inside that read, which takes the slot beyond the
+    /// retention (ADR 0062 section 2).
+    Reader reader_deferred() const noexcept {
+        return Reader();
+    }
+
     /// A reader at the head: it sees only what is published after this call.
     Reader reader_head() const noexcept {
         return Reader(head());
@@ -301,8 +329,16 @@ public:
     /// retried, it is the answer (`Lagged`). `out` is unspecified unless the
     /// answer is `Item`.
     Read read(Reader &reader, Entry &out) const noexcept {
-        const std::uint64_t r = reader.cursor_;
         const std::uint64_t h = head_.value.load(std::memory_order_acquire);
+        // The first read of a deferred reader binds its cursor at this head, the one
+        // load of the read, and then goes on as every read does: a 64-bit count does
+        // not wrap, so the oldest retained entry is at most `kRetention` behind it
+        // and the slot is inside the window.
+        if (reader.unbound_) {
+            reader.cursor_ = h > kRetention ? h - kRetention : 0;
+            reader.unbound_ = false;
+        }
+        const std::uint64_t r = reader.cursor_;
         if (r >= h) {
             return Read::empty();
         }
