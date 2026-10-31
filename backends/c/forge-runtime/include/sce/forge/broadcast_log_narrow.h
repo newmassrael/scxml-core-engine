@@ -439,6 +439,7 @@ static inline sce_blogn_reader_t sce_blogn_reader_at(const sce_blogn_t *log, uin
     const uint32_t residue = (uint32_t)(seq & (uint64_t)SCE_BLOGN_MASK);
     reader.cursor = sce_blogn_distance(head, residue) < SCE_BLOGN_HALF ? residue : head;
     reader.lost = 0;
+    reader.unbound = 0u;
     return reader;
 }
 
