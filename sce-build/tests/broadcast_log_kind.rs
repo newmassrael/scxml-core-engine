@@ -2238,12 +2238,11 @@ fn go_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own()
             "\tS bool",
             "\tT bool",
             "\tFlags   EventRingFlags",
-            "\tTag     byte",
-            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, flags EventRingFlags, tag byte) (uint64, error) {",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, flags EventRingFlags) (uint64, error) {",
             "if err := element.Encode(sink, flagInput(flags.S), flagInput(flags.T)); err != nil {",
             "entry[1+0] |= uint64(1) << 0",
             "entry[1+0] |= uint64(1) << 1",
-            "entry[1+1] = uint64(tag)",
+            "entry[1+1] = uint64(element.Tag())",
             "entry[3+index/8] |= uint64(value) << (8 * (index % 8))",
             "encoded[index] = byte(entry[3+index/8] >> (8 * (index % 8)))",
             "S: (entry[1+0]>>0)&1 == 1,",
@@ -2251,8 +2250,17 @@ fn go_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own()
             "tag := byte(entry[1+1])",
             "element, err := sce_event_record.DecodeEventRecord(&cursor, flagInput(flags.S), flagInput(flags.T), tag)",
             "Flags:   flags,",
-            "Tag:     tag,",
         ],
+    );
+    // The tag is the element's own: neither a parameter of Publish nor a field of the item.
+    assert!(!code.contains("tag byte"), "Publish takes no tag:\n{code}");
+    assert!(
+        !code.contains("\tTag     byte"),
+        "the item carries no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("Tag:     tag,"),
+        "Read sets no tag in the item:\n{code}"
     );
 }
 
@@ -2273,15 +2281,26 @@ fn go_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() {
         &code,
         &[
             "const ContextWords = 1",
-            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, tag byte) (uint64, error) {",
-            "\tTag     byte",
+            "type EventRingItem struct {",
+            "\tElement *sce_event_record.EventRecord",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord) (uint64, error) {",
             "if err := element.Encode(sink); err != nil {",
-            "entry[1+0] = uint64(tag)",
+            "entry[1+0] = uint64(element.Tag())",
             "entry[2+index/8] |= uint64(value) << (8 * (index % 8))",
             "tag := byte(entry[1+0])",
             "element, err := sce_event_record.DecodeEventRecord(&cursor, tag)",
-            "Tag:     tag,",
+            "return answer, &EventRingItem{",
+            "Element: element,",
         ],
+    );
+    assert!(!code.contains("tag byte"), "Publish takes no tag:\n{code}");
+    assert!(
+        !code.contains("\tTag     byte"),
+        "the item carries no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("Tag:     tag,"),
+        "Read sets no tag in the item:\n{code}"
     );
     assert!(
         !code.contains("Flags"),

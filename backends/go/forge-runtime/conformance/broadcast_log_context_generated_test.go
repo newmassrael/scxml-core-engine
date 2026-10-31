@@ -9,8 +9,9 @@ package conformance
 //
 // An element's codec may take single-bit flag inputs on Encode and Decode, and a
 // variant with no tag field takes its tag on Decode. The log stores them in the
-// entry's context words, takes them on Publish and returns them in the item, so
-// every reader decodes an entry under what it was published under. Here the package
+// entry's context words, so every reader decodes an entry under what it was published
+// under: Publish takes the flags and returns them in the item, and takes the tag from
+// the element (its Tag()), which the element Read returns reports again. Here the package
 // the generator writes for each of the two logs is compiled over the element
 // packages it imports, and the typed Publish and Read are used on one goroutine: a
 // rename in the codec, a context word in the wrong place or a flag read under the
@@ -85,12 +86,13 @@ func blogctxPublishFlagged(t *testing.T, publisher *broadcastlog.Publisher, elem
 	return seq
 }
 
-// blogctxPublishChosen publishes element to the chosen log under tag.
-func blogctxPublishChosen(t *testing.T, publisher *broadcastlog.Publisher, element blogchoice.BroadcastLogConformanceChoice, tag byte) uint64 {
+// blogctxPublishChosen publishes element to the chosen log, which stores the tag of
+// the arm element holds.
+func blogctxPublishChosen(t *testing.T, publisher *broadcastlog.Publisher, element blogchoice.BroadcastLogConformanceChoice) uint64 {
 	t.Helper()
-	seq, err := blogchosen.Publish(publisher, &element, tag)
+	seq, err := blogchosen.Publish(publisher, &element)
 	if err != nil {
-		t.Fatalf("publishing %+v under tag %d: %v", element, tag, err)
+		t.Fatalf("publishing %+v: %v", element, err)
 	}
 	return seq
 }
@@ -273,9 +275,10 @@ func TestBroadcastLogContextTheTagIsStoredInTheContextWordAndTheArmsBytesFollowI
 	log := blogchosen.NewBroadcastLogConformanceChosen()
 	publisher := blogctxPublisher(t, log)
 	// The wire form of an arm carries no tag: the small arm is its one byte and the large arm
-	// its two bytes little-endian, and the context word is the tag the publisher gave.
-	blogctxPublishChosen(t, publisher, blogctxSmall(9), 1)
-	blogctxPublishChosen(t, publisher, blogctxLarge(0x0102), 0)
+	// its two bytes little-endian, and the context word is the tag of the arm the element
+	// holds, which Publish takes from the element.
+	blogctxPublishChosen(t, publisher, blogctxSmall(9))
+	blogctxPublishChosen(t, publisher, blogctxLarge(0x0102))
 
 	reader := log.ReaderOldest()
 	blogctxExpectWords(t, "entry 0", blogctxRawEntry(t, log, &reader), []uint64{1, 1, 0x09})
@@ -288,10 +291,10 @@ func TestBroadcastLogContextAReaderGetsBackTheTagAnEntryWasPublishedUnder(t *tes
 	reader := log.ReaderOldest()
 
 	// The wire form of an arm carries no tag, so which arm a frame is comes from the tag
-	// stored beside it.
-	blogctxPublishChosen(t, publisher, blogctxSmall(9), 1)
-	blogctxPublishChosen(t, publisher, blogctxLarge(0x0102), 0)
-	blogctxPublishChosen(t, publisher, blogctxSmall(255), 1)
+	// stored beside it, which Publish took from the element.
+	blogctxPublishChosen(t, publisher, blogctxSmall(9))
+	blogctxPublishChosen(t, publisher, blogctxLarge(0x0102))
+	blogctxPublishChosen(t, publisher, blogctxSmall(255))
 
 	type expected struct {
 		tag     byte
@@ -308,8 +311,8 @@ func TestBroadcastLogContextAReaderGetsBackTheTagAnEntryWasPublishedUnder(t *tes
 		if err != nil || answer.Kind != broadcastlog.ReadItem || answer.Seq != uint64(seq) || item == nil {
 			t.Fatalf("entry %d: %+v, %+v, %v, want the item of that sequence number", seq, answer, item, err)
 		}
-		if item.Tag != want.tag {
-			t.Fatalf("entry %d came back under tag %d, want %d", seq, item.Tag, want.tag)
+		if item.Element.Tag() != want.tag {
+			t.Fatalf("entry %d came back under tag %d, want %d", seq, item.Element.Tag(), want.tag)
 		}
 		arms := item.Element.Body
 		if want.isSmall {
@@ -329,20 +332,37 @@ func TestBroadcastLogContextAReaderGetsBackTheTagAnEntryWasPublishedUnder(t *tes
 	}
 }
 
-func TestBroadcastLogContextATagThatSelectsNoArmIsTheCodecsErrorAndTheLogDoesNotJudgeIt(t *testing.T) {
-	// The log stores the tag it is given and does not know which tags the variant has. A
-	// tag that selects no arm is stored, and the typed read is the codec's error for it
-	// (the variant has no catch-all arm): no item, and the reader has moved past the entry.
+func TestBroadcastLogContextTheStoredTagIsTheTagOfTheArmTheElementHolds(t *testing.T) {
+	// Publish takes no tag: the context word it stores is the tag of the arm the element
+	// holds, element.Tag(), so a publisher cannot give a tag that disagrees with the element
+	// (the old test that a tag selecting no arm is the codec's error cannot be provoked
+	// through Publish any more). The element read back reports the same tag.
 	log := blogchosen.NewBroadcastLogConformanceChosen()
 	publisher := blogctxPublisher(t, log)
-	blogctxPublishChosen(t, publisher, blogctxSmall(9), 7)
+	small := blogctxSmall(9)
+	large := blogctxLarge(0x0102)
+	if small.Tag() != 1 || large.Tag() != 0 {
+		t.Fatalf("the arms' tags are %d and %d, want 1 and 0", small.Tag(), large.Tag())
+	}
+	blogctxPublishChosen(t, publisher, small)
+	blogctxPublishChosen(t, publisher, large)
+
+	raw := log.ReaderOldest()
+	for seq, element := range []blogchoice.BroadcastLogConformanceChoice{small, large} {
+		entry := blogctxRawEntry(t, log, &raw)
+		if entry[1] != uint64(element.Tag()) {
+			t.Fatalf("entry %d stores context word %d, want the element's tag %d", seq, entry[1], element.Tag())
+		}
+	}
 
 	reader := log.ReaderOldest()
-	answer, item, err := blogchosen.Read(log, &reader)
-	if !errors.Is(err, codec.ErrNeedMoreBytes) || item != nil {
-		t.Fatalf("a tag of no arm: %+v, %v, want codec.ErrNeedMoreBytes and no item", item, err)
-	}
-	if answer.Kind != broadcastlog.ReadItem || reader.Cursor() != 1 {
-		t.Fatalf("answer %+v, cursor %d, want the item and a reader past it", answer, reader.Cursor())
+	for seq, element := range []blogchoice.BroadcastLogConformanceChoice{small, large} {
+		answer, item, err := blogchosen.Read(log, &reader)
+		if err != nil || answer.Kind != broadcastlog.ReadItem || item == nil {
+			t.Fatalf("entry %d: %+v, %+v, %v, want the item", seq, answer, item, err)
+		}
+		if item.Element.Tag() != element.Tag() {
+			t.Fatalf("entry %d reads back under tag %d, want %d", seq, item.Element.Tag(), element.Tag())
+		}
 	}
 }
