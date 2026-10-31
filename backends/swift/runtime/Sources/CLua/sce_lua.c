@@ -25,6 +25,8 @@ struct sce_lua {
     size_t message_capacity;
     char *scratch;
     size_t scratch_capacity;
+    sce_lua_state_query query;
+    void *query_context;
 };
 
 static sce_lua_status status_of(int lua_status) {
@@ -274,6 +276,41 @@ sce_lua_status sce_lua_get_global(sce_lua *state, const char *name, sce_lua_valu
         return SCE_LUA_MEMORY;
     }
     return status;
+}
+
+/// `In(state_id)`. The argument is checked before the host is asked: a bad argument raises, and a
+/// raise while the host's frame is live would jump across it.
+static int in_predicate(lua_State *L) {
+    sce_lua *state = (sce_lua *)lua_touserdata(L, lua_upvalueindex(1));
+    size_t length = 0;
+    const char *state_id = luaL_checklstring(L, 1, &length);
+    int active = state->query != NULL && state->query(state->query_context, state_id, length) != 0;
+    lua_pushboolean(L, active);
+    return 1;
+}
+
+typedef struct {
+    sce_lua *state;
+    int install;
+} query_job;
+
+static int install_in(lua_State *L) {
+    query_job *job = (query_job *)lua_touserdata(L, 1);
+    if (job->install) {
+        lua_pushlightuserdata(L, job->state);
+        lua_pushcclosure(L, in_predicate, 1);
+    } else {
+        lua_pushnil(L);
+    }
+    lua_setglobal(L, "In");
+    return 0;
+}
+
+sce_lua_status sce_lua_set_state_query(sce_lua *state, sce_lua_state_query query, void *context) {
+    query_job job = {state, query != NULL};
+    state->query = query;
+    state->query_context = context;
+    return call_protected(state, install_in, &job);
 }
 
 const char *sce_lua_message(const sce_lua *state, size_t *length) {

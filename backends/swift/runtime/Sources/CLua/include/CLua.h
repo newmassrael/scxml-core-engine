@@ -70,6 +70,16 @@ sce_lua_status sce_lua_set_global(sce_lua *state, const char *name, const sce_lu
 /// Reads the global `name` into `out`; an unset global is `SCE_LUA_NIL`.
 sce_lua_status sce_lua_get_global(sce_lua *state, const char *name, sce_lua_value *out);
 
+/// The host's answer to `In(state_id)`: nonzero when the state named by the `length` bytes at
+/// `state_id` is active. It runs inside a Lua call, so it must not raise, and it must not call into
+/// the same state.
+typedef int (*sce_lua_state_query)(void *context, const char *state_id, size_t length);
+
+/// Gives the session the global function `In`, which asks `query` with `context`; a NULL `query`
+/// removes `In`. A call to `In` with an argument that is not a string raises in Lua, before the
+/// host is asked.
+sce_lua_status sce_lua_set_state_query(sce_lua *state, sce_lua_state_query query, void *context);
+
 /// The message of the last call that did not end in `SCE_LUA_OK`, valid until the next call.
 const char *sce_lua_message(const sce_lua *state, size_t *length);
 

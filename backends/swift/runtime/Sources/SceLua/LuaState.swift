@@ -33,7 +33,11 @@ public enum LuaError: Error, Equatable, Sendable {
 /// A state is not thread safe and is not `Sendable`: one thread drives it, as it does the engine
 /// that owns it.
 public final class LuaState {
-    private let handle: OpaquePointer
+    // Module-visible, not public: the extensions of this module that bind a session or a callback
+    // reach the shim through them.
+    let handle: OpaquePointer
+    /// What the shim's `In` calls back into, kept alive for as long as the shim may call it.
+    var stateQuery: AnyObject?
 
     public init() throws {
         guard let handle = sce_lua_open() else {
@@ -118,7 +122,7 @@ public final class LuaState {
         }
     }
 
-    private func check(_ status: sce_lua_status) throws {
+    func check(_ status: sce_lua_status) throws {
         if status == SCE_LUA_OK {
             return
         }
