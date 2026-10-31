@@ -218,6 +218,125 @@ func TestACopyOfAReaderIsASecondReaderThatStartsWhereTheFirstStood(t *testing.T)
 	wantItem(t, log, &second, 0, entry(0))
 }
 
+func TestADeferredReaderStartsAtTheOldestOfItsFirstReadAndIsToldOfNothing(t *testing.T) {
+	log := newTestLog()
+	publisher := mustPublisher(t, log)
+	// Both readers are opened on the empty log, one at the oldest now and one
+	// deferred; then four entries (0 to 3) are published. The retention is 2, so
+	// the oldest retained is entry 2.
+	eager := log.ReaderOldest()
+	deferred := log.ReaderDeferred()
+	if !eager.IsBound() || deferred.IsBound() {
+		t.Fatalf("bound is %t for the eager reader and %t for the deferred one", eager.IsBound(), deferred.IsBound())
+	}
+	if deferred.Cursor() != 0 {
+		t.Fatalf("a deferred reader that has not read holds %d, want 0", deferred.Cursor())
+	}
+	for n := uint64(0); n < 4; n++ {
+		publisher.Publish(entry(n))
+	}
+	// The eager reader holds 0, which is 4 behind: it is told it missed 2.
+	wantKind(t, log, &eager, Read{Kind: ReadLagged, Skipped: 2})
+	// The deferred reader binds at this read, at the oldest retained entry, so
+	// its first answer is that entry and it has lost nothing.
+	wantItem(t, log, &deferred, 2, entry(2))
+	if !deferred.IsBound() || deferred.Lost() != 0 || deferred.Cursor() != 3 {
+		t.Fatalf("after its first read the deferred reader is bound %t, lost %d, holds %d", deferred.IsBound(), deferred.Lost(), deferred.Cursor())
+	}
+	wantItem(t, log, &deferred, 3, entry(3))
+	wantKind(t, log, &deferred, Read{Kind: ReadEmpty})
+}
+
+func TestADeferredReaderIsTheRingsLateReaderOfTheConsumerVector(t *testing.T) {
+	// Retention 4. Three entries are published, a reader is opened each way, and
+	// ten more follow: 13 in all, so the oldest retained is 9.
+	log := New(testWords, 5)
+	publisher := mustPublisher(t, log)
+	for n := uint64(0); n < 3; n++ {
+		publisher.Publish(entry(n))
+	}
+	deferred := log.ReaderDeferred()
+	eager := log.ReaderOldest()
+	for n := uint64(3); n < 13; n++ {
+		publisher.Publish(entry(n))
+	}
+	wantKind(t, log, &eager, Read{Kind: ReadLagged, Skipped: 9})
+	for seq := uint64(9); seq < 13; seq++ {
+		wantItem(t, log, &deferred, seq, entry(seq))
+	}
+	wantKind(t, log, &deferred, Read{Kind: ReadEmpty})
+	if deferred.Lost() != 0 {
+		t.Fatalf("the deferred reader lost %d, want 0", deferred.Lost())
+	}
+}
+
+func TestADeferredReaderOnALogWithNothingPublishedIsEmptyAndThenReadsFromTheStart(t *testing.T) {
+	log := newTestLog()
+	publisher := mustPublisher(t, log)
+	reader := log.ReaderDeferred()
+	wantKind(t, log, &reader, Read{Kind: ReadEmpty})
+	if !reader.IsBound() || reader.Cursor() != 0 {
+		t.Fatalf("after an empty first read the reader is bound %t and holds %d, want true and 0", reader.IsBound(), reader.Cursor())
+	}
+	publisher.Publish(entry(0))
+	wantItem(t, log, &reader, 0, entry(0))
+}
+
+func TestADeferredReaderOnAYoungLogBindsToEntryZero(t *testing.T) {
+	// One entry published, retention 2: the log has not yet dropped anything, so
+	// the oldest retained is entry 0.
+	log := newTestLog()
+	publisher := mustPublisher(t, log)
+	publisher.Publish(entry(0))
+	reader := log.ReaderDeferred()
+	wantItem(t, log, &reader, 0, entry(0))
+	if reader.Lost() != 0 {
+		t.Fatalf("the reader lost %d, want 0", reader.Lost())
+	}
+}
+
+func TestADeferredReaderThatFallsBehindLaterIsToldAsAnyReaderIs(t *testing.T) {
+	log := newTestLog()
+	publisher := mustPublisher(t, log)
+	for n := uint64(0); n < 10; n++ {
+		publisher.Publish(entry(n))
+	}
+	reader := log.ReaderDeferred()
+	wantItem(t, log, &reader, 8, entry(8))
+	for n := uint64(10); n < 13; n++ {
+		publisher.Publish(entry(n))
+	}
+	// h = 13, the window is [11, 13), the reader holds 9: two are gone.
+	wantKind(t, log, &reader, Read{Kind: ReadLagged, Skipped: 2})
+	if reader.Lost() != 2 || reader.Cursor() != 11 {
+		t.Fatalf("the reader lost %d and holds %d, want 2 and 11", reader.Lost(), reader.Cursor())
+	}
+}
+
+func TestARefusedReadLeavesADeferredReaderUnboundAndACopyBindsOnItsOwn(t *testing.T) {
+	log := newTestLog()
+	publisher := mustPublisher(t, log)
+	publisher.Publish(entry(0))
+	reader := log.ReaderDeferred()
+	if !panics(func() { log.Read(&reader, make([]uint64, 3)) }) {
+		t.Fatal("a read into a buffer of the wrong width was answered")
+	}
+	if reader.IsBound() {
+		t.Fatal("a refused read bound the reader")
+	}
+	// A copy of an unbound reader is a second unbound reader: it binds at its own
+	// first read, not at the first read of the reader it was copied from.
+	second := reader
+	publisher.Publish(entry(1))
+	publisher.Publish(entry(2))
+	wantItem(t, log, &reader, 1, entry(1))
+	if second.IsBound() {
+		t.Fatal("reading with the first bound its copy")
+	}
+	publisher.Publish(entry(3))
+	wantItem(t, log, &second, 2, entry(2))
+}
+
 func TestARefusedConstructionOrCallPanics(t *testing.T) {
 	for _, slots := range []int{-1, 0, 1} {
 		if !panics(func() { New(2, slots) }) {
