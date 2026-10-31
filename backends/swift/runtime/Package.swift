@@ -31,7 +31,17 @@ let package = Package(
                 .define("LUA_USE_POSIX"),
             ]
         ),
-        .target(name: "SceLua", dependencies: ["CLua"]),
+        .target(
+            name: "SceLua",
+            dependencies: ["CLua"],
+            resources: [
+                // The two Lua sources every engine loads, linked from `sce/include/scripting`
+                // (`Library/`) and compiled into the module as bytes: no bundle to find at run
+                // time, and one definition of what `+` and `==` mean.
+                .embedInCode("Library/ecma_semantics.lua"),
+                .embedInCode("Library/json_builtins.lua"),
+            ]
+        ),
         .testTarget(name: "SceLuaTests", dependencies: ["SceLua"]),
     ]
 )

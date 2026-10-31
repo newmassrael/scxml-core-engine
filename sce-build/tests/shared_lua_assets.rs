@@ -3,13 +3,14 @@
 //
 //! The Lua sources every engine loads have exactly one definition.
 //!
-//! `sce/include/scripting/*.lua` is that definition. Five of the six
+//! `sce/include/scripting/*.lua` is that definition. Six of the seven
 //! backends reach it directly — C++ through a CMake-generated header, Rust
 //! through `include_str!`, Kotlin through a Gradle copy, Python through the
-//! repository path, C11 through a codegen-time embed — and Go cannot,
-//! because `go:embed` refuses paths outside the module. Go therefore keeps
-//! a byte copy, and a byte copy with nothing checking it is a second
-//! definition waiting to disagree.
+//! repository path, C11 through a codegen-time embed, Swift through a link
+//! that `embedInCode` compiles into the module — and Go cannot, because
+//! `go:embed` refuses paths outside the module. Go therefore keeps a byte
+//! copy, and a byte copy with nothing checking it is a second definition
+//! waiting to disagree.
 //!
 //! That matters more for `ecma_semantics.lua` than for anything else here:
 //! it defines what `==` and `+` *mean*, so a drifted copy would not crash,
@@ -64,8 +65,9 @@ fn every_copied_lua_asset_is_byte_identical_to_its_source() {
 /// this test never looked at.
 ///
 /// `None` is a backend with no Lua engine at all, which has nothing to load
-/// the file. Swift is that until its Lua target lands, and the arm is replaced
-/// by the loader's path in the same commit.
+/// the file. Every backend has one now (Swift was the last, until its `SceLua`
+/// target landed), and a backend that does not stays `None` here, in the commit
+/// that adds it, until its loader is written.
 fn loader_of(language: Language) -> Option<(&'static str, &'static str)> {
     match language {
         Language::Rust => Some(("backends/rust/lua/src/lib.rs", "ecma_semantics.lua")),
@@ -83,7 +85,10 @@ fn loader_of(language: Language) -> Option<(&'static str, &'static str)> {
             "tools/codegen/templates/c/scriptengine.jinja2",
             "ecma_semantics_lua_c",
         )),
-        Language::Swift => None,
+        Language::Swift => Some((
+            "backends/swift/runtime/Sources/SceLua/EcmaScriptLibrary.swift",
+            "PackageResources.ecma_semantics_lua",
+        )),
     }
 }
 
