@@ -9444,7 +9444,18 @@ fn render_codec(
                     body_encode_args_with_leading_comma,
                 ) = combine_arm_call_args(&arm_flag_bind_args);
                 let mut obj = serde_json::Map::new();
+                // The tag of a caller-tag variant's value, as the accessor
+                // that returns it writes it: the arm's declared tag, from the
+                // same `value_literal` the decode matches on, so the two
+                // cannot name different tags. Kotlin's accessor returns a
+                // `UByte`, which an `Int` literal is not; every other backend
+                // returns the literal as it is.
+                let tag_literal = match lang {
+                    crate::generator::Language::Kotlin => format!("{value_literal}.toUByte()"),
+                    _ => value_literal.clone(),
+                };
                 obj.insert("value_literal".into(), value_literal.into());
+                obj.insert("tag_literal".into(), tag_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
                 // Owned-projection mirror (Rust): the arm body's owned
                 // type + the match-arm deep-copy expr. A borrowed arm body
