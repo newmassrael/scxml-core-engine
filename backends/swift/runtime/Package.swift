@@ -8,14 +8,30 @@ import PackageDescription
 // `sce-codegen generate -l swift`. `Synchronization` (the two places the engine
 // shares state across threads) needs macOS 15 and iOS 18 on Apple platforms; on
 // Linux it ships with the toolchain.
+//
+// `SceLua` is the optional script-engine tier, kept apart from `SceRuntime` the way the C runtime
+// keeps its scripting tier: a machine whose document needs no engine does not link Lua. `CLua`
+// compiles the Lua 5.4 sources of `third_party/lua` (reached through the `lua` link under
+// `Sources/CLua`, because a SwiftPM target cannot name a path outside its package) and exports only
+// the shim in `include/CLua.h`.
 let package = Package(
     name: "SceRuntime",
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
-        .library(name: "SceRuntime", targets: ["SceRuntime"])
+        .library(name: "SceRuntime", targets: ["SceRuntime"]),
+        .library(name: "SceLua", targets: ["SceLua"]),
     ],
     targets: [
         .target(name: "SceRuntime"),
         .testTarget(name: "SceRuntimeTests", dependencies: ["SceRuntime"]),
+        .target(
+            name: "CLua",
+            cSettings: [
+                .headerSearchPath("lua"),
+                .define("LUA_USE_POSIX"),
+            ]
+        ),
+        .target(name: "SceLua", dependencies: ["CLua"]),
+        .testTarget(name: "SceLuaTests", dependencies: ["SceLua"]),
     ]
 )
