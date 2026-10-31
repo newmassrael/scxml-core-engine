@@ -231,31 +231,42 @@ func TestBroadcastLogContextALappedReaderResumesAtAnEntryWithItsOwnFlag(t *testi
 	blogctxExpectFlagged(t, log, &slow, 5, blogctxEvent(9, optional.None[uint16]()), false)
 }
 
-func TestBroadcastLogContextTheFlagThatWasStoredDecidesHowAnEntryIsReadAndTheLogDoesNotJudgeIt(t *testing.T) {
-	// The Go codec's Encode writes a field gated on a flag input whenever the field holds
-	// a value, and never reads the flag, and the log stores the flag it is given: neither
-	// refuses a flag that disagrees with the element. What is read back is decoded under
-	// the stored flag.
+func TestBroadcastLogContextAFlagItsElementContradictsIsRefusedByTheCodecAndNothingIsPublished(t *testing.T) {
+	// The codec's Encode checks a flag input against the field it gates before it writes a
+	// byte (codec.ErrPresentIfMismatch, as the Rust codec does). The log stores what the
+	// codec accepted and judges nothing of its own, so a contradiction never reaches an
+	// entry: nothing is published and no sequence number is taken.
 	log := blogflagged.NewBroadcastLogConformanceFlagged()
 	publisher := blogctxPublisher(t, log)
 
-	// A value published under a flag that says it is absent: its bytes are stored, the
-	// entry reads back under the flag, without the value.
-	blogctxPublishFlagged(t, publisher, blogctxEvent(1, optional.Some(uint16(0x0203))), false)
-	// A value published as absent under a flag that says it is there: one byte is stored,
-	// and the decode under the flag asks for three.
-	blogctxPublishFlagged(t, publisher, blogctxEvent(2, optional.None[uint16]()), true)
+	cases := []struct {
+		name     string
+		element  blogflaggedevent.BroadcastLogConformanceFlaggedEvent
+		hasValue bool
+	}{
+		// The value is there and the flag says it is not.
+		{"a value under a flag that says it is absent", blogctxEvent(1, optional.Some(uint16(0x0203))), false},
+		// The value is absent and the flag says it is there.
+		{"an absent value under a flag that says it is there", blogctxEvent(2, optional.None[uint16]()), true},
+	}
+	for _, c := range cases {
+		element := c.element
+		_, err := blogflagged.Publish(publisher, &element, blogflagged.BroadcastLogConformanceFlaggedFlags{HasValue: c.hasValue})
+		if !errors.Is(err, codec.ErrPresentIfMismatch) {
+			t.Fatalf("%s: publish returned %v, want codec.ErrPresentIfMismatch", c.name, err)
+		}
+		if log.Head() != 0 {
+			t.Fatalf("%s: a refused flag publishes nothing, the head is %d", c.name, log.Head())
+		}
+	}
 
+	// An element and a flag that agree are published as the first entry.
+	agreeing := blogctxEvent(1, optional.Some(uint16(0x0203)))
+	if seq := blogctxPublishFlagged(t, publisher, agreeing, true); seq != 0 {
+		t.Fatalf("the first agreeing entry is number %d, want 0: the refusals took no number", seq)
+	}
 	reader := log.ReaderOldest()
-	blogctxExpectFlagged(t, log, &reader, 0, blogctxEvent(1, optional.None[uint16]()), false)
-
-	answer, item, err := blogflagged.Read(log, &reader)
-	if err == nil || item != nil {
-		t.Fatalf("an entry that is shorter than its flag says: %+v, %v, want an error and no item", item, err)
-	}
-	if answer.Kind != broadcastlog.ReadItem || reader.Cursor() != 2 {
-		t.Fatalf("answer %+v, cursor %d, want the item and a reader past it", answer, reader.Cursor())
-	}
+	blogctxExpectFlagged(t, log, &reader, 0, agreeing, true)
 }
 
 func TestBroadcastLogContextTheTagIsStoredInTheContextWordAndTheArmsBytesFollowIt(t *testing.T) {

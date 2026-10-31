@@ -43,7 +43,7 @@ from typing import Any, Optional
 
 import _sce_codegen
 from sce_forge_runtime.broadcast_log import BroadcastLog, Empty, Lagged
-from sce_forge_runtime.codec import BufferOverflow, CodecError, LengthOutOfRange
+from sce_forge_runtime.codec import BufferOverflow, CodecError, LengthOutOfRange, PresentIfMismatch
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
@@ -511,30 +511,30 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
             self.assertEqual(self.flagged_item(n, element, has_value), module.read(log, slow))
         self.assertEqual(Empty(), module.read(log, slow))
 
-    def test_the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it(self) -> None:
-        # This backend's codec does not check a flag against the field it gates when it
-        # encodes (the Rust codec does, and refuses with `PresentIfMismatch`), and the
-        # log does not either: the publisher gives what it knows. What a reader sees is
-        # then the entry decoded under the flag that was stored. A codec that refused a
-        # disagreement would raise from the first `publish` here, and this test would
-        # turn red there.
+    def test_a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published(self) -> None:
+        # The codec checks a flag input against the field it gates before it writes a
+        # byte (`PresentIfMismatch`, as the Rust codec does). The log stores what the
+        # codec accepted and judges nothing of its own, so a contradiction never reaches
+        # an entry: nothing is published and no sequence number is taken.
         module = self.flagged
         log = module.new_broadcast_log_conformance_flagged()
         publisher = log.publisher()
         reader = log.reader_oldest()
 
-        # The value is there and the flag says it is not: the three bytes are stored under
-        # a flag that reads one, so the reader gets the element without its value.
-        module.publish(publisher, self.make_event(7, 1), self.flags(False))
-        self.assertEqual(self.flagged_item(0, self.make_event(7, None), False), module.read(log, reader))
+        # The value is there and the flag says it is not.
+        with self.assertRaises(PresentIfMismatch):
+            module.publish(publisher, self.make_event(7, 1), self.flags(False))
+        self.assertEqual(0, log.head(), "a refused flag publishes nothing")
 
-        # The value is absent and the flag says it is there: the one byte stored is too
-        # few for the value the flag promises, which the codec does not decode.
-        module.publish(publisher, self.make_event(8, None), self.flags(True))
-        with self.assertRaises(CodecError) as raised:
-            module.read(log, reader)
-        self.assertIs(CodecError, type(raised.exception), "the length was within the bound, so it is not that error")
-        self.assertEqual(2, reader.cursor, "the reader moved past the entry")
+        # The value is absent and the flag says it is there.
+        with self.assertRaises(PresentIfMismatch):
+            module.publish(publisher, self.make_event(8, None), self.flags(True))
+        self.assertEqual(0, log.head(), "a refused flag publishes nothing")
+        self.assertEqual(Empty(), module.read(log, reader))
+
+        # An element and a flag that agree are published as the first entry.
+        self.assertEqual(0, module.publish(publisher, self.make_event(7, 1), self.flags(True)))
+        self.assertEqual(self.flagged_item(0, self.make_event(7, 1), True), module.read(log, reader))
 
     # The tag of a variant that has none of its own.
 

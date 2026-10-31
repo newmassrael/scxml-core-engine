@@ -20,6 +20,7 @@
 
 package com.sce.forge.runtime.broadcastlog
 
+import com.sce.forge.runtime.CodecError
 import com.sce.generated.broadcast_log_conformance_choice.BroadcastLogConformanceChoice
 import com.sce.generated.broadcast_log_conformance_choice.BroadcastLogConformanceChoiceVariant
 import com.sce.generated.broadcast_log_conformance_choice_large.BroadcastLogConformanceChoiceLarge
@@ -142,6 +143,38 @@ class BroadcastLogContextGeneratedTest {
             assertFlaggedItem(log, reader, seq.toLong(), entry.first, entry.second)
         }
         assertEquals(BroadcastLogConformanceFlaggedRead.Empty, readFlagged(log, reader))
+    }
+
+    @Test
+    fun aFlagItsElementContradictsIsRefusedByTheCodecAndNothingIsPublished() {
+        // The codec checks a flag input against the field it gates before it writes a byte
+        // (`CodecError.PresentIfMismatch`, as the Rust codec does). The log stores what the
+        // codec accepted and judges nothing of its own, so a contradiction never reaches an
+        // entry: nothing is published and no sequence number is taken.
+        val log = newBroadcastLogConformanceFlagged()
+        val publisher = assertNotNull(log.publisher())
+        val reader = log.readerOldest()
+
+        val contradictions = listOf(
+            // The value is there and the flag says it is not.
+            flaggedEvent(1, 0x0203) to false,
+            // The value is absent and the flag says it is there.
+            flaggedEvent(2, null) to true,
+        )
+        for ((element, hasValue) in contradictions) {
+            val refused = assertIs<BroadcastLogConformanceFlaggedPublish.Refused>(
+                publishFlagged(publisher, element, BroadcastLogConformanceFlaggedFlags(hasValue = hasValue)),
+            )
+            assertEquals(CodecError.PresentIfMismatch, refused.error)
+            assertEquals(0L, log.head(), "a refused flag publishes nothing")
+        }
+        assertEquals(BroadcastLogConformanceFlaggedRead.Empty, readFlagged(log, reader))
+
+        // An element and a flag that agree are published as the first entry.
+        val published = assertIs<BroadcastLogConformanceFlaggedPublish.Published>(
+            publishFlagged(publisher, flaggedEvent(1, 0x0203), BroadcastLogConformanceFlaggedFlags(hasValue = true)),
+        )
+        assertEquals(0L, published.seq, "the refusals took no sequence number")
     }
 
     @Test

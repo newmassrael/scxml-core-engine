@@ -216,41 +216,39 @@ void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_publis
     CHECK(std::holds_alternative<FlaggedEmpty>(flagged::read(log, slow)), "nothing is left after the window");
 }
 
-void the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it() {
-    // The C++ codec does not check a flag input against the field it gates when it
-    // encodes (it writes a gated field whenever the value is present, and only the
-    // chain-membership predicates are checked), and the log does not either: the
-    // publisher gives what it knows. A codec that refused a disagreement would refuse
-    // the first publish here, and this test would turn red there.
+void a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published() {
+    // The codec checks a flag input against the field it gates before it writes a byte
+    // (`CodecError::PresentIfMismatch`, as the Rust codec does). The log stores what the
+    // codec accepted and judges nothing of its own, so a contradiction never reaches an
+    // entry: nothing is published and no sequence number is taken.
     FlaggedLog log;
     auto publisher = log.publisher();
     CHECK(publisher.has_value(), "the first publisher");
     auto typed = log.reader_oldest();
-    auto raw = log.reader_oldest();
 
-    // The value is there and the flag says it is not: the three bytes are stored under
-    // a flag that is clear, which the entry's context word says.
-    const flagged::BroadcastLogConformanceFlaggedPublished kept =
+    // The value is there and the flag says it is not.
+    const flagged::BroadcastLogConformanceFlaggedPublished present_under_clear =
         flagged::publish(*publisher, make_event(7, true, 1), flags_of(false));
-    CHECK(kept.published() && !kept.error.has_value(), "the log does not judge the flag against the element");
-    FlaggedLog::Entry entry{};
-    const broadcast::Read answer = log.read(raw, entry);
-    CHECK(answer.kind == broadcast::ReadKind::Item && entry[0] == 3 && entry[1] == 0,
-          "the three bytes are stored under the clear flag the publisher gave");
+    CHECK(!present_under_clear.published(), "a value under a flag that says it is absent is not published");
+    CHECK(present_under_clear.error.has_value() &&
+              *present_under_clear.error == ::SCE::Forge::CodecError::PresentIfMismatch,
+          "the codec refuses it");
+    CHECK(log.head() == 0, "a refused flag publishes nothing");
 
-    // The value is absent and the flag says it is there: the one byte stored is too few
-    // for the value the flag promises, so the codec cannot decode the entry.
-    const flagged::BroadcastLogConformanceFlaggedPublished short_entry =
+    // The value is absent and the flag says it is there.
+    const flagged::BroadcastLogConformanceFlaggedPublished absent_under_set =
         flagged::publish(*publisher, make_event(8, false, 0), flags_of(true));
-    CHECK(short_entry.published() && !short_entry.error.has_value(),
-          "an absent value under a set flag is stored as it was given");
-    // The reader passes the first entry (published under a clear flag) and is then at the
-    // second.
-    (void)flagged::read(log, typed);
-    const FlaggedRead got = flagged::read(log, typed);
-    const FlaggedMalformed *bad = std::get_if<FlaggedMalformed>(&got);
-    CHECK(bad != nullptr && bad->seq == 1, "the codec refuses the entry its stored flag cannot decode");
-    CHECK(typed.cursor() == 2, "the reader moved past the entry");
+    CHECK(!absent_under_set.published(), "an absent value under a flag that says it is there is not published");
+    CHECK(absent_under_set.error.has_value() && *absent_under_set.error == ::SCE::Forge::CodecError::PresentIfMismatch,
+          "the codec refuses it");
+    CHECK(log.head() == 0, "a refused flag publishes nothing");
+    CHECK(std::holds_alternative<FlaggedEmpty>(flagged::read(log, typed)), "a reader sees nothing of either");
+
+    // An element and a flag that agree are published after the refused ones, as entry 0:
+    // a refusal does not spend a sequence number.
+    const flagged::BroadcastLogConformanceFlaggedPublished agreeing =
+        flagged::publish(*publisher, make_event(7, true, 1), flags_of(true));
+    CHECK(agreeing.published() && agreeing.seq == 0, "a refusal spends no sequence number");
 }
 
 // ─── The tag of a variant that has none of its own ───
@@ -340,7 +338,7 @@ int main() {
     a_reader_gets_back_the_flag_an_entry_was_published_under();
     every_reader_of_an_entry_decodes_it_under_the_same_flag();
     a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under();
-    the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it();
+    a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
 

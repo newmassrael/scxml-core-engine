@@ -235,13 +235,12 @@ static void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was
     FLG(publisher_release)(&publisher);
 }
 
-static void the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it(void) {
-    /* The C codec does not check a flag input against the field it gates when it
-     * encodes (it writes a gated field whenever the value is present, and only the
-     * chain-membership predicates are checked), and the log does not either: the
-     * publisher gives what it knows. What a reader sees is the entry decoded under the
-     * flag that was stored. A codec that refused a disagreement would refuse the first
-     * publish here, and this test would turn red there. */
+static void a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published(void) {
+    /* The codec checks a flag input against the field it gates before it writes a
+     * byte (SCE_FORGE_CODEC_PRESENT_IF_MISMATCH, as the Rust codec does). The log
+     * stores what the codec accepted and judges nothing of its own, so a
+     * contradiction never reaches an entry: nothing is published and no sequence
+     * number is taken. */
     static FLG(t) ring;
     FLG(publisher_t) publisher = {0};
     FLG(reader_t) reader;
@@ -255,25 +254,27 @@ static void the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_do
     CHECK(FLG(init)(&ring) && FLG(publisher_acquire)(&ring, &publisher), "a log and its publisher");
     reader = FLG(reader_oldest)(&ring);
 
-    /* The value is there and the flag says it is not: the three bytes are stored under
-     * a flag that reads one, so the reader gets the element without its value. */
+    /* The value is there and the flag says it is not. */
     published = FLG(publish)(&publisher, &present, &clear);
-    CHECK(published.status == FLG_U(PUBLISH_OK), "the log does not judge the flag against the element");
-    memset(&got, 0, sizeof got);
-    read = FLG(read)(&ring, &reader, &got);
-    CHECK(read.status == FLG_U(READ_ITEM) && !read.flags.has_value, "the entry reads back under the stored flag");
-    CHECK(got.sensor_id == 7u && !got.value.present, "and without the value the flag said was not there");
+    CHECK(published.status == FLG_U(PUBLISH_ENCODE_FAILED) &&
+              published.codec_status == SCE_FORGE_CODEC_PRESENT_IF_MISMATCH,
+          "a value under a flag that says it is absent is refused by the codec");
+    CHECK(FLG(head)(&ring) == 0u, "nothing was published");
 
-    /* The value is absent and the flag says it is there: the one byte stored is too
-     * few for the value the flag promises, which the codec does not decode. */
+    /* The value is absent and the flag says it is there. */
     published = FLG(publish)(&publisher, &absent, &set);
-    CHECK(published.status == FLG_U(PUBLISH_OK), "an absent value under a set flag is stored as it was given");
+    CHECK(published.status == FLG_U(PUBLISH_ENCODE_FAILED) &&
+              published.codec_status == SCE_FORGE_CODEC_PRESENT_IF_MISMATCH,
+          "an absent value under a flag that says it is there is refused by the codec");
+    CHECK(FLG(head)(&ring) == 0u, "nothing was published");
     memset(&got, 0, sizeof got);
     read = FLG(read)(&ring, &reader, &got);
-    CHECK(read.status == FLG_U(READ_DECODE_FAILED), "the codec refuses the entry its stored flag cannot decode");
-    CHECK(read.codec_status != SCE_FORGE_CODEC_OK, "and says why");
-    CHECK(read.flags.has_value, "the flag it refused under is the one stored");
-    CHECK(reader.cursor == 2u, "the reader moved past the entry");
+    CHECK(read.status == FLG_U(READ_EMPTY), "a reader sees nothing of either");
+
+    /* An element and a flag that agree are published after the refused ones, as
+     * entry 0: a refusal does not spend a sequence number. */
+    published = FLG(publish)(&publisher, &present, &set);
+    CHECK(published.status == FLG_U(PUBLISH_OK) && published.seq == 0u, "a refusal spends no sequence number");
     FLG(publisher_release)(&publisher);
 }
 
@@ -391,7 +392,7 @@ int main(void) {
     a_reader_gets_back_the_flag_an_entry_was_published_under();
     every_reader_of_an_entry_decodes_it_under_the_same_flag();
     a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under();
-    the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it();
+    a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
     (void)printf("generated broadcast logs with caller inputs (C11): %u check(s), %u failure(s)\n", g_checks,
