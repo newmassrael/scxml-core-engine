@@ -20,7 +20,7 @@
 // from a buffer only that read holds.
 //
 // Operations (from `{{ runtime_dep }}`, typed here over the element):
-//   publish(publisher, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}): {{ pascal }}Publish   wait-free; the entry's sequence number, or why the element was refused
+//   publish(publisher, element{% if context.flags %}, flags{% endif %}): {{ pascal }}Publish   wait-free; the entry's sequence number, or why the element was refused
 //   read(log, reader): {{ pascal }}Read                wait-free; an item, nothing new, how many were missed, or an entry that does not decode
 // A reader is `log.readerOldest()`, `log.readerHead()` or `log.readerAt(n)`
 // and owns its cursor; the publisher is `log.publisher()`, taken once and
@@ -28,9 +28,16 @@
 {% if context.present %}
 //
 // The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
-// part of the entry: `publish` takes them, the log stores them in the entry's context
-// words beside the bytes, and an `Item` returns them, so every reader decodes an entry
-// under what it was published under (ADR 0062 section 4).
+// part of the entry: the log stores them in the entry's context words beside the
+// bytes, so every reader decodes an entry under what it was published under (ADR 0062
+// section 4).
+{% if context.flags %}
+// `publish` takes the flags and an `Item` returns them.
+{% endif %}
+{% if context.has_tag %}
+// The tag is not given: it is a function of the element, which `publish` reads off it
+// (`element.tag`) and stores, and the tag of an `Item`'s element is its own.
+{% endif %}
 {% endif %}
 //
 // Kotlin's sequence numbers are the signed `Long`'s: the log stops at the
@@ -145,15 +152,15 @@ sealed interface {{ pascal }}Read {
     /**
      * The entry [seq], decoded, with what it was published under; the reader now
      * holds `seq + 1`.
+{% if context.has_tag %}
+     * The tag it was decoded under is the element's own (`element.tag`).
+{% endif %}
      */
     data class Item(
         val seq: Long,
-        val element: {{ element_pascal }},
+        val element: {{ element_pascal }}{{ "," if context.flags else "" }}
 {% if context.flags %}
-        val flags: {{ pascal }}Flags{{ "," if context.has_tag else "" }}
-{% endif %}
-{% if context.has_tag %}
-        val tag: UByte
+        val flags: {{ pascal }}Flags
 {% endif %}
     ) : {{ pascal }}Read
 {% else %}
@@ -188,14 +195,23 @@ sealed interface {{ pascal }}Read {
  * runtime's horizon of entries the runtime throws `IllegalStateException`,
  * which no run reaches in practice.
 {% if context.present %}
+{% if context.flags %}
  *
- * {% if context.flags %}[flags] are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}[tag] is the variant tag its decode takes{% endif %}:
+ * [flags] are what the element's codec takes from its caller as flag inputs:
  * they are encoded under here and stored in the entry's context words, so that every
  * reader decodes the entry under what it was published under. The log does not check that
- * {% if context.has_tag %}[tag] is the tag of the arm [element] holds{% else %}the flags agree with [element]{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+ * the flags agree with [element]; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
+{% if context.has_tag %}
+ *
+ * The variant tag the element's decode takes is not a parameter: it is a function of
+ * [element], `element.tag`, the tag of the arm it holds. It is stored in the entry's
+ * context words, so that no entry is stored under a tag its bytes disagree with and
+ * every reader decodes the entry under the arm it was published as.
+{% endif %}
 {% endif %}
  */
-fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag: UByte{% endif %}): {{ pascal }}Publish {
+fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}): {{ pascal }}Publish {
     val bytes = ByteArray(MAX_ENCODED_BYTES)
     val sink = ByteArraySink(bytes)
     val refused = element.encode(sink{% for flag in context.flags %}, flagInput(flags.{{ flag.camel }}){% endfor %})
@@ -209,7 +225,7 @@ fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}{% if
     entry[1 + {{ flag.word }}] = entry[1 + {{ flag.word }}] or ((if (flags.{{ flag.camel }}) 1L else 0L) shl {{ flag.shift }})
 {% endfor %}
 {% if context.has_tag %}
-    entry[1 + {{ context.tag_word }}] = tag.toLong()
+    entry[1 + {{ context.tag_word }}] = element.tag.toLong()
 {% endif %}
     for (index in 0 until length) {
         val word = {{ context.payload_start }} + index / 8
@@ -270,12 +286,9 @@ private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
 {% if context.present %}
     return {{ pascal }}Read.Item(
         seq,
-        element,
+        element{{ "," if context.flags else "" }}
 {% if context.flags %}
-        flags{{ "," if context.has_tag else "" }}
-{% endif %}
-{% if context.has_tag %}
-        tag,
+        flags
 {% endif %}
     )
 {% else %}
