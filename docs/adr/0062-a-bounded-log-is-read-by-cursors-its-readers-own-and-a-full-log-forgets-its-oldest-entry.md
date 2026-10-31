@@ -1373,18 +1373,56 @@ landed"): a 32-bit stamp, 32-bit words, and a publisher that needs no read-modif
   and its mutants (the hosted atomics' orderings, which are one macro for both widths) run over it as over the others.
   The mutation casefile `a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases` had two anchors moved by the
   renderer and has them re-aimed, and a case for the C11 narrow row's word width.
-- **Not run.** The change was written with nothing built, run or measured. The generator, the template, the headers, the C
-  tests and their CMake have been compiled by no compiler and the new `sce-build` tests have not run. The GenMC scenario
-  has not been explored, and its `REQUIRED` list (the four mutants of the 64-bit scenario, chosen by the same reading) is
-  unmeasured; the two fence mutants are left unlisted for the gate to print. The 3-bit cases are the Rust unit tests
-  carried over by arithmetic, not by a run. No `thumbv6m` or `thumbv7em` build of a generated header was made.
-  `broadcast_log.h` still says that a target whose atomics do not reach 64 bits has no broadcast log, which its text may not
-  change in this step and which is no longer true of the kind.
-- **What the merged tree is held to.** `cargo test -p sce-build --features cli --test
-  broadcast_log_kind`; `scripts/gates/forge-c11.sh` (the new ctest tests `broadcast_log_narrow_runtime_c`,
-  `broadcast_log_narrow_runtime_32_c`, `broadcast_log_narrow_generated_c` and `broadcast_log_narrow_unstated_pause_c`, on
-  top of the existing ones); `scripts/gates/genmc-queue.sh` for the new scenario and its mutants; the workspace clippy with
-  `-D warnings`; and `scripts/mutate --check` over the casefile above.
+- **Run (2026-10-31, build machines).** `cargo test -p sce-build --features cli --test broadcast_log_kind` passed 141 tests,
+  the 13 of this row among them; `scripts/gates/forge-c11.sh` passed all 33 ctest tests, the four of this row
+  (`broadcast_log_narrow_runtime_c`, `broadcast_log_narrow_runtime_32_c`, `broadcast_log_narrow_generated_c` and
+  `broadcast_log_narrow_unstated_pause_c`) built under `-Wall -Wextra -Wpedantic -Werror`; `scripts/gates/genmc-queue.sh`
+  ended `exit=0` with the baseline of `broadcast_log_narrow_slot_reuse` passing and its required mutants caught
+  (`load_acquire`, `store_release`, `acquire_release`, `all` and the two fences), the others surviving as in the 64-bit scenario
+  ("the harness does not require it"); the workspace clippy with `-D warnings` was clean. The 3-bit cases are the Rust unit
+  tests carried over, and they ran. Not done: no `thumbv6m` or `thumbv7em` build of a generated C header was made (the
+  cross-build gate of the repository covers the Rust crates only), so the narrow row has been compiled and run natively
+  with a stamp of 2 to 3 bits and of 32. `broadcast_log.h` still says that a target whose atomics do not reach 64 bits has
+  no broadcast log, which its text may not change while the 64-bit row must stay byte-identical and which is no longer true of
+  the kind.
+
+### The log against the cases of a downstream consumer's ring (2026-10-31)
+
+Layer 5 of §6 is a differential run against the consumer's own ring, and the ring's cases came from the owner of that code:
+its unit tests and its generated test, read at the revision `ddc8d2265c` of its repository, without linking its crate.
+`backends/rust/forge-runtime/tests/broadcast_log_consumer_ring_cases.rs` holds them as 7 tests, which passed on a build machine.
+
+- **What is run.** The ring's deterministic vectors, with its slot count `S` read as the retention (a ring of `S` slots keeps `S`
+  records between two writes, and a log of retention `S` keeps `S + 1` slots): overwrite-oldest gives `[-6, 7, 8, 9, 10]` to a reader
+  that fell behind and `[7, 8, 9, 10]` to a fresh one, `reader_at(8)` reads `[8, 9]`, `reader_at(2)` reads `[-4, 6, 7, 8, 9]`, a reader
+  at the head is empty and then reads entry 10, and readers are independent. And the ring's generated test, with its xorshift64 stream,
+  seed mapping and step rule: three readers, 200 records, seeds 1 to 300, a ring of 5 slots, held to the same five properties (in
+  order, whole, the cursor moves by one for an entry and by `skipped` for a lag, the reader ends at 200, and what it saw plus what it
+  lost is 200 less where it started).
+- **What is not.** The log's `publish` is one call, so only the ring's close step publishes (its stream and its reader-to-writer ratio
+  are kept, its steps open and fill do nothing). The ring's 32-bit words compared modulo `2^32`, with its demand that a reader read
+  once in `2^31` records, are the narrow row of §4 at 32 bits, whose bound has its own tests; a run of `2^31` records is not made.
+- **Three differences, each pinned by a test named `deviation_...`, and confirmed by the ring's side as intended.** (1) The ring's
+  `reader()` has no cursor until its first poll and then takes the oldest record alive, so it is told of no gap; `reader_oldest()` of
+  the log takes the oldest retained entry when it is called, so a reader that waits is told of the lag at its first read. (2) The
+  ring keeps the cursor it was given for a position ahead of the head, so the reader is empty until the producer gets there and then
+  skips what lies between; the log reads a position past the head as the head. (3) A ring of `S` slots keeps `S` records between writes
+  and `S - 1` while the slot of the oldest is being written; the log's retention holds at every instant, and the two agree between
+  publishes, which is all a test can see.
+
+### The codecs expose the tag of their active arm (2026-10-31)
+
+A caller-tag variant's `publish` takes the tag as a parameter because no generated codec exposed the tag of its active arm (§4,
+"What the log does not do"). The Kotlin, Python, Go, C11 and C++ codecs now do: an accessor on the codec struct that holds the
+variant (`val tag: UByte`, `tag(self)`, `Tag()`, `<codec>_tag`, `tag()`), whose value for a known arm is its declared tag and for the
+catch-all arm the unknown tag it holds. The definition is shared with the Rust codecs, which get their own `tag()` on the variant
+enums from the owner of that generator, and the per-arm literal is one string in the generator's context that the accessor and
+the `decode` both print, so the two cannot disagree. All five languages already held the unknown tag of a catch-all arm, so the
+accessor is total there; for a value that holds no arm (a state `decode` never produces) Python raises and Go panics, and C11
+and C++ answer 0. A codec with a field or flag named `tag` collides with the accessor in the five languages, and no diagnostic
+refuses it yet. The log does not use the accessor yet: its `publish` still takes the tag, until the Rust one exists, so the five
+templates change together. 11 text-pinning tests hold the accessors, over a fixture directory and over the real
+`broadcast_log_conformance_choice` document in every language.
 
 ### What is still undone
 
@@ -1397,19 +1435,29 @@ generation and conformance runs and their ARMv6-M and ARMv7-M builds (see their 
 
 What is left:
 
-- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a forge runtime. The narrow rows of the
-  languages other than Rust and C11, which each template will need on a target without 64-bit atomics, are not built:
-  Rust's and C11's are (C++ keeps one 64-bit row).
-- **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
-- **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry (a codec that takes flag inputs or
-  a variant tag from its caller is stored with the entry by every template that ships, section 4). A typed diagnostic for an
-  unresolved deploy limit.
+- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a log row. Its runtime already imports
+  `Synchronization` (`Atomic<T>` with explicit orderings) and a build machine has a Swift toolchain, so the row can be verified
+  there as the rest of the Swift backend is; it is not started. It is written without `InlineArray`, which needs a newer
+  toolchain than the package's tools version and carries an availability annotation on Apple platforms.
+- **The narrow row of C++**, which keeps one 64-bit row. Rust's and C11's are built. Kotlin, Go and Python have no narrow row: the
+  targets they run on offer 64-bit atomics, and a target that did not would take the row of the other two.
+- **The log taking the tag from the value.** The five non-Rust codecs expose the active arm's tag (section above); the Rust
+  codecs do not yet, and the `publish` of every template changes together once they do.
+- **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry, whose decoded form borrows
+  its input. The remedy is an owned form bounded by `sce:max-size`, in the Rust CBOR generator; not started. (A codec that takes flag
+  inputs or a variant tag from its caller is stored with the entry by every template that ships, section 4; a typed diagnostic
+  for an unresolved deploy limit is `broadcast-log/deploy-limit-unresolved`.)
+- **Mutation cases that need a test first** (listed at the foot of the casefiles of the Rust template and renderer): the refusal
+  of a stated width that is not 0, 32 or 64; the line numbers of the two refusals of `rust_broadcast_log_row`; the `Copy` derive
+  of the flags struct. Checked and closed: the size check of the Kotlin renderer does not need to count the context words, since
+  `(MAX_ENCODED_BYTES + 7) / 8` fitting an `Int` leaves no sum that can wrap.
 - **The stress runs of the six rows** still write short histories, a limit the general search imposed and the specialised
   checker does not; lengthening them is a change to each recorder, with a round of CI to read after it.
 - **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the
-  strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; and the Miri measurement, which CI cannot repeat because the
-  mutation selector passes its arguments to `cargo test` and a Miri runner for `scripts/mutate` is not built.
-- **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
+  strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; the casefiles written
+  on 2026-10-31 for the caller-input context (41 cases) and for the Rust template and renderer (43 cases); and the Miri
+  measurement, which CI cannot repeat because the mutation selector passes its arguments to `cargo test` and a Miri runner for
+  `scripts/mutate` is not built.
 
 ## Consequences
 
