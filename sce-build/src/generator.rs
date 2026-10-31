@@ -4475,14 +4475,15 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 ///
 /// For an `ecmascript` document the event, the target, the delay, the `idlocation` and the
 /// `<content expr>` are lowered to Lua and run by the engine, and so are the `<param>`s and the
-/// namelist (their causes are lowered in [`swift_ecmascript_cause_unlowered`]); the processor type
-/// an expression computes is not. A BasicHTTP send's body is the form its `<param>`s make, so a
-/// `<content expr>` there has nowhere to go. A `null` document has no expression language to write
-/// any of them in.
+/// namelist (their causes are lowered in [`swift_ecmascript_cause_unlowered`]); so is the processor
+/// type an expression computes, which the machine checks when the send runs and which does not
+/// change the route the element was lowered for. A BasicHTTP send's body is the form its
+/// `<param>`s make, so a `<content expr>` there has nowhere to go. A `null` document has no
+/// expression language to write any of them in.
 fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<&'static str> {
     let over_http = send.send_type.contains("BasicHTTPEventProcessor");
     [
-        ("<send typeexpr>", &send.typeexpr, false),
+        ("<send typeexpr>", &send.typeexpr, true),
         ("<send contentexpr>", &send.contentexpr, !over_http),
         ("<send eventexpr>", &send.eventexpr, true),
         ("<send targetexpr>", &send.targetexpr, true),

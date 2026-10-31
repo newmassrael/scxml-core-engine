@@ -22,6 +22,7 @@
 {% set ecma_event = ecmascript_datamodel and action.eventexpr %}
 {% set ecma_target = ecmascript_datamodel and action.targetexpr %}
 {% set ecma_delay = ecmascript_datamodel and action.delayexpr %}
+{% set ecma_typeexpr = ecmascript_datamodel and action.typeexpr %}
 {% set ecma_idlocation = ecmascript_datamodel and action.idlocation and not action.native_idlocation %}
 {% set ecma_namelist = ecmascript_datamodel and action.namelist and action.namelist | trim %}
 {# W3C SCXML 6.2 + B.2 (test 553): a namelist names variables, and one the document does not declare
@@ -72,7 +73,7 @@
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
 {% set computed_event = event_value %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
-{% set send_prologue = delay_value or event_value or computed_target or namelist_bad.name %}
+{% set send_prologue = delay_value or event_value or computed_target or ecma_typeexpr or namelist_bad.name %}
 {# W3C SCXML 6.2: the wait, as a Duration, or none for an immediate send. A delay
    postpones a send and does not change where it goes, so each delivery below takes
    it. The build read a static delay once, by the grammar every engine shares
@@ -215,6 +216,26 @@
                             sendTargetKnown = true
                         } else {
                             sendArgError = "<send> targetexpr could not be evaluated"
+                        }
+                    }
+{% endif %}
+{% if ecma_typeexpr %}
+                    // W3C SCXML 6.2: a typeexpr is the processor type, read from the engine now
+                    // (test 174: its current value, not the initial one). A value that is none of
+                    // the processors this platform has is the same error as one that cannot be
+                    // evaluated. The route stays the one the element was lowered for: a computed
+                    // type does not choose between the SCXML processor and BasicHTTP, whose
+                    // arguments differ, so a value naming BasicHTTP is refused here and not
+                    // delivered as an SCXML event it did not ask for.
+                    if sendArgError.isEmpty {
+                        if let sendType = evaluateText("{{ action.typeexpr | to_lua_expr | escape_swift }}") {
+                            if !isSupportedSendType(sendType) {
+                                sendArgError = "<send> typeexpr names a processor this platform does not support"
+                            } else if sendType.utf8.elementsEqual(basicHTTPEventProcessorType.utf8) {
+                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"
+                            }
+                        } else {
+                            sendArgError = "<send> typeexpr could not be evaluated"
                         }
                     }
 {% endif %}

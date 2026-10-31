@@ -854,32 +854,55 @@ fn a_namelist_name_the_document_does_not_declare_discards_the_send() {
     );
 }
 
-/// What a `<send>` computes with an expression is still refused by name.
+/// W3C SCXML 6.2: a `typeexpr` is read when the send runs, with the current value of what it names,
+/// and the machine refuses a value that is not a processor it has; the route is the one the element
+/// was lowered for, and a value naming BasicHTTP is refused and not delivered as an SCXML event.
 #[test]
-fn a_send_that_an_expression_computes_is_refused_by_name() {
-    for (what, send) in [
-        ("a typeexpr", r#"<send event="x" typeexpr="'scxml'"/>"#),
-        (
-            "a content expression over BasicHTTP",
-            r#"<send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost/x"><content expr="n"/></send>"#,
-        ),
-    ] {
-        let body = format!(
-            r#"<datamodel><data id="n" expr="1"/></datamodel>
-  <state id="s0"><onentry>{send}</onentry></state>"#
-        );
-        let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, &body), &[]);
-        assert_eq!(
-            status,
-            Some(7),
-            "{what} must be refused, not written: {said}"
-        );
-        assert!(machine.is_empty(), "{what} wrote a machine anyway");
-        assert!(
-            said.contains("<send") && said.contains("no Swift codegen path yet"),
-            "{what} is refused, but not by name: {said}"
-        );
-    }
+fn a_typeexpr_is_checked_when_the_send_runs() {
+    let body = r#"
+  <datamodel><data id="kind"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="kind" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+      <send event="e" typeexpr="kind"/>
+    </onentry>
+    <transition event="e" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"evaluateText("kind")"#) && machine.contains("isSupportedSendType("),
+        "the type is read from the engine and checked: {machine}"
+    );
+    assert!(
+        machine.contains("typeexpr names a processor this platform does not support")
+            && machine.contains("typeexpr names the BasicHTTP processor")
+            && machine.contains("typeexpr could not be evaluated"),
+        "each way the type can be refused is its own argument error: {machine}"
+    );
+}
+
+/// A BasicHTTP send's body is the form its `<param>`s make, so a `<content expr>` there has nowhere
+/// to go and is refused by name.
+#[test]
+fn a_content_expression_over_basic_http_is_refused_by_name() {
+    let body = r#"<datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0"><onentry><send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost/x"><content expr="n"/></send></onentry></state>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(
+        status,
+        Some(7),
+        "a content expression over BasicHTTP must be refused, not written: {said}"
+    );
+    assert!(
+        machine.is_empty(),
+        "a content expression over BasicHTTP wrote a machine anyway"
+    );
+    assert!(
+        said.contains("<send") && said.contains("no Swift codegen path yet"),
+        "it is refused, but not by name: {said}"
+    );
 }
 
 /// W3C SCXML B.2: any ECMAScript expression is a value, a function among them. The initialiser is
