@@ -366,8 +366,14 @@ public final class Test279Policy: InvocablePolicy {
     /// the assignment ran. A location that cannot be written, or a value that cannot be computed, is
     /// the caller's `error.execution`.
     private func assignData(_ location: String, _ value: String) -> Bool {
+        executeScript("\(location) = \(value)", name: "=assign")
+    }
+
+    /// W3C SCXML 5.8: runs a chunk already lowered to Lua in the session, and answers whether it ran.
+    /// A chunk that raises is the caller's `error.execution`.
+    private func executeScript(_ source: String, name: String) -> Bool {
         do {
-            try ensureLua().execute("\(location) = \(value)", name: "=assign")
+            try ensureLua().execute(source, name: name)
             return true
         } catch {
             return false
