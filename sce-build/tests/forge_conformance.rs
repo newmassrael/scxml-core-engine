@@ -2801,9 +2801,11 @@ fn forge_c11_codec_origin_choice() {
 /// that moved a byte of the default output would be caught by them, but one
 /// that made the option change something else would not.
 ///
-/// The origin projection is the last thing in the template. A change that put
-/// something after it would break the prefix test below, and that is a change
-/// to make deliberately rather than by accident.
+/// The origin projection is the last thing in the module: the last thing in a
+/// positional codec's template, and, for a CBOR codec, the text appended after
+/// the codec's source interface. A change that put something after it would
+/// break the prefix test below, and that is a change to make deliberately
+/// rather than by accident.
 #[test]
 fn the_origin_option_only_appends_the_origin_projection() {
     use sce_build::generator::Language::Rust;
@@ -2837,11 +2839,7 @@ fn the_origin_option_only_appends_the_origin_projection() {
         let (_, off) = &default.files[0];
         let (_, on) = &origin.files[0];
         checked += 1;
-        // A CBOR codec's owned mirror has no origin projection: the CBOR generator
-        // does not take the option, so its output is the same with it on, whatever
-        // the mirror holds (`a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror`).
-        let cbor = src.contains(r#"sce:encoding="cbor""#);
-        if off.contains("try_into_owned_in") && !cbor {
+        if off.contains("try_into_owned_in") {
             with_mirror += 1;
             assert!(
                 on.trim().starts_with(off.trim_end()) || on.starts_with(off.trim_end()),

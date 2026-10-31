@@ -31,12 +31,23 @@
 //!   neither has a map of scalars, which borrows nothing: one predicate
 //!   (`cbor_codec::rust_owned_mirror`) says it for the codec, the answer a
 //!   container is given for the element, and the fact a log is judged by.
+//! * With `generate --owned-origin` the mirror gains `try_into_owned_in_origin`, as
+//!   every other generated owned form does: a string is built by the profile's
+//!   `OriginStorage::str_from::<N>` and a byte string by `bytes_from::<N>`, each
+//!   at the entry's capacity and given the origin the view was decoded from, an
+//!   entry that may be absent only when present, and every other entry as the
+//!   copying projection moves it. The text is appended after the module the default
+//!   output is, and a map with no mirror is the same with the option on.
+
+use std::path::Path;
 
 use sce_build::forge::cbor_codec::{has_unbounded_text_or_bytes, rust_owned_mirror};
 use sce_build::forge::model::{CodecModel, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::generator::Language;
-use sce_build::{compile_forge_from_string, DocumentLabel};
+use sce_build::{
+    compile_forge_from_string, compile_forge_with_imports, DocumentLabel, ForgeCompileOptions,
+};
 
 /// A CBOR codec in codec format 2 whose `<datamodel>` holds `entries` verbatim.
 fn document(root_attrs: &str, entries: &str) -> String {
@@ -96,6 +107,23 @@ fn codec(text: &str) -> CodecModel {
 fn generated(text: &str) -> String {
     let output = compile_forge_from_string(text, label(), Language::Rust)
         .unwrap_or_else(|e| panic!("rust generates the codec: {e:?}"));
+    output
+        .files
+        .into_iter()
+        .find(|(name, _)| name == "probe_cbor.rs")
+        .map(|(_, code)| code)
+        .expect("the codec's module")
+}
+
+/// The generated Rust of the codec `text`, with `--owned-origin` on or off.
+fn generated_with_origin(text: &str, owned_origin: bool) -> String {
+    let options = ForgeCompileOptions {
+        owned_origin,
+        ..ForgeCompileOptions::default()
+    };
+    let output =
+        compile_forge_with_imports(text, label(), Language::Rust, Path::new("."), &options)
+            .unwrap_or_else(|e| panic!("rust generates the codec: {e:?}"));
     output
         .files
         .into_iter()
@@ -212,4 +240,111 @@ fn a_map_with_no_bound_on_one_entry_or_no_borrow_has_no_mirror() {
     // The map that borrows and has no mirror keeps its view as it was.
     let code = generated(&document("", ONLY_UNBOUNDED));
     assert_holds(&code, &["pub struct ProbeCbor<'a> {"]);
+}
+
+#[test]
+fn the_origin_projection_has_the_signature_every_other_owned_form_has() {
+    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    assert_holds(
+        &code,
+        &[
+            // The same method, over the same origin parameter, for a profile that is an
+            // `OriginStorage`; the copying projection is still there beside it.
+            "pub fn try_into_owned_in_origin<S: ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<ProbeCborOwned<S>, CodecError> {\n        Ok(ProbeCborOwned {",
+            "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+        ],
+    );
+}
+
+#[test]
+fn the_origin_projection_builds_text_and_bytes_through_the_profile_at_each_capacity() {
+    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    assert_holds(
+        &code,
+        &[
+            // A string by `str_from` and a byte string by `bytes_from`, at the capacity
+            // of the entry, which for an exact byte string is its length, and given the
+            // origin; the other entries move as they do in the copying projection.
+            "            note: <S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<8>(origin, self.note)?,",
+            "            blob: <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<12>(origin, self.blob)?,",
+            "            tag: <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<4>(origin, self.tag)?,",
+            "            level: self.level,\n            urgent: self.urgent,\n        })",
+        ],
+    );
+}
+
+#[test]
+fn the_origin_projection_builds_an_optional_entry_only_when_it_is_present() {
+    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    assert_holds(
+        &code,
+        &[
+            "            label: self.label.map(|_v| <S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<5>(origin, _v)).transpose()?,",
+            "            extra: self.extra.map(|_v| <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<6>(origin, _v)).transpose()?,",
+        ],
+    );
+}
+
+#[test]
+fn the_default_output_has_no_origin_projection() {
+    // `--owned-origin` is the only thing that writes it.
+    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), false);
+    for absent in [
+        "try_into_owned_in_origin",
+        "OriginStorage",
+        "str_from",
+        "bytes_from",
+    ] {
+        // None of these is a name the default module has: it copies through
+        // `from_view` and `from_slice`.
+        assert!(
+            !code.contains(absent),
+            "`{absent}` in the default output:\n{code}"
+        );
+    }
+    // The copying projection is the one the default output has.
+    assert_holds(
+        &code,
+        &["pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>"],
+    );
+}
+
+#[test]
+fn the_option_only_appends_the_projection_to_a_map_with_a_mirror() {
+    for (root, entries) in [
+        (MAY_FAIL, BOUNDED),
+        (MAY_FAIL, ONE_UNBOUNDED),
+        ("", ONLY_UNBOUNDED),
+        ("", SCALARS),
+    ] {
+        let text = document(root, entries);
+        let off = generated_with_origin(&text, false);
+        let on = generated_with_origin(&text, true);
+        if rust_owned_mirror(&codec(&text)) {
+            // The module without the option is the beginning of the module with it, and
+            // what follows is the projection, written after the source interface.
+            let head = off.trim_end();
+            assert!(
+                on.starts_with(head),
+                "the option changed the default output:\n{on}"
+            );
+            let tail = on[head.len()..].trim_start();
+            assert!(
+                tail.starts_with("// ── Owned projection with an origin (`--owned-origin`)"),
+                "the text the option adds is the projection:\n{tail}"
+            );
+            assert!(tail.contains("try_into_owned_in_origin"), "{tail}");
+            let source = on
+                .find("pub trait ProbeCborSource {")
+                .expect("the source interface");
+            let projection = on.find("try_into_owned_in_origin").expect("the projection");
+            assert!(
+                source < projection,
+                "the projection comes after the source interface"
+            );
+        } else {
+            // A map with no mirror has no owned form to project into.
+            assert_eq!(on, off, "{entries}");
+        }
+    }
 }
