@@ -74,8 +74,10 @@ PY
 # the other row.
 mutation_case "every narrow row is given the ownership-only publisher" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),''',
-     r'''        ownership_only => row != RustBroadcastLogRow::Wide,''')
+     r'''        narrow => row != RustBroadcastLogRow::Wide,
+        ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),''',
+     r'''        narrow => row != RustBroadcastLogRow::Wide,
+        ownership_only => row != RustBroadcastLogRow::Wide,''')
 PY
 
 # The pause the module states is the longest the stamp covers for the log's own retention:
@@ -86,11 +88,13 @@ PY
 # (`begins at most 2147483632 publishes`).
 mutation_case "the pause the module states counts one slot more than the log keeps" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits),
+        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
             crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
             inputs.retention,
         ),''',
-     r'''        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits),
+        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
             crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
             inputs.retention + 1,
         ),''')
