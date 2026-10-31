@@ -1,9 +1,35 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# Transform kind: pure static function(s) of its unit, a single output or a compound one.
-   A document that reads a field through previous() keeps a holder, which the generator
-   refuses (`swift_transform_unlowered`), so none reaches this fragment. #}
+{# Transform kind: pure static function(s) of its unit, a single output or a compound one;
+   or, for a document that reads a field through previous(), its holder driven through the
+   oracle's sequence twice: from a new holder, then after reset(). Both passes are held to
+   the same oracle, which is what says reset() restores every kept value. #}
+{% if f.holder %}
+    let steps = try oracleArray(try oracleSpec("{{ f.ref_section }}", "{{ f.name }}").member("sequence"))
+    let holder = {{ f.holder.new }}()
+    for pass in 0..<2 {
+        if pass == 1 {
+            holder.{{ f.holder.reset }}()
+        }
+        for (i, step) in steps.enumerated() {
+            let args = try oracleArray(step.member("args"))
+{% for arg_ty in f.args %}
+            let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+            let expected = step.member("expected")
+            let out = holder.{{ f.holder.update }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% for co in f.compound_outputs %}
+            let expected_{{ co.key }} = {{ ("expected?.member(\"" ~ co.key ~ "\")") | swift_unmarshal(co["type"]) }}
+{% if co.compare == "tolerance" %}
+            expectClose(Double(out.{{ co.field }}), Double(expected_{{ co.key }}), "{{ f.name }} pass \(pass) step \(i) {{ co.key }}")
+{% else %}
+            #expect(out.{{ co.field }} == expected_{{ co.key }}, "{{ f.name }} pass \(pass) step \(i) {{ co.key }}")
+{% endif %}
+{% endfor %}
+        }
+    }
+{% else %}
     for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
         let args = try oracleArray(testCase.member("args"))
 {% for arg_ty in f.args %}
@@ -30,3 +56,4 @@
 {% endfor %}
 {% endif %}
     }
+{% endif %}

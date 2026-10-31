@@ -5,8 +5,10 @@
 // function of the caseless enum the document's `<Pascal>` names for each output, lowerCamelCase
 // as Kotlin's, over the document's inputs, each named by the signature as the author wrote it.
 //
-// A transform that reads a value through `previous()` keeps it between activations in a holder
-// object, which a Swift unit has not spelled: it is refused by name, never written without it.
+// A transform that reads a value through `previous()` keeps it between activations: its unit is a
+// final class holding the kept values, with `reset()` and `update(...)` returning a record of the
+// outputs. A value the host restores (`sce:retain`) has no Swift constructor yet: it is refused by
+// name, never written without it.
 
 use std::path::{Path, PathBuf};
 
@@ -67,11 +69,57 @@ fn a_physical_quantity_is_documented_beside_the_function_that_reads_it() {
 }
 
 #[test]
-fn a_transform_that_keeps_a_value_between_activations_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/transform_previous_value.scxml")
-        .expect_err("a holder is not written yet");
+fn a_transform_that_keeps_a_value_between_activations_is_a_final_class_with_reset_and_update() {
+    let code = swift_of("tests/forge/resources/transform_previous_value.scxml")
+        .expect("a holder is written");
     assert!(
-        refusal.contains("a value read through `previous()`"),
+        code.contains("public final class TransformPreviousValue {"),
+        "the unit is the holder: {code}"
+    );
+    assert!(code.contains("public init() {}"), "{code}");
+    assert!(code.contains("public func reset() {"), "{code}");
+    assert!(
+        code.contains(") -> TransformPreviousValueOutputs {"),
+        "an activation answers a record of the outputs: {code}"
+    );
+    assert!(
+        code.contains("public struct TransformPreviousValueOutputs: Equatable, Sendable {"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_value_the_host_restores_is_refused_by_name() {
+    // A retained count read through `previous()`: the holder would start from a stored value.
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("a_swift_transform_unit");
+    std::fs::create_dir_all(&dir).expect("a directory under the target tree");
+    let document = dir.join("stored.scxml");
+    std::fs::write(
+        &document,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="stored">
+  <datamodel>
+    <data id="step" sce:type="int32" sce:direction="in"/>
+    <data id="count" sce:type="int32" sce:direction="out" sce:retain="nvm"
+          sce:initial="0" expr="previous(count) + step"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("write the document");
+    let refusal = compile_forge_file(
+        &document,
+        Language::Swift,
+        &[],
+        &ForgeCompileOptions::default(),
+    )
+    .map(|_| ())
+    .map_err(|e| format!("{e:?}"));
+    std::fs::remove_dir_all(&dir).expect("remove the document");
+    let refusal = refusal.expect_err("a restored holder is not written yet");
+    assert!(
+        refusal.contains("`sce:retain`"),
         "the refusal names the construct: {refusal}"
     );
 }

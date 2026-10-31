@@ -8,16 +8,33 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
+{% if holder %}
+// A formula per output: a static function of the final class `{{ struct_name }}` for each, a
+// file of the module that calls them. A call is qualified by the class
+// (`{{ struct_name }}.<function>(…)`), which a member of the calling type cannot hide as it would
+// hide a free function of the same name. An output that reads another output calls its function.
+//
+// A document that reads a field through `previous()` keeps the values it reads from one
+// activation to the next, so the unit is a class that holds them: its functions are still static,
+// each taking the kept values as trailing parameters, and `{{ holder.symbols.update }}` is one
+// activation, which computes every output from this activation's inputs and the kept values and
+// only then replaces each kept value by what its field holds now.
+{% else %}
 // A formula per output: a static function of the caseless enum `{{ struct_name }}` for each, a
 // file of the module that calls them. A call is qualified by the enum
 // (`{{ struct_name }}.<function>(…)`), which a member of the calling type cannot hide as it would
 // hide a free function of the same name. An output that reads another output calls its function.
+{% endif %}
 {% if swift_uses_forge_runtime %}
 
 import SceForgeRuntime
 {% endif %}
 
+{% if holder %}
+public final class {{ struct_name }} {
+{% else %}
 public enum {{ struct_name }} {
+{% endif %}
 {% for func in functions %}
 
 {% if func.param_quantities or func.output_quantity %}
@@ -36,4 +53,53 @@ public enum {{ struct_name }} {
         {{ func.expr }}
     }
 {% endfor %}
+{% if holder %}
+
+{% for c in holder.cells %}
+{% if c.is_string %}
+    private var {{ c.name }}: {{ c.type }} = "{{ c.initial_text | escape_swift }}"
+{% else %}
+    private var {{ c.name }}: {{ c.type }} = {{ c.initial }}
+{% endif %}
+{% endfor %}
+
+    public init() {}
+
+    /// Every kept value back to its field's `sce:initial`.
+    public func {{ holder.symbols.reset }}() {
+{% for c in holder.cells %}
+{% if c.is_string %}
+        self.{{ c.name }} = "{{ c.initial_text | escape_swift }}"
+{% else %}
+        self.{{ c.name }} = {{ c.initial }}
+{% endif %}
+{% endfor %}
+    }
+
+    /// One activation.
+    public func {{ holder.symbols.update }}({{ holder.input_params }}) -> {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+        let {{ o.name }} = {{ struct_name }}.{{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}self.{{ c.name }}{% endfor %})
+{% endfor %}
+{% for c in holder.cells %}
+        self.{{ c.name }} = {{ c.source }}
+{% endfor %}
+        return {{ holder.symbols.outputs }}({% for o in holder.outputs %}{{ o.field }}: {{ o.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+    }
+{% endif %}
 }
+{% if holder %}
+
+/// Every output of one activation.
+public struct {{ holder.symbols.outputs }}: Equatable, Sendable {
+{% for o in holder.outputs %}
+    public let {{ o.field }}: {{ o.type }}
+{% endfor %}
+
+    public init({% for o in holder.outputs %}{{ o.field }}: {{ o.type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for o in holder.outputs %}
+        self.{{ o.field }} = {{ o.field }}
+{% endfor %}
+    }
+}
+{% endif %}

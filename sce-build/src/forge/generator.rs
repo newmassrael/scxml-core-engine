@@ -2316,8 +2316,7 @@ fn transform_holder_context(
     };
     let self_name = fresh(
         match lang {
-            crate::generator::Language::Swift => no_swift_emitter("transform_holder_context"),
-            crate::generator::Language::Python => "self",
+            crate::generator::Language::Swift | crate::generator::Language::Python => "self",
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
@@ -25494,12 +25493,17 @@ fn swift_validator_refusal(m: &ValidatorModel, construct: &str) -> String {
 }
 
 /// What of the transform `m` the Swift backend does not lower yet, described for a refusal by
-/// name (`generate/unsupported-feature`): a value read through `previous()`, which a transform
-/// keeps from one activation to the next in a holder object, which a Swift unit has not spelled.
-/// A transform of pure output functions is lowered.
+/// name (`generate/unsupported-feature`): a value read through `previous()` that is also
+/// retained (`sce:retain`), which the host stores and hands back to a holder through a
+/// `restored` constructor a Swift unit has not spelled. A transform of pure output functions
+/// is lowered, and so is one whose values read through `previous()` are kept by a holder.
 pub(crate) fn swift_transform_unlowered(m: &TransformModel) -> Option<String> {
-    (!crate::forge::previous_value::cells(m).is_empty())
-        .then(|| "a value read through `previous()`, which a holder keeps".to_string())
+    crate::forge::previous_value::cells(m)
+        .iter()
+        .any(|cell| cell.param.retain.is_some())
+        .then(|| {
+            "a value read through `previous()` that the host restores (`sce:retain`)".to_string()
+        })
 }
 
 /// The refusal of the transform `m` for the Swift construct `construct` it holds
@@ -29469,9 +29473,8 @@ impl LangCtx {
                         | crate::generator::Language::C11,
                         false,
                     ) => "false".into(),
-                    (crate::generator::Language::Swift, _) => {
-                        no_swift_emitter("LangCtx::initial_expr")
-                    }
+                    (crate::generator::Language::Swift, true) => "true".into(),
+                    (crate::generator::Language::Swift, false) => "false".into(),
                 }
             }
             ty if ty.is_numeric() => {
@@ -34390,7 +34393,18 @@ pub(crate) fn forge_transform_holder_symbols(
             restored: restored("restored".to_string()),
             holder: pascal,
         },
-        Language::Swift => no_swift_emitter("forge_transform_holder_symbols"),
+        // The unit's own class holds the values and answers the record: the class takes
+        // the unit's name, as a Kotlin holder does, and its initializer is the type.
+        // `restored` has no Swift spelling yet, so a document with a retained field is
+        // refused ([`swift_transform_unlowered`]) and `restorable` is never true here.
+        Language::Swift => TransformHolderSymbols {
+            outputs: format!("{pascal}Outputs"),
+            new: pascal.clone(),
+            reset: "reset".to_string(),
+            update: "update".to_string(),
+            restored: None,
+            holder: pascal,
+        },
     }
 }
 
