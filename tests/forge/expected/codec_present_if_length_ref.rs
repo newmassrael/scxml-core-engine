@@ -25,8 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecPresentIfLengthRef<'a> {
     pub flags: u8,
-    pub payload_size: u8,
-    pub payload: Option<&'a [u8]>,
+    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<&'a [u8]>,
 }
 
 #[allow(dead_code)]
@@ -97,8 +96,7 @@ impl<'a> CodecPresentIfLengthRef<'a> {
             None
         };
         _out.flags = flags;
-        _out.payload_size = payload_size;
-        _out.payload = payload;
+        _out.flags_has_payload = if (flags & 0x01u8) != 0 { CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: payload.unwrap_or_default() } } else { CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } };
         Ok(())
     }
 
@@ -158,6 +156,32 @@ impl<'a> CodecPresentIfLengthRef<'a> {
     }
 }
 
+/// The fields `flags.has_payload` decides (docs/adr/0065 §6 R4b): a value holds the
+/// ones present while it holds, or the ones present while it does not,
+/// and `CodecPresentIfLengthRef` derives `flags.has_payload` from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecPresentIfLengthRefFlagsHasPayload<Payload> {
+    /// While `flags.has_payload` holds.
+    HasPayload {
+        /// The `payload` field.
+        payload: Payload,
+    },
+    /// While `flags.has_payload` does not hold.
+    NotHasPayload {
+        /// The `payload_size` field.
+        payload_size: u8,
+    },
+}
+
+impl<Payload: Default> Default for CodecPresentIfLengthRefFlagsHasPayload<Payload> {
+    /// The side present while `flags.has_payload` does not hold, each field at its
+    /// type's default.
+    fn default() -> Self {
+        Self::NotHasPayload { payload_size: Default::default(), }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfLengthRef` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecPresentIfLengthRef`
@@ -165,21 +189,16 @@ impl<'a> CodecPresentIfLengthRef<'a> {
 pub trait CodecPresentIfLengthRefSource {
     /// The `flags` field.
     fn flags(&self) -> u8;
-    /// The `payload_size` field.
-    fn payload_size(&self) -> Option<u8>;
-    /// The `payload` field.
-    fn payload(&self) -> Option<&[u8]>;
+    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4b).
+    fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]>;
 }
 
 impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource for &T {
     fn flags(&self) -> u8 {
         (**self).flags()
     }
-    fn payload_size(&self) -> Option<u8> {
-        (**self).payload_size()
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        (**self).payload()
+    fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]> {
+        (**self).flags_has_payload()
     }
 }
 
@@ -191,45 +210,43 @@ impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource fo
 pub struct CodecPresentIfLengthRefParts<'a> {
     /// The `flags` field.
     pub flags: u8,
-    /// The `payload_size` field.
-    pub payload_size: Option<u8>,
-    /// The `payload` field.
-    pub payload: Option<&'a [u8]>,
+    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4b).
+    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<&'a [u8]>,
 }
 
 impl<'a> CodecPresentIfLengthRefSource for CodecPresentIfLengthRefParts<'a> {
+    fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]> {
+        match &self.flags_has_payload {
+            CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: *payload },
+            CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: *payload_size },
+        }
+    }
     fn flags(&self) -> u8 {
         self.flags
-    }
-    fn payload_size(&self) -> Option<u8> {
-        self.payload_size
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload
     }
 }
 
 impl<'a> CodecPresentIfLengthRefSource for CodecPresentIfLengthRef<'a> {
+    fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]> {
+        match &self.flags_has_payload {
+            CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: *payload },
+            CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: *payload_size },
+        }
+    }
     fn flags(&self) -> u8 {
         self.flags
-    }
-    fn payload_size(&self) -> Option<u8> {
-        if self.payload.is_none() { Some(self.payload_size) } else { None }
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecPresentIfLengthRefSource for CodecPresentIfLengthRefOwned<S> {
+    fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]> {
+        match &self.flags_has_payload {
+            CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload) },
+            CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: *payload_size },
+        }
+    }
     fn flags(&self) -> u8 {
         self.flags
-    }
-    fn payload_size(&self) -> Option<u8> {
-        if self.payload.is_none() { Some(self.payload_size) } else { None }
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
     }
 }
 
@@ -247,26 +264,24 @@ impl<'a> CodecPresentIfLengthRef<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecPresentIfLengthRefSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _p_flags_has_payload_0: bool = src.payload().is_some();
-        let _n_d_payload_size_0: usize = match src.payload() {
+        let (_m_payload, _m_payload_size) = match src.flags_has_payload() {
+            CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => (Some(payload), None),
+            CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => (None, Some(payload_size)),
+        };
+        let _p_flags_has_payload_0: bool = _m_payload.is_some();
+        let _n_d_payload_size_0: usize = match _m_payload {
             Some(_v) => _v.len(),
             None => 0,
         };
-        let _f_d_payload_size: Option<usize> = if src.payload().is_some() { Some(_n_d_payload_size_0) } else { None };
+        let _f_d_payload_size: Option<usize> = if _m_payload.is_some() { Some(_n_d_payload_size_0) } else { None };
         let _d_payload_size: u8 = match _f_d_payload_size {
-            Some(_n) => {
-                let _d = u8::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;
-                if src.payload_size().is_some_and(|_s| _s != _d) {
-                    return Err(CodecError::InconsistentSource);
-                }
-                _d
-            }
-            None => src.payload_size().unwrap_or_default(),
+            Some(_n) => u8::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?,
+            None => _m_payload_size.unwrap_or_default(),
         };
         let _c_flags: u8 = (src.flags() & !0x1) | u8::from(_p_flags_has_payload_0);
         w.write_u8(_c_flags)?;
         w.write_u8(_d_payload_size)?;
-        if let Some(_v) = src.payload() {
+        if let Some(_v) = _m_payload {
             w.write_bytes(_v)?;
         }
         Ok(())
@@ -348,8 +363,7 @@ impl<'a> CodecPresentIfLengthRef<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecPresentIfLengthRefOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub flags: u8,
-    pub payload_size: u8,
-    pub payload: Option<S::Bytes<32>>,
+    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<S::Bytes<32>>,
 }
 
 #[allow(dead_code)]
@@ -381,8 +395,7 @@ impl<'a> CodecPresentIfLengthRef<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecPresentIfLengthRefOwned<S>, CodecError> {
         Ok(CodecPresentIfLengthRefOwned {
             flags: self.flags,
-            payload_size: self.payload_size,
-            payload: self.payload.map(<S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
+            flags_has_payload: match self.flags_has_payload { CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: <S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(payload)? }, CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size }, },
         })
     }
 
@@ -418,8 +431,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecPresentIfLengthRefOwned<S
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecPresentIfLengthRef<'o>) {
         _out.flags = self.flags;
-        _out.payload_size = self.payload_size;
-        _out.payload = self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        match &self.flags_has_payload {
+            CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => {
+                let mut _o_payload: &'o [u8] = Default::default();
+                _o_payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload);
+                _out.flags_has_payload = CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: _o_payload };
+            }
+            CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size } => {
+                let mut _o_payload_size: u8 = Default::default();
+                _o_payload_size = *payload_size;
+                _out.flags_has_payload = CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: _o_payload_size };
+            }
+        }
         
     }
 

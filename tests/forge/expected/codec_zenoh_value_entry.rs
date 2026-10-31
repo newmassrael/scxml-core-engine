@@ -415,7 +415,6 @@ impl<'a> CodecZenohValueEntry<'a> {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecZenohValueEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src, after_shm)?;
         Self::write_source(src, w, after_shm)
     }
 
@@ -442,12 +441,18 @@ impl<'a> CodecZenohValueEntry<'a> {
         if let Some(_o) = over.header_z {
             _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
         }
+        {
+            let _h: bool = after_shm != 0;
+            if match src.body() { CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b) => CodecZenohValueZbuf::input_after_shm(_b) != _h, _ => false, } {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        }
         let _ = after_shm;
         w.write_u8(_c_header)?;
         match src.body() {
             CodecZenohValueEntryVariantSource::CodecZenohExtUnit(_b) => CodecZenohExtUnit::write_source(_b, w)?,
             CodecZenohValueEntryVariantSource::CodecZenohExtZint(_b) => CodecZenohExtZint::write_source(_b, w)?,
-            CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b) => CodecZenohValueZbuf::write_source(_b, w, after_shm)?,
+            CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b) => CodecZenohValueZbuf::write_source(_b, w)?,
             CodecZenohValueEntryVariantSource::Default { body: _b, .. } => CodecZenohExtUnit::write_source(_b, w)?,
         }
         Ok(())

@@ -25,8 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainFlagEntry {
     pub header: u8,
-    pub short_value: Option<u8>,
-    pub long_value: Option<u16>,
+    pub wide: CodecChainFlagEntryWide,
 }
 
 #[allow(dead_code)]
@@ -103,8 +102,7 @@ impl CodecChainFlagEntry {
             None
         };
         _out.header = header;
-        _out.short_value = short_value;
-        _out.long_value = long_value;
+        _out.wide = if (wide & 0x01u8) != 0 { CodecChainFlagEntryWide::Wide { long_value: long_value.unwrap_or_default() } } else { CodecChainFlagEntryWide::NotWide { short_value: short_value.unwrap_or_default() } };
         Ok(())
     }
 
@@ -140,35 +138,58 @@ impl CodecChainFlagEntry {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 4;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, wide: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, wide)
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, wide: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, wide)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+}
+
+/// The fields `wide` decides (docs/adr/0065 §6 R4b): a value holds the
+/// ones present while it holds, or the ones present while it does not,
+/// and `CodecChainFlagEntry` derives `wide` from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecChainFlagEntryWide {
+    /// While `wide` holds.
+    Wide {
+        /// The `long_value` field.
+        long_value: u16,
+    },
+    /// While `wide` does not hold.
+    NotWide {
+        /// The `short_value` field.
+        short_value: u8,
+    },
+}
+
+impl Default for CodecChainFlagEntryWide {
+    /// The side present while `wide` does not hold, each field at its
+    /// type's default.
+    fn default() -> Self {
+        Self::NotWide { short_value: Default::default(), }
     }
 }
 
@@ -198,21 +219,16 @@ impl CodecChainFlagEntryOverrides {
 pub trait CodecChainFlagEntrySource {
     /// The `header` field.
     fn header(&self) -> u8;
-    /// The `short_value` field.
-    fn short_value(&self) -> Option<u8>;
-    /// The `long_value` field.
-    fn long_value(&self) -> Option<u16>;
+    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4b).
+    fn wide(&self) -> CodecChainFlagEntryWide;
 }
 
 impl<T: CodecChainFlagEntrySource + ?Sized> CodecChainFlagEntrySource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn short_value(&self) -> Option<u8> {
-        (**self).short_value()
-    }
-    fn long_value(&self) -> Option<u16> {
-        (**self).long_value()
+    fn wide(&self) -> CodecChainFlagEntryWide {
+        (**self).wide()
     }
 }
 
@@ -224,33 +240,25 @@ impl<T: CodecChainFlagEntrySource + ?Sized> CodecChainFlagEntrySource for &T {
 pub struct CodecChainFlagEntryParts {
     /// The `header` field.
     pub header: u8,
-    /// The `short_value` field.
-    pub short_value: Option<u8>,
-    /// The `long_value` field.
-    pub long_value: Option<u16>,
+    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4b).
+    pub wide: CodecChainFlagEntryWide,
 }
 
 impl CodecChainFlagEntrySource for CodecChainFlagEntryParts {
+    fn wide(&self) -> CodecChainFlagEntryWide {
+        self.wide
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn short_value(&self) -> Option<u8> {
-        self.short_value
-    }
-    fn long_value(&self) -> Option<u16> {
-        self.long_value
     }
 }
 
 impl CodecChainFlagEntrySource for CodecChainFlagEntry {
+    fn wide(&self) -> CodecChainFlagEntryWide {
+        self.wide
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn short_value(&self) -> Option<u8> {
-        self.short_value
-    }
-    fn long_value(&self) -> Option<u16> {
-        self.long_value
     }
 }
 
@@ -259,38 +267,42 @@ impl CodecChainFlagEntry {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecChainFlagEntrySource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source(src, w, wide)
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        Self::write_source(src, w)
+    }
+
+    /// The flag-input `wide` that `src` says: set exactly when the value holds the side of `wide` present while it holds.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_wide<S: CodecChainFlagEntrySource + ?Sized>(src: &S) -> bool {
+        matches!(CodecChainFlagEntrySource::wide(src), CodecChainFlagEntryWide::Wide { .. })
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, wide, &CodecChainFlagEntryOverrides::default())
+    pub fn write_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        Self::write_source_in(src, w, &CodecChainFlagEntryOverrides::default())
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
     /// ones `src` presents.
     #[doc(hidden)]
-    pub fn write_source_in<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8, over: &CodecChainFlagEntryOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source_in<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainFlagEntryOverrides) -> Result<(), K::Error> {
+        let (_m_long_value, _m_short_value) = match src.wide() {
+            CodecChainFlagEntryWide::Wide { long_value } => (Some(long_value), None),
+            CodecChainFlagEntryWide::NotWide { short_value } => (None, Some(short_value)),
+        };
         let mut _c_header: u8 = src.header();
         if let Some(_o) = over.header_z {
             _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
         }
-        if ((wide & 0x1) == 0) != src.short_value().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if ((wide & 0x1) != 0) != src.long_value().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        let _ = wide;
         w.write_u8(_c_header)?;
-        if let Some(_v) = src.short_value() {
+        if let Some(_v) = _m_short_value {
             w.write_u8(_v)?;
         }
-        if let Some(_v) = src.long_value() {
+        if let Some(_v) = _m_long_value {
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
             w.write_u8((_v & 0xFF) as u8)?;
         }
@@ -300,9 +312,38 @@ impl CodecChainFlagEntry {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecChainFlagEntrySource + ?Sized>(src: &S, wide: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecChainFlagEntrySource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, wide)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
+    }
+}
+
+impl<S: CodecChainFlagEntrySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainFlagEntry {
+    type Error<E> = E;
+
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl CodecChainFlagEntry {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecChainFlagEntrySource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
+    }
+
+    /// Write `src` into `window` in one pass and return the bytes it is, for a
+    /// window as large as the caller can spare. On an error the window holds a
+    /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].
+    pub fn write_window<S: CodecChainFlagEntrySource + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+        let mut sink = ::sce_forge_runtime::codec::SliceSink::new(window);
+        Self::write_source(src, &mut sink)?;
+        Ok(sink.position())
     }
 }

@@ -246,7 +246,6 @@ impl CodecChainFlagCarrier {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecChainFlagCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -265,9 +264,15 @@ impl CodecChainFlagCarrier {
         if let Some(_o) = over.head_w {
             _c_head = (_c_head & !0x1) | u8::from(_o);
         }
+        {
+            let _h: bool = (_c_head & 0x1) != 0;
+            if src.entries().any(|_e| CodecChainFlagEntry::input_wide(&_e) != _h) {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        }
         w.write_u8(_c_head)?;
         for (_i, _e) in src.entries().enumerate() {
-            CodecChainFlagEntry::write_source_in(&_e, w, _c_head & 0x1, &super::codec_chain_flag_entry::CodecChainFlagEntryOverrides::header_z(_i + 1 < _k_entries))?;
+            CodecChainFlagEntry::write_source_in(&_e, w, &super::codec_chain_flag_entry::CodecChainFlagEntryOverrides::header_z(_i + 1 < _k_entries))?;
         }
         Ok(())
     }

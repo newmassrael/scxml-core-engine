@@ -257,7 +257,6 @@ impl CodecRepeatFlagGated {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecRepeatFlagGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -279,13 +278,19 @@ impl CodecRepeatFlagGated {
         if let Some(_o) = over.head_w {
             _c_head = (_c_head & !0x1) | u8::from(_o);
         }
+        {
+            let _h: bool = (_c_head & 0x1) != 0;
+            if src.entries().is_some_and(|mut _l| _l.any(|_e| CodecChainFlagEntry::input_wide(&_e) != _h)) {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        }
         w.write_u8(_c_head)?;
         if (_c_head & 0x2) != 0 {
             w.write_u8(_d_count)?;
         }
         if let Some(_v) = src.entries() {
             for _e in _v {
-                CodecChainFlagEntry::write_source(&_e, w, _c_head & 0x1)?;
+                CodecChainFlagEntry::write_source(&_e, w)?;
             }
         }
         Ok(())

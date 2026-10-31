@@ -248,7 +248,6 @@ impl CodecChainPrevCarrier {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecChainPrevCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -273,11 +272,18 @@ impl CodecChainPrevCarrier {
                 return Err(CodecError::PresentIfMismatch);
             }
         }
+        {
+            let mut _prev: bool = false;
+            for _e in src.entries() {
+                if CodecChainPrevEntry::input_after_marker(&_e) != _prev {
+                    return Err(CodecError::PresentIfMismatch);
+                }
+                _prev = (u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0xF) == 4u64;
+            }
+        }
         w.write_u8(_c_head)?;
-        let mut _prev_after_marker: u8 = 0;
         for (_i, _e) in src.entries().enumerate() {
-            CodecChainPrevEntry::write_source_in(&_e, w, _prev_after_marker, &super::codec_chain_prev_entry::CodecChainPrevEntryOverrides::header_z(_i + 1 < _k_entries))?;
-            _prev_after_marker = u8::from((u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0xF) == 4u64);
+            CodecChainPrevEntry::write_source_in(&_e, w, &super::codec_chain_prev_entry::CodecChainPrevEntryOverrides::header_z(_i + 1 < _k_entries))?;
         }
         Ok(())
     }

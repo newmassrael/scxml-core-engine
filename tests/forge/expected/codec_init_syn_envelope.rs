@@ -193,35 +193,32 @@ impl CodecInitSynEnvelope {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 5;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -247,25 +244,6 @@ impl<'s, A0: ?Sized, D: ?Sized> CodecInitSynEnvelopeVariantSource<'s, A0, D> {
             Self::CodecInitSynBody(_) => 1,
             Self::Default { tag, .. } => tag.get(),
         }
-    }
-}
-
-/// Flags of `CodecInitSynEnvelope` a parent sets in place of the ones a value presents:
-/// the end flag of a chain whose entries are `CodecInitSynEnvelope`, which the chain
-/// derives from where an entry stands.
-#[doc(hidden)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CodecInitSynEnvelopeOverrides {
-    /// The `S` flag of `header`, when a parent sets it.
-    pub header_s: Option<bool>,
-}
-
-#[allow(dead_code)]
-impl CodecInitSynEnvelopeOverrides {
-    /// Sets `S` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_s(value: bool) -> Self {
-        Self { header_s: Some(value), ..Self::default() }
     }
 }
 
@@ -339,10 +317,9 @@ impl CodecInitSynEnvelope {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecInitSynEnvelopeSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
@@ -353,23 +330,18 @@ impl CodecInitSynEnvelope {
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, &CodecInitSynEnvelopeOverrides::default())
-    }
-
-    /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
-    #[doc(hidden)]
-    pub fn write_source_in<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecInitSynEnvelopeOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _d_header_mid: u8 = src.body().tag();
-        let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
-        if let Some(_o) = over.header_s {
-            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
-        }
+        let _n_d_header_s_arm: usize = match src.body() {
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => usize::from(CodecInitSynBody::input_s(_b)),
+            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => usize::from(CodecInitSynBody::input_s(_b)),
+        };
+        let _v_header_s: u8 = _n_d_header_s_arm as u8;
+        let _c_header: u8 = (((src.header() & !0x1F) | _d_header_mid) & !0x40) | (_v_header_s << 6);
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => CodecInitSynBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
-            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => CodecInitSynBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => CodecInitSynBody::write_source(_b, w)?,
+            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => CodecInitSynBody::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -377,17 +349,17 @@ impl CodecInitSynEnvelope {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecInitSynEnvelopeSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecInitSynEnvelopeSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<S: CodecInitSynEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecInitSynEnvelope {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -395,10 +367,12 @@ impl<S: CodecInitSynEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceW
 #[allow(dead_code)]
 impl CodecInitSynEnvelope {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecInitSynEnvelopeSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecInitSynEnvelopeSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a

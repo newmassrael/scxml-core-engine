@@ -281,35 +281,32 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 274;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -487,10 +484,9 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecZenohDeclarationSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
@@ -501,14 +497,14 @@ impl<'a> CodecZenohDeclaration<'a> {
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source_in(src, w, &CodecZenohDeclarationOverrides::default())
     }
 
     /// [`Self::write_source`] with the flags a parent sets in place of the
     /// ones `src` presents.
     #[doc(hidden)]
-    pub fn write_source_in<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclarationOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source_in<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclarationOverrides) -> Result<(), K::Error> {
         let _d_header_mid: u8 = src.body().tag();
         let _o_d_header_n_arm: Option<usize> = match src.body() {
             CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => Some(usize::from(CodecZenohDeclKexpr::input_n(_b))),
@@ -520,6 +516,7 @@ impl<'a> CodecZenohDeclaration<'a> {
         let _f_d_header_n: Option<usize> = if _o_d_header_n_arm.is_some() { Some(_o_d_header_n_arm.unwrap_or(0)) } else { None };
         let _o_d_header_z_arm: Option<usize> = match src.body() {
             CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => Some(usize::from(CodecZenohUndeclSubscriber::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(CodecZenohDeclQueryable::input_z(_b))),
             CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => Some(usize::from(CodecZenohUndeclQueryable::input_z(_b))),
             CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => Some(usize::from(CodecZenohUndeclToken::input_z(_b))),
             _ => None,
@@ -541,7 +538,7 @@ impl<'a> CodecZenohDeclaration<'a> {
             CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b) => CodecZenohUndeclKexpr::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => CodecZenohDeclSubscriber::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => CodecZenohUndeclSubscriber::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => CodecZenohUndeclQueryable::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => CodecZenohDeclToken::write_source(_b, w)?,
             CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => CodecZenohUndeclToken::write_source(_b, w)?,
@@ -554,17 +551,17 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohDeclarationSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohDeclarationSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecZenohDeclarationSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohDeclaration<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -572,10 +569,12 @@ impl<'a, S: CodecZenohDeclarationSource + ?Sized> ::sce_forge_runtime::codec::So
 #[allow(dead_code)]
 impl<'a> CodecZenohDeclaration<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecZenohDeclarationSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecZenohDeclarationSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -880,22 +879,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclarationOwned<S> 
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecZenohDeclaration::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohDeclaration::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }

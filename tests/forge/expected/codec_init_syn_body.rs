@@ -25,8 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecInitSynBody {
     pub version: u8,
-    pub sn_res: Option<u8>,
-    pub batch_size: Option<u16>,
+    pub s: Option<CodecInitSynBodyS>,
 }
 
 #[allow(dead_code)]
@@ -103,8 +102,7 @@ impl CodecInitSynBody {
             None
         };
         _out.version = version;
-        _out.sn_res = sn_res;
-        _out.batch_size = batch_size;
+        _out.s = if (s & 0x01u8) != 0 { Some(CodecInitSynBodyS { sn_res: sn_res.unwrap_or_default(), batch_size: batch_size.unwrap_or_default() }) } else { None };
         Ok(())
     }
 
@@ -114,36 +112,45 @@ impl CodecInitSynBody {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 4;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S, s: u8) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w, s)
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, s: u8) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, s)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
+}
+
+/// The fields `S` decides (docs/adr/0065 §6 R4b), present together
+/// while it holds: a value holds all of them or none, and `CodecInitSynBody`
+/// derives `S` from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CodecInitSynBodyS {
+    /// The `sn_res` field.
+    pub sn_res: u8,
+    /// The `batch_size` field.
+    pub batch_size: u16,
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -153,21 +160,16 @@ impl CodecInitSynBody {
 pub trait CodecInitSynBodySource {
     /// The `version` field.
     fn version(&self) -> u8;
-    /// The `sn_res` field.
-    fn sn_res(&self) -> Option<u8>;
-    /// The `batch_size` field.
-    fn batch_size(&self) -> Option<u16>;
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    fn s(&self) -> Option<CodecInitSynBodyS>;
 }
 
 impl<T: CodecInitSynBodySource + ?Sized> CodecInitSynBodySource for &T {
     fn version(&self) -> u8 {
         (**self).version()
     }
-    fn sn_res(&self) -> Option<u8> {
-        (**self).sn_res()
-    }
-    fn batch_size(&self) -> Option<u16> {
-        (**self).batch_size()
+    fn s(&self) -> Option<CodecInitSynBodyS> {
+        (**self).s()
     }
 }
 
@@ -179,33 +181,25 @@ impl<T: CodecInitSynBodySource + ?Sized> CodecInitSynBodySource for &T {
 pub struct CodecInitSynBodyParts {
     /// The `version` field.
     pub version: u8,
-    /// The `sn_res` field.
-    pub sn_res: Option<u8>,
-    /// The `batch_size` field.
-    pub batch_size: Option<u16>,
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    pub s: Option<CodecInitSynBodyS>,
 }
 
 impl CodecInitSynBodySource for CodecInitSynBodyParts {
+    fn s(&self) -> Option<CodecInitSynBodyS> {
+        self.s
+    }
     fn version(&self) -> u8 {
         self.version
-    }
-    fn sn_res(&self) -> Option<u8> {
-        self.sn_res
-    }
-    fn batch_size(&self) -> Option<u16> {
-        self.batch_size
     }
 }
 
 impl CodecInitSynBodySource for CodecInitSynBody {
+    fn s(&self) -> Option<CodecInitSynBodyS> {
+        self.s
+    }
     fn version(&self) -> u8 {
         self.version
-    }
-    fn sn_res(&self) -> Option<u8> {
-        self.sn_res
-    }
-    fn batch_size(&self) -> Option<u16> {
-        self.batch_size
     }
 }
 
@@ -214,27 +208,31 @@ impl CodecInitSynBody {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecInitSynBodySource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source(src, w, s)
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        Self::write_source(src, w)
+    }
+
+    /// The flag-input `S` that `src` says: set exactly when the value holds the side of `S` present while it holds.
+    /// A parent hands the decode this bit and derives it from here for the
+    /// encode.
+    pub fn input_s<S: CodecInitSynBodySource + ?Sized>(src: &S) -> bool {
+        CodecInitSynBodySource::s(src).is_some()
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        if ((s & 0x1) != 0) != src.sn_res().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if ((s & 0x1) != 0) != src.batch_size().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        let _ = s;
+    pub fn write_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let (_m_sn_res, _m_batch_size) = match src.s() {
+            Some(CodecInitSynBodyS { sn_res, batch_size }) => (Some(sn_res), Some(batch_size)),
+            None => (None, None),
+        };
         w.write_u8(src.version())?;
-        if let Some(_v) = src.sn_res() {
+        if let Some(_v) = _m_sn_res {
             w.write_u8(_v)?;
         }
-        if let Some(_v) = src.batch_size() {
+        if let Some(_v) = _m_batch_size {
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
             w.write_u8((_v & 0xFF) as u8)?;
         }
@@ -244,9 +242,38 @@ impl CodecInitSynBody {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecInitSynBodySource + ?Sized>(src: &S, s: u8) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecInitSynBodySource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c, s)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
+    }
+}
+
+impl<S: CodecInitSynBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecInitSynBody {
+    type Error<E> = E;
+
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl CodecInitSynBody {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecInitSynBodySource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
+    }
+
+    /// Write `src` into `window` in one pass and return the bytes it is, for a
+    /// window as large as the caller can spare. On an error the window holds a
+    /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].
+    pub fn write_window<S: CodecInitSynBodySource + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+        let mut sink = ::sce_forge_runtime::codec::SliceSink::new(window);
+        Self::write_source(src, &mut sink)?;
+        Ok(sink.position())
     }
 }

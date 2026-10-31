@@ -340,20 +340,12 @@ impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized,
 #[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodecTransportEnvelopeOverrides {
-    /// The `S` flag of `header`, when a parent sets it.
-    pub header_s: Option<bool>,
     /// The `Z` flag of `header`, when a parent sets it.
     pub header_z: Option<bool>,
 }
 
 #[allow(dead_code)]
 impl CodecTransportEnvelopeOverrides {
-    /// Sets `S` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_s(value: bool) -> Self {
-        Self { header_s: Some(value), ..Self::default() }
-    }
-
     /// Sets `Z` of `header` and nothing else.
     #[allow(clippy::needless_update)]
     pub fn header_z(value: bool) -> Self {
@@ -496,25 +488,31 @@ impl<'a> CodecTransportEnvelope<'a> {
             _ => None,
         };
         let _f_d_header_a: Option<usize> = if _o_d_header_a_arm.is_some() { Some(_o_d_header_a_arm.unwrap_or(0)) } else { None };
+        let _o_d_header_s_arm: Option<usize> = match src.body() {
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(CodecZenohInitBody::input_s(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => Some(usize::from(CodecZenohJoin::input_s(_b))),
+            _ => None,
+        };
+        let _f_d_header_s: Option<usize> = if _o_d_header_s_arm.is_some() { Some(_o_d_header_s_arm.unwrap_or(0)) } else { None };
         let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         if let Some(_n) = _f_d_header_a {
             _c_header = (_c_header & !0x20) | ((_n as u8) << 5);
         }
-        if let Some(_o) = over.header_s {
-            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        if let Some(_n) = _f_d_header_s {
+            _c_header = (_c_header & !0x40) | ((_n as u8) << 6);
         }
         if let Some(_o) = over.header_z {
             _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
         }
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => CodecZenohOpenBody::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohClose(_b) => CodecZenohClose::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b) => CodecZenohKeepAlive::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b) => CodecZenohFrame::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b) => CodecZenohFragment::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => CodecZenohJoin::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => CodecZenohJoin::write_source(_b, w)?,
             CodecTransportEnvelopeVariantSource::Default { body: _b, .. } => CodecZenohClose::write_source(_b, w)?,
         }
         Ok(())

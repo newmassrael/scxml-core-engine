@@ -25,8 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecExtEncodingInfo<'a> {
     pub combined_id: u32,
-    pub schema_size: u8,
-    pub schema: Option<&'a [u8]>,
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<&'a [u8]>,
 }
 
 #[allow(dead_code)]
@@ -92,8 +91,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
             None
         };
         _out.combined_id = combined_id;
-        _out.schema_size = schema_size;
-        _out.schema = schema;
+        _out.combined_id_has_schema = if (combined_id & 0x00000001u32) != 0 { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: schema.unwrap_or_default() } } else { CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } };
         Ok(())
     }
 
@@ -153,6 +151,32 @@ impl<'a> CodecExtEncodingInfo<'a> {
     }
 }
 
+/// The fields `combined_id.has_schema` decides (docs/adr/0065 §6 R4b): a value holds the
+/// ones present while it holds, or the ones present while it does not,
+/// and `CodecExtEncodingInfo` derives `combined_id.has_schema` from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecExtEncodingInfoCombinedIdHasSchema<Schema> {
+    /// While `combined_id.has_schema` holds.
+    HasSchema {
+        /// The `schema` field.
+        schema: Schema,
+    },
+    /// While `combined_id.has_schema` does not hold.
+    NotHasSchema {
+        /// The `schema_size` field.
+        schema_size: u8,
+    },
+}
+
+impl<Schema: Default> Default for CodecExtEncodingInfoCombinedIdHasSchema<Schema> {
+    /// The side present while `combined_id.has_schema` does not hold, each field at its
+    /// type's default.
+    fn default() -> Self {
+        Self::NotHasSchema { schema_size: Default::default(), }
+    }
+}
+
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecExtEncodingInfo` says: its presented fields. A length, a count
 /// or the flag a gated field is announced by is not among them; `CodecExtEncodingInfo`
@@ -160,21 +184,16 @@ impl<'a> CodecExtEncodingInfo<'a> {
 pub trait CodecExtEncodingInfoSource {
     /// The `combined_id` field.
     fn combined_id(&self) -> u32;
-    /// The `schema_size` field.
-    fn schema_size(&self) -> Option<u8>;
-    /// The `schema` field.
-    fn schema(&self) -> Option<&[u8]>;
+    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4b).
+    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]>;
 }
 
 impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
     fn combined_id(&self) -> u32 {
         (**self).combined_id()
     }
-    fn schema_size(&self) -> Option<u8> {
-        (**self).schema_size()
-    }
-    fn schema(&self) -> Option<&[u8]> {
-        (**self).schema()
+    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]> {
+        (**self).combined_id_has_schema()
     }
 }
 
@@ -186,45 +205,43 @@ impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
 pub struct CodecExtEncodingInfoParts<'a> {
     /// The `combined_id` field.
     pub combined_id: u32,
-    /// The `schema_size` field.
-    pub schema_size: Option<u8>,
-    /// The `schema` field.
-    pub schema: Option<&'a [u8]>,
+    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4b).
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<&'a [u8]>,
 }
 
 impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfoParts<'a> {
+    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]> {
+        match &self.combined_id_has_schema {
+            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: *schema },
+            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size: *schema_size },
+        }
+    }
     fn combined_id(&self) -> u32 {
         self.combined_id
-    }
-    fn schema_size(&self) -> Option<u8> {
-        self.schema_size
-    }
-    fn schema(&self) -> Option<&[u8]> {
-        self.schema
     }
 }
 
 impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfo<'a> {
+    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]> {
+        match &self.combined_id_has_schema {
+            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: *schema },
+            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size: *schema_size },
+        }
+    }
     fn combined_id(&self) -> u32 {
         self.combined_id
-    }
-    fn schema_size(&self) -> Option<u8> {
-        if self.schema.is_none() { Some(self.schema_size) } else { None }
-    }
-    fn schema(&self) -> Option<&[u8]> {
-        self.schema
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoSource for CodecExtEncodingInfoOwned<S> {
+    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]> {
+        match &self.combined_id_has_schema {
+            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: ::sce_forge_runtime::codec::SceByteBuf::as_slice(schema) },
+            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size: *schema_size },
+        }
+    }
     fn combined_id(&self) -> u32 {
         self.combined_id
-    }
-    fn schema_size(&self) -> Option<u8> {
-        if self.schema.is_none() { Some(self.schema_size) } else { None }
-    }
-    fn schema(&self) -> Option<&[u8]> {
-        self.schema.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
     }
 }
 
@@ -242,26 +259,24 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecExtEncodingInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _p_combined_id_has_schema_0: bool = src.schema().is_some();
-        let _n_d_schema_size_0: usize = match src.schema() {
+        let (_m_schema, _m_schema_size) = match src.combined_id_has_schema() {
+            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => (Some(schema), None),
+            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => (None, Some(schema_size)),
+        };
+        let _p_combined_id_has_schema_0: bool = _m_schema.is_some();
+        let _n_d_schema_size_0: usize = match _m_schema {
             Some(_v) => _v.len(),
             None => 0,
         };
-        let _f_d_schema_size: Option<usize> = if src.schema().is_some() { Some(_n_d_schema_size_0) } else { None };
+        let _f_d_schema_size: Option<usize> = if _m_schema.is_some() { Some(_n_d_schema_size_0) } else { None };
         let _d_schema_size: u8 = match _f_d_schema_size {
-            Some(_n) => {
-                let _d = u8::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;
-                if src.schema_size().is_some_and(|_s| _s != _d) {
-                    return Err(CodecError::InconsistentSource);
-                }
-                _d
-            }
-            None => src.schema_size().unwrap_or_default(),
+            Some(_n) => u8::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?,
+            None => _m_schema_size.unwrap_or_default(),
         };
         let _c_combined_id: u32 = (src.combined_id() & !0x1) | u32::from(_p_combined_id_has_schema_0);
         w.write_vle_u32(_c_combined_id)?;
         w.write_u8(_d_schema_size)?;
-        if let Some(_v) = src.schema() {
+        if let Some(_v) = _m_schema {
             w.write_bytes(_v)?;
         }
         Ok(())
@@ -343,8 +358,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecExtEncodingInfoOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub combined_id: u32,
-    pub schema_size: u8,
-    pub schema: Option<S::Bytes<64>>,
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<S::Bytes<64>>,
 }
 
 #[allow(dead_code)]
@@ -376,8 +390,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecExtEncodingInfoOwned<S>, CodecError> {
         Ok(CodecExtEncodingInfoOwned {
             combined_id: self.combined_id,
-            schema_size: self.schema_size,
-            schema: self.schema.map(<S::Bytes<64> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
+            combined_id_has_schema: match self.combined_id_has_schema { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: <S::Bytes<64> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(schema)? }, CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size }, },
         })
     }
 
@@ -413,8 +426,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecExtEncodingInfo<'o>) {
         _out.combined_id = self.combined_id;
-        _out.schema_size = self.schema_size;
-        _out.schema = self.schema.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        match &self.combined_id_has_schema {
+            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => {
+                let mut _o_schema: &'o [u8] = Default::default();
+                _o_schema = ::sce_forge_runtime::codec::SceByteBuf::as_slice(schema);
+                _out.combined_id_has_schema = CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: _o_schema };
+            }
+            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => {
+                let mut _o_schema_size: u8 = Default::default();
+                _o_schema_size = *schema_size;
+                _out.combined_id_has_schema = CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size: _o_schema_size };
+            }
+        }
         
     }
 

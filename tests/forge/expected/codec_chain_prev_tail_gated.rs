@@ -255,7 +255,6 @@ impl CodecChainPrevTailGated {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecChainPrevTailGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -281,12 +280,19 @@ impl CodecChainPrevTailGated {
                 return Err(CodecError::PresentIfMismatch);
             }
         }
+        {
+            let mut _prev: bool = false;
+            for _e in src.entries().into_iter().flatten() {
+                if CodecChainPrevEntry::input_after_marker(&_e) != _prev {
+                    return Err(CodecError::PresentIfMismatch);
+                }
+                _prev = (u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0x7F) == 4u64;
+            }
+        }
         w.write_u8(_c_head)?;
         if let Some(_v) = src.entries() {
-            let mut _prev_after_marker: u8 = 0;
             for _e in _v {
-                CodecChainPrevEntry::write_source(&_e, w, _prev_after_marker)?;
-                _prev_after_marker = u8::from((u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0x7F) == 4u64);
+                CodecChainPrevEntry::write_source(&_e, w)?;
             }
         }
         Ok(())
