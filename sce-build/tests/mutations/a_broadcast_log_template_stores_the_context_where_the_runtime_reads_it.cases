@@ -161,11 +161,12 @@ edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
      r'''entry[1+{{ flag.word }}] |= uint64(1) << 0''')
 PY
 
-# Killed by the Go test: `entry[1+1] = uint64(tag)` is printed `entry[1+0] = uint64(tag)`.
+# Killed by the Go test: `entry[1+1] = uint64(element.Tag())` is printed
+# `entry[1+0] = uint64(element.Tag())`.
 mutation_case "go writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
-     r'''entry[1+{{ context.tag_word }}] = uint64(tag)''',
-     r'''entry[1+0] = uint64(tag)''')
+     r'''entry[1+{{ context.tag_word }}] = uint64(element.Tag())''',
+     r'''entry[1+0] = uint64(element.Tag())''')
 PY
 
 # Killed by the Go test: `entry[3+index/8] |= uint64(value) << (8 * (index % 8))` is printed
@@ -193,11 +194,12 @@ edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
      r'''|= UINT64_C(1) << 0u;''')
 PY
 
-# Killed by the C11 test: `entry[1u + 1u] = (uint64_t)tag;` is printed `entry[1u + 0u]`.
+# Killed by the C11 test: `entry[1u + 1u] = (uint64_t)event_record_tag(element);` is printed
+# `entry[1u + 0u]`.
 mutation_case "c11 writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
-     r'''entry[1u + {{ context.tag_word }}u] = (uint64_t)tag;''',
-     r'''entry[1u + 0u] = (uint64_t)tag;''')
+     r'''entry[1u + {{ context.tag_word }}u] = (uint64_t){{ element_snake }}_tag(element);''',
+     r'''entry[1u + 0u] = (uint64_t){{ element_snake }}_tag(element);''')
 PY
 
 # Killed by the C11 test: `entry[3u + index / 8u] |= (uint64_t)bytes[index]` is printed
@@ -226,12 +228,12 @@ edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
      r'''|= std::uint64_t{1} << 0;''')
 PY
 
-# Killed by the C++ test: `entry[1 + 1] = static_cast<std::uint64_t>(tag);` is printed
-# `entry[1 + 0]`.
+# Killed by the C++ test: `entry[1 + 1] = static_cast<std::uint64_t>(element.tag());` is
+# printed `entry[1 + 0]`.
 mutation_case "cpp writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
-     r'''entry[1 + {{ context.tag_word }}] = static_cast<std::uint64_t>(tag);''',
-     r'''entry[1 + 0] = static_cast<std::uint64_t>(tag);''')
+     r'''entry[1 + {{ context.tag_word }}] = static_cast<std::uint64_t>(element.tag());''',
+     r'''entry[1 + 0] = static_cast<std::uint64_t>(element.tag());''')
 PY
 
 # Killed by the C++ test: `entry[3 + index / 8] |= static_cast<std::uint64_t>(bytes[index])` is
