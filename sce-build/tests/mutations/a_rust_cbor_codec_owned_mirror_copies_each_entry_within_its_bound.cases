@@ -1,0 +1,118 @@
+# Mutation cases for "a Rust CBOR codec owned mirror copies each entry within its bound".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_rust_cbor_codec_owned_mirror_copies_each_entry_within_its_bound.cases`.
+#
+# A Rust CBOR map decodes a string and a byte string to views of the buffer it was read from,
+# so the template `tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2` writes, beside the
+# view, a lifetime-free `{Name}Owned<S>` for the map whose every string and byte string states
+# its bound: each such entry is held in the storage profile's `S::Str<N>` or `S::Bytes<N>`,
+# `try_into_owned_in::<S>()` copies each with `from_view` or `from_slice` and a `?` (the inline
+# profile refuses a value past its bound), the mirror is read and written through the codec's
+# source interface, and `transcode_in` moves a value between profiles. A defect here is a mirror
+# that compiles and holds a value it should have refused, or writes something other than the
+# value it holds, with nothing in a run of the log to say so.
+#
+# The oracle is `sce-build/tests/a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror.rs`,
+# which renders the module of a map with every entry kind and holds the lines it prints. The
+# templates are embedded in the test binary by the `sce-build` build script, so a case that
+# edits one reaches the test with nothing else declared. What a mutant changes is a line a test
+# holds, and each case names the test.
+#
+# Anchors are literal slices of the template; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror
+mutation_targets tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2
+
+# A map with no mirror is the one that has no bound on a string or a byte string, or none to
+# copy. With the gate read the other way the mirror is written for the maps that have none and
+# not for the ones that do. Killed by `the_owned_form_holds_each_entry_in_a_container_of_its_bound`
+# (`pub struct ProbeCborOwned<S: ...` is not printed) and by
+# `a_map_with_no_bound_on_one_entry_or_no_borrow_has_no_mirror`.
+mutation_case "the mirror is written for the maps that have none" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''{% if emit_owned %}''',
+     r'''{% if not emit_owned %}''')
+PY
+
+# The mirror is declared with the derives the positional codec's mirror has. Without them a
+# value cannot be compared, cloned or printed, and a log whose item holds one cannot derive its
+# own. Killed by `the_owned_form_holds_each_entry_in_a_container_of_its_bound`
+# (`#[derive(Debug, Clone, PartialEq)]` before `pub struct ProbeCborOwned`).
+mutation_case "the mirror carries no derives" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''{{ codec_owned_derives_attr }}
+pub struct {{ struct_name }}Owned{{ owned_generics_decl }} {''',
+     r'''pub struct {{ struct_name }}Owned{{ owned_generics_decl }} {''')
+PY
+
+# A field is held in the container of the bound its entry declares. Held as the view holds it
+# the mirror borrows, and the lifetime it exists to remove comes back. Killed by
+# `the_owned_form_holds_each_entry_in_a_container_of_its_bound`
+# (`pub note: S::Str<8>,`).
+mutation_case "a field of the mirror is held as the view holds it" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''    pub {{ e.name }}: {{ e.owned_field_type }},''',
+     r'''    pub {{ e.name }}: {{ e.field_type }},''')
+PY
+
+# A required string is copied with the refusal of its container passed on. Without the `?` the
+# projection hands back the container's `Result` as the field. Killed by
+# `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
+# (`from_view(self.note)?,`).
+mutation_case "a required entry is copied and its refusal is not passed on" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''            {{ e.name }}: {{ owned_copy(e) }}(self.{{ e.name }})?,''',
+     r'''            {{ e.name }}: {{ owned_copy(e) }}(self.{{ e.name }}),''')
+PY
+
+# An optional string is copied only when it is present, and the refusal of the copy is passed
+# on. Without the `transpose` the field is an option of a `Result`. Killed by
+# `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
+# (`.from_view).transpose()?,`).
+mutation_case "an optional entry is copied and its refusal is not passed on" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''.map({{ owned_copy(e) }}).transpose()?,''',
+     r'''.map({{ owned_copy(e) }}),''')
+PY
+
+# A string is copied by the container made for a string. Copied by the one made for a byte
+# string, the text is not checked to be text. Killed by
+# `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
+# (`<S::Str<8> as ::sce_forge_runtime::codec::SceStr>::from_view(self.note)?,`).
+mutation_case "a string is copied by the container of a byte string" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''as ::sce_forge_runtime::codec::SceStr>::from_view''',
+     r'''as ::sce_forge_runtime::codec::SceByteBuf>::from_slice''')
+PY
+
+# The re-borrow reads each entry through the source interface, the one reading of the owned
+# form the encode shares. Read from nothing, the view it gives is not the value the mirror
+# holds. Killed by `the_owned_form_is_written_through_the_source_interface_as_the_view_is`
+# (`note: <Self as ProbeCborSource>::note(self),`).
+mutation_case "the re-borrow does not read the entries it holds" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''            {{ e.name }}: <Self as {{ struct_name }}Source>::{{ e.name }}(self),''',
+     r'''            {{ e.name }}: Default::default(),''')
+PY
+
+# A value moves between profiles through the view, which checks every destination capacity.
+# Moved by anything else, a value is refused that fits the profile it moves to, or kept that
+# does not. Killed by `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
+# (`self.as_borrowed().try_into_owned_in::<D>()`).
+mutation_case "a value is refused every move between profiles" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''        self.as_borrowed().try_into_owned_in::<D>()''',
+     r'''        Err(CodecError::TooManyElements)''')
+PY
+
+# The owned form is written as the view is, through `encode_source`, which refuses a value past
+# a bound before it writes a byte. Written by nothing, an owned value encodes to no bytes.
+# Killed by `the_owned_form_is_written_through_the_source_interface_as_the_view_is`
+# (`ProbeCbor::encode_source(self, w)`).
+mutation_case "the owned encode writes nothing" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
+     r'''        {{ struct_name }}::encode_source(self, w)''',
+     r'''        Ok(())''')
+PY
