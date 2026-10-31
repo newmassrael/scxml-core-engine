@@ -27,7 +27,13 @@
 (* and the publisher does not begin a publish that would put it more than  *)
 (* K past the cursor of a reader that is inside a read. That is the        *)
 (* hypothesis of the theorem in backends/rust/forge-runtime/src/           *)
-(* broadcast_log_core.rs, at every instant. With it off the model is a log *)
+(* broadcast_log_core.rs, at every instant. It covers the two loads that   *)
+(* open a reader at the oldest entry as it covers the loads of a read: a   *)
+(* reader between them (open2, dhead) holds the log to K publishes past    *)
+(* the first load (`ohl`), because a stamp space that wrapped between them *)
+(* leaves a distance of 0 for what is M entries, and an Empty for a head   *)
+(* that is not there (BroadcastLogWrapped_deferred_without_bound.cfg).     *)
+(* With it off the model is a log                                          *)
 (* whose reader may be stopped for as long as it likes, and TLC finds the  *)
 (* answer the bound exists to prevent (BroadcastLogWrapped_without_bound   *)
 (* .cfg: a copy of an entry a lap on, handed as the entry the reader       *)
@@ -39,7 +45,12 @@
 (* it was ever written, and then the head. A last slot still holding       *)
 (* Unwritten means the log has published at most R entries, so the oldest  *)
 (* is the first; it is how a count modulo M tells a young log from one     *)
-(* that wrapped.                                                           *)
+(* that wrapped. In OpenMode "deferred" the same two loads are the start   *)
+(* of the reader's first read (RDStart, RDHead): it binds its cursor to    *)
+(* the oldest retained entry of the head it loads and goes on from there,  *)
+(* so a reader that waited is told of nothing, and one that was overtaken  *)
+(* inside that first read is told as any reader is. DeferredStart and      *)
+(* FirstLagIsOvertaken are what is checked of it.                          *)
 (*                                                                         *)
 (* Each shared access is one step, so the model is sequentially consistent: *)
 (* it proves the arithmetic of the wrap, and the memory ordering is the    *)
@@ -53,14 +64,14 @@ CONSTANTS Readers,        \* the reader handles
           StampBits,      \* the width of the stamp in bits
           MaxPub,         \* the most entries the producer publishes
           EnforceBound,   \* whether the wrap bound is assumed
-          OpenMode        \* "head" or "oldest": where a reader opens
+          OpenMode        \* "head", "oldest" or "deferred": where a reader opens
 
 M == 2 ^ StampBits
 K == M \div 2
 S == R + 1
 
 ASSUME R \in 1..4 /\ StampBits \in 2..4 /\ MaxPub \in Nat
-ASSUME EnforceBound \in BOOLEAN /\ OpenMode \in {"head", "oldest"}
+ASSUME EnforceBound \in BOOLEAN /\ OpenMode \in {"head", "oldest", "deferred"}
 ASSUME S <= K
 
 Idx(c) == c % S
@@ -71,10 +82,12 @@ Garbage == MaxPub + 1
 Words == {0, 1}
 
 VARIABLES head, stamp, words, n, ppc,
-          opened, cur, ab, lost, rpc, hl, s1, cp, res, tch, ohl, oab
+          opened, cur, ab, lost, rpc, hl, s1, cp, res, tch, ohl, oab,
+          fresh, fl, ob          \* what a deferred reader's first read adds (history)
 
 pvars == <<head, stamp, words, n, ppc>>
-rvars == <<opened, cur, ab, lost, rpc, hl, s1, cp, res, tch, ohl, oab>>
+dvars == <<fresh, fl, ob>>
+rvars == <<opened, cur, ab, lost, rpc, hl, s1, cp, res, tch, ohl, oab, dvars>>
 vars  == <<pvars, rvars>>
 
 None == [k |-> "none"]
@@ -95,6 +108,9 @@ Init ==
     /\ tch  = [r \in Readers |-> FALSE]
     /\ ohl  = [r \in Readers |-> 0]
     /\ oab  = [r \in Readers |-> 0]
+    /\ fresh = [r \in Readers |-> OpenMode = "deferred"]
+    /\ fl    = [r \in Readers |-> FALSE]
+    /\ ob    = [r \in Readers |-> 0]
 
 (* The number of publishes begun: the busy stamp of the newest is stored. *)
 Begun == IF ppc \in {"idle", "busy"} THEN n ELSE n + 1
@@ -111,7 +127,9 @@ PStart ==
 PBusy ==
     /\ ppc = "busy"
     /\ (~EnforceBound \/
-        \A r \in Readers : (opened[r] /\ rpc[r] # "idle") => (n + 1 - ab[r] <= K))
+        (/\ \A r \in Readers : (opened[r] /\ rpc[r] # "idle") => (n + 1 - ab[r] <= K)
+         /\ \A r \in Readers :
+               (~opened[r] /\ rpc[r] \in {"open2", "dhead"}) => (n + 1 - ohl[r] <= K)))
     /\ stamp' = [stamp EXCEPT ![Idx(n)] = Busy(n)]
     /\ ppc' = "w0"
     /\ UNCHANGED <<head, words, n, rvars>>
@@ -148,14 +166,14 @@ ROpen(r) ==
     /\ ab' = [ab EXCEPT ![r] = n]
     /\ ohl' = [ohl EXCEPT ![r] = n]
     /\ oab' = [oab EXCEPT ![r] = n]
-    /\ UNCHANGED <<pvars, lost, rpc, hl, s1, cp, res, tch>>
+    /\ UNCHANGED <<pvars, lost, rpc, hl, s1, cp, res, tch, dvars>>
 
 ROpenStamp(r) ==
     /\ OpenMode = "oldest" /\ ~opened[r] /\ rpc[r] = "idle"
     /\ tch' = [tch EXCEPT ![r] = stamp[S - 1] # Unwritten]
     /\ ohl' = [ohl EXCEPT ![r] = n]
     /\ rpc' = [rpc EXCEPT ![r] = "open2"]
-    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, res, oab>>
+    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, res, oab, dvars>>
 
 ROpenHead(r) ==
     /\ rpc[r] = "open2"
@@ -170,7 +188,7 @@ ROpenHead(r) ==
                /\ UNCHANGED ohl
     /\ opened' = [opened EXCEPT ![r] = TRUE]
     /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-    /\ UNCHANGED <<pvars, lost, hl, s1, cp, res, tch>>
+    /\ UNCHANGED <<pvars, lost, hl, s1, cp, res, tch, dvars>>
 
 (* A read. Every answer is set by a load of head, which is `hl`. *)
 
@@ -183,7 +201,7 @@ RStart(r) ==
     /\ (~EnforceBound \/ Begun - ab[r] <= K)
     /\ rpc' = [rpc EXCEPT ![r] = "head1"]
     /\ res' = [res EXCEPT ![r] = None]
-    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, tch, ohl, oab>>
+    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, tch, ohl, oab, dvars>>
 
 RHead(r) ==
     /\ rpc[r] = "head1"
@@ -191,7 +209,8 @@ RHead(r) ==
     /\ \/ /\ Behind(r) = 0
           /\ res' = [res EXCEPT ![r] = [k |-> "Empty"]]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-          /\ UNCHANGED <<cur, ab, lost>>
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED <<cur, ab, lost, fl>>
        \/ /\ Behind(r) >= S
           /\ res' = [res EXCEPT ![r] =
                 [k |-> "Lagged", sk |-> Behind(r) - R, from |-> ab[r]]]
@@ -199,23 +218,73 @@ RHead(r) ==
           /\ ab' = [ab EXCEPT ![r] = ab[r] + Behind(r) - R]
           /\ lost' = [lost EXCEPT ![r] = @ + (Behind(r) - R)]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+          /\ fl' = [fl EXCEPT ![r] = fresh[r]]
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
        \/ /\ Behind(r) > 0 /\ Behind(r) < S
           /\ rpc' = [rpc EXCEPT ![r] = "stamp1"]
-          /\ UNCHANGED <<cur, ab, lost, res>>
-    /\ UNCHANGED <<pvars, opened, s1, cp, tch, ohl, oab>>
+          /\ UNCHANGED <<cur, ab, lost, res, fresh, fl>>
+    /\ UNCHANGED <<pvars, opened, s1, cp, tch, ohl, oab, ob>>
+
+(* The first read of a deferred reader. It begins with the two loads of opening at the oldest   *)
+(* (the stamp of the last slot, then the head), which here are part of the read: the cursor the *)
+(* second load gives is the oldest retained entry of the head it loaded, and the read goes on   *)
+(* from there as any read does, answering at that same load if it can: Empty, or Lagged when a  *)
+(* publish completed between the two loads and overtook the cursor. `ob` is the true count at  *)
+(* the first load. *)
+
+RDStart(r) ==
+    /\ OpenMode = "deferred" /\ ~opened[r] /\ rpc[r] = "idle"
+    /\ tch' = [tch EXCEPT ![r] = stamp[S - 1] # Unwritten]
+    /\ ohl' = [ohl EXCEPT ![r] = n]
+    /\ ob' = [ob EXCEPT ![r] = n]
+    /\ rpc' = [rpc EXCEPT ![r] = "dhead"]
+    /\ res' = [res EXCEPT ![r] = None]
+    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, cp, oab, fresh, fl>>
+
+RDHead(r) ==
+    /\ rpc[r] = "dhead"
+    /\ LET c0 == IF tch[r] THEN (head + M - R) % M ELSE 0
+           a0 == IF tch[r] THEN n - R ELSE 0
+           b0 == (head + M - c0) % M
+       IN /\ hl' = [hl EXCEPT ![r] = n]
+          /\ opened' = [opened EXCEPT ![r] = TRUE]
+          /\ ohl' = [ohl EXCEPT ![r] = IF tch[r] THEN n ELSE ohl[r]]
+          /\ oab' = [oab EXCEPT ![r] = a0]
+          /\ \/ /\ b0 = 0
+                /\ res' = [res EXCEPT ![r] = [k |-> "Empty"]]
+                /\ cur' = [cur EXCEPT ![r] = c0]
+                /\ ab' = [ab EXCEPT ![r] = a0]
+                /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+                /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+                /\ UNCHANGED <<lost, fl>>
+             \/ /\ b0 >= S
+                /\ res' = [res EXCEPT ![r] =
+                      [k |-> "Lagged", sk |-> b0 - R, from |-> a0]]
+                /\ cur' = [cur EXCEPT ![r] = (c0 + b0 - R) % M]
+                /\ ab' = [ab EXCEPT ![r] = a0 + b0 - R]
+                /\ lost' = [lost EXCEPT ![r] = @ + (b0 - R)]
+                /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+                /\ fl' = [fl EXCEPT ![r] = fresh[r]]
+                /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+             \/ /\ b0 > 0 /\ b0 < S
+                /\ cur' = [cur EXCEPT ![r] = c0]
+                /\ ab' = [ab EXCEPT ![r] = a0]
+                /\ rpc' = [rpc EXCEPT ![r] = "stamp1"]
+                /\ UNCHANGED <<lost, res, fresh, fl>>
+    /\ UNCHANGED <<pvars, s1, cp, tch, ob>>
 
 RStamp1(r) ==
     /\ rpc[r] = "stamp1"
     /\ s1' = [s1 EXCEPT ![r] = stamp[Idx(cur[r])]]
     /\ rpc' = [rpc EXCEPT ![r] =
           IF stamp[Idx(cur[r])] = Done(cur[r]) THEN "c0" ELSE "reload"]
-    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, cp, res, tch, ohl, oab>>
+    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, cp, res, tch, ohl, oab, dvars>>
 
 RCopy(r, w, from, to) ==
     /\ rpc[r] = from
     /\ cp' = [cp EXCEPT ![r][w] = words[Idx(cur[r])][w]]
     /\ rpc' = [rpc EXCEPT ![r] = to]
-    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, res, tch, ohl, oab>>
+    /\ UNCHANGED <<pvars, opened, cur, ab, lost, hl, s1, res, tch, ohl, oab, dvars>>
 
 RValidate(r) ==
     /\ rpc[r] = "v2"
@@ -224,10 +293,12 @@ RValidate(r) ==
           /\ cur' = [cur EXCEPT ![r] = (cur[r] + 1) % M]
           /\ ab' = [ab EXCEPT ![r] = ab[r] + 1]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED fl
        \/ /\ stamp[Idx(cur[r])] # s1[r]
           /\ rpc' = [rpc EXCEPT ![r] = "reload"]
-          /\ UNCHANGED <<cur, ab, res>>
-    /\ UNCHANGED <<pvars, opened, lost, hl, s1, cp, tch, ohl, oab>>
+          /\ UNCHANGED <<cur, ab, res, fresh, fl>>
+    /\ UNCHANGED <<pvars, opened, lost, hl, s1, cp, tch, ohl, oab, ob>>
 
 (* A copy that was overwritten while it was read: the head is reloaded and the *)
 (* distance, if it looks nearer than the window, is a head that wrapped. *)
@@ -240,12 +311,15 @@ RReload(r) ==
     /\ ab' = [ab EXCEPT ![r] = ab[r] + Skipped(r)]
     /\ lost' = [lost EXCEPT ![r] = @ + Skipped(r)]
     /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-    /\ UNCHANGED <<pvars, opened, s1, cp, tch, ohl, oab>>
+    /\ fl' = [fl EXCEPT ![r] = fresh[r]]
+    /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+    /\ UNCHANGED <<pvars, opened, s1, cp, tch, ohl, oab, ob>>
 
 Next ==
     \/ PStart \/ PBusy \/ PWord(0, "w0", "w1") \/ PWord(1, "w1", "done") \/ PDone \/ PHead
     \/ \E r \in Readers :
           \/ ROpen(r) \/ ROpenStamp(r) \/ ROpenHead(r)
+          \/ RDStart(r) \/ RDHead(r)
           \/ RStart(r) \/ RHead(r) \/ RStamp1(r)
           \/ RCopy(r, 0, "c0", "c1") \/ RCopy(r, 1, "c1", "v2")
           \/ RValidate(r) \/ RReload(r)
@@ -277,12 +351,25 @@ SlotIndexContinuous ==
     \A r \in Readers : opened[r] => (cur[r] % S = ab[r] % S)
 
 (* A reader opened where the specification puts it: at the head, or at the oldest *)
-(* retained entry, max(0, h - R). *)
+(* retained entry, max(0, h - R). A deferred reader's position is fixed by its first *)
+(* read, at the oldest retained entry of the head that read loaded. *)
 OpenRefines ==
     \A r \in Readers :
         opened[r] =>
             IF OpenMode = "head"
                THEN oab[r] = ohl[r]
                ELSE oab[r] = IF ohl[r] > R THEN ohl[r] - R ELSE 0
+
+(* A deferred reader never goes below its start, and what it was told it lost lies at or *)
+(* after it: every entry it was told it missed advanced its count. *)
+DeferredStart ==
+    \A r \in Readers :
+        opened[r] => (ab[r] >= oab[r] /\ lost[r] <= ab[r] - oab[r])
+
+(* A deferred reader's first read answers Lagged only if a publish had completed since the *)
+(* first load of that read: the cursor it was given is at most R behind the head, which the *)
+(* R + 1 slots keep readable until another publish begins. *)
+FirstLagIsOvertaken ==
+    \A r \in Readers : fl[r] => hl[r] > ob[r]
 
 =============================================================================

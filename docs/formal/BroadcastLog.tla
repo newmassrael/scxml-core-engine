@@ -29,15 +29,31 @@
 (* `Revalidate` the second stamp load. With either off the model is a      *)
 (* design the ADR rejects, and TLC finds the violation                     *)
 (* (BroadcastLog_without_extra_slot.cfg, _without_revalidation.cfg).       *)
+(*                                                                         *)
+(* A reader of `DeferredReaders` is opened by `reader_deferred()`: it has  *)
+(* no cursor until its first read, which binds the cursor to the oldest    *)
+(* retained entry of the head that read loads, in the same step, and then  *)
+(* goes on as any read does. The other readers are opened at 0, the        *)
+(* oldest entry of a log with nothing published. Two things are checked of *)
+(* a deferred reader, and they are the reasons it needs no new mechanism:  *)
+(* `DeferredStart` (its start is that oldest retained entry, and what it   *)
+(* is told it lost lies after the start), and `FirstLagIsOvertaken` (its   *)
+(* first read answers Lagged only when the head had moved on since the     *)
+(* bind, which takes the slot beyond the retention: with S = R, the        *)
+(* bound entry's slot is the one the next publish begins to write, and the *)
+(* reader is told of a loss nothing had caused,                            *)
+(* BroadcastLog_deferred_without_extra_slot.cfg).                          *)
 (***************************************************************************)
 EXTENDS Integers, TLC
 
-CONSTANTS Readers,     \* the reader handles
-          R,           \* the retention the specification promises
-          Extra,       \* 1: S = R + 1 slots (the design); 0: S = R
-          MaxPub,      \* the most entries the producer publishes
-          Revalidate   \* whether a reader loads the stamp again after the copy
+CONSTANTS Readers,         \* the reader handles
+          DeferredReaders, \* those opened by reader_deferred(): bound by their first read
+          R,               \* the retention the specification promises
+          Extra,           \* 1: S = R + 1 slots (the design); 0: S = R
+          MaxPub,          \* the most entries the producer publishes
+          Revalidate       \* whether a reader loads the stamp again after the copy
 
+ASSUME DeferredReaders \subseteq Readers
 ASSUME R \in 1..4 /\ Extra \in {0, 1} /\ MaxPub \in Nat /\ Revalidate \in BOOLEAN
 
 S == R + Extra
@@ -46,12 +62,15 @@ Busy(n) == 2 * n + 1
 Done(n) == 2 * n + 2
 Garbage == MaxPub + 1
 Words == {0, 1}
+Max0(x) == IF x > 0 THEN x ELSE 0
 
 VARIABLES head, stamp, words, n, ppc,        \* shared state and the producer
-          cur, lost, rpc, hl, s1, cp, res    \* each reader's
+          cur, lost, rpc, hl, s1, cp, res,   \* each reader's
+          bound, origin, ob, fresh, fl       \* and what a deferred reader's start adds
 
 pvars == <<head, stamp, words, n, ppc>>
-rvars == <<cur, lost, rpc, hl, s1, cp, res>>
+bvars == <<bound, origin, ob, fresh, fl>>
+rvars == <<cur, lost, rpc, hl, s1, cp, res, bvars>>
 vars  == <<pvars, rvars>>
 
 None == [k |-> "none"]
@@ -67,6 +86,11 @@ Init ==
     /\ s1   = [r \in Readers |-> 0]
     /\ cp   = [r \in Readers |-> [w \in Words |-> Garbage]]
     /\ res  = [r \in Readers |-> None]
+    /\ bound  = [r \in Readers |-> r \notin DeferredReaders]
+    /\ origin = [r \in Readers |-> 0]
+    /\ ob     = [r \in Readers |-> 0]
+    /\ fresh  = [r \in Readers |-> r \in DeferredReaders]
+    /\ fl     = [r \in Readers |-> FALSE]
 
 (* The producer. *)
 
@@ -106,36 +130,57 @@ RStart(r) ==
     /\ rpc[r] = "idle"
     /\ rpc' = [rpc EXCEPT ![r] = "head1"]
     /\ res' = [res EXCEPT ![r] = None]
-    /\ UNCHANGED <<pvars, cur, lost, hl, s1, cp>>
+    /\ UNCHANGED <<pvars, cur, lost, hl, s1, cp, bvars>>
+
+(* The binding of a deferred reader's first read: the cursor is the oldest retained entry of  *)
+(* the head this read loads, and the reader records where it started and which head it saw.   *)
+Bind(r) ==
+    /\ ~bound[r]
+    /\ bound'  = [bound  EXCEPT ![r] = TRUE]
+    /\ origin' = [origin EXCEPT ![r] = Max0(head - R)]
+    /\ ob'     = [ob     EXCEPT ![r] = head]
+    /\ cur'    = [cur    EXCEPT ![r] = Max0(head - R)]
 
 RHead(r) ==
     /\ rpc[r] = "head1"
     /\ hl' = [hl EXCEPT ![r] = head]
-    /\ \/ /\ cur[r] = head
+    /\ \/ /\ bound[r] /\ cur[r] = head
           /\ res' = [res EXCEPT ![r] = [k |-> "Empty"]]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-          /\ UNCHANGED <<cur, lost>>
-       \/ /\ cur[r] # head /\ head - cur[r] >= S
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED <<cur, lost, bound, origin, ob, fl>>
+       \/ /\ bound[r] /\ cur[r] # head /\ head - cur[r] >= S
           /\ res' = [res EXCEPT ![r] = [k |-> "Lagged", sk |-> head - R - cur[r]]]
           /\ cur' = [cur EXCEPT ![r] = head - R]
           /\ lost' = [lost EXCEPT ![r] = @ + (head - R - cur[r])]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-       \/ /\ cur[r] # head /\ head - cur[r] < S
+          /\ fl' = [fl EXCEPT ![r] = fresh[r]]
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED <<bound, origin, ob>>
+       \/ /\ bound[r] /\ cur[r] # head /\ head - cur[r] < S
           /\ rpc' = [rpc EXCEPT ![r] = "stamp1"]
-          /\ UNCHANGED <<cur, lost, res>>
+          /\ UNCHANGED <<cur, lost, res, bvars>>
+       \/ /\ Bind(r) /\ Max0(head - R) = head
+          /\ res' = [res EXCEPT ![r] = [k |-> "Empty"]]
+          /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED <<lost, fl>>
+       \/ /\ Bind(r) /\ Max0(head - R) # head
+          /\ rpc' = [rpc EXCEPT ![r] = "stamp1"]
+          /\ UNCHANGED <<lost, res, fresh, fl>>
     /\ UNCHANGED <<pvars, s1, cp>>
 
 RStamp1(r) ==
     /\ rpc[r] = "stamp1"
     /\ s1' = [s1 EXCEPT ![r] = stamp[Idx(cur[r])]]
     /\ rpc' = [rpc EXCEPT ![r] = IF stamp[Idx(cur[r])] = Done(cur[r]) THEN "c0" ELSE "reload"]
-    /\ UNCHANGED <<pvars, cur, lost, hl, cp, res>>
+    /\ UNCHANGED <<pvars, cur, lost, hl, cp, res, bvars>>
 
 RCopy(r, w, from, to) ==
     /\ rpc[r] = from
     /\ cp' = [cp EXCEPT ![r][w] = words[Idx(cur[r])][w]]
     /\ rpc' = [rpc EXCEPT ![r] = to]
-    /\ UNCHANGED <<pvars, cur, lost, hl, s1, res>>
+    /\ UNCHANGED <<pvars, cur, lost, hl, s1, res, bvars>>
 
 RValidate(r) ==
     /\ rpc[r] = "v2"
@@ -143,9 +188,11 @@ RValidate(r) ==
           /\ res' = [res EXCEPT ![r] = [k |-> "Item", seq |-> cur[r], v |-> cp[r]]]
           /\ cur' = [cur EXCEPT ![r] = @ + 1]
           /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+          /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+          /\ UNCHANGED <<bound, origin, ob, fl>>
        \/ /\ Revalidate /\ stamp[Idx(cur[r])] # s1[r]
           /\ rpc' = [rpc EXCEPT ![r] = "reload"]
-          /\ UNCHANGED <<cur, res>>
+          /\ UNCHANGED <<cur, res, bvars>>
     /\ UNCHANGED <<pvars, lost, hl, s1, cp>>
 
 RReload(r) ==
@@ -155,7 +202,9 @@ RReload(r) ==
     /\ cur' = [cur EXCEPT ![r] = head - R]
     /\ lost' = [lost EXCEPT ![r] = @ + (head - R - cur[r])]
     /\ rpc' = [rpc EXCEPT ![r] = "idle"]
-    /\ UNCHANGED <<pvars, s1, cp>>
+    /\ fl' = [fl EXCEPT ![r] = fresh[r]]
+    /\ fresh' = [fresh EXCEPT ![r] = FALSE]
+    /\ UNCHANGED <<pvars, s1, cp, bound, origin, ob>>
 
 Next ==
     \/ PStart \/ PBusy \/ PWord(0, "w0", "w1") \/ PWord(1, "w1", "done") \/ PDone \/ PHead
@@ -182,5 +231,19 @@ AnswerRefines ==
 CursorNotPastHead == \A r \in Readers : cur[r] <= head
 
 LostIsNonNegative == \A r \in Readers : lost[r] >= 0
+
+(* A deferred reader: its start is the oldest retained entry of the head its first read    *)
+(* loaded, its cursor never goes below the start, and what it was told it lost lies at or  *)
+(* after the start (every entry it was told it missed advanced its cursor).                *)
+DeferredStart ==
+    \A r \in Readers :
+        bound[r] =>
+            /\ (r \in DeferredReaders => origin[r] = Max0(ob[r] - R))
+            /\ cur[r] >= origin[r]
+            /\ lost[r] <= cur[r] - origin[r]
+
+(* A deferred reader's first read answers Lagged only if the head had moved since the bind. *)
+FirstLagIsOvertaken ==
+    \A r \in DeferredReaders : fl[r] => hl[r] > ob[r]
 
 =============================================================================

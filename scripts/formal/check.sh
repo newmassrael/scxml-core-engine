@@ -22,11 +22,23 @@
 #   * BroadcastLog_without_extra_slot.cfg, BroadcastLog_without_revalidation.cfg: the ring with only R
 #     slots, and the read without its second stamp load. TLC must find an answer the specification does
 #     not give (a Lagged that skipped nothing; an Item made of two entries).
+#   * BroadcastLog_deferred.cfg: a reader opened by reader_deferred() (its first read binds its cursor to the
+#     oldest retained entry of the head that read loads) beside an ordinary one. TLC must find no violation,
+#     of the existing invariants or of DeferredStart (its start is that entry, and what it was told it lost
+#     lies after it) and FirstLagIsOvertaken (its first read answers Lagged only if the head had moved).
+#     BroadcastLog_deferred_without_extra_slot.cfg: the same reader over R slots. TLC must find a first
+#     read told of a loss that no publish had caused.
 #   * BroadcastLogWrapped.cfg, _r3.cfg, _oldest.cfg (docs/formal/BroadcastLogWrapped.tla, ADR 0062
 #     "Stamp width"): the narrow row, whose 3-bit stamp wraps, with one reader that opens at the head, one
 #     whose log keeps as many slots as half the stamp space, and one that opens at the oldest entry, each
 #     under the wrap bound. TLC must find no violation of AnswerRefines (order, wholeness, exact gaps),
 #     CursorNotPastHead, LostIsNonNegative, SlotIndexContinuous or OpenRefines.
+#     BroadcastLogWrapped_deferred.cfg: a reader that opens by its first read (the two loads of opening at
+#     the oldest are the start of that read), under the same bound, which here also holds the log to K
+#     publishes past the reader's first load. TLC must find no violation, DeferredStart and
+#     FirstLagIsOvertaken among the invariants.
+#     BroadcastLogWrapped_deferred_without_bound.cfg: the same without the bound. TLC must find an Empty
+#     answered for a head that is a whole stamp space ahead, between the two loads of the open.
 #   * BroadcastLogWrapped_without_bound.cfg: the same log whose reader may be held for as long as it
 #     likes. TLC must find the entry of a later lap handed as the one the reader wanted.
 #     BroadcastLogWrapped_non_divisor.cfg: a slot count (3) that does not divide the stamp space (8). TLC
@@ -97,7 +109,7 @@ if [[ "$status" -ne 12 ]]; then
     echo "check.sh: expected TLC to report an invariant violation (exit 12), got $status" >&2
     exit 1
 fi
-for config in BroadcastLog BroadcastLog_r1; do
+for config in BroadcastLog BroadcastLog_r1 BroadcastLog_deferred; do
     echo "== $config: the bounded log of ADR 0062 as designed, no violation expected"
     if ! tlc "$config.cfg" BroadcastLog; then
         echo "check.sh: TLC found a violation of the bounded log's protocol ($config)" >&2
@@ -105,7 +117,7 @@ for config in BroadcastLog BroadcastLog_r1; do
     fi
 done
 
-for config in BroadcastLog_without_extra_slot BroadcastLog_without_revalidation; do
+for config in BroadcastLog_without_extra_slot BroadcastLog_without_revalidation BroadcastLog_deferred_without_extra_slot; do
     echo "== $config: a design the ADR rejects, a violation expected"
     set +e
     tlc "$config.cfg" BroadcastLog > "$config.log" 2>&1
@@ -117,7 +129,7 @@ for config in BroadcastLog_without_extra_slot BroadcastLog_without_revalidation;
         exit 1
     fi
 done
-for config in BroadcastLogWrapped BroadcastLogWrapped_r3 BroadcastLogWrapped_oldest; do
+for config in BroadcastLogWrapped BroadcastLogWrapped_r3 BroadcastLogWrapped_oldest BroadcastLogWrapped_deferred; do
     echo "== $config: the narrow bounded log under the wrap bound, no violation expected"
     if ! tlc "$config.cfg" BroadcastLogWrapped; then
         echo "check.sh: TLC found a violation of the narrow log's protocol ($config)" >&2
@@ -125,7 +137,7 @@ for config in BroadcastLogWrapped BroadcastLogWrapped_r3 BroadcastLogWrapped_old
     fi
 done
 
-for config in BroadcastLogWrapped_without_bound BroadcastLogWrapped_non_divisor; do
+for config in BroadcastLogWrapped_without_bound BroadcastLogWrapped_non_divisor BroadcastLogWrapped_deferred_without_bound; do
     echo "== $config: a narrow log the ADR refuses, a violation expected"
     set +e
     tlc "$config.cfg" BroadcastLogWrapped > "$config.log" 2>&1
