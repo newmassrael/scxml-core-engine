@@ -180,6 +180,65 @@ pub enum InputSource {
         alias: String,
         input: String,
     },
+    /// The group the input decides ([`GateGroup`]): the input is set exactly
+    /// when the value holds the group's side present while it holds.
+    Group,
+}
+
+/// What a gate reads: a flag-input of the codec, or a one-bit flag of one of
+/// its own carriers.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GateVar {
+    Input(String),
+    Flag { carrier: String, flag: String },
+}
+
+impl fmt::Display for GateVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GateVar::Input(name) => f.write_str(name),
+            GateVar::Flag { carrier, flag } => write!(f, "{carrier}.{flag}"),
+        }
+    }
+}
+
+/// The elements a value presents together because one gate decides them
+/// (docs/adr/0065 §6 R4b): those present while the gate holds, and those
+/// present while it does not. A length stated while its content is absent is
+/// present on the side where the content is not. A gate with one element
+/// keeps the element as it is; a group has two elements or more.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateGroup {
+    pub gate: GateVar,
+    /// Present while the gate holds, in declaration order.
+    pub set: Vec<String>,
+    /// Present while it does not, in declaration order.
+    pub clear: Vec<String>,
+}
+
+impl GateGroup {
+    /// Whether the group has elements on both sides, so that a value holds
+    /// one side or the other.
+    pub fn is_sum(&self) -> bool {
+        !self.set.is_empty() && !self.clear.is_empty()
+    }
+
+    /// Whether `field` is one of the group's elements.
+    pub fn contains(&self, field: &str) -> bool {
+        self.set.iter().chain(self.clear.iter()).any(|f| f == field)
+    }
+
+    /// The side `field` is on: `true` for the side present while the gate
+    /// holds.
+    pub fn side_of(&self, field: &str) -> Option<bool> {
+        if self.set.iter().any(|f| f == field) {
+            Some(true)
+        } else if self.clear.iter().any(|f| f == field) {
+            Some(false)
+        } else {
+            None
+        }
+    }
 }
 
 /// A flag-input of a held codec that the codec says itself, while the parent
@@ -413,6 +472,9 @@ pub struct CodecRoles {
     /// The inputs of held codecs that a codec says while the parent hands it a
     /// value from elsewhere: each a relation the encode holds a source to.
     pub input_checks: Vec<InputCheck>,
+    /// The elements one gate decides, which a value presents together
+    /// (docs/adr/0065 §6 R4b).
+    pub groups: Vec<GateGroup>,
     /// A derivation that names an element the codec does not have. A codec the
     /// parser accepted has none; a non-empty list is a defect of the model.
     pub unresolved: Vec<String>,
@@ -434,6 +496,16 @@ impl CodecRoles {
     /// Whether the value says the flag-input `name`.
     pub fn says_input(&self, name: &str) -> bool {
         self.inputs.contains_key(name)
+    }
+
+    /// The group `field` is an element of.
+    pub fn group_of(&self, field: &str) -> Option<&GateGroup> {
+        self.groups.iter().find(|g| g.contains(field))
+    }
+
+    /// The group the gate `gate` decides.
+    pub fn group_of_gate(&self, gate: &GateVar) -> Option<&GateGroup> {
+        self.groups.iter().find(|g| &g.gate == gate)
     }
 
     /// The role of an element, `None` when the codec has no such element.
@@ -507,8 +579,17 @@ impl CodecRoles {
                     when_clear: true,
                 } => format!("absence-of({field})"),
                 InputSource::Forward { embed, input, .. } => format!("input-of({embed}.{input})"),
+                InputSource::Group => format!("side-of(group {name})"),
             };
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
+        }
+        for group in &self.groups {
+            out.push_str(&format!(
+                "  group  {}  set ({})  clear ({})\n",
+                group.gate,
+                group.set.join(", "),
+                group.clear.join(", ")
+            ));
         }
         for check in &self.input_checks {
             out.push_str(&format!(
@@ -824,7 +905,33 @@ pub fn classify_with(
         });
     }
 
-    let inputs_said = said_inputs(model, &held, &derived_whole);
+    let mut unresolved = Vec::new();
+    for (id, by) in derivations {
+        match rows.iter_mut().find(|row| row.id == id) {
+            Some(row) => row.role = Role::Derived(by),
+            None => unresolved.push(format!(
+                "{} names `{id}`, which the codec does not have",
+                by.iter()
+                    .map(Derivation::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" AND ")
+            )),
+        }
+    }
+    // The groups read what is derived (a stated length is one), so they and
+    // what depends on them are found once the roles are.
+    let mut roles = CodecRoles {
+        codec: model.name.clone(),
+        encoding: model.encoding,
+        rows,
+        checks,
+        inputs: BTreeMap::new(),
+        input_checks: Vec::new(),
+        groups: Vec::new(),
+        unresolved,
+    };
+    roles.groups = gate_groups(model, &roles, &derived_whole);
+    let inputs_said = said_inputs(model, &held, &derived_whole, &roles.groups);
     for held_codec in &held {
         // An input of this codec handed on: checked where the value says it
         // otherwise than the body it is handed to.
@@ -883,27 +990,106 @@ pub fn classify_with(
         }
     }
 
-    let mut unresolved = Vec::new();
-    for (id, by) in derivations {
-        match rows.iter_mut().find(|row| row.id == id) {
-            Some(row) => row.role = Role::Derived(by),
-            None => unresolved.push(format!(
-                "{} names `{id}`, which the codec does not have",
-                by.iter()
-                    .map(Derivation::to_string)
-                    .collect::<Vec<_>>()
-                    .join(" AND ")
-            )),
+    roles.inputs = inputs_said;
+    roles.input_checks = input_checks;
+    roles
+}
+
+/// The groups of `model` (docs/adr/0065 §6 R4b): the presented fields each
+/// gate of one flag decides, by side, and a stated length on the side where
+/// its content is absent. A gate that decides one element makes no group.
+fn gate_groups(
+    model: &CodecModel,
+    roles: &CodecRoles,
+    derived_whole: &BTreeSet<String>,
+) -> Vec<GateGroup> {
+    let mut groups: Vec<GateGroup> = Vec::new();
+    let mut push = |gate: GateVar, field: &str, set: bool| {
+        let group = match groups.iter_mut().position(|g| g.gate == gate) {
+            Some(index) => &mut groups[index],
+            None => {
+                groups.push(GateGroup {
+                    gate,
+                    set: Vec::new(),
+                    clear: Vec::new(),
+                });
+                groups.last_mut().expect("just pushed")
+            }
+        };
+        if set {
+            group.set.push(field.to_string());
+        } else {
+            group.clear.push(field.to_string());
+        }
+    };
+    for field in &model.fields {
+        let Some(gate) = &field.present_if else {
+            continue;
+        };
+        if derived_whole.contains(&field.id) {
+            continue;
+        }
+        if let Some(var) = gate_var(model, gate) {
+            push(var, &field.id, !gate.negate);
         }
     }
-    CodecRoles {
-        codec: model.name.clone(),
-        encoding: model.encoding,
-        rows,
-        checks,
-        inputs: inputs_said,
-        input_checks,
-        unresolved,
+    // A length stated while its content is absent is on the other side from
+    // all of its content.
+    let stated: Vec<(String, GateVar, bool)> = model
+        .fields
+        .iter()
+        .filter(|f| crate::forge::codec_totality::stated(model, roles, f))
+        .filter_map(|f| {
+            let measured = crate::forge::codec_totality::measured(
+                model,
+                roles,
+                &ElementId::Field(f.id.clone()),
+            );
+            let first = measured.first()?;
+            let group = groups.iter().find(|g| g.contains(&first.id))?;
+            let side = group.side_of(&first.id)?;
+            measured
+                .iter()
+                .all(|m| group.side_of(&m.id) == Some(side))
+                .then(|| (f.id.clone(), group.gate.clone(), !side))
+        })
+        .collect();
+    for (field, gate, side) in stated {
+        if let Some(group) = groups.iter_mut().find(|g| g.gate == gate) {
+            if side {
+                group.set.push(field);
+            } else {
+                group.clear.push(field);
+            }
+        }
+    }
+    groups.retain(|g| g.set.len() + g.clear.len() >= 2);
+    groups
+}
+
+/// The flag a gate of one clause reads: a flag-input one bit wide, or a
+/// one-bit flag of a carrier of the codec. Any other gate decides no group.
+fn gate_var(model: &CodecModel, gate: &PresentIfPredicate) -> Option<GateVar> {
+    if gate.or_with.is_some() {
+        return None;
+    }
+    match gate.scope {
+        PresentIfScope::Input => model
+            .flag_inputs
+            .iter()
+            .any(|i| i.name == gate.flag_name && i.width == 1)
+            .then(|| GateVar::Input(gate.flag_name.clone())),
+        PresentIfScope::Local => model
+            .fields
+            .iter()
+            .find(|c| c.id == gate.field_id)
+            .and_then(|c| c.flags.iter().find(|d| d.name == gate.flag_name))
+            .filter(|d| d.width == 1)
+            .map(|_| GateVar::Flag {
+                carrier: gate.field_id.clone(),
+                flag: gate.flag_name.clone(),
+            }),
+        _ => None,
     }
 }
 
@@ -979,13 +1165,15 @@ fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCod
 }
 
 /// The flag-inputs of `model` its value says (docs/adr/0065 §6 R4a): those
-/// exactly one thing says, a presented field gated on the input alone, or the
-/// one body, always there, it is handed on to, whose codec says it. A length
-/// or a count gated with its content is derived whole and says nothing.
+/// exactly one thing says, a presented field gated on the input alone, the
+/// group of the fields it decides (§6 R4b), or the one body, always there, it
+/// is handed on to, whose codec says it. A length or a count gated with its
+/// content is derived whole and says nothing.
 fn said_inputs(
     model: &CodecModel,
     held: &[HeldCodec],
     derived_whole: &BTreeSet<String>,
+    groups: &[GateGroup],
 ) -> BTreeMap<String, InputSource> {
     let mut said = BTreeMap::new();
     for input in model.flag_inputs.iter().filter(|i| i.width == 1) {
@@ -1013,7 +1201,15 @@ fn said_inputs(
                 |(_, b)| matches!(&b.source, FlagBindSource::Input { name } if name == &input.name),
             )
             .collect();
+        let group = groups
+            .iter()
+            .find(|g| g.gate == GateVar::Input(input.name.clone()));
         let source = match (gates.as_slice(), forwards.as_slice(), in_other_gate) {
+            (gated, [], false)
+                if group.is_some_and(|g| gated.iter().all(|(f, _)| g.contains(f))) =>
+            {
+                Some(InputSource::Group)
+            }
             ([(field, when_clear)], [], false) => Some(InputSource::Gate {
                 field: field.to_string(),
                 when_clear: *when_clear,
@@ -1068,6 +1264,7 @@ fn flat<'a>(model: &CodecModel, ids: impl Iterator<Item = &'a str>) -> CodecRole
         checks: Vec::new(),
         inputs: BTreeMap::new(),
         input_checks: Vec::new(),
+        groups: Vec::new(),
         unresolved: Vec::new(),
     }
 }

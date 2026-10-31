@@ -367,17 +367,7 @@ pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
 /// destination holds, so the push cannot fail; the arm is there because `push`
 /// returns a `Result`.
 pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
-    let fill = |list: &str, indent: &str, walk: &str| {
-        format!(
-            "{list}.clear();\n{indent}\
-             for _e in {walk}.iter() {{\n{indent}    \
-                 {list}.push({entry}::default()).map_err(|_| CodecError::TooManyElements)?;\n{indent}    \
-                 if let Some(_slot) = {list}.last_mut() {{\n{indent}        \
-                     _e.into_builder(_slot)?;\n{indent}    \
-                 }}\n{indent}\
-             }}"
-        )
-    };
+    let fill = |list: &str, indent: &str, walk: &str| fill_list(list, indent, walk, entry);
     if gated {
         let body = fill("_vec", "                ", "_l");
         format!(
@@ -391,5 +381,38 @@ pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
         )
     } else {
         fill(&format!("_out.{id}"), "        ", &format!("self.{id}"))
+    }
+}
+
+/// The destination list `list` cleared and filled from the walk `walk`, each
+/// entry pushed as `entry`'s default and filled where it sits.
+fn fill_list(list: &str, indent: &str, walk: &str, entry: &str) -> String {
+    format!(
+        "{list}.clear();\n{indent}\
+         for _e in {walk}.iter() {{\n{indent}    \
+             {list}.push({entry}::default()).map_err(|_| CodecError::TooManyElements)?;\n{indent}    \
+             if let Some(_slot) = {list}.last_mut() {{\n{indent}        \
+                 _e.into_builder(_slot)?;\n{indent}    \
+             }}\n{indent}\
+         }}"
+    )
+}
+
+/// `into_builder` of an element of a group (docs/adr/0065 §6 R4b): `src` is a
+/// reference to the element the view holds and `dest` the place in the builder
+/// it fills. A list is filled entry by entry, a body by its own view, and
+/// anything else copied.
+pub(super) fn into_builder_member(
+    field: &CodecField,
+    src: &str,
+    dest: &str,
+    entry: &str,
+) -> String {
+    if field.is_repeat() || field.is_tlv_chain() {
+        fill_list(dest, "                ", src, entry)
+    } else if field.is_embed() {
+        format!("{src}.into_builder(&mut {dest})?;")
+    } else {
+        format!("{dest} = *{src};")
     }
 }

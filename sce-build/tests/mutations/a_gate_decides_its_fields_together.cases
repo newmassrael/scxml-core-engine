@@ -1,0 +1,42 @@
+# Mutation cases for "a gate decides its fields together".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_gate_decides_its_fields_together.cases`.
+#
+# The presented fields one gate decides form a group a value holds as one
+# thing, and a length stated while its content is absent belongs to the side
+# where the content is not (docs/adr/0065 §6 R4b). The fields of a group cannot
+# disagree about their gate, so the encode refuses none of it, and the codecs
+# that became total that way state it. Each case below breaks a group apart,
+# leaves a stated length beside its content, or keeps a refusal a group
+# removed, so a codec that states it is total refuses somewhere, and the test
+# that holds every codec document to its statement fails. No document has a
+# one-bit flag of its own carrier that gates two presented fields, so the
+# refusal of fields that disagree about such a flag has no case here: removing
+# it would change no statement.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test codec_totality
+mutation_targets sce-build/src/forge/codec_roles.rs sce-build/src/forge/codec_totality.rs
+mutation_oracles sce-build/tests/codec_totality.rs
+
+mutation_case "no gate makes a group" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''    groups.retain(|g| g.set.len() + g.clear.len() >= 2);''',
+     r'''    groups.retain(|g| g.set.len() + g.clear.len() >= usize::MAX);''')
+PY
+
+mutation_case "a stated length stays beside its content" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''                .then(|| (f.id.clone(), group.gate.clone(), !side))''',
+     r'''                .then(|| (f.id.clone(), group.gate.clone(), !side))
+                .filter(|_| false)''')
+PY
+
+mutation_case "a stated length a group holds is said twice" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''            if free && stated(m, roles, field) && roles.group_of(&field.id).is_none() {''',
+     r'''            if free && stated(m, roles, field) {''')
+PY

@@ -653,7 +653,13 @@ fn derived(
             .map(|b| (b.clone(), false))
             .collect(),
         Derivation::PresenceOf { gated: fields } => {
-            if fields.len() > 1 {
+            // Fields one group holds are present together (docs/adr/0065 §6
+            // R4b), so they cannot disagree.
+            let one_group = fields
+                .first()
+                .and_then(|g| roles.group_of(&g.field))
+                .is_some_and(|group| fields.iter().all(|g| group.contains(&g.field)));
+            if fields.len() > 1 && !one_group {
                 push(
                     out,
                     RefusalKind::InconsistentSource,
@@ -738,7 +744,9 @@ fn derived(
                     },
                 );
             }
-            if free && stated(m, roles, field) {
+            // A stated length a group holds is on the side where its content
+            // is absent (docs/adr/0065 §6 R4b): never said beside content.
+            if free && stated(m, roles, field) && roles.group_of(&field.id).is_none() {
                 push(
                     out,
                     RefusalKind::InconsistentSource,

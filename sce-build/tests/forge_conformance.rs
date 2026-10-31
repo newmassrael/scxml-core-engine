@@ -5910,7 +5910,7 @@ fn forge_codec_repeat_present_if_unconditional_count_accepts() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="cogating_unconditional">
+       sce:kind="codec" sce:default-endian="big" name="cogating_unconditional">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -16279,10 +16279,23 @@ mod tests {
 
     type Shape = (u8, Option<u8>, Option<u16>);
 
+    /// The value an entry holds, as the short value or the long one: the two
+    /// sides of the one sum `wide` decides (docs/adr/0065 section 6, R4b).
+    fn layout(e: &crate::codec_chain_flag_entry::CodecChainFlagEntry) -> (Option<u8>, Option<u16>) {
+        use crate::codec_chain_flag_entry::CodecChainFlagEntryWide as Wide;
+        match e.wide {
+            Wide::Wide { long_value } => (None, Some(long_value)),
+            Wide::NotWide { short_value } => (Some(short_value), None),
+        }
+    }
+
     fn shapes(entries: &[crate::codec_chain_flag_entry::CodecChainFlagEntry]) -> Vec<Shape> {
         entries
             .iter()
-            .map(|e| (e.header, e.short_value, e.long_value))
+            .map(|e| {
+                let (short, long) = layout(e);
+                (e.header, short, long)
+            })
             .collect()
     }
 
@@ -16321,8 +16334,8 @@ mod tests {
         let narrow = forward(&WIDE, 0);
         let wide_first = &wide.entries.as_ref().expect("chain")[0];
         let narrow_first = &narrow.entries.as_ref().expect("chain")[0];
-        assert_eq!((wide_first.short_value, wide_first.long_value), (None, Some(0x1234)));
-        assert_eq!((narrow_first.short_value, narrow_first.long_value), (Some(0x12), None));
+        assert_eq!(layout(wide_first), (None, Some(0x1234)));
+        assert_eq!(layout(narrow_first), (Some(0x12), None));
     }
 
     #[test]
@@ -17207,10 +17220,18 @@ mod tests {
 
     type Shape = (u8, Option<u8>, Option<u16>, Option<u8>);
 
+    /// Each entry as the short value or the long one, the two sides of the one
+    /// sum `after_marker` decides (docs/adr/0065 section 6, R4b), and its tag.
     fn shapes(entries: &[CodecChainPrevEntry]) -> Vec<Shape> {
+        use crate::codec_chain_prev_entry::CodecChainPrevEntryAfterMarker as AfterMarker;
         entries
             .iter()
-            .map(|e| (e.header, e.short_value, e.long_value, e.tag))
+            .map(|e| match e.after_marker {
+                AfterMarker::AfterMarker { long_value } => (e.header, None, Some(long_value), e.tag),
+                AfterMarker::NotAfterMarker { short_value } => {
+                    (e.header, Some(short_value), None, e.tag)
+                }
+            })
             .collect()
     }
 
@@ -17479,6 +17500,7 @@ mod tests {
     use crate::codec_zenoh_query_value::CodecZenohQueryValue;
     use crate::codec_zenoh_value_entry::CodecZenohValueEntryVariant;
     use crate::codec_zenoh_value_zbuf::CodecZenohValueZbuf;
+    use crate::codec_zenoh_value_zbuf::CodecZenohValueZbufAfterShm as AfterShm;
     use ::sce_forge_runtime::codec::SceCursor;
 
     const SHM: [u8; 15] = [@SHM@];
@@ -17507,12 +17529,15 @@ mod tests {
         ));
         assert_eq!(v.exts[1].header, 0x43);
         let z = zbuf(&v, 1);
-        // The declared length is read and carried; it is not what bounds the body.
-        assert_eq!(z.value_len, 1026);
-        assert!(z.value.is_none());
-        assert_eq!(z.encoding, Some(0));
+        // The sliced side of the one sum `after_shm` decides (docs/adr/0065
+        // section 6, R4b). The declared length is read and carried on it; it
+        // is not what bounds the body.
+        let AfterShm::AfterShm { value_len, encoding, slices } = &z.after_shm else {
+            panic!("a plain value after the marker");
+        };
+        assert_eq!(*value_len, 1026);
+        assert_eq!(*encoding, 0);
         assert_eq!(z.slice_count, Some(1));
-        let slices = z.slices.as_ref().expect("slices");
         assert_eq!(slices.len(), 1);
         assert_eq!(slices[0].kind, 1);
         assert_eq!(slices[0].len, 7);
@@ -17524,9 +17549,11 @@ mod tests {
     fn without_a_marker_the_zbuf_is_an_ordinary_value() {
         let v = decode(&PLAIN);
         let z = zbuf(&v, 0);
-        assert_eq!(z.value_len, 4);
-        assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
-        assert!(z.slices.is_none() && z.encoding.is_none());
+        // The plain side: its length is the value's, derived and not held.
+        let AfterShm::NotAfterShm { value } = &z.after_shm else {
+            panic!("a sliced body without the marker");
+        };
+        assert_eq!(*value, &[0xDE, 0xAD, 0xBE, 0xEF][..]);
         assert_eq!(v.encode_to_vec().expect("encode"),PLAIN.to_vec());
     }
 
@@ -17535,8 +17562,10 @@ mod tests {
         let v = decode(&NOT_ADJACENT);
         assert_eq!(v.exts.len(), 3);
         let z = zbuf(&v, 2);
-        assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
-        assert!(z.slices.is_none());
+        let AfterShm::NotAfterShm { value } = &z.after_shm else {
+            panic!("a sliced body after an extension that is not the marker");
+        };
+        assert_eq!(*value, &[0xDE, 0xAD, 0xBE, 0xEF][..]);
         assert_eq!(v.encode_to_vec().expect("encode"),NOT_ADJACENT.to_vec());
     }
 }

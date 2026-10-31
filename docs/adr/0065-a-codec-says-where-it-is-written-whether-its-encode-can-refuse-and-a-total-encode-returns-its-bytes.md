@@ -270,6 +270,21 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     `Not{Flag}` when it is clear). A stated length of absent content joins the arm in which its content is absent:
     that is the third bullet above. The source presents the group or the sum, each form holds it, and the flag is
     derived from it. An input gated on several elements is then said by one group, and R4a applies to it.
+    *Landed 2026-11-01.* A group is read off the document by `codec_roles` (`GateGroup`): the presented fields one
+    gate decides, by side, a gate being a flag-input one bit wide or a one-bit flag of one of the codec's own
+    carriers. A stated length whose content is all on one side is on the other side. A group of one side is a struct
+    `{Codec}{Gate}` that a value holds or not (`Option`). A group of two sides is an enum of that name, with a side
+    `{Gate}` present while the gate holds and `Not{Gate}` present while it does not. An element whose type differs
+    between the forms (text, bytes, a list, a body) is a type parameter of the group, so one type serves the source
+    trait, the parts, the decoded value, the view and the owned form. Each form holds the group in one field
+    named after the gate, and the source trait presents it by one accessor. The decode still reads each element
+    into a local, a list or a body included, and builds the group under the test it read them by. The encode
+    binds each element back to an `Option` local, so each statement that writes an element is the one it was. The
+    gate is derived from the side: a flag of the codec as one gated field's presence was, an input as R4a says
+    (`InputSource::Group`). Two refusals go with it: fields one flag announces that disagree, and a stated length
+    beside its content. Eight documents became total: `init_syn_body` and its envelope, `decl_queryable` with the
+    `declaration` and `declare` that hold it, `chain_flag_entry`, `chain_prev_entry` and `value_zbuf`. The Zenoh
+    `init_body` and `join` hold their group and keep the refusal of R1 for their `zid`.
   - **R4c, disjunctions**: the first bullet above, with each satisfying assignment of the flags as one arm.
 
   Other backends keep their checks until they take the source interface. Their encode is still handed every input.

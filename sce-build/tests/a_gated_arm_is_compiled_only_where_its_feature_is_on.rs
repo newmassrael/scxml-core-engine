@@ -180,7 +180,11 @@ fn every_rust_item_of_a_gated_arm_carries_its_cfg_and_no_other_does() {
             || next.trim_start().starts_with("fn body(&self)")
             || next
                 .trim_start()
-                .starts_with("/// The arm of the variant this value holds.");
+                .starts_with("/// The arm of the variant this value holds.")
+            // The `tag()` of the source enum, written once per build because a
+            // type's arguments take no cfg; the build with the feature on is
+            // spelled with the feature's own cfg.
+            || (next.starts_with("impl<'s, ") && next.contains("VariantSource<'s, "));
         assert!(
             follows_a_gated_item,
             "the feature's cfg stands in front of something every build holds:\n{next}"

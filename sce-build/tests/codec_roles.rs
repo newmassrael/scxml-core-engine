@@ -251,9 +251,10 @@ fn dispatched_in_xml(path: &Path) -> BTreeSet<ElementId> {
 }
 
 /// Whether the document at `path` says its flag input `input`, read out of the XML
-/// (docs/adr/0065 §6 R4a): exactly one field it presents is gated on the input
-/// alone and nothing else names it, or no field is gated on it and it is handed on
-/// once, to an import held by one embed that is always there, which says it.
+/// (docs/adr/0065 §6 R4a, R4b): the fields it presents gated on the input alone,
+/// one or a group of them, and nothing else names it; or no field is gated on it
+/// and it is handed on once, to an import held by one embed that is always there,
+/// which says it.
 fn says_input_in_xml(path: &Path, input: &str) -> bool {
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
@@ -286,7 +287,9 @@ fn says_input_in_xml(path: &Path, input: &str) -> bool {
         .filter_map(|n| Some((n.parent()?, n.attribute("input")?)))
         .collect();
     match (alone, forwards.as_slice(), elsewhere) {
-        (1, [], false) => true,
+        // One field says it, or the group of the fields it decides does
+        // (docs/adr/0065 §6 R4b).
+        (n, [], false) if n >= 1 => true,
         (0, [(import, bound)], false) => {
             let Some(alias) = import.attribute("as") else {
                 return false;

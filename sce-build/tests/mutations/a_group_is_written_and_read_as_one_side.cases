@@ -1,0 +1,40 @@
+# Mutation cases for "a group is written and read as one side".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_group_is_written_and_read_as_one_side.cases`.
+#
+# A Rust codec holds the fields one gate decides as one group, decodes each of
+# them and builds the group under the gate it read them by, writes each from
+# the side the value holds, and derives the gate from that side (docs/adr/0065
+# §6 R4b). The conformance crate generates its codecs from the documents when
+# it builds, so each case reaches the codecs the `groups` tests decode and
+# encode: a decode that builds the other side, an input read from the other
+# side, and an encode that writes the elements of the side the value does not
+# hold.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/generator/rust_source.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "a decode builds a group of one side when its gate does not hold" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                format!("if {test} {{ {some} }} else {{ None }}")''',
+     r'''                format!("if {test} {{ None }} else {{ {some} }}")''')
+PY
+
+mutation_case "an input two sides decide is read from the other side" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                    let (set, _) = Self::group_arms(group);''',
+     r'''                    let (_, set) = Self::group_arms(group);''')
+PY
+
+mutation_case "an encode writes the elements of the side the value does not hold" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                        if on.iter().any(|o| o.id == f.id) {
+                            format!("Some({})", self.accessor(f))''',
+     r'''                        if !on.iter().any(|o| o.id == f.id) {
+                            format!("Some({})", self.accessor(f))''')
+PY

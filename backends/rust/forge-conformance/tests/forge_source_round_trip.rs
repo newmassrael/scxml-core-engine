@@ -499,7 +499,9 @@ mod said_inputs {
     use super::codecs::codec_chain_prev_carrier::{
         CodecChainPrevCarrier, CodecChainPrevCarrierParts,
     };
-    use super::codecs::codec_chain_prev_entry::CodecChainPrevEntryParts;
+    use super::codecs::codec_chain_prev_entry::{
+        CodecChainPrevEntryAfterMarker, CodecChainPrevEntryParts,
+    };
     use super::codecs::codec_zenoh_decl_token::{CodecZenohDeclToken, CodecZenohDeclTokenParts};
     use super::codecs::codec_zenoh_interest_body::{
         CodecZenohInterestBody, CodecZenohInterestBodyParts,
@@ -580,8 +582,7 @@ mod said_inputs {
     fn an_entry_that_says_its_input_otherwise_than_its_chain_is_refused_before_a_byte() {
         let entries = [CodecChainPrevEntryParts {
             header: 0x01,
-            short_value: Some(5),
-            long_value: None,
+            after_marker: CodecChainPrevEntryAfterMarker::NotAfterMarker { short_value: 5 },
             tag: Some(9),
         }];
         let carrier = |head| CodecChainPrevCarrierParts {
@@ -597,6 +598,114 @@ mod said_inputs {
         CodecChainPrevCarrier::encode_source(&carrier(0x01), &mut VecSink::new(&mut bytes))
             .expect("the entry says the input the chain hands it");
         assert_eq!(bytes, [0x01, 0x01, 5, 9]);
+    }
+}
+
+// The fields one gate decides, held together (docs/adr/0065 §6 R4b): a value
+// holds a side or none, the gate is derived from which, and a length stated
+// while its content is absent is held on the side where it is.
+mod groups {
+    use super::codecs::codec_chain_flag_entry::{
+        CodecChainFlagEntry, CodecChainFlagEntryParts, CodecChainFlagEntryWide,
+    };
+    use super::codecs::codec_init_syn_body::{
+        CodecInitSynBody, CodecInitSynBodyParts, CodecInitSynBodyS,
+    };
+    use super::codecs::codec_present_if_length_ref::{
+        CodecPresentIfLengthRef, CodecPresentIfLengthRefFlagsHasPayload as HasPayload,
+        CodecPresentIfLengthRefParts,
+    };
+    use super::codecs::codec_zenoh_value_slice::CodecZenohValueSliceParts;
+    use super::codecs::codec_zenoh_value_zbuf::{
+        CodecZenohValueZbuf, CodecZenohValueZbufAfterShm as AfterShm, CodecZenohValueZbufParts,
+    };
+    use sce_forge_runtime::codec::{Bounded, SceCursor, VecSink};
+
+    #[test]
+    fn a_group_of_one_side_is_held_whole_or_not_at_all() {
+        let syn = |s| CodecInitSynBodyParts { version: 1, s };
+        let with = syn(Some(CodecInitSynBodyS {
+            sn_res: 0x33,
+            batch_size: 0xCAFE,
+        }));
+        assert!(CodecInitSynBody::input_s(&with));
+        assert!(!CodecInitSynBody::input_s(&syn(None)));
+        let mut bytes = Vec::new();
+        let Ok(()) = CodecInitSynBody::encode_source(&with, &mut VecSink::new(&mut bytes));
+        assert_eq!(bytes, [1, 0x33, 0xCA, 0xFE]);
+        let decoded = CodecInitSynBody::decode(&mut SceCursor::new(&bytes), 1).expect("a frame");
+        assert_eq!(decoded.s, with.s);
+        let decoded = CodecInitSynBody::decode(&mut SceCursor::new(&[1]), 0).expect("a frame");
+        assert_eq!(decoded.s, None);
+    }
+
+    #[test]
+    fn an_input_two_sides_decide_is_the_side_the_value_holds() {
+        let entry = |wide| CodecChainFlagEntryParts { header: 0x01, wide };
+        assert!(CodecChainFlagEntry::input_wide(&entry(
+            CodecChainFlagEntryWide::Wide { long_value: 0x1234 }
+        )));
+        assert!(!CodecChainFlagEntry::input_wide(&entry(
+            CodecChainFlagEntryWide::NotWide { short_value: 0x12 }
+        )));
+    }
+
+    #[test]
+    fn a_stated_length_is_held_on_the_side_without_its_content() {
+        let encode = |after_shm| {
+            let mut bytes = Vec::new();
+            let Ok(()) = CodecZenohValueZbuf::encode_source(
+                &CodecZenohValueZbufParts { after_shm },
+                &mut VecSink::new(&mut bytes),
+            );
+            bytes
+        };
+        let none: Bounded<&[CodecZenohValueSliceParts<'_>], 4> =
+            Bounded::new(&[][..]).expect("no entries");
+        // The sliced side states a length its bytes do not measure.
+        let sliced = AfterShm::AfterShm {
+            encoding: 0,
+            slices: none,
+            value_len: 1026,
+        };
+        assert!(CodecZenohValueZbuf::input_after_shm(
+            &CodecZenohValueZbufParts { after_shm: sliced }
+        ));
+        assert_eq!(encode(sliced), [0x82, 0x08, 0x00, 0x00]);
+        // The plain side's length is its value's.
+        let plain = AfterShm::NotAfterShm {
+            value: &[1u8, 2, 3][..],
+        };
+        assert!(!CodecZenohValueZbuf::input_after_shm(
+            &CodecZenohValueZbufParts { after_shm: plain }
+        ));
+        assert_eq!(encode(plain), [0x03, 1, 2, 3]);
+    }
+
+    #[test]
+    fn a_flag_of_the_codec_is_derived_from_the_side_the_value_holds() {
+        let encode = |flags_has_payload| {
+            let mut bytes = Vec::new();
+            CodecPresentIfLengthRef::encode_source(
+                &CodecPresentIfLengthRefParts {
+                    flags: 0x00,
+                    flags_has_payload,
+                },
+                &mut VecSink::new(&mut bytes),
+            )
+            .expect("a payload within its length's bits");
+            bytes
+        };
+        assert_eq!(
+            encode(HasPayload::HasPayload {
+                payload: &[9u8, 8][..]
+            }),
+            [0x01, 0x02, 9, 8]
+        );
+        assert_eq!(
+            encode(HasPayload::NotHasPayload { payload_size: 5 }),
+            [0x00, 0x05]
+        );
     }
 }
 

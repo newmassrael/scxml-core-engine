@@ -7082,6 +7082,9 @@ fn rust_owned_field_keys(
     imports: &[ImportContext],
     l: &LangCtx,
     origin: bool,
+    // The value the projection reads, when it is not `self.<id>`: an element
+    // of a group, bound by the match over the group (docs/adr/0065 §6 R4b).
+    place: Option<&str>,
 ) -> Result<(String, String), ForgeError> {
     // The element / body conversion a field needs. `List` and `Qualified`
     // carry their spelled-out call site, so the later `opt` match splices one
@@ -7229,7 +7232,7 @@ fn rust_owned_field_keys(
         }
     };
 
-    let self_ref = format!("self.{id}");
+    let self_ref = place.map_or_else(|| format!("self.{id}"), str::to_string);
     // A constructor call on `arg`: the origin form takes the origin first.
     let call = |path: &str, arg: &str| {
         if origin {
@@ -7275,6 +7278,364 @@ fn rust_owned_field_keys(
     }
 }
 
+/// A Rust codec's fields as each form holds them, and as the wire reads them
+/// (docs/adr/0065 §6 R4b). The elements of a group, which one gate decides, are
+/// held as one entry of the group's type, where the first of them stood; the
+/// wire's fields stay as they are, for the decode to read one by one. An
+/// element the decode builds in its field (a list, an embedded body) is built
+/// in a local of its own instead, which the group then takes.
+fn rust_group_storage(
+    m: &CodecModel,
+    imports: &[ImportContext],
+    l: &LangCtx,
+    mut wire: Vec<serde_json::Value>,
+    emit_views: bool,
+) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
+    use crate::forge::generator::rust_source::{
+        group_accessor, group_arms, group_type, member_varies,
+    };
+    let roles = crate::forge::codec_roles::classify(m, imports);
+    if roles.groups.is_empty() {
+        return Ok((wire.clone(), wire));
+    }
+    let struct_name = filters::to_pascal_case(m.name.clone());
+    let field_of = |id: &str| m.fields.iter().find(|f| f.id == id);
+    let index_of = |id: &str| m.fields.iter().position(|f| f.id == id);
+    let str_of = |obj: &serde_json::Value, key: &str| -> Option<String> {
+        obj.get(key).and_then(|v| v.as_str()).map(str::to_string)
+    };
+    // The type of an element while it is there: its field's type, less the
+    // `Option` a gated field is held in.
+    let present = |ty: &str| -> String {
+        ty.strip_prefix("Option<")
+            .and_then(|t| t.strip_suffix('>'))
+            .unwrap_or(ty)
+            .to_string()
+    };
+
+    // An element the decode builds in its field is built in its local.
+    for group in &roles.groups {
+        for id in group.set.iter().chain(group.clear.iter()) {
+            let (Some(f), Some(index)) = (field_of(id), index_of(id)) else {
+                continue;
+            };
+            let local = codec_field_decode_local(&f.id, l.lang);
+            let place = format!("_out.{}", l.codec_field_id(&f.id));
+            let obj = wire[index]
+                .as_object_mut()
+                .expect("a field's context is an object");
+            for (key, ty_key) in [
+                ("repeat_decode_stmt", "rs_type"),
+                ("tlv_chain_decode_stmt", "rs_type"),
+                ("embed_decode_stmt", "rs_type"),
+                ("view_repeat_decode_stmt", "view_rs_type"),
+                ("view_tlv_chain_decode_stmt", "view_rs_type"),
+                ("view_embed_decode_stmt", "view_rs_type"),
+            ] {
+                let Some(stmt) = obj.get(key).and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let ty = obj
+                    .get(ty_key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let built = replace_place(stmt, &place, &local);
+                // A decode that builds the element in place starts from none;
+                // one that assigns it on every path declares it unassigned.
+                // The statement is the one an element outside a group is
+                // decoded by, which assigns its field on every path; the local
+                // it assigns here is declared first, as that field was.
+                let declared = if stmt.contains(&format!("{place}.insert(")) {
+                    format!("let mut {local}: {ty} = None;\n        {built}")
+                } else {
+                    format!(
+                        "#[allow(clippy::needless_late_init)]\n        let {local}: {ty};\n        {built}"
+                    )
+                };
+                obj.insert(key.into(), declared.into());
+            }
+        }
+    }
+
+    let mut stored: Vec<serde_json::Value> = Vec::new();
+    for (index, f) in m.fields.iter().enumerate() {
+        let Some(group) = roles.group_of(&f.id) else {
+            stored.push(wire[index].clone());
+            continue;
+        };
+        // The group stands where its first element stood.
+        let first = group
+            .set
+            .iter()
+            .chain(group.clear.iter())
+            .filter_map(|id| index_of(id))
+            .min();
+        if first != Some(index) {
+            continue;
+        }
+        let accessor = group_accessor(group);
+        let ty = group_type(&struct_name, group);
+        let sides: Vec<(bool, Vec<&CodecField>)> = [(true, &group.set), (false, &group.clear)]
+            .into_iter()
+            .map(|(side, ids)| (side, ids.iter().filter_map(|id| field_of(id)).collect()))
+            .collect();
+        let members: Vec<&CodecField> = sides
+            .iter()
+            .flat_map(|(_, fs)| fs.iter().copied())
+            .collect();
+        let varies = members.iter().any(|f| member_varies(f));
+        let obj_of = |f: &CodecField| &wire[index_of(&f.id).expect("an element is a field")];
+        let acc = |f: &CodecField| l.codec_field_id(&f.id);
+        // The group's type in one form: each varying element as `ty_key` says.
+        let type_in = |ty_key: &str, lifetime: Option<(&str, &str)>| -> String {
+            let args: Vec<String> = members
+                .iter()
+                .filter(|f| member_varies(f))
+                .map(|f| {
+                    let t = present(&str_of(obj_of(f), ty_key).unwrap_or_default());
+                    match lifetime {
+                        Some((from, to)) => t.replace(from, to),
+                        None => t,
+                    }
+                })
+                .collect();
+            let inner = if args.is_empty() {
+                ty.clone()
+            } else {
+                format!("{ty}<{}>", args.join(", "))
+            };
+            if group.is_sum() {
+                inner
+            } else {
+                format!("Option<{inner}>")
+            }
+        };
+        let (set_arm, clear_arm) = group_arms(group);
+        let arm_of = |side: bool| if side { &set_arm } else { &clear_arm };
+        let names = |fs: &[&CodecField]| fs.iter().map(|f| acc(f)).collect::<Vec<_>>().join(", ");
+        let held_sides: Vec<&(bool, Vec<&CodecField>)> =
+            sides.iter().filter(|(_, fs)| !fs.is_empty()).collect();
+
+        let mut entry = serde_json::Map::new();
+        entry.insert("id".into(), accessor.clone().into());
+        entry.insert("rs_type".into(), type_in("rs_type", None).into());
+
+        // The decode: each element read into its local, then the group built
+        // from them under the gate, as the decode tested it.
+        let gate_member = members
+            .iter()
+            .find(|f| f.present_if.is_some())
+            .expect("a group has an element gated on it");
+        let mut holds = gate_member.present_if.clone().expect("checked above");
+        holds.negate = false;
+        let test = present_if_test_literal(&m.fields, &holds, l.lang);
+        let build = |fs: &[&CodecField]| -> String {
+            fs.iter()
+                .map(|f| {
+                    let local = codec_field_decode_local(&f.id, l.lang);
+                    if f.present_if.is_some() {
+                        format!("{}: {local}.unwrap_or_default()", acc(f))
+                    } else {
+                        shorthand(&acc(f), &local)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let assign = if group.is_sum() {
+            format!(
+                "if {test} {{ {ty}::{set_arm} {{ {} }} }} else {{ {ty}::{clear_arm} {{ {} }} }}",
+                build(&sides[0].1),
+                build(&sides[1].1)
+            )
+        } else {
+            let (side, fs) = held_sides[0];
+            let some = format!("Some({ty} {{ {} }})", build(fs));
+            if *side {
+                format!("if {test} {{ {some} }} else {{ None }}")
+            } else {
+                format!("if {test} {{ None }} else {{ {some} }}")
+            }
+        };
+        entry.insert("assign_expr".into(), assign.into());
+
+        // The owned form: each element projected as its field is.
+        let owned_conv = |origin: bool| -> Result<String, ForgeError> {
+            if !varies {
+                return Ok(format!("self.{accessor}"));
+            }
+            // Each side as the pattern that takes it apart and the value built
+            // from its elements projected.
+            let mut arms: Vec<(String, String)> = Vec::new();
+            let mut fallible = false;
+            for (side, fs) in &held_sides {
+                let mut convs: Vec<String> = Vec::new();
+                for f in fs {
+                    let mut value = (*f).clone();
+                    value.present_if = None;
+                    let (_, expr) =
+                        rust_owned_field_keys(&value, &m.name, imports, l, origin, Some(&acc(f)))?;
+                    fallible |= expr.contains('?');
+                    convs.push(shorthand(&acc(f), &expr));
+                }
+                let path = if group.is_sum() {
+                    format!("{ty}::{}", arm_of(*side))
+                } else {
+                    ty.clone()
+                };
+                arms.push((
+                    format!("{path} {{ {} }}", names(fs)),
+                    format!("{path} {{ {} }}", convs.join(", ")),
+                ));
+            }
+            Ok(if group.is_sum() {
+                let arms: Vec<String> = arms
+                    .iter()
+                    .map(|(pattern, value)| format!("{pattern} => {value},"))
+                    .collect();
+                format!("match self.{accessor} {{ {} }}", arms.join(" "))
+            } else if fallible {
+                // A projection that can fail passes its error out of the
+                // method, which a closure would keep.
+                let (pattern, value) = &arms[0];
+                format!(
+                    "match self.{accessor} {{ Some({pattern}) => Some({value}), None => None }}"
+                )
+            } else {
+                let (pattern, value) = &arms[0];
+                format!("self.{accessor}.map(|{pattern}| {value})")
+            })
+        };
+        entry.insert("rs_into_owned_expr".into(), owned_conv(false)?.into());
+        entry.insert("rs_into_owned_origin_expr".into(), owned_conv(true)?.into());
+        let owned_ty = {
+            let args: Vec<String> = members
+                .iter()
+                .filter(|f| member_varies(f))
+                .map(|f| {
+                    let mut value = (*f).clone();
+                    value.present_if = None;
+                    rust_owned_field_keys(&value, &m.name, imports, l, false, None).map(|(t, _)| t)
+                })
+                .collect::<Result<_, _>>()?;
+            let inner = if args.is_empty() {
+                ty.clone()
+            } else {
+                format!("{ty}<{}>", args.join(", "))
+            };
+            if group.is_sum() {
+                inner
+            } else {
+                format!("Option<{inner}>")
+            }
+        };
+        entry.insert("rs_owned_type".into(), owned_ty.into());
+
+        // A projection into a destination: each element built in a local of
+        // the destination's type, then the side made of them.
+        let into_dest = |lifetime: Option<(&str, &str)>,
+                         stmt: &dyn Fn(&CodecField, &str, &str) -> Result<String, ForgeError>|
+         -> Result<String, ForgeError> {
+            if !varies {
+                return Ok(format!("_out.{accessor} = self.{accessor};"));
+            }
+            let mut arms: Vec<String> = Vec::new();
+            for (side, fs) in &held_sides {
+                let mut body = String::new();
+                for f in fs {
+                    let local = format!("_o_{}", acc(f));
+                    let mut t = present(&str_of(obj_of(f), "rs_type").unwrap_or_default());
+                    if let Some((from, to)) = lifetime {
+                        t = t.replace(from, to);
+                    }
+                    body.push_str(&format!(
+                        "                let mut {local}: {t} = Default::default();\n                {}\n",
+                        stmt(f, &acc(f), &local)?
+                    ));
+                }
+                let built = fs
+                    .iter()
+                    .map(|f| format!("{}: _o_{}", acc(f), acc(f)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let (pattern, value) = if group.is_sum() {
+                    (
+                        format!("{ty}::{} {{ {} }}", arm_of(*side), names(fs)),
+                        format!("{ty}::{} {{ {built} }}", arm_of(*side)),
+                    )
+                } else {
+                    (
+                        format!("Some({ty} {{ {} }})", names(fs)),
+                        format!("Some({ty} {{ {built} }})"),
+                    )
+                };
+                arms.push(format!(
+                    "            {pattern} => {{\n{body}                _out.{accessor} = {value};\n            }}\n"
+                ));
+            }
+            if !group.is_sum() {
+                arms.push(format!("            None => _out.{accessor} = None,\n"));
+            }
+            Ok(format!(
+                "match &self.{accessor} {{\n{}        }}",
+                arms.concat()
+            ))
+        };
+        let as_borrowed = into_dest(Some(("'a", "'o")), &|f, src, dest| {
+            let mut value = f.clone();
+            value.present_if = None;
+            rust_as_borrowed_field_into_stmt(&value, imports, l, Some((src, dest)))
+        })?;
+        entry.insert("rs_as_borrowed_into_stmt".into(), as_borrowed.into());
+
+        if emit_views {
+            entry.insert("view_rs_type".into(), type_in("view_rs_type", None).into());
+            let into_builder = into_dest(None, &|f, src, dest| {
+                let entry_type = match crate::forge::codec_totality::child_alias(f) {
+                    Some(alias) if !f.is_embed() => {
+                        resolve_repeat_body_type(&m.name, alias, imports, l.lang)?
+                    }
+                    _ => String::new(),
+                };
+                Ok(rust_view::into_builder_member(f, src, dest, &entry_type))
+            })?;
+            entry.insert("view_into_builder_stmt".into(), into_builder.into());
+        }
+        stored.push(serde_json::Value::Object(entry));
+    }
+    Ok((stored, wire))
+}
+
+/// The field `name` of a struct literal set to `value`: the shorthand where the
+/// value is a binding of the same name.
+fn shorthand(name: &str, value: &str) -> String {
+    if name == value {
+        name.to_string()
+    } else {
+        format!("{name}: {value}")
+    }
+}
+
+/// `text` with each use of the place `place` (`_out.<id>`) read as `local`:
+/// `place` followed by a character no identifier continues with.
+fn replace_place(text: &str, place: &str, local: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(place) {
+        let after = &rest[at + place.len()..];
+        let continues = after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+        out.push_str(&rest[..at]);
+        out.push_str(if continues { place } else { local });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Owned→borrowed projection for one codec field — the inverse of
 /// [`rust_owned_field_keys`]'s `into_owned` expr. Returns the statement that
 /// projects `self.<id>` (an `&{Codec}Owned` field) into the borrowed view's
@@ -7298,11 +7659,18 @@ fn rust_as_borrowed_field_into_stmt(
     f: &CodecField,
     imports: &[ImportContext],
     l: &LangCtx,
+    // The value read and the place written, when they are not `self.<id>` and
+    // `_out.<id>`: an element of a group (docs/adr/0065 §6 R4b), read through
+    // the reference the match over the group binds it to.
+    places: Option<(&str, &str)>,
 ) -> Result<String, ForgeError> {
     let id = l.codec_field_id(&f.id);
     let opt = f.present_if.is_some();
-    let self_ref = format!("self.{id}");
-    let out_ref = format!("_out.{id}");
+    let by_ref = places.is_some();
+    let (self_ref, out_ref) = match places {
+        Some((read, write)) => (read.to_string(), write.to_string()),
+        None => (format!("self.{id}"), format!("_out.{id}")),
+    };
 
     // Bounded list (repeat / tlv-chain): owned `Vec` -> borrowed
     // `heapless::Vec<_, N>`, capacity-fallible via the shared projector.
@@ -7388,6 +7756,8 @@ fn rust_as_borrowed_field_into_stmt(
         let path = format!("{RUNTIME_CODEC}::{trait_name}::{method}");
         if opt {
             format!("{self_ref}.as_ref().map({path})")
+        } else if by_ref {
+            format!("{path}({self_ref})")
         } else {
             format!("{path}(&{self_ref})")
         }
@@ -7395,6 +7765,7 @@ fn rust_as_borrowed_field_into_stmt(
     let expr = match f.sce_type {
         SceType::Bytes => read("SceByteBuf", "as_slice"),
         SceType::String => read("SceStr", "as_str"),
+        _ if by_ref => format!("*{self_ref}"),
         _ => self_ref,
     };
     Ok(format!("{out_ref} = {expr};"))
@@ -8850,14 +9221,14 @@ fn render_codec(
             // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
             if matches!(lang, crate::generator::Language::Rust) {
                 let (rs_owned_type, rs_into_owned_expr) =
-                    rust_owned_field_keys(f, &m.name, imports, &l, false)?;
+                    rust_owned_field_keys(f, &m.name, imports, &l, false, None)?;
                 obj.insert("rs_owned_type".into(), rs_owned_type.into());
                 obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
                 // The same field's projection through the profile's
                 // `OriginStorage`, rendered only into the opt-in
                 // `try_into_owned_in_origin` block (`owned_origin`).
                 let (_, rs_into_owned_origin_expr) =
-                    rust_owned_field_keys(f, &m.name, imports, &l, true)?;
+                    rust_owned_field_keys(f, &m.name, imports, &l, true, None)?;
                 obj.insert(
                     "rs_into_owned_origin_expr".into(),
                     rs_into_owned_origin_expr.into(),
@@ -8866,7 +9237,8 @@ fn render_codec(
                 // per-field expr that re-borrows `self.<id>` back into the
                 // borrowed view. Consumed by the same owned-projection
                 // template block.
-                let rs_as_borrowed_into_stmt = rust_as_borrowed_field_into_stmt(f, imports, &l)?;
+                let rs_as_borrowed_into_stmt =
+                    rust_as_borrowed_field_into_stmt(f, imports, &l, None)?;
                 obj.insert(
                     "rs_as_borrowed_into_stmt".into(),
                     rs_as_borrowed_into_stmt.into(),
@@ -8930,7 +9302,18 @@ fn render_codec(
     };
 
     let mut ctx = l.base_context(&m.name);
-    ctx.insert("fields".into(), serde_json::json!(fields));
+    // The fields each form holds and the fields the wire reads: on Rust a group
+    // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
+    // and every other backend holds the wire's fields as they are.
+    let (stored, wire) = if matches!(lang, crate::generator::Language::Rust)
+        && m.encoding == CodecEncoding::Positional
+    {
+        rust_group_storage(m, imports, &l, fields, emit_views)?
+    } else {
+        (fields.clone(), fields)
+    };
+    ctx.insert("fields".into(), serde_json::json!(stored));
+    ctx.insert("wire_fields".into(), serde_json::json!(wire));
     // RFC §synth-5-B flags primitive: codec-level rollup so the template
     // can short-circuit the accessor block when no field has flags. The
     // snake-cased struct name doubles as the C11 accessor prefix

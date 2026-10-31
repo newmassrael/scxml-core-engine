@@ -67,7 +67,7 @@
         // tag without advancing — the arm body decoder reads the peeked
         // byte as its own header byte (Zenoh response/request body MID
         // dispatch shape per network.c:347-364 + 220-235).
-{% for field in fields %}
+{% for field in wire_fields %}
 {% if field.is_repeat %}
         {{ field.view_repeat_decode_stmt if view_decode else field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
@@ -154,7 +154,7 @@
         }
 {% for field in fields %}
 {% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
-        _out.{{ field.id }} = {{ field.id }};
+        _out.{{ field.id }} = {{ field.assign_expr if field.assign_expr is defined else field.id }};
 {% endif %}
 {% endfor %}
         Ok(())
@@ -171,7 +171,10 @@
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`, whose
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
-{% for field in fields %}
+{# The wire's fields are read one by one; a group of fields one gate decides
+   is held as one field, built from its elements once they are read
+   (docs/adr/0065 §6 R4b). #}
+{% for field in wire_fields %}
 {% if field.is_repeat %}
         {{ field.view_repeat_decode_stmt if view_decode else field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
@@ -184,7 +187,7 @@
 {% endfor %}
 {% for field in fields %}
 {% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
-        _out.{{ field.id }} = {{ field.id }};
+        _out.{{ field.id }} = {{ field.assign_expr if field.assign_expr is defined else field.id }};
 {% endif %}
 {% endfor %}
         Ok(())

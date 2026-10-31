@@ -22,7 +22,8 @@
 
 use super::*;
 use crate::forge::codec_roles::{
-    self, BindSite, Binder, CodecRoles, Derivation, ElementId, InputSource, InputValue, Role,
+    self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, InputSource,
+    InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
 
@@ -350,6 +351,59 @@ pub(crate) fn supported_with(
     check(m, &|alias| known.get(alias).copied().unwrap_or(false)).is_ok()
 }
 
+// ── groups (docs/adr/0065 §6 R4b) ────────────────────────────────────
+// The names a group goes by, read by the source interface here and by the
+// forms the generator renders, so the two spell a group alike.
+
+/// The name of a group's gate as a type: the input, or the carrier and its
+/// flag.
+fn gate_pascal(gate: &GateVar) -> String {
+    match gate {
+        GateVar::Input(name) => filters::to_pascal_case(name.clone()),
+        GateVar::Flag { carrier, flag } => filters::to_pascal_case(format!("{carrier}_{flag}")),
+    }
+}
+
+/// The accessor of a group, and the field each form holds it in.
+pub(crate) fn group_accessor(group: &GateGroup) -> String {
+    match &group.gate {
+        GateVar::Input(name) => filters::to_snake_case(name.clone()),
+        GateVar::Flag { carrier, flag } => filters::to_snake_case(format!("{carrier}_{flag}")),
+    }
+}
+
+/// The type a group of the codec `codec` is held as: an enum of its two
+/// sides for a sum, and a struct of its one side otherwise, which a value
+/// holds or does not.
+pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
+    let pascal = gate_pascal(&group.gate);
+    if group.is_sum() || !group.set.is_empty() {
+        format!("{codec}{pascal}")
+    } else {
+        format!("{codec}Not{pascal}")
+    }
+}
+
+/// The names of the two sides of a sum: the one present while the gate
+/// holds, then the other. The type names the carrier already, so a side names
+/// the flag alone.
+pub(crate) fn group_arms(group: &GateGroup) -> (String, String) {
+    let pascal = match &group.gate {
+        GateVar::Input(name) => filters::to_pascal_case(name.clone()),
+        GateVar::Flag { flag, .. } => filters::to_pascal_case(flag.clone()),
+    };
+    (pascal.clone(), format!("Not{pascal}"))
+}
+
+/// Whether `field`'s type differs between the forms of a value, so that a
+/// group holding it takes it as a type parameter.
+pub(crate) fn member_varies(field: &CodecField) -> bool {
+    field.is_repeat()
+        || field.is_tlv_chain()
+        || field.is_embed()
+        || matches!(field.sce_type, SceType::Bytes | SceType::String)
+}
+
 /// Whether the borrowed source of a codec (`{Codec}Parts`) carries a lifetime:
 /// it holds text, bytes, a list, an embedded body or a variant, each of which it
 /// borrows from the caller. A codec of scalars alone holds everything by value.
@@ -673,6 +727,28 @@ impl<'a> Plan<'a> {
                     self.accessor(field)
                 )
             }
+            InputSource::Group => {
+                let group = self
+                    .roles
+                    .group_of_gate(&GateVar::Input(name.to_string()))
+                    .expect("an input a group says has its group");
+                let held = format!(
+                    "{}::{}({value})",
+                    self.trait_name,
+                    self.group_accessor(group)
+                );
+                if group.is_sum() {
+                    let (set, _) = Self::group_arms(group);
+                    format!(
+                        "matches!({held}, {}::{set} {{ .. }})",
+                        self.group_type(group)
+                    )
+                } else if group.set.is_empty() {
+                    format!("{held}.is_none()")
+                } else {
+                    format!("{held}.is_some()")
+                }
+            }
         }
     }
 
@@ -696,6 +772,12 @@ impl<'a> Plan<'a> {
                 } => format!("set exactly when `{field}` is absent"),
                 InputSource::Forward { embed, input, .. } => {
                     format!("the input `{input}` that the body `{embed}` says")
+                }
+                InputSource::Group => {
+                    format!(
+                        "set exactly when the value holds the side of `{}` present while it holds",
+                        input.name
+                    )
                 }
             };
             out.push_str(&format!(
@@ -788,7 +870,6 @@ impl<'a> Plan<'a> {
                     unreachable!("a chain supplies an input from the entry before");
                 };
                 let chain = field_of(field);
-                let accessor = self.accessor(chain);
                 let walk = [
                     format!("    if {} != _prev {{", says("&_e")),
                     format!("        return Err({refuse});"),
@@ -801,10 +882,11 @@ impl<'a> Plan<'a> {
                 ];
                 lines.push("{".to_string());
                 lines.push("    let mut _prev: bool = false;".to_string());
+                let read = self.read_src(chain);
                 let entries = if chain.present_if.is_some() {
-                    format!("src.{accessor}().into_iter().flatten()")
+                    format!("{read}.into_iter().flatten()")
                 } else {
-                    format!("src.{accessor}()")
+                    read
                 };
                 lines.push(format!("    for _e in {entries} {{"));
                 lines.extend(walk.iter().map(|line| format!("    {line}")));
@@ -815,21 +897,21 @@ impl<'a> Plan<'a> {
         let differs = match &binder.site {
             BindSite::List { field } => {
                 let list = field_of(field);
-                let accessor = self.accessor(list);
+                let read = self.read_src(list);
                 let differs = format!("{} != _h", says("&_e"));
                 if list.present_if.is_some() {
-                    format!("src.{accessor}().is_some_and(|mut _l| _l.any(|_e| {differs}))")
+                    format!("{read}.is_some_and(|mut _l| _l.any(|_e| {differs}))")
                 } else {
-                    format!("src.{accessor}().any(|_e| {differs})")
+                    format!("{read}.any(|_e| {differs})")
                 }
             }
             BindSite::Embed { field } => {
                 let body = field_of(field);
-                let accessor = self.accessor(body);
+                let read = self.read_src(body);
                 if body.present_if.is_some() {
-                    format!("src.{accessor}().is_some_and(|_b| {} != _h)", says("_b"))
+                    format!("{read}.is_some_and(|_b| {} != _h)", says("_b"))
                 } else {
-                    format!("{} != _h", says(&format!("src.{accessor}()")))
+                    format!("{} != _h", says(&read))
                 }
             }
             BindSite::Arm => {
@@ -1029,12 +1111,12 @@ impl<'a> Plan<'a> {
             .expect("the parser found the chain a gate reads");
         let value = clause.entry_id.expect("a chain clause names an identifier");
         let found = format!("{} == {value}u64", self.entry_identifier(chain, "&_e"));
-        let accessor = self.accessor(chain);
+        let read = self.read_src(chain);
         // A chain that is gated off holds no entry.
         if chain.present_if.is_some() {
-            format!("src.{accessor}().is_some_and(|mut _l| _l.any(|_e| {found}))")
+            format!("{read}.is_some_and(|mut _l| _l.any(|_e| {found}))")
         } else {
-            format!("src.{accessor}().any(|_e| {found})")
+            format!("{read}.any(|_e| {found})")
         }
     }
 
@@ -1053,9 +1135,9 @@ impl<'a> Plan<'a> {
                 continue;
             };
             lines.push(format!(
-                "if ({}) != src.{}().is_some() {{\n    return Err({});\n}}",
+                "if ({}) != {}.is_some() {{\n    return Err({});\n}}",
                 self.gate_test(gate, derived),
-                self.accessor(field),
+                self.read_src(field),
                 self.refuse(RefusalKind::PresentIfMismatch, &field.id),
             ));
         }
@@ -1080,6 +1162,332 @@ impl<'a> Plan<'a> {
     /// The accessor a field is read through.
     fn accessor(&self, field: &CodecField) -> String {
         self.l().codec_field_id(&field.id)
+    }
+
+    /// What the encode reads `field` as: the source's accessor, or, for an
+    /// element of a group (docs/adr/0065 §6 R4b), the local the encode bound
+    /// it to from the group, which is `None` on the side the value does not
+    /// hold. A list is an iterator, so each read takes a copy of it.
+    fn read_src(&self, field: &CodecField) -> String {
+        if self.roles.group_of(&field.id).is_some() {
+            let local = self.member_local(field);
+            if field.is_repeat() || field.is_tlv_chain() {
+                format!("{local}.clone()")
+            } else {
+                local
+            }
+        } else {
+            format!("src.{}()", self.accessor(field))
+        }
+    }
+
+    /// The local a group's element is bound to in the encode.
+    fn member_local(&self, field: &CodecField) -> String {
+        format!("_m_{}", self.accessor(field))
+    }
+
+    /// The accessor and the field a form holds a group under.
+    fn group_accessor(&self, group: &GateGroup) -> String {
+        group_accessor(group)
+    }
+
+    fn group_type(&self, group: &GateGroup) -> String {
+        group_type(self.name(), group)
+    }
+
+    fn group_arms(group: &GateGroup) -> (String, String) {
+        group_arms(group)
+    }
+
+    fn group_fields<'s>(&'s self, ids: &'s [String]) -> impl Iterator<Item = &'s CodecField> {
+        ids.iter()
+            .filter_map(|id| self.m().fields.iter().find(|f| &f.id == id))
+    }
+
+    fn member_varies(field: &CodecField) -> bool {
+        member_varies(field)
+    }
+
+    /// The type parameter of a group that is `field`'s type.
+    fn member_param(field: &CodecField) -> String {
+        filters::to_pascal_case(field.id.clone())
+    }
+
+    /// `group_type` with each varying element's type as `ty` says it, the
+    /// group held in one form.
+    fn group_type_in(&self, group: &GateGroup, ty: &dyn Fn(&CodecField) -> String) -> String {
+        let args: Vec<String> = self
+            .group_fields(&group.set)
+            .chain(self.group_fields(&group.clear))
+            .filter(|f| Self::member_varies(f))
+            .map(ty)
+            .collect();
+        if args.is_empty() {
+            self.group_type(group)
+        } else {
+            format!("{}<{}>", self.group_type(group), args.join(", "))
+        }
+    }
+
+    /// `group_type_in` wrapped as a form holds it: the sum as it is, a group
+    /// of one side as an `Option`.
+    fn group_held_in(&self, group: &GateGroup, ty: &dyn Fn(&CodecField) -> String) -> String {
+        let inner = self.group_type_in(group, ty);
+        if group.is_sum() {
+            inner
+        } else {
+            format!("Option<{inner}>")
+        }
+    }
+
+    /// The type of an element of a group while it is there: what the source
+    /// presents (`value_type`), a stated length as its number.
+    fn member_value_type(&self, field: &CodecField) -> String {
+        self.value_type(field)
+    }
+
+    /// The definition of each group's type.
+    fn group_definitions(&self) -> String {
+        let mut out = String::new();
+        for group in &self.roles.groups {
+            let members: Vec<&CodecField> = self
+                .group_fields(&group.set)
+                .chain(self.group_fields(&group.clear))
+                .collect();
+            let params: Vec<String> = members
+                .iter()
+                .filter(|f| Self::member_varies(f))
+                .map(|f| Self::member_param(f))
+                .collect();
+            let generics = if params.is_empty() {
+                String::new()
+            } else {
+                format!("<{}>", params.join(", "))
+            };
+            let member_ty = |f: &CodecField| {
+                if Self::member_varies(f) {
+                    Self::member_param(f)
+                } else {
+                    self.l().type_name(&f.sce_type).to_string()
+                }
+            };
+            let fields_of = |ids: &[String], indent: &str| -> String {
+                self.group_fields(ids)
+                    .map(|f| {
+                        format!(
+                            "{indent}/// The `{id}` field.\n{indent}{vis}{acc}: {ty},\n",
+                            id = f.id,
+                            vis = if indent.len() == 4 { "pub " } else { "" },
+                            acc = self.accessor(f),
+                            ty = member_ty(f),
+                        )
+                    })
+                    .collect()
+            };
+            let name = self.group_type(group);
+            if group.is_sum() {
+                let (set, clear) = Self::group_arms(group);
+                let default_params = params
+                    .iter()
+                    .map(|p| format!("{p}: Default"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let default_fields: String = self
+                    .group_fields(&group.clear)
+                    .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
+                    .collect();
+                out.push_str(&format!(
+                    "/// The fields `{gate}` decides (docs/adr/0065 §6 R4b): a value holds the\n\
+                     /// ones present while it holds, or the ones present while it does not,\n\
+                     /// and `{codec}` derives `{gate}` from which.\n\
+                     #[allow(dead_code)]\n\
+                     #[derive(Debug, Clone, Copy, PartialEq)]\n\
+                     pub enum {name}{generics} {{\n\
+                     \x20   /// While `{gate}` holds.\n\
+                     \x20   {set} {{\n{set_fields}    }},\n\
+                     \x20   /// While `{gate}` does not hold.\n\
+                     \x20   {clear} {{\n{clear_fields}    }},\n\
+                     }}\n\n\
+                     impl{default_generics} Default for {name}{generics} {{\n\
+                     \x20   /// The side present while `{gate}` does not hold, each field at its\n\
+                     \x20   /// type's default.\n\
+                     \x20   fn default() -> Self {{\n\
+                     \x20       Self::{clear} {{ {default_fields}}}\n\
+                     \x20   }}\n\
+                     }}\n\n",
+                    gate = group.gate,
+                    codec = self.name(),
+                    set_fields = fields_of(&group.set, "        "),
+                    clear_fields = fields_of(&group.clear, "        "),
+                    default_generics = if params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("<{default_params}>")
+                    },
+                ));
+            } else {
+                let (ids, when) = if group.set.is_empty() {
+                    (&group.clear, "does not hold")
+                } else {
+                    (&group.set, "holds")
+                };
+                out.push_str(&format!(
+                    "/// The fields `{gate}` decides (docs/adr/0065 §6 R4b), present together\n\
+                     /// while it {when}: a value holds all of them or none, and `{codec}`\n\
+                     /// derives `{gate}` from which.\n\
+                     #[allow(dead_code)]\n\
+                     #[derive(Debug, Clone, Copy, PartialEq)]\n\
+                     pub struct {name}{generics} {{\n{fields}}}\n\n",
+                    gate = group.gate,
+                    codec = self.name(),
+                    fields = fields_of(ids, "    "),
+                ));
+            }
+        }
+        out
+    }
+
+    /// How the form `form` (`None` for the parts) reads an element of a group
+    /// it holds, `r` being a reference to the element, as the source presents
+    /// it: a list's entries with their count, a body lent, text and bytes as
+    /// slices, a scalar copied.
+    fn member_read(&self, form: Option<Form>, field: &CodecField, r: &str) -> String {
+        let storage = RUNTIME_CODEC;
+        if field.is_embed() {
+            return match form {
+                None => format!("*{r}"),
+                Some(_) => r.to_string(),
+            };
+        }
+        if field.is_repeat() || field.is_tlv_chain() {
+            return match form {
+                Some(Form::Builder) => format!("{storage}::BoundedIter::from({r})"),
+                Some(Form::Owned) => format!("{r}.list_iter()"),
+                _ => format!("{r}.iter()"),
+            };
+        }
+        match (form, &field.sce_type) {
+            (Some(Form::Owned), SceType::Bytes) => format!("{storage}::SceByteBuf::as_slice({r})"),
+            (Some(Form::Owned), SceType::String) => format!("{storage}::SceStr::as_str({r})"),
+            _ => format!("*{r}"),
+        }
+    }
+
+    /// The body of a form's accessor of `group`: the group it holds, each
+    /// element read as the source presents it. A group of scalars alone is
+    /// the same in every form and is copied whole.
+    fn group_read(&self, group: &GateGroup, form: Option<Form>) -> String {
+        let accessor = self.group_accessor(group);
+        let ty = self.group_type(group);
+        let members: Vec<&CodecField> = self
+            .group_fields(&group.set)
+            .chain(self.group_fields(&group.clear))
+            .collect();
+        if !members.iter().any(|f| Self::member_varies(f)) {
+            return format!("self.{accessor}");
+        }
+        let side = |ids: &[String]| {
+            let fields: Vec<&CodecField> = self.group_fields(ids).collect();
+            let names = fields
+                .iter()
+                .map(|f| self.accessor(f))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let reads = fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}: {}",
+                        self.accessor(f),
+                        self.member_read(form, f, &self.accessor(f))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            (names, reads)
+        };
+        if group.is_sum() {
+            let (set_arm, clear_arm) = Self::group_arms(group);
+            let (set_names, set_reads) = side(&group.set);
+            let (clear_names, clear_reads) = side(&group.clear);
+            format!(
+                "match &self.{accessor} {{\n            \
+                 {ty}::{set_arm} {{ {set_names} }} => {ty}::{set_arm} {{ {set_reads} }},\n            \
+                 {ty}::{clear_arm} {{ {clear_names} }} => {ty}::{clear_arm} {{ {clear_reads} }},\n        \
+                 }}"
+            )
+        } else {
+            let ids = if group.set.is_empty() {
+                &group.clear
+            } else {
+                &group.set
+            };
+            let (names, reads) = side(ids);
+            format!("self.{accessor}.as_ref().map(|{ty} {{ {names} }}| {ty} {{ {reads} }})")
+        }
+    }
+
+    /// The accessor of each group in the source trait, the group with each
+    /// element as the source presents it.
+    fn group_accessor_type(&self, group: &GateGroup) -> String {
+        self.group_held_in(group, &|f| self.member_value_type(f))
+    }
+
+    /// The statement that binds each element of the groups to its local, as
+    /// the side the value holds says: `Some` on that side, `None` on the
+    /// other.
+    fn group_bindings(&self, lines: &mut Vec<String>) {
+        for group in &self.roles.groups {
+            let accessor = self.group_accessor(group);
+            let ty = self.group_type(group);
+            let set: Vec<&CodecField> = self.group_fields(&group.set).collect();
+            let clear: Vec<&CodecField> = self.group_fields(&group.clear).collect();
+            let all: Vec<&CodecField> = set.iter().chain(clear.iter()).copied().collect();
+            let locals = all
+                .iter()
+                .map(|f| self.member_local(f))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let tuple = |on: &[&CodecField]| {
+                all.iter()
+                    .map(|f| {
+                        if on.iter().any(|o| o.id == f.id) {
+                            format!("Some({})", self.accessor(f))
+                        } else {
+                            "None".to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let names = |on: &[&CodecField]| {
+                on.iter()
+                    .map(|f| self.accessor(f))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let nones = vec!["None"; all.len()].join(", ");
+            let arms = if group.is_sum() {
+                let (set_arm, clear_arm) = Self::group_arms(group);
+                format!(
+                    "    {ty}::{set_arm} {{ {} }} => ({}),\n    {ty}::{clear_arm} {{ {} }} => ({}),",
+                    names(&set),
+                    tuple(&set),
+                    names(&clear),
+                    tuple(&clear),
+                )
+            } else {
+                let on = if set.is_empty() { &clear } else { &set };
+                format!(
+                    "    Some({ty} {{ {} }}) => ({}),\n    None => ({nones}),",
+                    names(on),
+                    tuple(on),
+                )
+            };
+            lines.push(format!(
+                "let ({locals}) = match src.{accessor}() {{\n{arms}\n}};"
+            ));
+        }
     }
 
     /// The local that holds the value of a derived element, named after it.
@@ -1326,6 +1734,9 @@ impl<'a> Plan<'a> {
             let held: Vec<&Arm> = arms.iter().filter(|arm| world.holds(arm)).collect();
             let mut tags = String::new();
             for arm in &held {
+                // Each item of a gated arm carries its feature, inside a build's
+                // impl as everywhere else (docs/adr/0072).
+                tags.push_str(&arm.cfg_line("            "));
                 match arm.value {
                     Some(value) => tags.push_str(&format!(
                         "            Self::{}(_) => {value},\n",
@@ -1451,7 +1862,7 @@ impl<'a> Plan<'a> {
     fn parts_definition(&self) -> String {
         let mut members = String::new();
         for field in &self.m().fields {
-            if !(self.presented(field) || self.stated(field)) {
+            if !self.has_accessor(field) {
                 continue;
             }
             members.push_str(&format!(
@@ -1459,6 +1870,14 @@ impl<'a> Plan<'a> {
                 id = field.id,
                 accessor = self.accessor(field),
                 ty = self.parts_field_type(field),
+            ));
+        }
+        for group in &self.roles.groups {
+            members.push_str(&format!(
+                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4b).\n    pub {accessor}: {ty},\n",
+                gate = group.gate,
+                accessor = self.group_accessor(group),
+                ty = self.group_held_in(group, &|f| self.parts_value_type(f)),
             ));
         }
         let mut out = String::new();
@@ -1511,8 +1930,16 @@ impl<'a> Plan<'a> {
 
     fn parts_impl(&self) -> String {
         let mut items = String::new();
+        for group in &self.roles.groups {
+            items.push_str(&format!(
+                "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
+                accessor = self.group_accessor(group),
+                ty = self.group_accessor_type(group),
+                read = self.group_read(group, None),
+            ));
+        }
         for field in &self.m().fields {
-            if !(self.presented(field) || self.stated(field)) {
+            if !self.has_accessor(field) {
                 continue;
             }
             let accessor = self.accessor(field);
@@ -1563,6 +1990,7 @@ impl<'a> Plan<'a> {
 
     fn text(&self) -> String {
         let mut out = String::new();
+        out.push_str(&self.group_definitions());
         out.push_str(&self.body_enum_definition());
         out.push_str(&self.overrides_definition());
         out.push_str(&self.trait_definition());
@@ -1574,10 +2002,16 @@ impl<'a> Plan<'a> {
         out
     }
 
+    /// Whether the source presents `field` by an accessor of its own: it is
+    /// presented or stated, and no group holds it.
+    fn has_accessor(&self, field: &CodecField) -> bool {
+        (self.presented(field) || self.stated(field)) && self.roles.group_of(&field.id).is_none()
+    }
+
     fn trait_definition(&self) -> String {
         let mut items = String::new();
         for field in &self.m().fields {
-            if !(self.presented(field) || self.stated(field)) {
+            if !self.has_accessor(field) {
                 continue;
             }
             items.push_str(&format!(
@@ -1585,6 +2019,14 @@ impl<'a> Plan<'a> {
                 id = field.id,
                 accessor = self.accessor(field),
                 ty = self.accessor_type(field),
+            ));
+        }
+        for group in &self.roles.groups {
+            items.push_str(&format!(
+                "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4b).\n    fn {accessor}(&self) -> {ty};\n",
+                gate = group.gate,
+                accessor = self.group_accessor(group),
+                ty = self.group_accessor_type(group),
             ));
         }
         if self.m().variant.is_some() {
@@ -1608,13 +2050,20 @@ impl<'a> Plan<'a> {
     fn reference_impl(&self) -> String {
         let mut items = String::new();
         for field in &self.m().fields {
-            if !(self.presented(field) || self.stated(field)) {
+            if !self.has_accessor(field) {
                 continue;
             }
             let accessor = self.accessor(field);
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        (**self).{accessor}()\n    }}\n",
                 ty = self.accessor_type(field),
+            ));
+        }
+        for group in &self.roles.groups {
+            let accessor = self.group_accessor(group);
+            items.push_str(&format!(
+                "    fn {accessor}(&self) -> {ty} {{\n        (**self).{accessor}()\n    }}\n",
+                ty = self.group_accessor_type(group),
             ));
         }
         if self.m().variant.is_some() {
@@ -1646,8 +2095,16 @@ impl<'a> Plan<'a> {
     fn impl_for(&self, form: Form) -> String {
         let storage = "::sce_forge_runtime::codec";
         let mut items = String::new();
+        for group in &self.roles.groups {
+            items.push_str(&format!(
+                "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
+                accessor = self.group_accessor(group),
+                ty = self.group_accessor_type(group),
+                read = self.group_read(group, Some(form)),
+            ));
+        }
         for field in &self.m().fields {
-            if !(self.presented(field) || self.stated(field)) {
+            if !self.has_accessor(field) {
                 continue;
             }
             let accessor = self.accessor(field);
@@ -1853,6 +2310,9 @@ impl<'a> Plan<'a> {
     /// The statements of `write_source`: the derived values, then the wire.
     fn write_body(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
+        // Each group's elements, as the side the value holds says them
+        // (docs/adr/0065 §6 R4b).
+        self.group_bindings(&mut lines);
         // An input the value says is read off it, under the name a gate reads
         // it by; a codec that does not test it has nothing to read
         // (docs/adr/0065 §6 R4a).
@@ -1972,7 +2432,7 @@ impl<'a> Plan<'a> {
                     "{enum_path}::Default {{ tag, .. }} => {ty}::from(tag.get()) & 0x{mask:X}"
                 ));
             }
-            let accessor = self.accessor(embed);
+            let read = self.read_src(embed);
             let arms = arms.join(", ");
             // The embedded body's source is read through its trait by path: the
             // trait is not imported here.
@@ -1982,10 +2442,10 @@ impl<'a> Plan<'a> {
             );
             terms.push(if embed.present_if.is_some() {
                 format!(
-                    "match src.{accessor}() {{ Some(_x) => match {body_of}(_x) {{ {arms} }}, None => 0 }}"
+                    "match {read} {{ Some(_x) => match {body_of}(_x) {{ {arms} }}, None => 0 }}"
                 )
             } else {
-                format!("match {body_of}(src.{accessor}()) {{ {arms} }}")
+                format!("match {body_of}({read}) {{ {arms} }}")
             });
         }
         lines.push(format!("let {local}: {ty} = {};", terms.join(" | ")));
@@ -2073,11 +2533,11 @@ impl<'a> Plan<'a> {
     /// The expression for the number of bytes `field` holds, 0 when it is
     /// absent.
     fn byte_count(&self, field: &CodecField) -> String {
-        let accessor = self.accessor(field);
+        let read = self.read_src(field);
         if field.present_if.is_some() {
-            format!("src.{accessor}().map_or(0, |_v| _v.len())")
+            format!("{read}.map_or(0, |_v| _v.len())")
         } else {
-            format!("src.{accessor}().len()")
+            format!("{read}.len()")
         }
     }
 
@@ -2111,9 +2571,9 @@ impl<'a> Plan<'a> {
             // A field gated off has no content to measure, so its length is the
             // wire's zero and not the arithmetic of an empty field.
             let value = if field.present_if.is_some() {
-                let accessor = self.accessor(field);
                 format!(
-                    "match src.{accessor}() {{\n    Some(_v) => {},\n    None => 0,\n}}",
+                    "match {} {{\n    Some(_v) => {},\n    None => 0,\n}}",
+                    self.read_src(field),
                     measure("_v.len()")
                 )
             } else {
@@ -2133,7 +2593,7 @@ impl<'a> Plan<'a> {
         field
             .present_if
             .is_some()
-            .then(|| format!("src.{}().is_some()", self.accessor(field)))
+            .then(|| format!("{}.is_some()", self.read_src(field)))
     }
 
     /// The local that holds how many entries the list `field` holds.
@@ -2149,11 +2609,11 @@ impl<'a> Plan<'a> {
             if !(field.is_repeat() || field.is_tlv_chain()) {
                 continue;
             }
-            let accessor = self.accessor(field);
+            let read = self.read_src(field);
             let count = if field.present_if.is_some() {
-                format!("src.{accessor}().map_or(0, |_l| _l.len())")
+                format!("{read}.map_or(0, |_l| _l.len())")
             } else {
-                format!("src.{accessor}().len()")
+                format!("{read}.len()")
             };
             let local = self.count_local(field);
             lines.push(format!("let {local}: usize = {count};"));
@@ -2217,12 +2677,13 @@ impl<'a> Plan<'a> {
                     ""
                 }
             );
+            let read = self.read_src(field);
             lines.push(if field.present_if.is_some() {
                 format!(
-                    "let {size}: usize = match src.{accessor}() {{\n    Some(_v) => {count},\n    None => 0,\n}};"
+                    "let {size}: usize = match {read} {{\n    Some(_v) => {count},\n    None => 0,\n}};"
                 )
             } else {
-                format!("let {size}: usize = {{\n    let _v = src.{accessor}();\n    {count}\n}};")
+                format!("let {size}: usize = {{\n    let _v = {read};\n    {count}\n}};")
             });
             // The length of a body that is not there is the wire's zero.
             numbers.push(Measure {
@@ -2341,13 +2802,23 @@ impl<'a> Plan<'a> {
                         "let {local}: {ty} = {};",
                         narrow(&format!("{one}.unwrap_or(0)"))
                     )),
+                    // Derived while there is content, and what the group holds
+                    // on the side where there is not (docs/adr/0065 §6 R4b):
+                    // the two sides are apart, so it is never said twice.
+                    Some(one) if self.roles.group_of(&field.id).is_some() => {
+                        lines.push(format!(
+                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {},\n    None => {}.unwrap_or_default(),\n}};",
+                            narrow("_n"),
+                            self.read_src(field),
+                        ));
+                    }
                     // Derived while there is content, and what the source states
                     // while there is not; a source that states a number beside
                     // content says it twice and must say the same.
                     Some(one) => {
-                        let accessor = self.accessor(field);
+                        let read = self.read_src(field);
                         lines.push(format!(
-                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {};\n        if src.{accessor}().is_some_and(|_s| _s != _d) {{\n            return Err({});\n        }}\n        _d\n    }}\n    None => src.{accessor}().unwrap_or_default(),\n}};",
+                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {};\n        if {read}.is_some_and(|_s| _s != _d) {{\n            return Err({});\n        }}\n        _d\n    }}\n    None => {read}.unwrap_or_default(),\n}};",
                             narrow("_n"),
                             self.refuse(RefusalKind::InconsistentSource, &element),
                         ));
@@ -2411,21 +2882,18 @@ impl<'a> Plan<'a> {
                         .iter()
                         .find(|f| &f.id == field)
                         .expect("a bind site is a field of the codec");
-                    let accessor = self.accessor(body);
+                    let read = self.read_src(body);
                     if body.present_if.is_some() {
                         lines.push(format!(
-                            "let {number}: usize = src.{accessor}().map_or(0, |_b| {});",
+                            "let {number}: usize = {read}.map_or(0, |_b| {});",
                             says(binder, "_b")
                         ));
                         measures.push(Measure {
                             number,
-                            present: Some(format!("src.{accessor}().is_some()")),
+                            present: Some(format!("{read}.is_some()")),
                         });
                     } else {
-                        lines.push(format!(
-                            "let {number}: usize = {};",
-                            says(binder, &format!("src.{accessor}()"))
-                        ));
+                        lines.push(format!("let {number}: usize = {};", says(binder, &read)));
                         measures.push(Measure {
                             number,
                             present: None,
@@ -2501,7 +2969,7 @@ impl<'a> Plan<'a> {
             let Some(gated_field) = self.m().fields.iter().find(|f| f.id == gate.field) else {
                 continue;
             };
-            let present = format!("src.{}().is_some()", self.accessor(gated_field));
+            let present = format!("{}.is_some()", self.read_src(gated_field));
             // The flag is set exactly when the field is present, or exactly when
             // it is absent for a field gated on `!flag`.
             let local = format!("{}_{index}", self.local("_p_", id));
@@ -2514,6 +2982,15 @@ impl<'a> Plan<'a> {
                 }
             ));
             presences.push(local);
+        }
+        // Fields one group holds are present together (docs/adr/0065 §6 R4b):
+        // the first says the flag and the rest cannot disagree with it.
+        let one_group = gated
+            .first()
+            .and_then(|g| self.roles.group_of(&g.field))
+            .is_some_and(|group| gated.iter().all(|g| group.contains(&g.field)));
+        if one_group {
+            presences.truncate(1);
         }
         for pair in presences.windows(2) {
             lines.push(format!(
@@ -2549,7 +3026,7 @@ impl<'a> Plan<'a> {
         if derived.flags.contains_key(&field.id) {
             return self.carrier_local(field);
         }
-        format!("src.{}()", self.accessor(field))
+        self.read_src(field)
     }
 
     /// `expr` as the carrier the wire holds: an enum goes out as its
@@ -2756,8 +3233,7 @@ impl<'a> Plan<'a> {
             }
         }
         if gated && self.presented(field) {
-            let accessor = self.accessor(field);
-            lines.push(format!("if let Some(_v) = src.{accessor}() {{"));
+            lines.push(format!("if let Some(_v) = {} {{", self.read_src(field)));
             lines.extend(body.into_iter().map(|line| format!("    {line}")));
             lines.push("}".to_string());
         } else if gated {

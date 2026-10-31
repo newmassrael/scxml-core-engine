@@ -160,6 +160,7 @@ mod codecs {
 
 use codecs::codec_chain_has_tagged::{CodecChainHasTagged, CodecChainHasTaggedView};
 use codecs::codec_chain_prev_carrier::{CodecChainPrevCarrier, CodecChainPrevCarrierView};
+use codecs::codec_chain_prev_entry::CodecChainPrevEntryAfterMarker;
 use codecs::codec_chain_prev_gated::{CodecChainPrevGated, CodecChainPrevGatedView};
 use codecs::codec_embed_basic::{CodecEmbedBasic, CodecEmbedBasicView};
 use codecs::codec_nested_parent::{CodecNestedParent, CodecNestedParentView};
@@ -508,7 +509,12 @@ fn a_walk_rebuilds_the_value_a_chain_carries_from_one_entry_to_the_next() {
     let walked: Vec<_> = view.entries.iter().collect();
     let decoded: Vec<_> = eager.entries.iter().cloned().collect();
     assert_eq!(walked, decoded);
-    assert_eq!(walked[1].long_value, Some(0x1234));
+    // The entry after the marker holds the long side of the one sum
+    // `after_marker` decides (docs/adr/0065 §6 R4b).
+    assert_eq!(
+        walked[1].after_marker,
+        CodecChainPrevEntryAfterMarker::AfterMarker { long_value: 0x1234 }
+    );
     // Reading it again, and by index, gives the same.
     assert_eq!(view.entries.iter().collect::<Vec<_>>(), walked);
     assert_eq!(view.entries.get(1), Some(decoded[1].clone()));

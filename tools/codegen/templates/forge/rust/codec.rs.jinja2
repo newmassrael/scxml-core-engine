@@ -464,7 +464,7 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 {# How each list of the view reads its entries: one marker type for each, which the
    list names by type (`ListWalk`) so that it holds no function over the lifetime of
    the bytes and stays covariant in it. #}
-{% for field in fields %}
+{% for field in wire_fields %}
 {% if field.view_walk_item is defined %}
 {{ field.view_walk_item }}
 {% endif %}
