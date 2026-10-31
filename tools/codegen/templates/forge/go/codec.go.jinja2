@@ -336,6 +336,28 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if has_variant and has_caller_tag %}
+// Tag returns the tag of the arm this value holds: the one the arm declares,
+// or, for the catch-all arm, the unknown tag it holds. It is the `tag` that
+// Decode{{ struct_name }} takes for a value of this arm, and the literals are
+// the ones it switches on (RFC §synth-5-B variant primitive). A value that
+// holds no arm, as the zero value of the struct does, has no tag, and Tag
+// panics for it.
+func (s *{{ struct_name }}) Tag() byte {
+	switch {
+{% for arm in variant.arms %}
+	case s.Body.{{ arm.variant_name }} != nil:
+		return {{ arm.tag_literal }}
+{% endfor %}
+{% if variant.default_arm %}
+	case s.Body.{{ variant.default_arm.variant_name }} != nil:
+		return s.Body.{{ variant.default_arm.variant_name }}.Tag
+{% endif %}
+	}
+	panic("{{ struct_name }}: the value holds no variant arm")
+}
+
+{% endif %}
 // Encode writes the {{ struct_name }} into the caller-owned sink.
 // Returns nil on success; codec.ErrBufferOverflow from a bounded sink
 // when the destination has insufficient remaining capacity; growable

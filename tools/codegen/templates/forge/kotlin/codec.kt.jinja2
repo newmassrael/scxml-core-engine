@@ -162,6 +162,27 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if has_variant and has_caller_tag %}
+    /// The tag of the arm this value holds: the one the arm declares, or,
+    /// for the catch-all arm, the unknown tag it holds. It is the `tag` the
+    /// decode of a value of this arm takes, and the literals are the ones
+    /// that decode matches on (RFC §synth-5-B variant primitive). The `when`
+    /// is exhaustive over the sealed variant.
+    val tag: UByte
+{% if variant.default_arm %}
+        get() = when (val _b = this.body) {
+{% else %}
+        get() = when (this.body) {
+{% endif %}
+{% for arm in variant.arms %}
+            is {{ struct_name }}Variant.{{ arm.variant_name }} -> {{ arm.tag_literal }}
+{% endfor %}
+{% if variant.default_arm %}
+            is {{ struct_name }}Variant.{{ variant.default_arm.variant_name }} -> _b.tag
+{% endif %}
+        }
+
+{% endif %}
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the

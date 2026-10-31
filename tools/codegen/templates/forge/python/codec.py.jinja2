@@ -337,6 +337,24 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if has_variant and has_caller_tag %}
+    def tag(self) -> int:
+        """The tag of the arm this value holds: the one the arm declares,
+        or, for the catch-all arm, the unknown tag it holds in
+        ``default_tag``. It is the ``tag`` the decode of a value of this arm
+        takes, and the literals are the ones that decode compares against.
+        Raises :class:`ValueError` when ``body.kind`` names no arm."""
+{% for arm in variant.arms %}
+        if self.body.kind == "{{ arm.variant_name }}":
+            return {{ arm.tag_literal }}
+{% endfor %}
+{% if variant.default_arm %}
+        if self.body.kind == "{{ variant.default_arm.variant_name }}":
+            return self.body.default_tag
+{% endif %}
+        raise ValueError(f"no variant arm is named {self.body.kind!r}")
+
+{% endif %}
     def encode(self, w: SceSink{{ params_after_first_arg }}) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises

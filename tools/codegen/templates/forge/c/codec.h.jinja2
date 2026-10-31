@@ -612,4 +612,32 @@ static inline void {{ c_struct_snake }}_{{ fl.name_set }}({{ c_struct_typedef }}
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if has_variant and has_caller_tag %}
+/* The tag of the arm `self` holds: the one the arm declares, or, for the
+ * catch-all arm, the unknown tag it keeps in `default_tag`. It is the `tag`
+ * the decode of a value of this arm takes, and the literals are the ones that
+ * decode switches on (RFC §synth-5-B variant primitive). A `kind` that is no
+ * arm's is not one decode writes; it has no tag, and 0 is returned, as the
+ * parent's derivation of a carrier adds nothing for it. */
+static inline uint8_t {{ c_struct_snake }}_tag(const {{ c_struct_typedef }} *self) {
+    switch (self->body.kind) {
+{% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+        case {{ arm.c_kind_constant }}:
+            return {{ arm.tag_literal }};
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
+{% endfor %}
+{% if variant.default_arm %}
+        case {{ variant.default_arm.c_kind_constant }}:
+            return self->body.default_tag;
+{% endif %}
+    }
+    return 0;
+}
+
+{% endif %}
 #endif  /* {{ guard }} */

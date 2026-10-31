@@ -540,6 +540,30 @@ struct {{ struct_name }} {
         return _sce_v;
     }
 {% endif %}
+{% if has_variant and has_caller_tag %}
+
+    /// The tag of the arm this value holds: the one the arm declares, or,
+    /// for the catch-all arm, the unknown tag it holds. It is the `tag` the
+    /// decode of a value of this arm takes, so a value decoded under a tag
+    /// answers that tag. The literals are the ones the decode matches on
+    /// (RFC §synth-5-B variant primitive). A variant holds one alternative
+    /// at all times, so the `0` at the end is not reached.
+    [[nodiscard]] std::uint8_t tag() const noexcept {
+{% for arm in variant.arms %}
+{% if arm.c_feature_macro %}
+#if {{ arm.c_feature_macro }}
+{% endif %}
+        if (std::get_if<{{ arm.body_type }}>(&body) != nullptr) return {{ arm.tag_literal }};
+{% if arm.c_feature_macro %}
+#endif
+{% endif %}
+{% endfor %}
+{% if variant.default_arm %}
+        if (const auto* _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) return _p->tag;
+{% endif %}
+        return 0;
+    }
+{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}
