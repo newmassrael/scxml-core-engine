@@ -439,7 +439,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
-    (Language::Swift, "Forge conformance gate", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "integration channel", Why::NotYet(SWIFT_NO_EMITTER)),
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),
@@ -466,8 +465,7 @@ const SWIFT_STATIC_IN_PART: &str =
 /// Swift writes the Forge kinds in part (`codegen_matrix::ships_in_part`).
 const SWIFT_NO_FORGE: &str =
     "Swift writes each Forge kind in part and refuses the rest of it by name; the codec shapes beyond \
-     fixed-width integer frames, the procedure and observer kinds and the Forge conformance gate are \
-     built after them";
+     fixed-width integer frames and the procedure and observer kinds are built after them";
 
 /// Swift has no host Mesh core, as Go, Python and C11 have none.
 const SWIFT_NO_MESH: &str =

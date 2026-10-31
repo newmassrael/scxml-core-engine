@@ -6,7 +6,8 @@
 # packages: the statechart runtime (backends/swift/runtime), the forge runtime
 # (backends/swift/forge-runtime), the reference host of the standard host features
 # (backends/swift/host-features) and the generated machines with the tests that drive
-# them (backends/swift/tests).
+# them (backends/swift/tests). The forge runtime is run by the `forge` arm, with the numerical
+# conformance tests of the generated units, and not by the default list.
 #
 # Like `./gradlew test` for Kotlin, it writes: the machines under
 # backends/swift/tests/Sources are rewritten from the generator before they are
@@ -15,13 +16,15 @@
 # rewritten files stay there, and `bx --action regen` is what brings them back.
 #
 # Usage (from repo root):
-#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, w3c,
-#                                                  # ecma262-lowered
+#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, forge,
+#                                                  # w3c, ecma262-lowered
 #
-# `w3c` and `ecma262-lowered` are not among the four packages: each writes machines into
-# `backends/swift/tests` and runs its own tests alone, so neither is in the default list.
-# `scripts/gate w3c-swift` runs the first, `scripts/gate ecma262-lowered-swift` the second, and
-# `scripts/gate swift-backend` runs the four.
+# `forge`, `w3c` and `ecma262-lowered` are not among the default list: each is a question of its
+# own with its own gate. `forge` runs the forge runtime and the numerical conformance tests,
+# `w3c` and `ecma262-lowered` write machines into `backends/swift/tests` and run their own tests
+# alone. `scripts/gate forge-swift` runs the first, `scripts/gate w3c-swift` the second,
+# `scripts/gate ecma262-lowered-swift` the third, and `scripts/gate swift-backend` runs the
+# default list.
 #
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing) and a
@@ -47,7 +50,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime forge-runtime host-features tests)
+    PACKAGES=(runtime host-features tests)
 fi
 
 for package in "${PACKAGES[@]}"; do
@@ -68,13 +71,26 @@ for package in "${PACKAGES[@]}"; do
             echo "== swift test: backends/swift/tests (ECMA-262 lowered artifact)"
             (cd backends/swift/tests && swift test --filter Ecma262LoweredTests)
             ;;
+        forge)
+            # The Forge conformance question (`scripts/gate forge-swift`): the forge runtime's own
+            # tests, then every unit the generator writes for a forge document held to the numerical
+            # oracle. The units are written by the sweep `tests` below also runs, and the tests that
+            # replay them are the ones named `...MatchesReference`; `tests` skips those, so each
+            # question is judged by one gate.
+            echo "== swift test: backends/swift/forge-runtime"
+            (cd backends/swift/forge-runtime && swift test)
+            scripts/regen_static_datamodel_swift.sh
+            echo "== swift test: backends/swift/tests (numerical conformance)"
+            (cd backends/swift/tests && swift test --filter MatchesReference)
+            ;;
         tests)
             scripts/regen_swift_statecharts.sh
             scripts/regen_static_datamodel_swift.sh
             scripts/regen_swift_ecmascript.sh
             echo "== swift test: backends/swift/tests"
-            # A tree another lane left on this machine is built with the rest, and not run here.
-            (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests)
+            # A tree another lane left on this machine is built with the rest, and not run here;
+            # the numerical conformance tests are the Forge lane's (`forge` above).
+            (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests --skip MatchesReference)
             ;;
         *)
             echo "== swift test: backends/swift/$package"

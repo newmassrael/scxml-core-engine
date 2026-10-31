@@ -1,0 +1,64 @@
+# Mutations for the Swift Forge conformance lane.
+#
+# What these guard is the sentence `forge-swift` says about itself: that the forge runtime's tests
+# ran and that every unit the Swift backend writes for a forge document was held to the numerical
+# oracle by a test that ran.
+#
+# ⚠ The runner cannot regenerate the units between mutants, so what is judged here is the half that
+# does not need it: the registry row that makes the gate reachable, and the gate script's own
+# structural claims, which `gate_registry_contract` holds. The Swift half of the lane (the suite's
+# verdicts) is bought by hand, as the Swift lowered-artifact lane's is: the units are written by the
+# lane just before they are built.
+#
+# ⚠ Target selectors, never a bare filter: a filter reaches every binary the selector matched.
+mutation_tests -p sce-build --features cli \
+    --test gate_registry_contract --test ci_supersession_policy
+mutation_runtime_targets scripts/gates/forge-swift.sh \
+    .github/workflows/swift-backend.yml \
+    tools/git-hooks/gate_registry.py
+
+# ── The lane stops being reachable ─────────────────────────────────
+#
+# A gate nothing selects is a gate that never runs, and the failure is silent: `scripts/gate` would
+# refuse the slug, the pre-push hook would never choose it, and CI's own job would be the only thing
+# left measuring the units. `gate_registry_contract` holds every gate to having a workflow that runs
+# it.
+
+mutation_case "the Swift Forge gate loses the workflow that runs it" <<'PY'
+edit("tools/git-hooks/gate_registry.py",
+     '"forge-swift": {\n        "workflows": ["swift-backend.yml"],',
+     '"forge-swift": {\n        "workflows": [],')
+PY
+
+# ── The population stops being floored ─────────────────────────────
+#
+# A generator that wrote an empty or truncated suite would pass by being small: every test it wrote
+# passes. The floor is what says the suite was generated from the oracle.
+
+mutation_case "the generated suite may hold no conformance test at all" <<'PY'
+edit("scripts/gates/forge-swift.sh",
+     "if (( written < 100 )); then",
+     "if (( written < 0 )); then")
+PY
+
+# ── A written test may go unrun ────────────────────────────────────
+#
+# The count the generator wrote is compared with the count the run reported, so a test that was
+# written and never discovered is red and not a smaller green.
+
+mutation_case "a conformance test written and not run is accepted" <<'PY'
+edit("scripts/gates/forge-swift.sh",
+     '[ "$ran" -eq "$written" ] \\',
+     '[ "$ran" -eq "$written" ] || true \\')
+PY
+
+# ── The runs are no longer counted ─────────────────────────────────
+#
+# Both runs are demanded, and not only looked for: a package whose tests were not discovered builds,
+# runs nothing and exits 0.
+
+mutation_case "the gate stops demanding both test runs" <<'PY'
+edit("scripts/gates/forge-swift.sh",
+     '[ "${#runs[@]}" -eq 2 ] \\',
+     '[ "${#runs[@]}" -ge 0 ] \\')
+PY

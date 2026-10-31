@@ -342,6 +342,8 @@ COST_MEASURED: dict[str, str] = {
     "w3c-swift": "2026-11-01",
     # 11s, the lane script under the gate through bx (see the gate's own entry).
     "ecma262-lowered-swift": "2026-11-01",
+    # 102s, the lane script under the gate through bx (see the gate's own entry).
+    "forge-swift": "2026-11-01",
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
@@ -987,19 +989,18 @@ GATES: dict[str, dict] = {
     # ⚠ The Swift backend's own lane, and the one the family tables could not
     # hold. `<family>-<canonical name>` slugs name a backend's arm of a lane the
     # backend has: `w3c-<lang>` and `forge-<lang>` need an emitter that writes a
-    # W3C statechart or a Forge kind, and Swift has neither yet (the rows of
-    # `a_backend_holds_what_the_other_backends_hold` that say so). What Swift
-    # does have is a runtime, a forge runtime and two hundred generated machines
-    # that replay the shared scenarios, and until this entry nothing a runner ran
-    # compiled any of it: the Swift lane was `bx -- scripts/test_swift_backend.sh`
-    # by hand.
+    # W3C statechart or a Forge kind. What Swift had first was a runtime, a
+    # reference host and two hundred generated machines that replay the shared
+    # scenarios, and until this entry nothing a runner ran compiled any of it:
+    # the Swift lane was `bx -- scripts/test_swift_backend.sh` by hand.
     #
     # The slug is `swift-backend` and not `forge-swift` on purpose. A
-    # `forge-swift` would be a Forge conformance gate that conforms nothing, and
-    # `a_backend_holds_what_the_other_backends_hold` reads the slug to decide
-    # that the backend HOLDS such a gate, which would erase the `NotYet` row that
-    # says it does not. When Swift's Forge and W3C arms exist they take
-    # `forge-swift` and `w3c-swift`, and this gate keeps judging the packages.
+    # `forge-swift` would have been a Forge conformance gate that conforms
+    # nothing, and `a_backend_holds_what_the_other_backends_hold` reads the slug
+    # to decide that the backend HOLDS such a gate, which would erase the `NotYet`
+    # row that says it does not. The Forge and W3C arms exist now and took
+    # `forge-swift` and `w3c-swift`, and this gate keeps judging the packages that
+    # are neither.
     #
     # `deps` is the generator, which the script regenerates the machines with.
     "swift-backend": {
@@ -1026,7 +1027,7 @@ GATES: dict[str, dict] = {
                    "that says nothing about the tree. swift-backend.yml "
                    "installs the pin by its digest.",
         "cost_s": 38,
-        "summary": "Swift backend: runtime, forge runtime and generated machines",
+        "summary": "Swift backend: runtime, host features and generated machines",
     },
     # The Swift W3C arm, the twin of `w3c-go`: `sce-codegen generate-w3c -l swift` writes the
     # suite and the engine runs it. It rides the workflow of `swift-backend` as a second step of
@@ -1075,6 +1076,31 @@ GATES: dict[str, dict] = {
         # starts from nothing.
         "cost_s": 11,
         "summary": "ECMA-262 lowered artifact, Swift",
+    },
+    # The Swift twin of `forge-kotlin`: the forge runtime's own tests and every unit the generator
+    # writes for a forge document, held to the numerical oracle. A fourth step of the same job as
+    # `swift-backend`, `w3c-swift` and `ecma262-lowered-swift`, for the same reason. It takes the
+    # `forge-<canonical name>` slug the `swift-backend` entry said it would, now that Swift writes
+    # forge kinds in part and holds what it writes to the oracle; the queue and broadcast-log
+    # history checks the other arms make are read here when Swift has those kinds.
+    #
+    # `ci_only` for the reason `swift-backend` is: the toolchain pin.
+    "forge-swift": {
+        "workflows": ["swift-backend.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[tools.swift]` "
+                   "in bx.toml) that not every build machine is verified to "
+                   "carry; the gate refuses without it, so a push that "
+                   "selected it there would be refused for a reason that says "
+                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "by its digest.",
+        # 102s, `scripts/test_swift_backend.sh forge` through `bx` on a build machine on
+        # 2026-11-01 (the script under the gate: a gate run is refused locally for this
+        # repository). The forge runtime's 73 tests and 184 conformance tests. Warm, like its
+        # siblings: a runner starts from nothing.
+        "cost_s": 102,
+        "summary": "Forge conformance, Swift",
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs

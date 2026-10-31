@@ -61,6 +61,8 @@ on:
       - 'scripts/gates/swift-backend.sh'
       - 'scripts/gates/w3c-swift.sh'
       - 'scripts/gates/ecma262-lowered-swift.sh'
+      - 'scripts/gates/forge-swift.sh'
+      - 'tests/forge/**'
       - 'scripts/regen_swift_ecma262_lowered.sh'
       - 'tools/generate_lowered_ecma262_fixture.py'
       - 'tests/ecmascript/**'
@@ -165,3 +167,8 @@ jobs:
     # build-time lowering, compiled and run. A step of this job for the same reason.
     - name: Run the Swift ECMA-262 lowered-artifact gate
       run: scripts/gate ecma262-lowered-swift
+
+    # The forge runtime's tests and every generated unit held to the numerical oracle. A step of
+    # this job for the same reason.
+    - name: Run the Swift Forge conformance gate
+      run: scripts/gate forge-swift

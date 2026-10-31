@@ -1195,6 +1195,49 @@ fn the_swift_lowered_gate_holds_the_claims_its_run_is_read_for() {
     );
 }
 
+/// The Swift Forge conformance gate holds the claims its run is read for.
+///
+/// The suite's verdicts are a SwiftPM package whose units the lane writes just before it builds
+/// them, which the mutation runner cannot regenerate between mutants; what it can judge is the gate
+/// script that reads the run. Each check is held WITH its consequence, adjacent: asserting the
+/// failure message alone is blind to `|| true` appended to the test.
+#[test]
+fn the_swift_forge_gate_holds_the_claims_its_run_is_read_for() {
+    let code: String = std::fs::read_to_string(repo_root().join("scripts/gates/forge-swift.sh"))
+        .expect("the Swift Forge conformance gate is readable")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        code.contains("if (( written < 100 )); then\n    sce_gate_fail \"the generator wrote"),
+        "the floor on the generated conformance tests is gone. Without it a generator that wrote \
+         an empty or truncated suite passes by being small, and every test it wrote passes."
+    );
+    assert!(
+        code.contains(
+            "[ \"$ran\" -eq \"$written\" ] \\\n    || sce_gate_fail \"the generator wrote"
+        ),
+        "a conformance test the generator wrote may now go unrun: a unit held to nothing reads \
+         as a unit held to the oracle. This holds the TEST and its `sce_gate_fail` together."
+    );
+    assert!(
+        code.contains(
+            "[ \"${#runs[@]}\" -eq 2 ] \\\n    || sce_gate_fail \"${#runs[@]} Swift test run(s) reported"
+        ),
+        "the gate no longer demands both runs, the forge runtime's and the conformance tests': \
+         a package that built and ran nothing exits 0, and is the shape of a lane that was never \
+         testing."
+    );
+    assert!(
+        code.contains(
+            "[ \"$runtime_ran\" -ge 1 ] \\\n    || sce_gate_fail \"the forge runtime ran"
+        ),
+        "the forge runtime may now run no test and the gate stays green."
+    );
+}
+
 /// Every gate that derives a JDK floor names a workflow that declares one.
 ///
 /// `sce_gate_require_jdk` reads its floor out of a workflow's `java-version:`

@@ -4,19 +4,20 @@
 #
 # Mirrors: swift-backend.yml
 #
-# The Swift backend's own lane: the four SwiftPM packages under `backends/swift/`
+# The Swift backend's own lane: three of the SwiftPM packages under `backends/swift/`
 # built and tested with the toolchain the workflow pins.
 #
 #   runtime          the statechart runtime (`SceRuntime`)
-#   forge-runtime    the checked arithmetic and bounded values the generated code calls
 #   host-features    the reference host of the standard host features (`SceHostFeatures`)
 #   tests            the machines the generator writes, replayed against the shared
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
 #
 # Until this gate existed nothing a hosted runner ran compiled a line of Swift: the other
-# backends' suites are reached through their W3C and Forge lanes. Swift has the W3C one now
-# (`w3c-swift`, which writes and runs the W3C suite and is not run here) and no Forge lane
-# yet (its `ACCEPTED` row in `a_backend_holds_what_the_other_backends_hold` says so).
+# backends' suites are reached through their W3C and Forge lanes. Swift has both now:
+# `w3c-swift` writes and runs the W3C suite, and `forge-swift` runs the forge runtime
+# (`forge-runtime`, the checked arithmetic and bounded values the generated code calls) and
+# holds the units the generator writes for forge documents to the numerical oracle. Neither
+# is run here.
 # `regen-reproduces` judges that the committed Swift machines are what the generator writes;
 # this judges that what the generator writes COMPILES and BEHAVES.
 #
@@ -48,11 +49,11 @@ set -e
 [ "$status" -eq 0 ] \
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 
-# One `Test run with N tests` line per test target that ran: the runtime, the forge runtime,
-# the reference host, and the tests package's two targets.
+# One `Test run with N tests` line per test target that ran: the runtime, the reference host,
+# and the tests package's two targets.
 runs="$(grep -cE 'Test run with [0-9]+ tests? ' "$LOG" || true)"
-[ "$runs" -ge 5 ] \
-    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (5 or more): a package built and ran nothing"
+[ "$runs" -ge 4 ] \
+    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (4 or more): a package built and ran nothing"
 if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi
