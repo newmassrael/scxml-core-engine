@@ -23,10 +23,13 @@ package broadcastlog
 // Every read is recorded, the empty ones and the lagged ones too, because those
 // are results the checker must account for.
 //
-// The runs are short on purpose. The checker's general search is exponential in
-// the readers' operations in the worst case (ADR 0062 section 5), so a run is
-// a few dozen operations a participant and the volume comes from the number of
-// runs.
+// A run is a few hundred entries and about a thousand reads a reader. The
+// checker's general search is exponential in the readers' operations in the worst
+// case (ADR 0062 section 5), but the command runs the specialised procedure
+// first, which does not search (`O(n log n)`) and declines only a history that is
+// not well formed or has an operation it has no row for, neither of which a
+// recording of this log is. The volume comes from the length of a run and from the
+// number of runs.
 
 import (
 	"encoding/json"
@@ -91,14 +94,18 @@ func headOperation(head, invoked, returned uint64) historyOperation {
 }
 
 const (
-	// runsPerShape runs of each log shape are recorded: short runs, many of
-	// them, because the schedules that matter are a small fraction of those a
-	// machine gives.
+	// runsPerShape runs of each log shape are recorded: many of them, because
+	// the schedules that matter are a small fraction of those a machine gives.
 	runsPerShape = 25
-	// publishesPerRun entries are published in each run.
-	publishesPerRun = 24
-	// readsPerReader reads each reader makes in each run, whatever they find.
-	readsPerReader = 24
+	// publishesPerRun entries are published in each run: a few hundred, so that
+	// every slot is reused many times over. The checker decides a history of one
+	// publisher by a procedure that does not search (ADR 0062 section 5), so the
+	// length is what a run costs and not what the checker can bear.
+	publishesPerRun = 500
+	// readsPerReader reads each reader makes in each run, whatever they find:
+	// nearly twice the entries, so that a reader keeps pace with the publisher
+	// and still meets the laps that overtake it.
+	readsPerReader = 900
 )
 
 // historyShape is a log shape the runs record: the retention the log under test

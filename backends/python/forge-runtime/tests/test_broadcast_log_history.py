@@ -24,10 +24,13 @@
 # The values published are a function of the sequence number, so a torn entry
 # (words of two entries) is caught in the thread that read it, and a value the
 # checker reads in a history is the one the publisher recorded for that
-# sequence number. The histories are kept short: the checker's general search
-# is exponential in the readers' operations in the worst case (ADR 0062 section
-# 5), so the length is bounded by the number of publishes and by a pause after
-# an empty read, not by the time the run takes.
+# sequence number. The checker's general search is exponential in the readers'
+# operations in the worst case (ADR 0062 section 5), but the command runs the
+# specialised procedure first, which does not search (`O(n log n)`) and declines
+# only a history that is not well formed or has an operation it has no row for,
+# neither of which a recording of this log is. So the length is bounded by the
+# number of publishes and by a pause after an empty read, which is what a run
+# costs: a few hundred entries a run.
 
 from __future__ import annotations
 
@@ -43,18 +46,18 @@ from sce_forge_runtime.broadcast_log import BroadcastLog, Empty, Item, Lagged
 
 DEADLINE_SECONDS = 120
 WORDS = 2
-# Runs of each shape: short runs, many of them, because the schedules that
-# matter are a small fraction of those a machine gives.
+# Runs of each shape: many of them, because the schedules that matter are a
+# small fraction of those a machine gives.
 RUNS_PER_SHAPE = 10
 # (retention, readers, publishes): the ring under test holds retention + 1
 # slots. A retention of 1 lags a reader after any two publishes it has not
 # read; 8 lags one only when it is far behind.
 SHAPES = (
-    (1, 1, 200),
-    (2, 2, 150),
-    (3, 3, 100),
-    (4, 3, 120),
-    (8, 2, 100),
+    (1, 1, 600),
+    (2, 2, 500),
+    (3, 3, 400),
+    (4, 3, 400),
+    (8, 2, 400),
 )
 # How long a reader waits after finding the log empty, and the extra pause of a
 # slow reader after each entry, in seconds. The slow reader is what makes a log

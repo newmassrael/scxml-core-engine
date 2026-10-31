@@ -26,10 +26,13 @@
 // The values the publisher publishes are a function of the sequence number, and
 // the words of an entry are a function of its value, so a copy that mixes two
 // entries fails the run here, before the checker sees it, as well as showing in
-// the history as a value no publish wrote. The runs are short: the general
-// search of the checker is exponential in the number of the readers' operations
-// in the worst case (ADR 0062 section "What step 1 landed"), so each reader's
-// record is capped.
+// the history as a value no publish wrote. The general search of the checker is
+// exponential in the number of the readers' operations in the worst case (ADR
+// 0062 section "What step 1 landed"), but the command runs the specialised
+// procedure first, which does not search (`O(n log n)`) and declines only a
+// history that is not well formed or has an operation it has no row for, neither
+// of which a recording of this log is. A run is a few hundred entries, and each
+// reader's record is capped at what a run costs.
 
 package com.sce.forge.runtime.broadcastlog
 
@@ -58,12 +61,12 @@ private const val READER_HEAD_EVERY = 7
  * reader that has not reached the end of the log by then stops, and its history
  * is a prefix of what it would have done, which is a history all the same.
  */
-private const val MAX_READER_OPERATIONS = 30
+private const val MAX_READER_OPERATIONS = 900
 
 /** Where the reader opened `at` asks to start; past the head when the log is young, which clamps. */
 private const val OPEN_AT = 3L
 
-/** Runs of each shape that are recorded: short runs, many of them, as the queue arm's. */
+/** Runs of each shape that are recorded, many of them, as the queue arm's. */
 private const val RUNS_PER_SHAPE = 25
 
 private const val HISTORY_DEADLINE_NANOS = 120_000_000_000L
@@ -259,10 +262,10 @@ class BroadcastLogHistoryTest {
         // after the first laps a reader, to one a reader can follow.
         class Shape(val retention: Int, val readers: Int, val total: Long)
         val shapes = listOf(
-            Shape(1, 2, 24),
-            Shape(2, 2, 30),
-            Shape(2, 3, 24),
-            Shape(3, 3, 30),
+            Shape(1, 2, 500),
+            Shape(2, 2, 500),
+            Shape(2, 3, 400),
+            Shape(3, 3, 500),
         )
         for (s in shapes) {
             for (run in 0 until RUNS_PER_SHAPE) {

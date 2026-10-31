@@ -17,9 +17,12 @@
 // read-modify-write chain on one atomic orders the readings with the calls between
 // them and "returned before invoked" in the record means it in the run.
 //
-// The checker is a general search over the operations of all participants, so a
-// history is kept short: a run publishes tens of entries, and the shapes cover the
-// retentions 1 to 4 and one to three readers. A reader that finds the log empty
+// The checker decides a history of one publisher by a procedure that does not
+// search (`O(n log n)`, ADR 0062 section 5), and falls back to the general search
+// only for a history it does not model, which a recording of this log never is. A
+// run therefore publishes several hundred entries, so that every slot is reused
+// many times over and the readers meet a lap in every position, and the shapes
+// cover the retentions 1 to 4 and one to three readers. A reader that finds the log empty
 // records that read and then waits, unrecorded, for the head to move: the waiting
 // is a read of the head that the history does not claim, and an empty read changes
 // nothing, so leaving the wait out leaves a history that is judged exactly as the
@@ -66,8 +69,8 @@ struct Operation {
 
 using Participant = std::vector<Operation>;
 
-/// How many runs of each shape are recorded: short runs, many of them, because
-/// the schedules that matter are a small fraction of those a machine gives.
+/// How many runs of each shape are recorded: many of them, because the
+/// schedules that matter are a small fraction of those a machine gives.
 constexpr int kRunsPerShape = 20;
 /// The words of an entry the runs publish.
 constexpr std::size_t kEntryWords = 2;
@@ -287,7 +290,7 @@ struct Shape {
 
 /// The retentions 1 to 4, one to three readers: the smallest logs lap their slots
 /// the most, and the larger ones leave a reader room to be ahead of the publisher.
-constexpr Shape kShapes[] = {{1, 2, 80}, {2, 3, 80}, {3, 2, 80}, {1, 1, 120}, {4, 3, 60}};
+constexpr Shape kShapes[] = {{1, 2, 500}, {2, 3, 500}, {3, 2, 500}, {1, 1, 800}, {4, 3, 400}};
 
 bool record_shape(const std::filesystem::path &dir, const std::string &name, const Shape &shape) {
     switch (shape.retention) {

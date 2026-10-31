@@ -13,10 +13,13 @@
 //! this arm's runs as it judges the other backends'. A name is a shape, so a shape
 //! recorded many times leaves its last recording.
 //!
-//! The runs are short on purpose. The checker's general search is the definition of
-//! linearizability and is exponential in the readers' operations in the worst case
-//! (ADR 0062 section 5, "What step 1 landed"), so a history is kept to a few dozen
-//! operations a reader.
+//! The runs are a few hundred entries and about a thousand reads a reader. The
+//! checker's general search is the definition of linearizability and is exponential
+//! in the readers' operations in the worst case (ADR 0062 section 5, "What step 1
+//! landed"), but `check` runs the specialised procedure first, which does not search
+//! (`O(n log n)`) and declines only a history that is not well formed or has an
+//! operation it has no row for, neither of which a recording of this log is. So the
+//! length is bounded by what a run costs, not by the checker.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -28,11 +31,13 @@ use sce_build::history_common::Verdict;
 use sce_forge_runtime::broadcast_log::{BroadcastLog, Read};
 
 /// How many entries each run publishes.
-const ENTRIES: u64 = 24;
+const ENTRIES: u64 = 500;
 
 /// The most reads each reader makes. A reader that is ahead of the publisher
-/// reads nothing but `Empty`, so this bounds the history and not the run.
-const READS_PER_READER: usize = 36;
+/// reads nothing but `Empty`, so this bounds the history and not the run. It is
+/// nearly twice the entries, so that a reader keeps pace with the publisher
+/// across the run and still meets the laps that overtake it.
+const READS_PER_READER: usize = 900;
 
 /// What an entry holds for the sequence number `seq`: both words, so that a copy
 /// mixing two entries shows as two words that differ.
