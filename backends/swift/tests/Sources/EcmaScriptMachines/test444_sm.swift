@@ -348,7 +348,7 @@ public final class Test444Policy: InvocablePolicy {
     /// declares none. The name crosses as a string and never as source: an XML name is not always
     /// a Lua identifier. An initialiser that fails raises `error.execution` and leaves the
     /// variable nil.
-    private func defineData(_ id: String, as expression: String?, engine: Engine<Test444Policy>) {
+    private func defineData(_ id: String, as expression: String?, orText fallback: String? = nil, engine: Engine<Test444Policy>) {
         do {
             let session = try ensureLua()
             if let seed = invokeSeeds[id] {
@@ -356,7 +356,16 @@ public final class Test444Policy: InvocablePolicy {
                 try session.setGlobal("_scxml_seed", .string(seed))
                 try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
             } else if let expression {
-                try session.defineGlobal(id, as: expression, chunkName: "=data")
+                do {
+                    try session.defineGlobal(id, as: expression, chunkName: "=data")
+                } catch {
+                    // W3C SCXML B.2: inline content that cannot be read as an expression is the
+                    // string it spells, whitespace-normalized (the last of its ordered readings).
+                    guard let fallback else {
+                        throw error
+                    }
+                    try session.setGlobal(id, .string(fallback))
+                }
             } else {
                 try session.setGlobal(id, .nilValue)
             }
