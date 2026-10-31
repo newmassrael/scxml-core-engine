@@ -1150,8 +1150,13 @@ codec: each such entry is held in the storage profile's `S::Str<N>` or
 profile refuses a value past a bound with `CodecError::TooManyElements`),
 `as_borrowed`, `transcode_in`, `encode` and `encode_to_vec` are the positional
 mirror's, and the mirror implements the codec's source interface so that it is
-written as the view is. A map with a string or byte string that states no bound
-has no mirror, since a container needs a capacity, and a map of scalars borrows
+written as the view is. With `generate --owned-origin` the mirror also has
+`try_into_owned_in_origin::<S>(&origin)`, as every other Rust owned mirror does:
+a string is built by the profile's `OriginStorage::str_from::<N>` and a byte
+string by `bytes_from::<N>`, each at its bound, and the option appends it after
+the rest of the module without changing a byte of the output without it. A map
+with a string or byte string that states no bound has no mirror, since a
+container needs a capacity, and a map of scalars borrows
 nothing; a queue, a bounded collection or a broadcast log over an element stores
 the mirror, at the inline profile, where it exists. The refusals are
 typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,

@@ -529,8 +529,9 @@ every language that lowers the kind, and no element is refused for its shape. Ru
 decodes such an entry to a view of the buffer, so its log stores and returns the
 map's owned mirror, `{Name}Owned<Inline>`, which the codec generates when every
 string and byte string of the map states its bound (`sce:max-size`, or the
-`sce:length` of an exact byte string); a map with an entry that states none has no
-mirror and no largest encoded size, and is refused as
+`sce:length` of an exact byte string), and which has `try_into_owned_in_origin`
+under `generate --owned-origin` as every other Rust owned mirror does; a map with an
+entry that states none has no mirror and no largest encoded size, and is refused as
 `broadcast-log/element-size-unbounded`. Python, Kotlin, Go, C11 and C++ hold that
 element as it decodes: their decoded values own their bytes. A
 document is refused when `producers` is
