@@ -176,10 +176,15 @@ typedef struct sce_blogn_read {
  * costs the log nothing: the publisher does not know how many readers exist,
  * which is what keeps publishing wait-free. */
 typedef struct sce_blogn_reader {
-    /* The sequence number this reader reads next, modulo 2^w. */
+    /* The sequence number this reader reads next, modulo 2^w. A deferred reader
+     * that has not read yet has none: this is 0 and sce_blogn_reader_is_bound says
+     * no. */
     uint32_t cursor;
     /* The entries this reader has been told it missed, summed over its reads. */
     uint64_t lost;
+    /* Nonzero for a reader opened by sce_blogn_reader_deferred, until its first
+     * read binds a cursor. Every other constructor leaves it zero. */
+    uint32_t unbound;
 } sce_blogn_reader_t;
 
 /* A bounded log whose entries are `words` 32-bit words, kept in `slots` slots (a
@@ -358,6 +363,16 @@ static inline uint32_t sce_blogn_publish(sce_blogn_publisher_t *publisher, const
     return n;
 }
 
+/* The cursor of the oldest retained entry, from `last`, the stamp of the last slot,
+ * and `head`, the head loaded after it (see sce_blogn_reader_oldest for why the
+ * stamp decides). `head` is read only when `last` is not SCE_BLOGN_UNWRITTEN, so a
+ * caller that has not loaded it may pass anything then. A reader opened at the
+ * oldest and a deferred reader binding at its first read take the cursor from
+ * here, so they cannot disagree. */
+static inline uint32_t sce_blogn_oldest_cursor(const sce_blogn_t *log, uint32_t last, uint32_t head) {
+    return last == SCE_BLOGN_UNWRITTEN ? 0u : sce_blogn_distance(head, sce_blogn_retention(log));
+}
+
 /* A reader at the oldest retained entry. The oldest retained entry is
  * `max(0, h - retention)`, and a count modulo 2^w cannot tell a log that has
  * published fewer than `retention` entries from one that wrapped, so the log says
@@ -369,10 +384,38 @@ static inline uint32_t sce_blogn_publish(sce_blogn_publisher_t *publisher, const
 static inline sce_blogn_reader_t sce_blogn_reader_oldest(const sce_blogn_t *log) {
     sce_blogn_reader_t reader;
     const uint32_t last = sce_atomic_load_acquire_u32(sce_blogn_slot(log, log->slots - 1u));
-    reader.cursor =
-        last == SCE_BLOGN_UNWRITTEN ? 0u : sce_blogn_distance(sce_blogn_head(log), sce_blogn_retention(log));
+    reader.cursor = sce_blogn_oldest_cursor(log, last, last == SCE_BLOGN_UNWRITTEN ? 0u : sce_blogn_head(log));
     reader.lost = 0;
+    reader.unbound = 0u;
     return reader;
+}
+
+/* A reader whose start is the oldest retained entry at its first read, and not at
+ * this call: it has no cursor until sce_blogn_read binds one, from the head that
+ * read loads, so a reader that waited is told of nothing the publisher did
+ * meanwhile, where sce_blogn_reader_oldest would tell it of the lag. Opening it
+ * loads nothing (`log` is not touched) and costs the log nothing.
+ *
+ * The first read binds as sce_blogn_reader_oldest does, with its loads part of the
+ * read: the stamp of the last slot, then the head (the order of the models:
+ * `RDStart`, `RDHead`), the head being the one the read goes on with. It then
+ * answers as any read does: an item, empty for a log with nothing published, or
+ * lagged if the publisher overtook the cursor inside that read. The deploy's pause
+ * bound covers the two loads as it covers the loads of a read, counted from the
+ * first of them (ADR 0062 section 2). */
+static inline sce_blogn_reader_t sce_blogn_reader_deferred(const sce_blogn_t *log) {
+    sce_blogn_reader_t reader;
+    (void)log;
+    reader.cursor = 0u;
+    reader.lost = 0;
+    reader.unbound = 1u;
+    return reader;
+}
+
+/* Whether `reader` has a cursor: zero only for a deferred reader that has not
+ * read yet. */
+static inline int sce_blogn_reader_is_bound(const sce_blogn_reader_t *reader) {
+    return reader->unbound == 0u;
 }
 
 /* A reader at the head: it sees only what is published after this call. */
@@ -380,6 +423,7 @@ static inline sce_blogn_reader_t sce_blogn_reader_head(const sce_blogn_t *log) {
     sce_blogn_reader_t reader;
     reader.cursor = sce_blogn_head(log);
     reader.lost = 0;
+    reader.unbound = 0u;
     return reader;
 }
 
@@ -427,9 +471,22 @@ static inline sce_blogn_read_t sce_blogn_lagged(sce_blogn_reader_t *reader, cons
  * publisher overwrote is not retried, it is the answer (SCE_BLOGN_LAGGED). */
 static inline sce_blogn_read_t sce_blogn_read(const sce_blogn_t *log, sce_blogn_reader_t *reader, uint32_t *out) {
     sce_blogn_read_t result;
-    const uint32_t r = reader->cursor;
-    uint32_t head = sce_atomic_load_acquire_u32(&log->head);
-    const uint32_t behind = sce_blogn_distance(head, r);
+    uint32_t r;
+    uint32_t head;
+    uint32_t behind;
+    if (reader->unbound != 0u) {
+        /* The first read of a deferred reader binds its cursor first: the stamp of
+         * the last slot, then the head, which is the head the read goes on with, so
+         * the read loads it once. */
+        const uint32_t last = sce_atomic_load_acquire_u32(sce_blogn_slot(log, log->slots - 1u));
+        head = sce_atomic_load_acquire_u32(&log->head);
+        reader->cursor = sce_blogn_oldest_cursor(log, last, head);
+        reader->unbound = 0u;
+    } else {
+        head = sce_atomic_load_acquire_u32(&log->head);
+    }
+    r = reader->cursor;
+    behind = sce_blogn_distance(head, r);
     result.seq = 0;
     result.skipped = 0;
     if (behind == 0u) {
