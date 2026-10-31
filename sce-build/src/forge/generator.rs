@@ -1879,7 +1879,8 @@ pub fn generate_cpp_with_imports_and_externs(
         // own `render_broadcast_log_<language>`); every other dispatch refuses
         // it by name ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it
         // through to here, since only the dispatcher has the document. C++'s
-        // renders over `sce/forge/broadcast_log.h` and reads the numbers the
+        // renders over `sce/forge/broadcast_log.h` (or, for a target without 64-bit
+        // atomics, `sce/forge/broadcast_log_narrow.h`) and reads the numbers the
         // document-set compile resolved into `options.broadcast_log_resolutions`.
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_cpp(&env, m, imports, options)?,
         // A declaration writes no file (`KindClass::Declaration`).
@@ -21915,8 +21916,8 @@ struct BroadcastLogRenderInputs {
     /// What the deploy says of the target's atomics
     /// ([`crate::BroadcastLogResolution::atomic_rmw_width`]), the triple of the
     /// device ([`crate::BroadcastLogResolution::target`]) and the pause the design
-    /// relies on ([`crate::BroadcastLogResolution::min_wrap_ops`]). Only the Rust
-    /// and C11 renderers read them, to choose their row ([`rust_broadcast_log_row`],
+    /// relies on ([`crate::BroadcastLogResolution::min_wrap_ops`]). Only the Rust,
+    /// C11 and C++ renderers read them, to choose their row ([`rust_broadcast_log_row`],
     /// [`judged_broadcast_log_row`]); the other runtimes have one row.
     atomic_rmw_width: Option<u32>,
     target: Option<String>,
@@ -22210,6 +22211,26 @@ fn render_broadcast_log_rust(
 /// `WORDS = 1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`; an element with no
 /// caller input has no context word and the header it always had. The words are
 /// a `std::size_t` count, so there is no 32-bit limit on them to refuse here.
+///
+/// **The row** the header is generated over is chosen from the target the deploy
+/// states, by the function the Rust and C11 renderers ask
+/// ([`judged_broadcast_log_row`]), so the three languages choose a row from a
+/// target the same way and refuse a deploy with the same messages: a target whose
+/// widest read-modify-write atomic is 64 bits, or a deploy that states none, gets the
+/// 64-bit row (`sce/forge/broadcast_log.h`, 64-bit stamps and words) exactly as it
+/// always did, from `broadcast_log.h.jinja2`; a target below that gets the narrow
+/// row (`sce/forge/broadcast_log_narrow.h`, 32-bit stamps and words) from
+/// `broadcast_log_narrow.h.jinja2`, and the log is judged against the stamp it keeps
+/// ([`judge_broadcast_log_stamp`]). The context words are laid out for the row's own
+/// word. The narrow row keeps the length of the encoded element in its first 32-bit
+/// word, so an element that encodes to more bytes than a word counts is refused.
+///
+/// Two templates and not one with a row key: the rows differ in the include, the
+/// constants the header states and asserts, the word of an entry and the way bytes
+/// are packed into it, which is most lines of the typed `publish` and `read`, and
+/// the 64-bit row's template is quoted by mutation casefiles and pinned by text
+/// tests, so it is left as it is and the narrow row is written beside it, as the C11
+/// renderer does.
 fn render_broadcast_log_cpp(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -22217,9 +22238,32 @@ fn render_broadcast_log_cpp(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::Cpp, options)?;
-    let tmpl = env.get_template("broadcast_log.h.jinja2").map_err(|e| {
+    let row = judged_broadcast_log_row(m, &inputs)?;
+    let narrow = row != RustBroadcastLogRow::Wide;
+    // The word an entry is made of: 64 bits over the 64-bit stamp, 32 over the narrow one.
+    let word_bits: u32 = if narrow { 32 } else { 64 };
+    // The narrow row stores the length of the encoded element in its first 32-bit word, so
+    // an element that encodes to more bytes than a 32-bit word counts cannot be stored in it.
+    if narrow && inputs.max_bytes > u64::from(u32::MAX) {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the element '{element}' encodes to at most {bytes} bytes, \
+             and the C++ narrow row keeps the length of an entry in a 32-bit word (at most \
+             {max} bytes).",
+            name = m.name,
+            element = m.element_type,
+            bytes = inputs.max_bytes,
+            max = u32::MAX,
+        )))
+        .at_line(m.element_type_line));
+    }
+    let template_name = if narrow {
+        "broadcast_log_narrow.h.jinja2"
+    } else {
+        "broadcast_log.h.jinja2"
+    };
+    let tmpl = env.get_template(template_name).map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
-            "broadcast_log.h.jinja2 (cpp): {e}"
+            "{template_name} (cpp): {e}"
         )))
     })?;
     let ctx = minijinja::context! {
@@ -22233,12 +22277,23 @@ fn render_broadcast_log_cpp(
         max_bytes => inputs.max_bytes,
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
-        runtime_dep => "sce/forge/broadcast_log.h",
-        context => broadcast_log_context_value(&inputs.element, 64),
+        runtime_dep => if narrow {
+            "sce/forge/broadcast_log_narrow.h"
+        } else {
+            "sce/forge/broadcast_log.h"
+        },
+        ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),
+        stamp_bits => crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+        log_name => &m.name,
+        wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
+            crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
+            inputs.retention,
+        ),
+        context => broadcast_log_context_value(&inputs.element, word_bits),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
-            "broadcast_log.h.jinja2 (cpp): {e}"
+            "{template_name} (cpp): {e}"
         )))
     })
 }
@@ -22538,14 +22593,15 @@ fn render_broadcast_log_c(
 
 /// The row of the runtime a broadcast log is generated over, and the judgement of the
 /// stamp it keeps (ADR 0062 section 4, "Stamp width"): [`rust_broadcast_log_row`] and
-/// then [`judge_broadcast_log_stamp`] at the width the narrow row keeps. The Rust and
-/// the C11 renderers both ask it, so that the two languages choose a row from a target
-/// the same way and cannot answer one deploy with two rows or refuse it with two
-/// messages. `RustBroadcastLogRow::Wide` is the 64-bit row, whose stamp is never
-/// asked anything; `Narrow` is the 32-bit row, for a target whose widest
+/// then [`judge_broadcast_log_stamp`] at the width the narrow row keeps. The Rust, the
+/// C11 and the C++ renderers all ask it, so that the three languages choose a row from a
+/// target the same way and cannot answer one deploy with different rows or refuse it
+/// with different messages. `RustBroadcastLogRow::Wide` is the 64-bit row, whose stamp
+/// is never asked anything; `Narrow` is the 32-bit row, for a target whose widest
 /// read-modify-write atomic is 32 bits (`ownership_only: false`) or which has none
 /// (`ownership_only: true`, where the Rust module and the C11 header do not define the
-/// publisher taken by a swap or a compare-and-swap).
+/// publisher taken by a swap or a compare-and-swap, and the C++ header says to take it
+/// by `split` or `publisher_unchecked`).
 fn judged_broadcast_log_row(
     m: &crate::forge::model::BroadcastLogModel,
     inputs: &BroadcastLogRenderInputs,
