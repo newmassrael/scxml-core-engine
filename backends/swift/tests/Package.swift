@@ -13,7 +13,8 @@ import PackageDescription
 // replay scenarios drive. `EcmaScriptMachines` (`scripts/regen_swift_ecmascript.sh`) holds the
 // machines of `datamodel="ecmascript"`, whose expressions are lowered to Lua and run by the
 // `SceLua` engine; it is a target of its own so that a machine that needs no engine does not
-// link Lua.
+// link Lua. `W3cMachines` and its tests are written, and not committed, by
+// `scripts/regen_swift_w3c.sh` from the W3C documents the backend lowers, as Go's W3C suite is.
 let package = Package(
     name: "SceSwiftTests",
     platforms: [.macOS(.v15), .iOS(.v18)],
@@ -66,6 +67,20 @@ let package = Package(
                 "EcmaScriptMachines",
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+        .target(
+            name: "W3cMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "W3cMachinesTests",
+            dependencies: [
+                "W3cMachines",
+                .product(name: "SceRuntime", package: "runtime"),
             ]
         ),
     ]

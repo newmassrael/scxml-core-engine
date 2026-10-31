@@ -199,6 +199,12 @@ backends/go/tests/generated/
 # generated, so it stays under this ignore rule).
 backends/python/tests/generated/
 
+# The Swift W3C suite follows the Go convention: `scripts/regen_swift_w3c.sh` writes one machine per
+# W3C document the Swift backend lowers, and the test file beside them, and the lane regenerates
+# both before it runs them, so a template edit does not rewrite a file per document in git.
+backends/swift/tests/Sources/W3cMachines/
+backends/swift/tests/Tests/W3cMachinesTests/
+
 # Python AOT integration trees: emitted by
 # `scripts/regen_donedata_local_invoke_python.sh` (and
 # `sce-codegen generate-integration -l python` in CI). Mirrors the W3C

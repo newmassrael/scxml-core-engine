@@ -53,6 +53,8 @@ on:
       - 'scripts/regen_swift_statecharts.sh'
       - 'scripts/regen_static_datamodel_swift.sh'
       - 'scripts/regen_swift_ecmascript.sh'
+      - 'scripts/regen_swift_w3c.sh'
+      - 'tests/w3c/conformance/fixtures.json'
       - 'scripts/lib/sce_codegen.sh'
       - 'scripts/lib/swift_pin.sh'
       - 'scripts/install_swift_toolchain.sh'

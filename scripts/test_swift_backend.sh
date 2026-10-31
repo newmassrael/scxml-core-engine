@@ -49,6 +49,7 @@ for package in "${PACKAGES[@]}"; do
         scripts/regen_swift_statecharts.sh
         scripts/regen_static_datamodel_swift.sh
         scripts/regen_swift_ecmascript.sh
+        scripts/regen_swift_w3c.sh
     fi
     echo "== swift test: backends/swift/$package"
     (cd "backends/swift/$package" && swift test)

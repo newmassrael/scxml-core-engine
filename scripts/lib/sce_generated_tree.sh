@@ -156,6 +156,7 @@ sce_generated_trees() {
         backends/python/tests/generated \
         backends/go/forge-runtime/round_trip/generated \
         backends/swift/tests/Sources/StaticMachines \
+        backends/swift/tests/Sources/EcmaScriptMachines \
         backends/rust/mesh/src/generated \
         backends/rust/mesh/examples/generated \
         backends/kotlin/mesh/src/commonMain/kotlin/generated \
