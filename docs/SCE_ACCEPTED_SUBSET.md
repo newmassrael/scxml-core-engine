@@ -524,10 +524,15 @@ kind: the entry stores them in context words between its length word and its byt
 flags and reads the tag off the element, and `read` returns the flags with the item
 (the element reports its own tag), so each reader decodes an entry under what it was
 published under; an element that asks for neither has the entry and the
-signatures it always had. What is refused, naming the element
-(`generate/invalid-config`), is on Rust a CBOR map with a string or byte-string entry
-(whose decoded form borrows its buffer and has no owned mirror). Python, Kotlin, Go,
-C11 and C++ hold that element: their decoded values own their bytes. A
+signatures it always had. A CBOR map with a string or byte-string entry is held on
+every language that lowers the kind, and no element is refused for its shape. Rust
+decodes such an entry to a view of the buffer, so its log stores and returns the
+map's owned mirror, `{Name}Owned<Inline>`, which the codec generates when every
+string and byte string of the map states its bound (`sce:max-size`, or the
+`sce:length` of an exact byte string); a map with an entry that states none has no
+mirror and no largest encoded size, and is refused as
+`broadcast-log/element-size-unbounded`. Python, Kotlin, Go, C11 and C++ hold that
+element as it decodes: their decoded values own their bytes. A
 document is refused when `producers` is
 `many` (`broadcast-log/producers-many-unsupported`), when its
 `<sce:element-type>` names no codec or procedure of the build

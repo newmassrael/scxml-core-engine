@@ -1141,7 +1141,19 @@ envelope codec never writes one.
 optional one as `Option<T>`, `string` and `bytes` as views of the input),
 `decode(&mut SceCursor)` — which moves the cursor only when the whole map
 decoded — `encode(&mut impl SceSink)` and `encode_to_vec()`, every CBOR item
-read and written by the runtime's `sce_forge_runtime::cbor`. The refusals are
+read and written by the runtime's `sce_forge_runtime::cbor`. A Rust map with a
+string or a byte string borrows the buffer it was read from (`Name<'a>`), and
+when every one of them states its bound (`sce:max-size`, or the `sce:length` of an
+exact byte string) it also has the owned mirror `{Name}Owned<S>` of a positional
+codec: each such entry is held in the storage profile's `S::Str<N>` or
+`S::Bytes<N>` at its bound, `try_into_owned_in::<S>()` copies them (the inline
+profile refuses a value past a bound with `CodecError::TooManyElements`),
+`as_borrowed`, `transcode_in`, `encode` and `encode_to_vec` are the positional
+mirror's, and the mirror implements the codec's source interface so that it is
+written as the view is. A map with a string or byte string that states no bound
+has no mirror, since a container needs a capacity, and a map of scalars borrows
+nothing; a queue, a bounded collection or a broadcast log over an element stores
+the mirror, at the inline profile, where it exists. The refusals are
 typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,
 `CborTooDeep`, `CborOutOfRange`, and the existing `InvalidUtf8` /
 `UndeclaredEnumValue`. Kotlin generates the same codec as a data class (an
