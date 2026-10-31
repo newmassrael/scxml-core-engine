@@ -151,9 +151,8 @@ impl<'a> CodecExtEncodingInfo<'a> {
     }
 }
 
-/// The fields `combined_id.has_schema` decides (docs/adr/0065 §6 R4b): a value holds the
-/// ones present while it holds, or the ones present while it does not,
-/// and `CodecExtEncodingInfo` derives `combined_id.has_schema` from which.
+/// The fields `combined_id.has_schema` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecExtEncodingInfo` derives the gates from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecExtEncodingInfoCombinedIdHasSchema<Schema> {
@@ -170,8 +169,7 @@ pub enum CodecExtEncodingInfoCombinedIdHasSchema<Schema> {
 }
 
 impl<Schema: Default> Default for CodecExtEncodingInfoCombinedIdHasSchema<Schema> {
-    /// The side present while `combined_id.has_schema` does not hold, each field at its
-    /// type's default.
+    /// The arm held while `combined_id.has_schema` does not hold, each field at its type's default.
     fn default() -> Self {
         Self::NotHasSchema { schema_size: Default::default(), }
     }
@@ -184,7 +182,7 @@ impl<Schema: Default> Default for CodecExtEncodingInfoCombinedIdHasSchema<Schema
 pub trait CodecExtEncodingInfoSource {
     /// The `combined_id` field.
     fn combined_id(&self) -> u32;
-    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4).
     fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<&[u8]>;
 }
 
@@ -205,7 +203,7 @@ impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
 pub struct CodecExtEncodingInfoParts<'a> {
     /// The `combined_id` field.
     pub combined_id: u32,
-    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4).
     pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<&'a [u8]>,
 }
 

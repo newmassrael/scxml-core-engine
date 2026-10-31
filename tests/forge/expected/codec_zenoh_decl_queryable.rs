@@ -139,9 +139,9 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     }
 }
 
-/// The fields `Z` decides (docs/adr/0065 §6 R4b), present together
-/// while it holds: a value holds all of them or none, and `CodecZenohDeclQueryable`
-/// derives `Z` from which.
+/// The fields `Z` decide (docs/adr/0065 §6 R4b), present together
+/// while `Z` holds: a value holds all of them or none, and `CodecZenohDeclQueryable`
+/// derives the gate from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CodecZenohDeclQueryableZ {
@@ -160,7 +160,7 @@ pub trait CodecZenohDeclQueryableSource {
     fn id(&self) -> u32;
     /// The `wireexpr` field.
     fn wireexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource;
-    /// The fields `Z` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `Z` decides, held together (docs/adr/0065 §6 R4).
     fn z(&self) -> Option<CodecZenohDeclQueryableZ>;
 }
 
@@ -186,7 +186,7 @@ pub struct CodecZenohDeclQueryableParts<'a> {
     pub id: u32,
     /// The `wireexpr` field.
     pub wireexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
-    /// The fields `Z` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `Z` decides, held together (docs/adr/0065 §6 R4).
     pub z: Option<CodecZenohDeclQueryableZ>,
 }
 

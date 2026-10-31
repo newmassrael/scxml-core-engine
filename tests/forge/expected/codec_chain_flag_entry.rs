@@ -167,9 +167,8 @@ impl CodecChainFlagEntry {
     }
 }
 
-/// The fields `wide` decides (docs/adr/0065 §6 R4b): a value holds the
-/// ones present while it holds, or the ones present while it does not,
-/// and `CodecChainFlagEntry` derives `wide` from which.
+/// The fields `wide` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecChainFlagEntry` derives the gates from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecChainFlagEntryWide {
@@ -186,8 +185,7 @@ pub enum CodecChainFlagEntryWide {
 }
 
 impl Default for CodecChainFlagEntryWide {
-    /// The side present while `wide` does not hold, each field at its
-    /// type's default.
+    /// The arm held while `wide` does not hold, each field at its type's default.
     fn default() -> Self {
         Self::NotWide { short_value: Default::default(), }
     }
@@ -219,7 +217,7 @@ impl CodecChainFlagEntryOverrides {
 pub trait CodecChainFlagEntrySource {
     /// The `header` field.
     fn header(&self) -> u8;
-    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4).
     fn wide(&self) -> CodecChainFlagEntryWide;
 }
 
@@ -240,7 +238,7 @@ impl<T: CodecChainFlagEntrySource + ?Sized> CodecChainFlagEntrySource for &T {
 pub struct CodecChainFlagEntryParts {
     /// The `header` field.
     pub header: u8,
-    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `wide` decides, held together (docs/adr/0065 §6 R4).
     pub wide: CodecChainFlagEntryWide,
 }
 

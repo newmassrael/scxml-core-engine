@@ -156,9 +156,8 @@ impl<'a> CodecPresentIfLengthRef<'a> {
     }
 }
 
-/// The fields `flags.has_payload` decides (docs/adr/0065 §6 R4b): a value holds the
-/// ones present while it holds, or the ones present while it does not,
-/// and `CodecPresentIfLengthRef` derives `flags.has_payload` from which.
+/// The fields `flags.has_payload` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecPresentIfLengthRef` derives the gates from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecPresentIfLengthRefFlagsHasPayload<Payload> {
@@ -175,8 +174,7 @@ pub enum CodecPresentIfLengthRefFlagsHasPayload<Payload> {
 }
 
 impl<Payload: Default> Default for CodecPresentIfLengthRefFlagsHasPayload<Payload> {
-    /// The side present while `flags.has_payload` does not hold, each field at its
-    /// type's default.
+    /// The arm held while `flags.has_payload` does not hold, each field at its type's default.
     fn default() -> Self {
         Self::NotHasPayload { payload_size: Default::default(), }
     }
@@ -189,7 +187,7 @@ impl<Payload: Default> Default for CodecPresentIfLengthRefFlagsHasPayload<Payloa
 pub trait CodecPresentIfLengthRefSource {
     /// The `flags` field.
     fn flags(&self) -> u8;
-    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4).
     fn flags_has_payload(&self) -> CodecPresentIfLengthRefFlagsHasPayload<&[u8]>;
 }
 
@@ -210,7 +208,7 @@ impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource fo
 pub struct CodecPresentIfLengthRefParts<'a> {
     /// The `flags` field.
     pub flags: u8,
-    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4).
     pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<&'a [u8]>,
 }
 

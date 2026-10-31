@@ -178,9 +178,8 @@ impl CodecChainPrevEntry {
     }
 }
 
-/// The fields `after_marker` decides (docs/adr/0065 §6 R4b): a value holds the
-/// ones present while it holds, or the ones present while it does not,
-/// and `CodecChainPrevEntry` derives `after_marker` from which.
+/// The fields `after_marker` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecChainPrevEntry` derives the gates from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecChainPrevEntryAfterMarker {
@@ -197,8 +196,7 @@ pub enum CodecChainPrevEntryAfterMarker {
 }
 
 impl Default for CodecChainPrevEntryAfterMarker {
-    /// The side present while `after_marker` does not hold, each field at its
-    /// type's default.
+    /// The arm held while `after_marker` does not hold, each field at its type's default.
     fn default() -> Self {
         Self::NotAfterMarker { short_value: Default::default(), }
     }
@@ -232,7 +230,7 @@ pub trait CodecChainPrevEntrySource {
     fn header(&self) -> u8;
     /// The `tag` field.
     fn tag(&self) -> Option<u8>;
-    /// The fields `after_marker` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `after_marker` decides, held together (docs/adr/0065 §6 R4).
     fn after_marker(&self) -> CodecChainPrevEntryAfterMarker;
 }
 
@@ -258,7 +256,7 @@ pub struct CodecChainPrevEntryParts {
     pub header: u8,
     /// The `tag` field.
     pub tag: Option<u8>,
-    /// The fields `after_marker` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `after_marker` decides, held together (docs/adr/0065 §6 R4).
     pub after_marker: CodecChainPrevEntryAfterMarker,
 }
 

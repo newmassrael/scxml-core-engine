@@ -192,9 +192,9 @@ impl<'a> CodecZenohJoin<'a> {
     }
 }
 
-/// The fields `S` decides (docs/adr/0065 §6 R4b), present together
-/// while it holds: a value holds all of them or none, and `CodecZenohJoin`
-/// derives `S` from which.
+/// The fields `S` decide (docs/adr/0065 §6 R4b), present together
+/// while `S` holds: a value holds all of them or none, and `CodecZenohJoin`
+/// derives the gate from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CodecZenohJoinS {
@@ -221,7 +221,7 @@ pub trait CodecZenohJoinSource {
     fn next_sn_reliable(&self) -> u64;
     /// The `next_sn_best_effort` field.
     fn next_sn_best_effort(&self) -> u64;
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     fn s(&self) -> Option<CodecZenohJoinS>;
 }
 
@@ -267,7 +267,7 @@ pub struct CodecZenohJoinParts<'a> {
     pub next_sn_reliable: u64,
     /// The `next_sn_best_effort` field.
     pub next_sn_best_effort: u64,
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     pub s: Option<CodecZenohJoinS>,
 }
 

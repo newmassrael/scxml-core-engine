@@ -203,9 +203,9 @@ impl<'a> CodecZenohInitBody<'a> {
     }
 }
 
-/// The fields `S` decides (docs/adr/0065 §6 R4b), present together
-/// while it holds: a value holds all of them or none, and `CodecZenohInitBody`
-/// derives `S` from which.
+/// The fields `S` decide (docs/adr/0065 §6 R4b), present together
+/// while `S` holds: a value holds all of them or none, and `CodecZenohInitBody`
+/// derives the gate from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CodecZenohInitBodyS {
@@ -228,7 +228,7 @@ pub trait CodecZenohInitBodySource {
     fn zid(&self) -> &[u8];
     /// The `cookie` field.
     fn cookie(&self) -> Option<&[u8]>;
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     fn s(&self) -> Option<CodecZenohInitBodyS>;
 }
 
@@ -264,7 +264,7 @@ pub struct CodecZenohInitBodyParts<'a> {
     pub zid: &'a [u8],
     /// The `cookie` field.
     pub cookie: Option<&'a [u8]>,
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     pub s: Option<CodecZenohInitBodyS>,
 }
 

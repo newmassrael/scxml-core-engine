@@ -160,9 +160,8 @@ impl<'a> CodecZenohValueZbuf<'a> {
     }
 }
 
-/// The fields `after_shm` decides (docs/adr/0065 §6 R4b): a value holds the
-/// ones present while it holds, or the ones present while it does not,
-/// and `CodecZenohValueZbuf` derives `after_shm` from which.
+/// The fields `after_shm` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecZenohValueZbuf` derives the gates from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecZenohValueZbufAfterShm<Slices, Value> {
@@ -183,8 +182,7 @@ pub enum CodecZenohValueZbufAfterShm<Slices, Value> {
 }
 
 impl<Slices: Default, Value: Default> Default for CodecZenohValueZbufAfterShm<Slices, Value> {
-    /// The side present while `after_shm` does not hold, each field at its
-    /// type's default.
+    /// The arm held while `after_shm` does not hold, each field at its type's default.
     fn default() -> Self {
         Self::NotAfterShm { value: Default::default(), }
     }
@@ -195,7 +193,7 @@ impl<Slices: Default, Value: Default> Default for CodecZenohValueZbufAfterShm<Sl
 /// or the flag a gated field is announced by is not among them; `CodecZenohValueZbuf`
 /// computes those from what is ([`CodecZenohValueZbuf::encode_source`]).
 pub trait CodecZenohValueZbufSource {
-    /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
     fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]>;
 }
 
@@ -211,7 +209,7 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohValueZbufParts<'a> {
-    /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
     pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], 4>, &'a [u8]>,
 }
 

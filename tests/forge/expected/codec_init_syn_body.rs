@@ -141,9 +141,9 @@ impl CodecInitSynBody {
     }
 }
 
-/// The fields `S` decides (docs/adr/0065 §6 R4b), present together
-/// while it holds: a value holds all of them or none, and `CodecInitSynBody`
-/// derives `S` from which.
+/// The fields `S` decide (docs/adr/0065 §6 R4b), present together
+/// while `S` holds: a value holds all of them or none, and `CodecInitSynBody`
+/// derives the gate from which.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CodecInitSynBodyS {
@@ -160,7 +160,7 @@ pub struct CodecInitSynBodyS {
 pub trait CodecInitSynBodySource {
     /// The `version` field.
     fn version(&self) -> u8;
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     fn s(&self) -> Option<CodecInitSynBodyS>;
 }
 
@@ -181,7 +181,7 @@ impl<T: CodecInitSynBodySource + ?Sized> CodecInitSynBodySource for &T {
 pub struct CodecInitSynBodyParts {
     /// The `version` field.
     pub version: u8,
-    /// The fields `S` decides, held together (docs/adr/0065 §6 R4b).
+    /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     pub s: Option<CodecInitSynBodyS>,
 }
 

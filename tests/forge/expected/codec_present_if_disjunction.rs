@@ -25,7 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecPresentIfDisjunction {
     pub flags: u8,
-    pub seq: Option<u16>,
+    pub flags_wants_a_or_wants_b: Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB>,
 }
 
 #[allow(dead_code)]
@@ -89,7 +89,7 @@ impl CodecPresentIfDisjunction {
             None
         };
         _out.flags = flags;
-        _out.seq = seq;
+        _out.flags_wants_a_or_wants_b = match ((flags & 0x01u8) != 0, (flags & 0x02u8) != 0) { (true, false) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsA { seq: seq.unwrap_or_default() }), (false, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: seq.unwrap_or_default() }), (true, true) => Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { seq: seq.unwrap_or_default() }), _ => None, };
         Ok(())
     }
 
@@ -129,63 +129,55 @@ impl CodecPresentIfDisjunction {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 3;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
-/// Flags of `CodecPresentIfDisjunction` a parent sets in place of the ones a value presents:
-/// the end flag of a chain whose entries are `CodecPresentIfDisjunction`, which the chain
-/// derives from where an entry stands.
-#[doc(hidden)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CodecPresentIfDisjunctionOverrides {
-    /// The `wants_a` flag of `flags`, when a parent sets it.
-    pub flags_wants_a: Option<bool>,
-    /// The `wants_b` flag of `flags`, when a parent sets it.
-    pub flags_wants_b: Option<bool>,
-}
-
+/// The fields `flags.wants_a`, `flags.wants_b` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecPresentIfDisjunction` derives the gates from which. A value holds no arm while `flags.wants_a` does not hold and `flags.wants_b` does not hold.
 #[allow(dead_code)]
-impl CodecPresentIfDisjunctionOverrides {
-    /// Sets `wants_a` of `flags` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn flags_wants_a(value: bool) -> Self {
-        Self { flags_wants_a: Some(value), ..Self::default() }
-    }
-
-    /// Sets `wants_b` of `flags` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn flags_wants_b(value: bool) -> Self {
-        Self { flags_wants_b: Some(value), ..Self::default() }
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecPresentIfDisjunctionFlagsWantsAOrWantsB {
+    /// While `flags.wants_a` holds and `flags.wants_b` does not hold.
+    WantsA {
+        /// The `seq` field.
+        seq: u16,
+    },
+    /// While `flags.wants_a` does not hold and `flags.wants_b` holds.
+    WantsB {
+        /// The `seq` field.
+        seq: u16,
+    },
+    /// While `flags.wants_a` holds and `flags.wants_b` holds.
+    WantsAWantsB {
+        /// The `seq` field.
+        seq: u16,
+    },
 }
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
@@ -195,16 +187,16 @@ impl CodecPresentIfDisjunctionOverrides {
 pub trait CodecPresentIfDisjunctionSource {
     /// The `flags` field.
     fn flags(&self) -> u8;
-    /// The `seq` field.
-    fn seq(&self) -> Option<u16>;
+    /// The fields `flags.wants_a || flags.wants_b` decides, held together (docs/adr/0065 §6 R4).
+    fn flags_wants_a_or_wants_b(&self) -> Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB>;
 }
 
 impl<T: CodecPresentIfDisjunctionSource + ?Sized> CodecPresentIfDisjunctionSource for &T {
     fn flags(&self) -> u8 {
         (**self).flags()
     }
-    fn seq(&self) -> Option<u16> {
-        (**self).seq()
+    fn flags_wants_a_or_wants_b(&self) -> Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB> {
+        (**self).flags_wants_a_or_wants_b()
     }
 }
 
@@ -216,25 +208,25 @@ impl<T: CodecPresentIfDisjunctionSource + ?Sized> CodecPresentIfDisjunctionSourc
 pub struct CodecPresentIfDisjunctionParts {
     /// The `flags` field.
     pub flags: u8,
-    /// The `seq` field.
-    pub seq: Option<u16>,
+    /// The fields `flags.wants_a || flags.wants_b` decides, held together (docs/adr/0065 §6 R4).
+    pub flags_wants_a_or_wants_b: Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB>,
 }
 
 impl CodecPresentIfDisjunctionSource for CodecPresentIfDisjunctionParts {
+    fn flags_wants_a_or_wants_b(&self) -> Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB> {
+        self.flags_wants_a_or_wants_b
+    }
     fn flags(&self) -> u8 {
         self.flags
-    }
-    fn seq(&self) -> Option<u16> {
-        self.seq
     }
 }
 
 impl CodecPresentIfDisjunctionSource for CodecPresentIfDisjunction {
+    fn flags_wants_a_or_wants_b(&self) -> Option<CodecPresentIfDisjunctionFlagsWantsAOrWantsB> {
+        self.flags_wants_a_or_wants_b
+    }
     fn flags(&self) -> u8 {
         self.flags
-    }
-    fn seq(&self) -> Option<u16> {
-        self.seq
     }
 }
 
@@ -243,34 +235,23 @@ impl CodecPresentIfDisjunction {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecPresentIfDisjunctionSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, &CodecPresentIfDisjunctionOverrides::default())
-    }
-
-    /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
-    #[doc(hidden)]
-    pub fn write_source_in<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecPresentIfDisjunctionOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let mut _c_flags: u8 = src.flags();
-        if let Some(_o) = over.flags_wants_a {
-            _c_flags = (_c_flags & !0x1) | u8::from(_o);
-        }
-        if let Some(_o) = over.flags_wants_b {
-            _c_flags = (_c_flags & !0x2) | (u8::from(_o) << 1);
-        }
-        if ((_c_flags & 0x1) != 0 || (_c_flags & 0x2) != 0) != src.seq().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
+    pub fn write_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let _m_seq = src.flags_wants_a_or_wants_b().map(|_g| match _g {
+            CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsA { seq } | CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq } | CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { seq } => seq,
+        });
+        let _d_flags_wants_a: bool = matches!(src.flags_wants_a_or_wants_b(), Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsA { .. } | CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { .. }));
+        let _d_flags_wants_b: bool = matches!(src.flags_wants_a_or_wants_b(), Some(CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { .. } | CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsAWantsB { .. }));
+        let _c_flags: u8 = (((src.flags() & !0x1) | u8::from(_d_flags_wants_a)) & !0x2) | (u8::from(_d_flags_wants_b) << 1);
         w.write_u8(_c_flags)?;
-        if let Some(_v) = src.seq() {
+        if let Some(_v) = _m_seq {
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
             w.write_u8((_v & 0xFF) as u8)?;
         }
@@ -280,17 +261,17 @@ impl CodecPresentIfDisjunction {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecPresentIfDisjunctionSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecPresentIfDisjunctionSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<S: CodecPresentIfDisjunctionSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecPresentIfDisjunction {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -298,10 +279,12 @@ impl<S: CodecPresentIfDisjunctionSource + ?Sized> ::sce_forge_runtime::codec::So
 #[allow(dead_code)]
 impl CodecPresentIfDisjunction {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecPresentIfDisjunctionSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecPresentIfDisjunctionSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
