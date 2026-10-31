@@ -106,8 +106,8 @@ if [ "${#LOWERED[@]}" -lt 1 ]; then
 fi
 # A floor, not an equality: a construct Swift gains lowers more fixtures without touching this
 # number, but a document the generator stopped lowering must not read as a smaller suite that
-# passed. Raise it when a slice lands; measured 2026-10-31 at 29 of 157.
-FLOOR=29
+# passed. Raise it when a slice lands; measured 2026-10-31 at 62 of 157.
+FLOOR=62
 if [ "${#LOWERED[@]}" -lt "$FLOOR" ]; then
     echo "error: the Swift backend lowers ${#LOWERED[@]} simple W3C fixture(s), under the floor of $FLOOR: a construct it lowered is refused again" >&2
     exit 1
@@ -128,16 +128,43 @@ sce_generated_tree_clear --recursive "$GENERATED_DIR"
     printf '// the Swift backend lowers. The machine runs to completion and must settle in its `pass` state,\n'
     printf '// or in its `final` state for a manual test that has no `pass` (W3C 415).\n\n'
     printf 'import SceRuntime\nimport Testing\nimport W3cMachines\n\n'
-    printf 'private func started<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {\n'
+    printf '// The run every other backend gives a `simple` fixture: start the machine and let it tick, for\n'
+    printf '// at most three seconds, until it reaches a final state. A machine that starts a child session\n'
+    printf '// or sends to itself is only finished by the ticks.\n'
+    printf 'private func settled<Policy: StatePolicy>(_ policy: Policy) -> (engine: Engine<Policy>, completed: Bool) {\n'
     printf '    let engine = Engine(policy: policy)\n'
-    printf '    engine.setClock(ManualClock())\n'
     printf '    engine.initialize()\n'
-    printf '    return engine\n}\n'
+    printf '    let completed = engine.runUntilCompletion(timeout: .seconds(3), pollInterval: .milliseconds(10))\n'
+    printf '    return (engine, completed)\n}\n'
 } > "$TEST_FILE"
 
+# A fixture the backend lowers and that cannot settle yet, with the reason it cannot. It is run
+# under `withKnownIssue`, so it is held both ways: it still has to fail, and the day it passes the
+# suite says so and the entry goes. An entry whose fixture is no longer lowered is an error, since
+# nothing would run it.
+declare -A KNOWN_GAPS=(
+    [561]="a receiver builds no DOM from an XML payload: SceLua has no DOM binding (§scxml-B-2-8-1, the first rung)"
+)
+for gap in "${!KNOWN_GAPS[@]}"; do
+    case " ${LOWERED[*]} " in
+        *" $gap "*) ;;
+        *)
+            echo "error: the recorded gap $gap names a fixture the Swift backend no longer lowers" >&2
+            exit 1
+            ;;
+    esac
+done
+
 for id in "${LOWERED[@]}"; do
-    machine="$(ls "$TMP/$id"/*_sm.swift)"
-    cp "$machine" "$GENERATED_DIR/"
+    # A document that starts a child session is written as its own machine and one more for each
+    # child it starts (`test220__sce_synth_invoke__invoke_0_sm.swift`), all of which the target
+    # compiles; the one under test is the machine of the document.
+    machine="$TMP/$id/test${id}_sm.swift"
+    if [ ! -f "$machine" ]; then
+        echo "error: the generator wrote no $machine for fixture $id" >&2
+        exit 1
+    fi
+    cp "$TMP/$id"/*_sm.swift "$GENERATED_DIR/"
     # The policy class is named from the document, so it is read from the file it was written
     # to rather than spelled again here.
     policy="$(grep -o 'public final class [A-Za-z0-9_]*Policy' "$machine" | head -n 1 | awk '{print $4}')"
@@ -150,9 +177,17 @@ for id in "${LOWERED[@]}"; do
         printf '\n@Test("W3C %s settles in its %s state")\n' "$id" "$expected"
         printf 'func w3c_%s() {\n' "$id"
         printf '    let policy = %s()\n' "$policy"
-        printf '    let engine = started(policy)\n'
-        printf '    #expect(engine.isInFinalState, "W3C %s did not run to a final state")\n' "$id"
-        printf '    #expect(policy.getStateName(engine.getCurrentState()) == "%s", "W3C %s settled in another state")\n' "$expected" "$id"
+        if [ -n "${KNOWN_GAPS[$id]:-}" ]; then
+            printf '    withKnownIssue("%s") {\n' "${KNOWN_GAPS[$id]}"
+            printf '        let run = settled(policy)\n'
+            printf '        #expect(run.completed, "W3C %s did not run to a final state")\n' "$id"
+            printf '        #expect(policy.getStateName(run.engine.getCurrentState()) == "%s", "W3C %s settled in another state")\n' "$expected" "$id"
+            printf '    }\n'
+        else
+            printf '    let run = settled(policy)\n'
+            printf '    #expect(run.completed, "W3C %s did not run to a final state")\n' "$id"
+            printf '    #expect(policy.getStateName(run.engine.getCurrentState()) == "%s", "W3C %s settled in another state")\n' "$expected" "$id"
+        fi
         printf '}\n'
     } >> "$TEST_FILE"
 done

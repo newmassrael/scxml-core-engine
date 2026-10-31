@@ -151,6 +151,160 @@ fn the_name_of_a_data_variable_is_a_string_and_never_source() {
     );
 }
 
+/// A `<send>` and a `<cancel>` of literals need no engine: the event, the id and the `<param>` the
+/// document writes as text are read by the template, so the machine delivers them whichever data
+/// model the document declares.
+#[test]
+fn a_send_and_a_cancel_of_literals_are_lowered() {
+    // A `<param expr>` is an expression, which a `null` data model has no language to write in, so
+    // that data model carries the literal as `<content>` and the other as a `<param>`.
+    for (datamodel, data) in [
+        ("null", r#"<content>me</content>"#),
+        ("ecmascript", r#"<param name="who" expr="'me'"/>"#),
+    ] {
+        let body = format!(
+            r#"
+  <state id="s0">
+    <onentry>
+      <send id="first" event="ping">{data}</send>
+      <cancel sendid="first"/>
+      <send event="pong"/>
+    </onentry>
+    <transition event="pong" target="done"/>
+  </state>
+  <final id="done"/>"#
+        );
+        let (status, machine, said) = generate(
+            &document(&format!(r#"datamodel="{datamodel}""#), &body),
+            &[],
+        );
+        assert_eq!(status, Some(0), "{datamodel}: {said}");
+        assert_eq!(
+            machine.matches("engine.raiseExternalWithMeta(").count(),
+            2,
+            "{datamodel}: each of the two sends is delivered through the engine: {machine}"
+        );
+        assert!(
+            machine.contains("engine.cancelEvent("),
+            "{datamodel}: the cancel reaches the engine: {machine}"
+        );
+    }
+}
+
+/// A BasicHTTP `<send>` that names no target has nowhere to go: the build decides it once, and the
+/// machine raises error.communication (W3C SCXML C.2, W3C 577) instead of handing the engine's
+/// transport a request for the empty string.
+#[test]
+fn a_basichttp_send_with_no_target_is_an_error_and_reaches_no_transport() {
+    let body = r#"
+  <state id="s0">
+    <onentry><send event="t" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/></onentry>
+    <transition event="error.communication" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("BasicHTTP names no target"),
+        "the send raises the error: {machine}"
+    );
+    assert!(
+        !machine.contains("engine.performHTTPSend("),
+        "and hands no transport a request: {machine}"
+    );
+}
+
+/// The text of a `<content>` travels as it was written under `ecmascript`, for the receiver's engine
+/// to read as JSON or as a string (§scxml-B-2-8-1, W3C 578); under any other data model it is the
+/// value, the last rung taken at build time.
+#[test]
+fn the_content_of_a_send_travels_as_written_for_the_receivers_engine() {
+    let body = r#"
+  <state id="s0">
+    <onentry><send event="e"><content>{ "a" : 1 }</content></send></onentry>
+    <transition event="e" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let written = r##"let sendEventData = "{ \"a\" : 1 }""##;
+
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(machine.contains(written), "{machine}");
+
+    let (status, machine, said) = generate(&document(r#"datamodel="null""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        !machine.contains(written),
+        "a null data model has no engine to read it, so the value is the string: {machine}"
+    );
+}
+
+/// `#_<invokeid>` addresses an invoked child. Delivering it to the sender's own queue, as the
+/// targets that name the sender are, would hand the child's event to its parent (W3C 347 waited
+/// for a `done.invoke` that way), so it is routed by the engine's target table.
+#[test]
+fn a_send_to_an_invoked_child_is_routed_and_not_kept_by_the_sender() {
+    let body = r##"
+  <state id="s0">
+    <invoke id="child" type="scxml">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0" datamodel="ecmascript">
+          <state id="c0"><transition event="go" target="cdone"/></state>
+          <final id="cdone"/>
+        </scxml>
+      </content>
+    </invoke>
+    <onentry><send target="#_child" event="go"/></onentry>
+    <transition event="done.invoke" target="done"/>
+  </state>
+  <final id="done"/>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r##"target: "#_child","##),
+        "the send is routed by its target: {machine}"
+    );
+    assert!(machine.contains("engine.sendToTarget("), "{machine}");
+}
+
+/// What a `<send>` computes with an expression is still refused by name.
+#[test]
+fn a_send_that_an_expression_computes_is_refused_by_name() {
+    for (what, send) in [
+        ("an eventexpr", r#"<send eventexpr="'x'"/>"#),
+        (
+            "a targetexpr",
+            r#"<send event="x" targetexpr="'#_internal'"/>"#,
+        ),
+        ("a delayexpr", r#"<send event="x" delayexpr="'1s'"/>"#),
+        ("a namelist", r#"<send event="x" namelist="n"/>"#),
+        (
+            "a param expression",
+            r#"<send event="x"><param name="p" expr="n + 1"/></send>"#,
+        ),
+        (
+            "a content expression",
+            r#"<send event="x"><content expr="n"/></send>"#,
+        ),
+    ] {
+        let body = format!(
+            r#"<datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0"><onentry>{send}</onentry></state>"#
+        );
+        let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, &body), &[]);
+        assert_eq!(
+            status,
+            Some(7),
+            "{what} must be refused, not written: {said}"
+        );
+        assert!(machine.is_empty(), "{what} wrote a machine anyway");
+        assert!(
+            said.contains("<send") && said.contains("no Swift codegen path yet"),
+            "{what} is refused, but not by name: {said}"
+        );
+    }
+}
+
 /// Each reason a document needs the engine that the templates do not lower is refused by its name,
 /// with the status that says it is an unsupported feature.
 #[test]

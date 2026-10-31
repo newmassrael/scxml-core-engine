@@ -4424,13 +4424,27 @@ fn swift_hybrid_invoke_unlowered(
     None
 }
 
+/// Whether the Swift templates lower an executable element of this type outside
+/// `datamodel="sce-static"`, whose actions are the static lowering's to judge.
+///
+/// `<raise>`, and a `<send>` or `<cancel>` of literals: the event, target, delay, `<param>`s
+/// and `<content>` the document writes as text are read by the template, and need no engine.
+/// What an expression would compute (`eventexpr`, `targetexpr`, `delayexpr`, `typeexpr`,
+/// `idlocation`, a `<param expr>` that is not a string literal, a `namelist`, a `<content
+/// expr>`, a `<cancel sendidexpr>`) is a cause the analyzer names, and
+/// [`swift_ecmascript_cause_unlowered`] refuses each by name for an `ecmascript` document; a
+/// `null` one has no expression language to write them in.
+fn swift_lowers_action_type(action_type: &str) -> bool {
+    matches!(action_type, "raise" | "send" | "cancel")
+}
+
 /// Whether `actions` hold, at any depth, an executable element the Swift
 /// templates do not lower: the first one's type and position.
 fn first_unlowered_swift_action(
     actions: &[crate::model::Action],
 ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
     for action in actions {
-        if action.action_type != "raise" {
+        if !swift_lowers_action_type(&action.action_type) {
             return Some((
                 format!("<{}>", action.action_type.replace('_', ":")),
                 action.source_location.clone(),
@@ -4693,6 +4707,11 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
+        // Whether the document's expressions are ECMAScript, which a script engine reads: the
+        // text of a `<send>`'s `<content>` then travels as written for the receiver's engine to
+        // read by the order the payload clause of Appendix B gives its readings, where under any
+        // other data model it is the last of them taken at build time.
+        ecmascript_datamodel => matches!(model.datamodel, crate::model::Datamodel::EcmaScript),
         license_config => minijinja::Value::from_serialize(license_config()),
         has_native_actions => native.any,
         has_native_duties => native.has_duty,

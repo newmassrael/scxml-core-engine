@@ -17,6 +17,13 @@
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set send_id_swift = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_swift) ~ '"' %}
 {% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{# A literal target that names neither this session's own queues (none, `#_internal`,
+   `#_scxml_<sessionid>`) nor its parent (`#_parent`) is `#_<invokeid>`, which addresses an
+   invoked child session (W3C SCXML 6.2.4 + C.1). Delivering it to this session's own queue, as
+   the last arm below does for the targets that name this session, would hand a child's event to
+   its parent, so it is routed by the same table a computed target is. #}
+{% set routed_target = static_target and static_target is startingwith('#_') and static_target != '#_internal' and static_target != '#_parent' and not (static_target is startingwith('#_scxml_')) %}
+{% set route_target = 'sendTarget' if action.native_target else '"' ~ (static_target | escape_swift) ~ '"' %}
 {# A BasicHTTP send (W3C SCXML C.2): posted at once to the URL the document writes, with the
    `<param>`s as the form. Its other axes are refused by name before this template runs. #}
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
@@ -254,6 +261,12 @@
 {% if action.content | data_content_is_xml %}
                     // XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER build the DOM.
                     let sendEventData = "{{ action.content | escape_swift }}"
+{% elif ecmascript_datamodel %}
+                    // W3C SCXML B.2 + §scxml-B-2-8-1: the text travels as it was written, and the
+                    // RECEIVER reads it: as JSON where it parses, else as the space-normalized
+                    // string. Taking the last rung here would hand a script engine a string where
+                    // the document wrote an object, and `_event.data.field` would read nothing.
+                    let sendEventData = "{{ action.content | escape_swift }}"
 {% else %}
                     // W3C SCXML B.2: no data model, so the text is the value — the last rung of
                     // §scxml-B-2-8-1, taken at codegen time.
@@ -284,14 +297,15 @@
 {% else %}
                     let sendEventData = ""
 {% endif %}
-{% if action.native_target %}
+{% if action.native_target or routed_target %}
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
-                    // the table `classifyTarget` holds.
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
                     let sendRouted = engine.sendToTarget(
                         event: engine.resolveEventByName({{ event_name_swift }}),
                         eventName: {{ event_name_swift }},
-                        target: sendTarget,
+                        target: {{ route_target }},
                         ownSessionID: self.sessionID,
                         delay: {{ delay_swift if delay_swift else '.zero' }},
                         sendID: {{ send_id_swift }},
@@ -299,17 +313,25 @@
                         origin: self.sessionID
                     )
                     if sendRouted == .notSupported {
-{{ send_error('error.execution', '"<send> targetexpr produced a value that is not a target"', send_id_swift) }}
+{{ send_error('error.execution', '"<send> ' ~ ('targetexpr produced a value that is' if action.native_target else 'target is') ~ ' not a target"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
                     if sendRouted == .notReachable {
-{{ send_error('error.communication', '"<send> targetexpr names a session this processor cannot reach"', send_id_swift) }}
+{{ send_error('error.communication', '"<send> ' ~ ('targetexpr' if action.native_target else 'target') ~ ' names a session this processor cannot reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
+{% elif is_http and not action.target %}
+                    // W3C SCXML C.2: a BasicHTTP send names where it goes with its `target`, and one
+                    // that names none has nowhere to go: the build decided it once, and the send is
+                    // an error.communication on the internal queue, handed to no transport.
+{{ send_error('error.communication', '"<send> over BasicHTTP names no target"', send_id_swift) }}
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
 {% elif is_http %}
                     // W3C SCXML C.2: a BasicHTTP send. The engine hands the request to the transport
                     // the host registered (`setHTTPSendCallback`); a document with no `<content>`
