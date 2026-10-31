@@ -316,6 +316,17 @@ public final class Test444Policy: InvocablePolicy {
         invokeSeeds = seeds
     }
 
+    /// The value of a Lua expression read in this machine's session, for a host or a test that wants
+    /// to see what the data model holds (`JSON.stringify(answers)`). Nil when the machine has no
+    /// session yet or the expression cannot be evaluated. Reading changes nothing: it does not run
+    /// the machine and it does not raise `error.execution`.
+    public func readScriptValue(_ expression: String) -> LuaValue? {
+        guard let session = lua else {
+            return nil
+        }
+        return try? session.evaluate(expression, name: "=read")
+    }
+
     /// The metadata of the event being handled, kept by `populateEventMetadata` until
     /// `bindCurrentEvent` hands it to the session (§scxml-5.10).
     private var pendingEventMetadata = EventMetadata()
