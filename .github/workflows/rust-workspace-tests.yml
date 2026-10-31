@@ -137,6 +137,12 @@ on:
       # to hold the stamp width the generator judges against to the one the
       # header keeps.
       - 'backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
+      # The C++ runtime's two broadcast-log headers, which the C++ broadcast-log
+      # tests read: each name the generated headers call against a declaration
+      # of it, and the stamp width the generator judges against the width the
+      # narrow row keeps.
+      - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h'
+      - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
   pull_request:
     branches: [ main ]
     paths:
@@ -220,6 +226,12 @@ on:
       # to hold the stamp width the generator judges against to the one the
       # header keeps.
       - 'backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
+      # The C++ runtime's two broadcast-log headers, which the C++ broadcast-log
+      # tests read: each name the generated headers call against a declaration
+      # of it, and the stamp width the generator judges against the width the
+      # narrow row keeps.
+      - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h'
+      - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
 
 # This lane is not superseded by the push that follows it.
 #

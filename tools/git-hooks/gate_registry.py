@@ -775,6 +775,12 @@ GATES: dict[str, dict] = {
             # to the width the header keeps and each name the generated header
             # calls to a declaration of it.
             "backends/c/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
+            # The C++ runtime's two broadcast-log headers, which the C++
+            # broadcast-log tests read: each name the generated headers call
+            # against a declaration of it, and the stamp width the generator
+            # judges against the width the narrow row keeps.
+            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
+            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
