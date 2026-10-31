@@ -482,19 +482,59 @@ fn a_send_whose_event_target_and_delay_an_expression_computes_is_lowered() {
     assert!(machine.contains("engine.sendToTarget("), "{machine}");
 }
 
+/// The data of a `<send>` is read by the engine and keeps its type: a `<param>`, each name of a
+/// namelist and a `<content expr>` are lowered to Lua and written as JSON, a value that cannot be
+/// read is an `error.execution` that leaves its pair out, and over BasicHTTP a form carries the
+/// text of the value.
+#[test]
+fn the_data_of_a_send_is_read_by_the_engine_and_keeps_its_type() {
+    let body = r#"
+  <datamodel><data id="n" expr="1"/><data id="m" expr="2"/></datamodel>
+  <state id="s0">
+    <onentry>
+      <send event="a" namelist="n m"><param name="p" expr="n + 1"/></send>
+      <send event="b"><content expr="m"/></send>
+      <send event="c" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost/x">
+        <param name="q" expr="n"/>
+      </send>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"PayloadPair.json("p", rawJSON: paramValue)"#),
+        "a param keeps its type: {machine}"
+    );
+    assert!(
+        machine.contains(r#"PayloadPair.json("n", rawJSON: paramValue)"#)
+            && machine.contains(r#"PayloadPair.json("m", rawJSON: paramValue)"#),
+        "each name of a namelist is a pair of its own: {machine}"
+    );
+    assert!(
+        machine.contains(r#"if let contentJSON = evaluateJSON(""#),
+        "a content expression keeps its type: {machine}"
+    );
+    assert!(
+        machine.contains(r#"appendFormParam(&sendForm, "q", .text(paramValue))"#),
+        "a form carries the text of the value: {machine}"
+    );
+    assert!(
+        machine.contains("<send> <param name=p> failed to evaluate")
+            && machine.contains("<send> contentexpr failed to evaluate"),
+        "a value that cannot be read is an error.execution: {machine}"
+    );
+}
+
 /// What a `<send>` computes with an expression is still refused by name.
 #[test]
 fn a_send_that_an_expression_computes_is_refused_by_name() {
     for (what, send) in [
         ("a typeexpr", r#"<send event="x" typeexpr="'scxml'"/>"#),
-        ("a namelist", r#"<send event="x" namelist="n"/>"#),
         (
-            "a param expression",
-            r#"<send event="x"><param name="p" expr="n + 1"/></send>"#,
-        ),
-        (
-            "a content expression",
-            r#"<send event="x"><content expr="n"/></send>"#,
+            "a content expression over BasicHTTP",
+            r#"<send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost/x"><content expr="n"/></send>"#,
         ),
     ] {
         let body = format!(

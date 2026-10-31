@@ -450,6 +450,14 @@ extension PayloadPair {
     public init(_ name: String, _ value: WireValue) {
         self.init(name: name, json: value.json)
     }
+
+    /// A pair of `name` and a value a script engine already wrote as JSON, which the pair carries as
+    /// it is: an object or an array the document's expression computed keeps its shape, and the
+    /// receiver's `_event.data.name` reads it as one. The text must be a JSON value; the engine that
+    /// wrote it is the one place that knows it is.
+    public static func json(_ name: String, rawJSON: String) -> PayloadPair {
+        PayloadPair(name: name, json: rawJSON)
+    }
 }
 
 /// The wire spelling of the fields an inject seam was given, so that the script

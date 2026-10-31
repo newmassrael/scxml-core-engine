@@ -23,6 +23,26 @@
 {% set ecma_target = ecmascript_datamodel and action.targetexpr %}
 {% set ecma_delay = ecmascript_datamodel and action.delayexpr %}
 {% set ecma_idlocation = ecmascript_datamodel and action.idlocation and not action.native_idlocation %}
+{% set ecma_namelist = ecmascript_datamodel and action.namelist and action.namelist | trim %}
+{% set ecma_content = ecmascript_datamodel and action.contentexpr %}
+{# The data of one `<param>`, or of one name of a namelist, under `datamodel="ecmascript"`: the value
+   of a Lua expression the engine computes (`evaluateJSON`, which keeps its type; over BasicHTTP
+   `evaluateText`, the text a form carries). W3C SCXML 5.7.1 + 4.9: one that cannot be read is
+   reported and its pair left out, and the message still goes. #}
+{% macro ecma_param(name, source, http) %}
+                    if let paramValue = {{ 'evaluateText' if http else 'evaluateJSON' }}("{{ source | to_lua_expr | escape_swift }}") {
+{% if http %}
+                        appendFormParam(&sendForm, "{{ name | escape_swift }}", .text(paramValue))
+{% else %}
+                        sendParts.append(PayloadPair.json("{{ name | escape_swift }}", rawJSON: paramValue))
+{% endif %}
+                    } else {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ name | escape_swift }}> failed to evaluate"))
+{% endif %}
+                        paramFailed = true
+                    }
+{% endmacro %}
 {% set event_value = action.native_event or ('(evaluateText("' ~ (action.eventexpr | to_lua_expr | escape_swift) ~ '") ?? "")' if ecma_event else '') %}
 {% set delay_value = action.native_delay or ('(evaluateText("' ~ (action.delayexpr | to_lua_expr | escape_swift) ~ '") ?? "")' if ecma_delay else '') %}
 {% set computed_target = action.native_target or ecma_target %}
@@ -241,7 +261,7 @@
    W3C SCXML 6.2: a name may repeat and every value must be delivered, so the pairs are
    an ordered list rather than a map, and the typed value is kept rather than its text:
    a receiver reading `_event.data.value === 42` finds the string "42" unequal. #}
-{% set sends_params = action.params and action.params | length > 0 %}
+{% set sends_params = (action.params and action.params | length > 0) or ecma_namelist %}
 {% if sends_params %}
                     // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
                     // pair left out, and the message still goes; the error ends the block once
@@ -290,8 +310,16 @@
                         sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
                     }
+{% elif ecmascript_datamodel and (param.expr or param.location) %}
+{{ ecma_param(param.name, param.expr or param.location, is_http) }}
 {% endif %}
 {% endfor %}
+{% if ecma_namelist %}
+{# W3C SCXML 6.2: each name of a namelist is a variable whose value goes by its own name. #}
+{% for namelist_id in action.namelist | split %}
+{{ ecma_param(namelist_id, namelist_id, is_http) }}
+{% endfor %}
+{% endif %}
 {% if not is_http %}
                     let sendEventData = payloadJSON(sendParts)
 {% endif %}
@@ -310,6 +338,22 @@
                     // §scxml-B-2-8-1, taken at codegen time.
                     let sendEventData = "\"{{ action.content | normalize_ws | escape_json_string | escape_swift }}\""
 {% endif %}
+{% elif ecma_content %}
+                    // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>, the
+                    // event's data, and it keeps its type (`evaluateJSON`). "If the evaluation of
+                    // 'expr' produces an error, the Processor MUST place error.execution in the
+                    // internal event queue and use the empty string as the value of the <content>
+                    // element."
+                    var paramFailed = false
+                    var sendEventData = "\"\""
+                    if let contentJSON = evaluateJSON("{{ action.contentexpr | to_lua_expr | escape_swift }}") {
+                        sendEventData = contentJSON
+                    } else {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> contentexpr failed to evaluate"))
+{% endif %}
+                        paramFailed = true
+                    }
 {% elif action.native_content_value %}
                     // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>, the
                     // event's data. Under `datamodel="sce-static"` it is one value lowered to
@@ -483,7 +527,7 @@
 {% endif %}
                     }
 {% endif %}
-{% if sends_params or (action.native_content_value and action.native_content_value_fails) %}
+{% if sends_params or ecma_content or (action.native_content_value and action.native_content_value_fails) %}
 {% if in_block %}
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.

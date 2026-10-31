@@ -13,6 +13,17 @@ import Testing
 
 private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
 
+// A pair a script engine already wrote as JSON is carried as it is, so a number stays a number and an
+// object keeps its shape in the payload a receiver reads `_event.data` from.
+@Test func aPairCarriesTheJSONAnEngineWroteAsItIs() {
+    let pairs = [
+        PayloadPair.json("n", rawJSON: "42"),
+        PayloadPair.json("o", rawJSON: #"{"a":[1,2]}"#),
+        PayloadPair.json("z", rawJSON: "null"),
+    ]
+    #expect(payloadJSON(pairs) == #"{"n":42,"o":{"a":[1,2]},"z":null}"#)
+}
+
 @Test func aFieldTheDeliveryLacksIsReadOutOfTheDefaults() throws {
     let fields = try PayloadFields.decode(#"{"level": 4}"#, defaults: revisedDefaults)
     #expect(try fields.unsigned("level") as UInt8 == 4)

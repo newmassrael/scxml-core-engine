@@ -4458,13 +4458,17 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 
 /// The attribute of a `<send>` an expression computes that the Swift templates do not lower, named.
 ///
-/// For an `ecmascript` document the event, the target, the delay and the `idlocation` are lowered
-/// to Lua and run by the engine; the processor type and the `<content>` an expression computes
-/// are not. A `null` document has no expression language to write any of them in.
+/// For an `ecmascript` document the event, the target, the delay, the `idlocation` and the
+/// `<content expr>` are lowered to Lua and run by the engine, and so are the `<param>`s and the
+/// namelist (their causes are lowered in [`swift_ecmascript_cause_unlowered`]); the processor type
+/// an expression computes is not. A BasicHTTP send's body is the form its `<param>`s make, so a
+/// `<content expr>` there has nowhere to go. A `null` document has no expression language to write
+/// any of them in.
 fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<&'static str> {
+    let over_http = send.send_type.contains("BasicHTTPEventProcessor");
     [
         ("<send typeexpr>", &send.typeexpr, false),
-        ("<send contentexpr>", &send.contentexpr, false),
+        ("<send contentexpr>", &send.contentexpr, !over_http),
         ("<send eventexpr>", &send.eventexpr, true),
         ("<send targetexpr>", &send.targetexpr, true),
         ("<send delayexpr>", &send.delayexpr, true),
@@ -4686,12 +4690,14 @@ fn swift_ecmascript_cause_unlowered(
         // templates do not lower are named where the actions are read
         // ([`swift_send_unlowered`]), which can tell them apart.
         | Cause::SendDynamicAttr { .. }
+        // The data of a `<send>`: each `<param>` and each name of a namelist is a value the engine
+        // reads and the pair carries with its type (`evaluateJSON`).
+        | Cause::SendNamelist { .. }
+        | Cause::SendParamExpr { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
         }
-        Cause::SendNamelist { state_id } => named("a <send namelist>", state_id),
-        Cause::SendParamExpr { state_id, .. } => named("a <send> <param> expression", state_id),
         Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
         Cause::ForeachAction { state_id } => named("a <foreach>", state_id),
         Cause::HybridInvoke { invoke_id } => {
