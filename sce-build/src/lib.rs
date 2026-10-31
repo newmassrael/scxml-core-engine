@@ -6171,6 +6171,27 @@ fn validate_and_enrich_imports(
                     ctx.swift_unlowered = forge::generator::swift_enum_unlowered(em);
                 }
             }
+            // A Swift validator calls the unit a transform or a lookup is written as,
+            // which exists only when Swift writes that document: a value a transform
+            // reads through `previous()` and a table that answers a name have no unit,
+            // and a table that answers an optional on a miss has one a comparison cannot
+            // read.
+            if *language == generator::Language::Swift {
+                match &doc {
+                    forge::model::ForgeDocument::Transform(tm) => {
+                        ctx.swift_unlowered = forge::generator::swift_transform_unlowered(tm);
+                    }
+                    forge::model::ForgeDocument::Lookup(lm) => {
+                        ctx.swift_unlowered =
+                            forge::generator::swift_lookup_unlowered(lm).or_else(|| {
+                                lm.miss_policy
+                                    .is_error()
+                                    .then(|| "an optional answer on a miss".to_string())
+                            });
+                    }
+                    _ => {}
+                }
+            }
             // Whether the imported transform keeps state is recorded here,
             // where its model is in hand, and judged once the importing
             // document's use of it is known — see `transform_state_read`.

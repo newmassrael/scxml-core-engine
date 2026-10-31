@@ -20011,10 +20011,9 @@ fn render_validator(
             Language::Cpp => Some(imp.member_name.clone()),
             Language::Rust | Language::Python => Some(format!("self.{}", imp.member_name)),
             Language::Go => Some(format!("{GO_FORGE_RECEIVER}.{}", imp.member_name)),
-            Language::Kotlin | Language::C11 => None,
-            // A validator that holds an import's state is refused before it is rendered
-            // ([`swift_validator_unlowered`]).
-            Language::Swift => unreachable!("refused by swift_validator_unlowered"),
+            // The member is named as the alias, and a member of the validator's class is
+            // read by its name inside the class's own method.
+            Language::Kotlin | Language::C11 | Language::Swift => None,
         };
         if let Some(exp) = alias_expansion {
             owned_renames.insert(imp.alias.as_str(), exp);
@@ -25306,17 +25305,28 @@ pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
 }
 
 /// What of a validator the Swift backend does not lower yet, described for a refusal by name
-/// (`generate/unsupported-feature`): an import of another kind, whose unit the validator
-/// calls (a stateless kind) or holds a member of (a kind that keeps state). A validator over
-/// its own inputs, with range, rate-of-change and plausibility rules, is lowered.
+/// (`generate/unsupported-feature`): an import of a kind Swift does not write as a unit, or
+/// of a document of a kind it writes that Swift does not write itself. A validator calls the
+/// unit of a condition, a lookup, a transform or an interpolation it imports, and holds a
+/// member of the unit of a filter, which keeps state. A validator over its own inputs, with
+/// range, rate-of-change and plausibility rules, is lowered.
 pub(crate) fn swift_validator_unlowered(imports: &[ImportContext]) -> Option<String> {
-    imports.first().map(|import| {
-        format!(
-            "the <sce:import as=\"{}\">, an import of {} that a validator composes",
-            import.alias,
-            import.kind.as_str()
-        )
-    })
+    imports
+        .iter()
+        .find_map(|import| match import.kind.as_str() {
+            "condition" | "filter" | "interpolation" | "lookup" | "transform" => {
+                import.swift_unlowered.as_ref().map(|why| {
+                    format!(
+                        "the <sce:import as=\"{}\">, a {} with {why}, which a validator composes",
+                        import.alias, import.kind
+                    )
+                })
+            }
+            other => Some(format!(
+                "the <sce:import as=\"{}\">, an import of {other} that a validator composes",
+                import.alias
+            )),
+        })
 }
 
 /// The refusal of the validator `m` for the Swift construct `construct` it holds
@@ -26886,7 +26896,9 @@ fn stateful_import_method_renames(
                 // stale entries that would silently shadow a future
                 // bare-Member usage (e.g. taking a method's address).
                 generator::Language::C11 => continue,
-                generator::Language::Swift => no_swift_emitter("stateful_import_method_renames"),
+                // A member of the validator's class, called by its name inside the class's
+                // own method; the unit of a filter names its method as the document does.
+                generator::Language::Swift => format!("{}.{method}", imp.member_name),
             };
             out.push((qualified_key, expansion));
         }
@@ -26955,7 +26967,9 @@ fn stateful_import_field_renames(
                     let snake_field = filters::to_snake_case(field.to_string());
                     format!("_st->{}.{}", imp.member_name, snake_field)
                 }
-                generator::Language::Swift => no_swift_emitter("stateful_import_field_renames"),
+                // A member of the validator's class, read by its name inside the class's own
+                // method, as Kotlin reads one.
+                generator::Language::Swift => format!("{}.{}", imp.member_name, field),
             };
             out.push((qualified_key.clone(), expansion));
         }

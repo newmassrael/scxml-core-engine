@@ -4,7 +4,8 @@
 {# Validator kind: a stateful `validate(args...)` driven over the oracle's sequence. The
    state it keeps advances only on a success, which the sequence is written to state: a
    failing step asserts that the value it was handed was not kept. A validator that imports
-   another document is refused by the generator, so none reaches this fragment. #}
+   another document composes its unit (a stateless kind is called, a filter is a member), and
+   is driven the same way. #}
     let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
     let validator = {{ f.name | to_pascal_case }}()
     for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {

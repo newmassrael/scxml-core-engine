@@ -92,12 +92,45 @@ fn a_bound_at_a_types_extreme_carries_no_check() {
     );
 }
 
+/// A validator calls the unit of a stateless kind it imports, through the unit's name.
 #[test]
-fn a_validator_that_imports_another_kind_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/crossfile_validator_condition.scxml")
-        .expect_err("an import of another kind is not written yet");
+fn a_validator_calls_the_unit_of_a_stateless_kind_it_imports() {
+    let code = swift_of("tests/forge/resources/crossfile_validator_condition.scxml")
+        .expect("an import of a condition is written");
     assert!(
-        refusal.contains("an import of condition that a validator composes"),
-        "the refusal names the import: {refusal}"
+        code.contains("ConditionThreshold.conditionThreshold("),
+        "the condition is called through its unit: {code}"
+    );
+}
+
+/// A validator owns the unit of a kind that keeps state it imports, a filter's smoothed
+/// value being its own, and calls it by the member's name.
+#[test]
+fn a_validator_holds_the_unit_of_a_filter_it_imports_as_a_member() {
+    let code = swift_of("tests/forge/resources/crossfile_validator_filter.scxml")
+        .expect("an import of a filter is written");
+    assert!(
+        code.contains("private let smoother = FilterLowPass()"),
+        "the filter is a member of the validator: {code}"
+    );
+    assert!(
+        code.contains("smoother.update("),
+        "the member is called by its name: {code}"
+    );
+}
+
+/// A kind Swift does not write as a unit, and a document of one it does that Swift does not
+/// write, are named in a refusal and not called.
+#[test]
+fn an_import_of_a_unit_swift_does_not_write_is_refused_by_name() {
+    let refusal = swift_of("tests/forge/resources/crossfile_validator_codec.scxml")
+        .expect_err("an import of a codec is not written");
+    // The codec the validator imports has no Swift template, so it is the codec's own
+    // generation that refuses, by the kind and the language.
+    assert!(
+        refusal.contains("CodegenGenericKindBackendEmitMissing")
+            && refusal.contains("\"codec\"")
+            && refusal.contains("\"swift\""),
+        "the refusal names the codec and the language: {refusal}"
     );
 }

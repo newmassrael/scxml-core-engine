@@ -23,6 +23,15 @@ public final class {{ struct_name }} {
 {% if prev_vars %}
 
 {% endif %}
+{# A kind that keeps state, which a validator composes, is a member the validator owns: a
+   filter's smoothed value is the validator's own, so each validator has its own filter. A
+   stateless kind is called through its unit, in the expression. #}
+{% for imp in imports if imp.is_stateful %}
+    private let {{ imp.member_name }} = {{ imp.member_type }}()
+{% endfor %}
+{% if imports | selectattr('is_stateful') | list %}
+
+{% endif %}
     public init() {}
 
     public func validate({{ params }}) -> SceForgeRuntime.ValidationResult {
