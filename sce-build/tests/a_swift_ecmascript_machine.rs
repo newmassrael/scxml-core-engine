@@ -882,43 +882,19 @@ fn a_send_that_an_expression_computes_is_refused_by_name() {
     }
 }
 
-/// Each reason a document needs the engine that the templates do not lower is refused by its name,
-/// with the status that says it is an unsupported feature.
+/// W3C SCXML B.2: any ECMAScript expression is a value, a function among them. The initialiser is
+/// lowered to the Lua function the session holds under the variable's name, and a later expression
+/// calls it.
 #[test]
-fn what_the_templates_do_not_lower_is_refused_by_name() {
-    struct Refusal {
-        what: &'static str,
-        attributes: &'static str,
-        body: &'static str,
-        extra: &'static [(&'static str, &'static str)],
-        named: &'static str,
-    }
-    let refusals = [Refusal {
-        what: "a function expression as an initialiser",
-        attributes: r#"datamodel="ecmascript""#,
-        body: r#"<datamodel><data id="f" expr="function() { return 1; }"/></datamodel><state id="s0"/>"#,
-        extra: &[],
-        named: "a function expression",
-    }];
-    for refusal in refusals {
-        let (status, machine, said) =
-            generate(&document(refusal.attributes, refusal.body), refusal.extra);
-        assert_eq!(
-            status,
-            Some(7),
-            "{} must be refused as an unsupported feature, not written: {said}",
-            refusal.what
-        );
-        assert!(
-            machine.is_empty(),
-            "{} wrote a machine anyway: {machine}",
-            refusal.what
-        );
-        assert!(
-            said.contains(refusal.named) && said.contains("no Swift codegen path yet"),
-            "{} is refused, but not by name ({}): {said}",
-            refusal.what,
-            refusal.named
-        );
-    }
+fn a_function_expression_is_an_initialiser_like_any_other() {
+    let body = r#"
+  <datamodel><data id="inc" expr="function(n) { return n + 1; }"/></datamodel>
+  <state id="s0"><transition cond="inc(2) == 3" target="done"/></state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"defineData("inc", as: "function("#),
+        "the initialiser is the lowered function: {machine}"
+    );
 }
