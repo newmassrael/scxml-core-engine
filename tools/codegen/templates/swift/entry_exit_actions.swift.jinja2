@@ -23,6 +23,7 @@
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import 'data_source.swift.jinja2' as ds %}
 
     /// Enters one state (W3C SCXML 3.8): adds it to the configuration, runs its
     /// `<onentry>`, and its `<initial>` transition's content when its initial
@@ -38,8 +39,17 @@
 {% endif %}
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml or state.invokes | hybrid or state.invokes | host_invoker %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) or state.invokes | scxml or state.invokes | hybrid or state.invokes | host_invoker or (state.datamodel and model.binding == 'late' and ecmascript_datamodel) %}
         case .{{ state_id | to_state_variant }}:
+{% if state.datamodel and model.binding == 'late' and ecmascript_datamodel %}
+            // §scxml-D-enterStates, late binding: the state's `<data>` is bound on its FIRST entry only,
+            // before its <onentry>. The engine owns the first-entry rule; this is what binding means here.
+            if engine.claimLateBindingFirstEntry(state) {
+{% for var in state.datamodel %}
+                defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
+{% endfor %}
+            }
+{% endif %}
 {% for block in state.on_entry_blocks %}
             // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}; an error ends it.
             sceBlock: do {

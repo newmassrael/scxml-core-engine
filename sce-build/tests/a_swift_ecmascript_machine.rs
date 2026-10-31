@@ -619,6 +619,53 @@ fn the_inline_text_of_a_data_is_an_expression_or_the_string_it_spells() {
     );
 }
 
+/// Under late binding a state's own `<data>` is declared on the state's first entry, before its
+/// `<onentry>`, and not at document load; the data of the document itself is still declared at load.
+/// The engine owns the first-entry rule, so a state entered twice binds once.
+#[test]
+fn late_binding_declares_a_states_data_on_its_first_entry() {
+    let body = r#"
+  <datamodel><data id="top" expr="1"/></datamodel>
+  <state id="s0">
+    <datamodel><data id="inner" expr="top + 1"/></datamodel>
+    <onentry><assign location="top" expr="inner"/></onentry>
+    <transition cond="top == 2" target="done"/>
+  </state>
+  <final id="done"/>"#;
+    let (status, machine, said) = generate(
+        &document(r#"datamodel="ecmascript" binding="late""#, body),
+        &[],
+    );
+    assert_eq!(status, Some(0), "{said}");
+    let load = machine
+        .find("public func initializeDataModel(")
+        .expect("the data of the document is declared at load");
+    let load_end = machine[load..]
+        .find("populateEventMetadata")
+        .map(|at| load + at)
+        .expect("the load ends before the event is bound");
+    assert!(
+        machine[load..load_end].contains(r#"defineData("top""#)
+            && !machine[load..load_end].contains(r#"defineData("inner""#),
+        "the document's data is declared at load and the state's is not: {machine}"
+    );
+    let entry = machine
+        .find("engine.claimLateBindingFirstEntry(state)")
+        .expect("the state's data is declared on its first entry");
+    let bind = machine[entry..]
+        .find(r#"defineData("inner""#)
+        .map(|at| entry + at)
+        .expect("the first entry declares the state's data");
+    let first_onentry = machine[entry..]
+        .find(r#"assignData("top""#)
+        .map(|at| entry + at)
+        .expect("the onentry assigns");
+    assert!(
+        bind < first_onentry,
+        "the data is bound before the state's onentry runs: {machine}"
+    );
+}
+
 /// A top-level `<script>` runs once, at document load, after the data is declared.
 #[test]
 fn a_top_level_script_runs_at_load_after_the_data() {
@@ -832,13 +879,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
             body: r#"<datamodel><data id="f" expr="function() { return 1; }"/></datamodel><state id="s0"/>"#,
             extra: &[],
             named: "a function expression",
-        },
-        Refusal {
-            what: "late binding of a state's own data",
-            attributes: r#"datamodel="ecmascript" binding="late""#,
-            body: r#"<state id="s0"><datamodel><data id="x" expr="1"/></datamodel></state>"#,
-            extra: &[],
-            named: r#"binding="late""#,
         },
     ];
     for refusal in refusals {

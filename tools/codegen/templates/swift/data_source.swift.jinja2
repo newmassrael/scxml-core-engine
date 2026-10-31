@@ -1,0 +1,18 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The initialiser of one `<data>` in the form the engine policy's `defineData` takes it: the lowered
+   `expr`, the lowered inline text with the string it spells as its last reading (W3C SCXML B.2), or
+   none. Written where the document's data is declared at load (`script_engine.swift.jinja2`) and where
+   a state with late binding declares its own on its first entry (`entry_exit_actions.swift.jinja2`), so
+   the two cannot read one `<data>` two ways.
+
+   It lives beside the Swift templates and not in the shared `_macros/`: the directory is the C++
+   backend's by the ownership rule (`Language::owns_template`), so an expression site written there
+   would be counted as C++'s. #}
+{% macro data_source(var) -%}
+{%- if var.expr -%}as: "{{ var.expr | to_lua_expr | escape_swift }}"
+{%- elif var.content -%}as: "{{ var.content | to_lua_data_content | escape_swift }}", orText: "{{ var.content | normalize_ws | escape_swift }}"
+{%- else -%}as: nil
+{%- endif -%}
+{%- endmacro %}

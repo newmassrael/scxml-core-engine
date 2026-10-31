@@ -4634,27 +4634,21 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
 /// named, and where the document wrote it; `None` for a document the engine can run whole.
 ///
 /// What is lowered is the `<data>` initialiser that is an expression, top level or in a state
-/// under early binding, the `cond` of a transition, and an `<assign>`. Every other reason a document needs the
+/// (declared at load under early binding, on the state's first entry under late binding), the
+/// `cond` of a transition, and an `<assign>`. Every other reason a document needs the
 /// engine is a [`crate::script_engine_analyzer::ScriptEngineCauseKind`], and each is decided by
 /// [`swift_ecmascript_cause_unlowered`], which has no default arm: a cause added there is a
 /// compile error here before it is a construct that quietly runs without its engine call.
 /// What the analyzer counts as one `<data>` cause it does not tell apart, so the shapes of an
-/// initialiser the templates have no arm for (`src`, inline content, a function expression) and
-/// the bindings that would move it are named from the variable itself.
+/// initialiser the templates have no arm for (`src`, XML content, a function expression) are named
+/// from the variable itself.
 fn swift_ecmascript_unlowered(
     model: &SCXMLModel,
 ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|state| state.document_order);
-    let late = model.binding == "late";
-    let locals = states.iter().flat_map(|state| {
-        state
-            .datamodel
-            .iter()
-            .map(move |var| (Some(state.id.as_str()), var))
-    });
-    let globals = model.variables.iter().map(|var| (None, var));
-    for (state, var) in globals.chain(locals) {
+    let locals = states.iter().flat_map(|state| state.datamodel.iter());
+    for var in model.variables.iter().chain(locals) {
         let what = if !var.src.is_empty() {
             Some("a <data src>")
         } else if var.content.trim_start().starts_with('<') {
@@ -4669,15 +4663,6 @@ fn swift_ecmascript_unlowered(
         if let Some(what) = what {
             return Some((
                 format!("{what} (<data id='{}'>)", var.id),
-                var.source_location.clone(),
-            ));
-        }
-        if let (true, Some(state)) = (late, state) {
-            return Some((
-                format!(
-                    "binding=\"late\" for the <data id='{}'> of state '{state}'",
-                    var.id
-                ),
                 var.source_location.clone(),
             ));
         }

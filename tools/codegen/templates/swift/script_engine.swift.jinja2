@@ -78,14 +78,7 @@
 {% endif %}
     }
 
-{# The initialiser of one `<data>` in the form `defineData` takes it: the lowered `expr`, the lowered
-   inline text with the string it spells as its last reading (W3C SCXML B.2), or none. #}
-{% macro data_source(var) -%}
-{%- if var.expr -%}as: "{{ var.expr | to_lua_expr | escape_swift }}"
-{%- elif var.content -%}as: "{{ var.content | to_lua_data_content | escape_swift }}", orText: "{{ var.content | normalize_ws | escape_swift }}"
-{%- else -%}as: nil
-{%- endif -%}
-{%- endmacro %}
+{% import 'data_source.swift.jinja2' as ds %}
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
     /// declares none. The name crosses as a string and never as source: an XML name is not always
     /// a Lua identifier. An initialiser that fails raises `error.execution` and leaves the
@@ -195,18 +188,19 @@
     }
 
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
-    /// `<data>` here, at document load, before the state that holds it is visited.
+    /// `<data>` here, at document load, before the state that holds it is visited; late binding
+    /// declares a state's own on its first entry (`executeEntryActions`).
     public func initializeDataModel(engine: Engine<{{ machine_name }}Policy>) {
         lua = nil
         pendingEventMetadata = EventMetadata()
 {% for var in model.variables %}
-        defineData("{{ var.id | escape_swift }}", {{ data_source(var) }}, engine: engine)
+        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
 {% endfor %}
 {% for state_id, state in model.states | dictsort %}
-{% if state.datamodel %}
+{% if state.datamodel and model.binding != 'late' %}
         // W3C SCXML 5.3: early binding, the data of state {{ state_id }}
 {% for var in state.datamodel %}
-        defineData("{{ var.id | escape_swift }}", {{ data_source(var) }}, engine: engine)
+        defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var) }}, engine: engine)
 {% endfor %}
 {% endif %}
 {% endfor %}
