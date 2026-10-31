@@ -594,16 +594,22 @@ fn the_donedata_of_a_final_is_read_by_the_engine_and_keeps_its_type() {
 
 /// The inline text of a `<data>` takes the ordered readings of W3C SCXML B.2: it is lowered to Lua as
 /// an expression when it is one, and the string it spells, whitespace-normalized, is the last reading,
-/// which the engine falls back to when the expression cannot be run. The name of the variable crosses
-/// as a string, and XML content (a DOM) is refused by name instead.
+/// which the engine falls back to when the expression cannot be run. XML content is the first of
+/// the readings: it is built into a DOM by the library's parser, and the string it spells is still
+/// the last reading, for markup that is not a document. The name of the variable crosses as a string.
 #[test]
 fn the_inline_text_of_a_data_is_an_expression_or_the_string_it_spells() {
     let body = r#"
-  <datamodel><data id="n">42</data><data id="words">  two   words  </data></datamodel>
+  <datamodel><data id="n">42</data><data id="words">  two   words  </data><data id="doc"><item a="1"/></data></datamodel>
   <state id="s0"><transition cond="n == 42" target="done"/></state>
   <final id="done"/>"#;
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
     assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"defineData("doc", as: "_scxml_parse_xml(\"<item "#)
+            && machine.contains(r#"a=\\\"1\\\"></item>\")", orText: "<item "#),
+        "XML content is built into a DOM, with the string it spells as the last reading: {machine}"
+    );
     assert!(
         machine.contains(r#"defineData("n", as: ""#)
             && machine.contains(r#", orText: "42", engine"#),
@@ -865,13 +871,6 @@ fn what_the_templates_do_not_lower_is_refused_by_name() {
             body: r#"<datamodel><data id="x" src="probe.json"/></datamodel><state id="s0"/>"#,
             extra: &[("probe.json", r#"{"a":1}"#)],
             named: "a <data src>",
-        },
-        Refusal {
-            what: "an XML <data> content",
-            attributes: r#"datamodel="ecmascript""#,
-            body: r#"<datamodel><data id="x"><item/></data></datamodel><state id="s0"/>"#,
-            extra: &[],
-            named: "an XML <data> content",
         },
         Refusal {
             what: "a function expression as an initialiser",

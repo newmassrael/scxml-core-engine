@@ -15,12 +15,6 @@ private func boundState(_ event: LuaEvent) throws -> LuaState {
     return lua
 }
 
-/// The cases of the shared table that need a DOM, which this module does not have: the clause's
-/// first rung, "a valid XML document ... MUST create the corresponding DOM structure". Each is a
-/// source the table names, and the sweep below holds the list both ways: a case outside it must pass,
-/// and a case inside it must still fail, so the day the DOM binding lands this list has to shrink.
-private let casesThatNeedADom: Set<String> = ["_event.data.documentElement.nodeName"]
-
 @Test func everyPayloadTheClauseNamesIsReadTheWayTheSharedTableSays() throws {
     let table = try cases(of: "event_data_readings.json")
     // A floor, not an equality: adding a case must not have to touch this number, but a table that
@@ -28,32 +22,20 @@ private let casesThatNeedADom: Set<String> = ["_event.data.documentElement.nodeN
     #expect(table.count >= 8, "the shared reading table produced only \(table.count) case(s)")
 
     var failures: [String] = []
-    var stillGaps = 0
     for expected in table {
         let payload = expected["payload"] as? String ?? ""
-        let source = expected["source"] as? String ?? ""
         let expression = expected["lua"] as? String ?? ""
-        let gap = casesThatNeedADom.contains(source)
         do {
             let lua = try boundState(LuaEvent(name: "brief", type: "external", data: payload))
             let actual = try lua.evaluate(expression, name: "=expression")
-            let matched = try answers(actual, expected["expect"] as? [String: Any] ?? [:])
-            if gap && matched {
-                failures.append("payload \(payload.debugDescription) now answers `\(source)`: remove it from casesThatNeedADom")
-            } else if !gap && !matched {
+            if try !answers(actual, expected["expect"] as? [String: Any] ?? [:]) {
                 failures.append("payload \(payload.debugDescription): \(expression) answered \(actual), the table says \(expected["expect"] ?? "?")")
             }
-            if gap && !matched { stillGaps += 1 }
         } catch {
-            if gap {
-                stillGaps += 1
-            } else {
-                failures.append("payload \(payload.debugDescription): \(error)")
-            }
+            failures.append("payload \(payload.debugDescription): \(error)")
         }
     }
     #expect(failures.isEmpty, "\(failures.joined(separator: "\n"))")
-    #expect(stillGaps == table.filter { casesThatNeedADom.contains($0["source"] as? String ?? "") }.count)
 }
 
 @Test func anEventWithNoDataLeavesTheFieldUndefinedAndTheReadOfAFieldOffItFails() throws {
@@ -140,6 +122,9 @@ private let casesThatNeedADom: Set<String> = ["_event.data.documentElement.nodeN
     #expect(try reading("2 + 3") == .text)
     #expect(try reading("<") == .text)
     #expect(try reading("<assign> to detail failed") == .text)
+    #expect(try reading("<a/>") == .dom)
+    #expect(try reading("  <a><b/></a>") == .dom)
+    #expect(try reading("<a><b></a>") == .text)
     #expect(try reading("{not json") == .undecodable)
     #expect(try reading("[1,") == .undecodable)
 }

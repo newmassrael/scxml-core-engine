@@ -19,5 +19,8 @@ extension LuaState {
         try execute(
             String(decoding: PackageResources.json_builtins_lua, as: UTF8.self),
             name: "=json_builtins")
+        try execute(
+            String(decoding: PackageResources.dom_read_surface_lua, as: UTF8.self),
+            name: "=dom_read_surface")
     }
 }

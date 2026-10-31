@@ -2,8 +2,9 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# The initialiser of one `<data>` in the form the engine policy's `defineData` takes it: the lowered
-   `expr`, the lowered inline text with the string it spells as its last reading (W3C SCXML B.2), or
-   none. Written where the document's data is declared at load (`script_engine.swift.jinja2`) and where
+   `expr`, the inline text read in the order of W3C SCXML B.2 (XML becomes its DOM through the
+   library's `_scxml_parse_xml`, an expression its value) with the string it spells as the last
+   reading, or none. Written where the document's data is declared at load (`script_engine.swift.jinja2`) and where
    a state with late binding declares its own on its first entry (`entry_exit_actions.swift.jinja2`), so
    the two cannot read one `<data>` two ways.
 
@@ -12,6 +13,7 @@
    would be counted as C++'s. #}
 {% macro data_source(var) -%}
 {%- if var.expr -%}as: "{{ var.expr | to_lua_expr | escape_swift }}"
+{%- elif var.content | data_content_is_xml -%}as: "_scxml_parse_xml(\"{{ var.content | escape_lua | escape_swift }}\")", orText: "{{ var.content | normalize_ws | escape_swift }}"
 {%- elif var.content -%}as: "{{ var.content | to_lua_data_content | escape_swift }}", orText: "{{ var.content | normalize_ws | escape_swift }}"
 {%- else -%}as: nil
 {%- endif -%}

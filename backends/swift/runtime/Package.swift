@@ -40,6 +40,10 @@ let package = Package(
                 // time, and one definition of what `+` and `==` mean.
                 .embedInCode("Library/ecma_semantics.lua"),
                 .embedInCode("Library/json_builtins.lua"),
+                // The DOM of XML in the data model. Unlike the two above it is this backend's own
+                // file (a regular file, not a link): the other engines read XML with a parser of
+                // their platform, and the Lua state has none.
+                .embedInCode("Library/dom_read_surface.lua"),
             ]
         ),
         .testTarget(name: "SceLuaTests", dependencies: ["SceLua"]),

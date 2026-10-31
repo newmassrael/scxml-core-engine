@@ -4640,8 +4640,8 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
 /// [`swift_ecmascript_cause_unlowered`], which has no default arm: a cause added there is a
 /// compile error here before it is a construct that quietly runs without its engine call.
 /// What the analyzer counts as one `<data>` cause it does not tell apart, so the shapes of an
-/// initialiser the templates have no arm for (`src`, XML content, a function expression) are named
-/// from the variable itself.
+/// initialiser the templates have no arm for (`src`, a function expression) are named from the
+/// variable itself.
 fn swift_ecmascript_unlowered(
     model: &SCXMLModel,
 ) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
@@ -4651,10 +4651,6 @@ fn swift_ecmascript_unlowered(
     for var in model.variables.iter().chain(locals) {
         let what = if !var.src.is_empty() {
             Some("a <data src>")
-        } else if var.content.trim_start().starts_with('<') {
-            // XML content becomes a DOM, which the Swift engine does not have; any other inline
-            // text is an expression or the string it spells.
-            Some("an XML <data> content (it needs a DOM)")
         } else if var.expr.trim_start().starts_with("function") {
             Some("a <data> whose initialiser is a function expression")
         } else {

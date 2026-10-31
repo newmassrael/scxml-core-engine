@@ -172,9 +172,7 @@ sce_generated_tree_clear --recursive "$GENERATED_DIR"
 # under `withKnownIssue`, so it is held both ways: it still has to fail, and the day it passes the
 # suite says so and the entry goes. An entry whose fixture is no longer lowered is an error, since
 # nothing would run it.
-declare -A KNOWN_GAPS=(
-    [561]="a receiver builds no DOM from an XML payload: SceLua has no DOM binding (§scxml-B-2-8-1, the first rung)"
-)
+declare -A KNOWN_GAPS=()
 for gap in "${!KNOWN_GAPS[@]}"; do
     case " ${LOWERED[*]} " in
         *" $gap "*) ;;

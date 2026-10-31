@@ -48,8 +48,7 @@ public struct LuaEvent: Equatable, Sendable {
 public enum PayloadReading: Equatable, Sendable {
     /// No payload came with the event; `_event.data` is undefined.
     case absent
-    /// The payload parsed as an XML document and became a DOM. Not produced yet: the DOM binding is
-    /// not part of this module, so a document payload reads as `text`.
+    /// The payload parsed as an XML document and became a DOM (`dom_read_surface.lua`).
     case dom
     /// The payload parsed as structured data and became the corresponding value.
     case structured
@@ -83,7 +82,10 @@ extension LuaState {
     /// A fixed chunk with nothing interpolated: the payload is data, so it crosses as a Lua value and
     /// is decoded in Lua and never pasted into Lua source. The shape that did paste it ran the
     /// payload, so an event's data could execute code in the session, and a JSON object read as a
-    /// Lua array. Answers whether the payload parsed as structured data.
+    /// Lua array. The rungs are those of §scxml-B-2-8-1, in its order: a payload that opens with `<`
+    /// and parses as a document becomes its DOM, one that parses as JSON becomes the value, and
+    /// anything else is the space-normalized string. Answers which rung was taken: `dom`,
+    /// `structured` or `text`.
     private static let bindingChunk = """
         (function()
             local raw = _sce_event_raw
@@ -92,20 +94,30 @@ extension LuaState {
                 origin = _sce_event_origin, origintype = _sce_event_origintype,
                 invokeid = _sce_event_invokeid, raw = raw,
             }
-            local decoded = false
+            local rung = 'text'
             if raw ~= nil and raw ~= '' then
-                local value, ok = JSON._parse_document(raw)
-                if ok then
-                    _event.data = value
-                    decoded = true
+                local document
+                if raw:find('^[ \\t\\r\\n]*<') then
+                    local parsed, tree = pcall(_scxml_parse_xml, raw)
+                    document = parsed and tree or nil
+                end
+                if document then
+                    _event.data = document
+                    rung = 'dom'
                 else
-                    _event.data = _scxml_normalize_ws(raw)
+                    local value, ok = JSON._parse_document(raw)
+                    if ok then
+                        _event.data = value
+                        rung = 'structured'
+                    else
+                        _event.data = _scxml_normalize_ws(raw)
+                    end
                 end
             end
             _sce_event_name, _sce_event_type, _sce_event_sendid = nil, nil, nil
             _sce_event_origin, _sce_event_origintype, _sce_event_invokeid = nil, nil, nil
             _sce_event_raw = nil
-            return decoded
+            return rung
         end)()
         """
 
@@ -127,9 +139,13 @@ extension LuaState {
             try setGlobal("_sce_event_origintype", text(event.originType))
             try setGlobal("_sce_event_invokeid", text(event.invokeID))
             try setGlobal("_sce_event_raw", text(event.data))
-            let decoded = try evaluate(Self.bindingChunk, name: "=bindCurrentEvent")
+            let rung = try evaluate(Self.bindingChunk, name: "=bindCurrentEvent")
             guard let payload = event.data, !payload.isEmpty else { return .absent }
-            return decoded == .boolean(true) ? .structured : PayloadReading.ofText(payload)
+            switch rung {
+            case .string("dom"): return .dom
+            case .string("structured"): return .structured
+            default: return PayloadReading.ofText(payload)
+            }
         } catch {
             // A failure part way leaves the transient globals behind; take them away so the
             // next binding starts from nothing.
