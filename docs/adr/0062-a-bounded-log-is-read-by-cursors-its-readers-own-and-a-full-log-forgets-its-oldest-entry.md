@@ -97,10 +97,39 @@ read(reader r) :
                                                       -- the reader resumes at the oldest retained
 head()         : h
 reader_oldest() : cursor = max(0, h - R)       reader_head() : cursor = h       reader_at(n) : cursor = min(n, h)
+reader_deferred() : cursor = unbound           -- the first read binds it (below)
+read(reader r) with r unbound :
+    r' = max(0, h - R) at this read's own load of h, then the read goes on as above with r'
+                                       -- Item or Empty; Lagged only if a publish overtook it inside this read
 ```
 
 A batch read into a caller's buffer is `n` reads in sequence and promises no more: the entries it returns are not a
 snapshot of one instant, and a `Lagged` ends the batch at the point it was found.
+
+- **A position the log cannot serve is resolved, never refused, and each way out of range has one answer.** A position
+  behind the window is the reader resumed at the oldest retained entry and told how many it missed (`Lagged`): the
+  reset to *earliest* that a log with a bounded retention has to offer. A position ahead of the head is the head
+  (`reader_at(n) = min(n, h)`): the reset to *latest*. That keeps `r <= h`, which is not a convenience of the
+  implementation but the hypothesis of what is proved: the answer rules above are stated for it, the model keeps it as
+  `CursorNotPastHead`, and the wrap-bound theorem of §4 starts from `c <= H`. A reader that wants to start at a number
+  the log has not reached opens at the head and reads until it gets there; the log does not hold a place ahead of itself.
+  A consumer whose own ring keeps a cursor ahead of the head (it reads nothing until the producer arrives, and then skips
+  what lay between) has a different rule, which the differential cases of §6 pin as a difference.
+- **Two ways to open at the oldest, which differ in what the start of a reader's stream is.** `reader_oldest()` binds the
+  cursor when it is called: the stream starts at the oldest retained entry of that moment, and a reader that waits is told
+  of what the publisher did meanwhile. `reader_deferred()` binds it at the first read, from the head that read loads, so
+  the stream starts at the oldest retained entry of the moment it is first read, and a reader that waited is told of
+  nothing. Neither is the other with a flag: the first makes a read a function of the cursor and the history alone, which
+  is what a test needs; the second is what a late subscriber needs. The deferred reader adds no mechanism to the
+  protocol: the bind is the first read's own load of the head, the cursor it gives is at most `R` behind it, so the slot is
+  inside the window and the one stamp comparison that follows is the ordinary one. The models check it
+  (`BroadcastLog_deferred.cfg`, 13,658,347 distinct states, and `BroadcastLogWrapped_deferred.cfg`, 528,936, run to the end
+  with no violation of the existing invariants or of `DeferredStart` and `FirstLagIsOvertaken`): the start is that entry, what
+  the reader is told it lost lies after the start, and its first read answers `Lagged` only when a publish had completed since
+  its first load, which takes the `R + 1`th slot (with `R` slots the bound entry's slot is the one the next publish begins to
+  write, and `BroadcastLog_deferred_without_extra_slot.cfg` finds a first read told of a loss nothing had caused). In a narrow
+  row the bind is two loads, and the wrap bound of §4 must cover them (see "What the narrow and load/store-only rows
+  landed", "What a deploy states").
 
 - **Loss is a value, not a counter.** What the consumer asked for as "a way to read the overwrite count" is
   `Lagged.skipped` per read, the reader's own `lost` total, and `head()`. The log keeps no count of overwrites, because
@@ -976,7 +1005,14 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   within `R` of the head it loaded (`Item`: `c + 1 > H - R`; `Lagged`: exactly `H - R`; `Empty`: `H`), and one publish may
   be in flight, so if the publisher begins at most `P` publishes between a reader's load of the head in one read and its
   last access of the next, then `B(t_e) - c <= P + S`. The hypothesis therefore holds when `P <= K - S`: that `P` is
-  `machines.<m>.queues.<log>.min_wrap_ops`, and `broadcast_log_longest_pause_ops` is the bound it is judged against. This
+  `machines.<m>.queues.<log>.min_wrap_ops`, and `broadcast_log_longest_pause_ops` is the bound it is judged against. The two loads that open a
+  reader at the oldest entry in a narrow row (the stamp of the last slot, then the head) are accesses of the reader as
+  a read's are, so the same `P` covers the publishes begun between them, and for a deferred reader (§2) the first read
+  counts from its first load. Without that, a stamp space that wrapped between the two loads leaves a distance of 0 for what
+  is `2^w` entries, and the head load answers `Empty` for a head that is not where the reader's cursor says
+  (`BroadcastLogWrapped_deferred_without_bound.cfg`). The model had left this out for `reader_oldest()` too, because a
+  reader that opened that way could not start its next read under the bound and the model stopped there; the deferred
+  reader answers at the second load, which is how the gap showed. This
   corrects the bound the step that wrote `judge_broadcast_log_stamp` took, `K` itself (the stamp's capacity), which is the
   bound of the distance and not of the pause: a pause of exactly `K` leaves the reader `K + S` behind. The three
   refusals are unchanged; the `bound` they carry is `K - S`, and their message still says the stamp "tells `bound`
