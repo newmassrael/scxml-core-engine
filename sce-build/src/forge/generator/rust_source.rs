@@ -356,20 +356,27 @@ pub(crate) fn supported_with(
 // The names a group goes by, read by the source interface here and by the
 // forms the generator renders, so the two spell a group alike.
 
-/// The gates of a group as words of a name: the input, or the carrier and
-/// its flag; several flags of one carrier as the carrier and the flags, each
-/// joined by `or`.
+/// The word a chain's membership of the kind `key` goes by in a name
+/// (docs/adr/0065 §6 R6a): `has_0x12`.
+fn member_word(key: u64) -> String {
+    format!("has_0x{key:x}")
+}
+
+/// The gates of a group as words of a name: the input, the carrier and its
+/// flag, or the chain and the kind it is asked for; several flags of one
+/// carrier as the carrier and the flags, each joined by `or`.
 fn gate_words(group: &GateGroup) -> String {
     let flag_of = |gate: &GateVar| match gate {
         GateVar::Input(name) => name.clone(),
         GateVar::Flag { flag, .. } => flag.clone(),
+        GateVar::Member { key, .. } => member_word(*key),
     };
     let carriers: BTreeSet<&str> = group
         .gates
         .iter()
         .filter_map(|g| match g {
             GateVar::Flag { carrier, .. } => Some(carrier.as_str()),
-            GateVar::Input(_) => None,
+            GateVar::Input(_) | GateVar::Member { .. } => None,
         })
         .collect();
     let one_carrier = carriers.len() == 1
@@ -388,6 +395,7 @@ fn gate_words(group: &GateGroup) -> String {
             .map(|g| match g {
                 GateVar::Input(name) => name.clone(),
                 GateVar::Flag { carrier, flag } => format!("{carrier}_{flag}"),
+                GateVar::Member { chain, key } => format!("{chain}_{}", member_word(*key)),
             })
             .collect::<Vec<_>>()
             .join("_or_")
@@ -421,6 +429,47 @@ pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
     }
 }
 
+/// The type that names the kind of entry a chain's membership asks for
+/// (docs/adr/0065 §6 R6a): the group's type and `Key`.
+pub(crate) fn key_type(codec: &str, group: &GateGroup) -> String {
+    format!("{}Key", group_type(codec, group))
+}
+
+/// The key a group of a chain's membership asks for, when `field` is its chain.
+pub(crate) fn held_chain_key(group: &GateGroup, field: &CodecField) -> Option<u64> {
+    group
+        .member()
+        .filter(|(chain, _)| *chain == field.id)
+        .map(|(_, key)| key)
+}
+
+/// The type the chain `field` of a group of its membership has in `arm`, held
+/// as `list` (docs/adr/0065 §6 R6a): the others and the named entry's place
+/// where the gate holds, the chain with no entry of the kind where it does not,
+/// as an `Option` when the chain is itself gated. Both hold the one list.
+pub(crate) fn chain_arm_type(
+    codec: &str,
+    group: &GateGroup,
+    field: &CodecField,
+    arm: &GroupArm,
+    list: &str,
+) -> String {
+    let key = key_type(codec, group);
+    let bound = codec_totality::list_bound(field);
+    if arm.values == [true] {
+        return format!("{RUNTIME_CODEC}::Placed<{list}, {key}, {bound}>");
+    }
+    let except = format!(
+        "{RUNTIME_CODEC}::Except<{list}, {key}, {}>",
+        codec_totality::list_bound_args(field)
+    );
+    if field.present_if.is_some() {
+        format!("Option<{except}>")
+    } else {
+        except
+    }
+}
+
 /// The name of an arm of a group: for one gate, the flag (`Not` before it for
 /// the arm present while it does not hold); for several, the flags the arm
 /// holds set, or `Neither` where it holds none. The type names the carrier
@@ -429,6 +478,7 @@ pub(crate) fn group_arm_name(group: &GateGroup, arm: &GroupArm) -> String {
     let flag_of = |gate: &GateVar| match gate {
         GateVar::Input(name) => pascal_words(name),
         GateVar::Flag { flag, .. } => pascal_words(flag),
+        GateVar::Member { key, .. } => pascal_words(&member_word(*key)),
     };
     if let ([gate], [value]) = (group.gates.as_slice(), arm.values.as_slice()) {
         return if *value {
@@ -1183,10 +1233,32 @@ impl<'a> Plan<'a> {
             .find(|f| f.id == clause.field_id)
             .expect("the parser found the chain a gate reads");
         let value = clause.entry_id.expect("a chain clause names an identifier");
-        let found = format!("{} == {value}u64", self.entry_identifier(chain, "&_e"));
+        let mut found = format!("{} == {value}u64", self.entry_identifier(chain, "&_e"));
+        // A chain whose membership a group holds: the gate on the group's kind
+        // is the arm the value holds, and any other kind is looked for in its
+        // walk, whose named entry has the group's key (docs/adr/0065 §6 R6a).
+        if let Some(group) = self
+            .roles
+            .group_of(&chain.id)
+            .filter(|group| held_chain_key(group, chain).is_some())
+        {
+            if held_chain_key(group, chain) == Some(value) {
+                let held = format!("src.{}()", self.group_accessor(group));
+                return self.gate_value(group, 0, &held);
+            }
+            found = format!(
+                "match &_e {{ {RUNTIME_CODEC}::Slot::Entry(_n) => {} == {value}u64, {RUNTIME_CODEC}::Slot::Named => false }}",
+                self.entry_identifier(chain, "_n")
+            );
+        }
         let read = self.read_src(chain);
-        // A chain that is gated off holds no entry.
-        if chain.present_if.is_some() {
+        let held = self
+            .roles
+            .group_of(&chain.id)
+            .is_some_and(|group| held_chain_key(group, chain).is_some());
+        // A chain that is gated off holds no entry, and one a group holds is
+        // read from the arm, where it may be absent.
+        if chain.present_if.is_some() || held {
             format!("{read}.is_some_and(|mut _l| _l.any(|_e| {found}))")
         } else {
             format!("{read}.any(|_e| {found})")
@@ -1402,22 +1474,26 @@ impl<'a> Plan<'a> {
             } else {
                 format!("<{}>", params.join(", "))
             };
-            let member_ty = |f: &CodecField| {
-                if Self::member_varies(f) {
+            // The chain of a membership is the one list in both arms, refined as
+            // the arm says (docs/adr/0065 §6 R6a).
+            let member_ty = |f: &CodecField, arm: &GroupArm| {
+                if held_chain_key(group, f).is_some() {
+                    chain_arm_type(self.name(), group, f, arm, &Self::member_param(f))
+                } else if Self::member_varies(f) {
                     Self::member_param(f)
                 } else {
                     self.l().type_name(&f.sce_type).to_string()
                 }
             };
-            let fields_of = |ids: &[String], indent: &str| -> String {
-                self.group_fields(ids)
+            let fields_of = |arm: &GroupArm, indent: &str| -> String {
+                self.group_fields(&arm.fields)
                     .map(|f| {
                         format!(
                             "{indent}/// The `{id}` field.\n{indent}{vis}{acc}: {ty},\n",
                             id = f.id,
                             vis = if indent.len() == 4 { "pub " } else { "" },
                             acc = self.accessor(f),
-                            ty = member_ty(f),
+                            ty = member_ty(f, arm),
                         )
                     })
                     .collect()
@@ -1443,7 +1519,7 @@ impl<'a> Plan<'a> {
                         "    /// While {}.\n    {} {{\n{}    }},\n",
                         arm_condition(group, &arm.values),
                         group_arm_name(group, arm),
-                        fields_of(&arm.fields, "        "),
+                        fields_of(arm, "        "),
                     ));
                 }
                 out.push_str(&format!(
@@ -1455,16 +1531,32 @@ impl<'a> Plan<'a> {
                     codec = self.name(),
                 ));
                 // A form holds a group a value always holds an arm of as it is,
-                // and starts it at the arm where every gate is clear.
+                // and starts it at the arm where every gate is clear. A chain
+                // that is always present has no chain without an entry to
+                // start from where the gate is clear, since it holds one entry
+                // or more, so its membership starts where the gate holds, with
+                // the named entry alone (docs/adr/0065 §6 R6a).
+                let always_present_chain = group
+                    .member()
+                    .and_then(|(chain, _)| self.m().fields.iter().find(|f| f.id == chain))
+                    .filter(|chain| chain.present_if.is_none());
                 if group.absent.is_none() {
-                    let arm = group
-                        .arms
-                        .iter()
-                        .find(|a| a.values.iter().all(|v| !v))
-                        .unwrap_or(&group.arms[0]);
+                    let arm = match always_present_chain {
+                        Some(_) => &group.arms[0],
+                        None => group
+                            .arms
+                            .iter()
+                            .find(|a| a.values.iter().all(|v| !v))
+                            .unwrap_or(&group.arms[0]),
+                    };
                     let default_params = params
                         .iter()
-                        .map(|p| format!("{p}: Default"))
+                        .map(|p| match always_present_chain {
+                            Some(chain) if *p == Self::member_param(chain) => {
+                                format!("{p}: Default + {RUNTIME_CODEC}::Entries")
+                            }
+                            _ => format!("{p}: Default"),
+                        })
                         .collect::<Vec<_>>()
                         .join(", ");
                     let default_fields: String = self
@@ -1487,6 +1579,9 @@ impl<'a> Plan<'a> {
                         arm_name = group_arm_name(group, arm),
                     ));
                 }
+                if let Some((chain, key)) = group.member() {
+                    out.push_str(&self.membership_key(group, chain, key));
+                }
             } else {
                 let arm = &group.arms[0];
                 out.push_str(&format!(
@@ -1498,11 +1593,116 @@ impl<'a> Plan<'a> {
                      pub struct {name}{generics} {{\n{fields}}}\n\n",
                     condition = arm_condition(group, &arm.values),
                     codec = self.name(),
-                    fields = fields_of(&arm.fields, "    "),
+                    fields = fields_of(arm, "    "),
                 ));
             }
         }
         out
+    }
+
+    /// The type that names the kind of entry the membership `group` of the
+    /// chain `chain_id` asks for (`key`), with the entry of the kind, whose
+    /// identifier is all of its value (docs/adr/0065 §6 R6a): the kind is read
+    /// off every form of the entry through its source, as a gate reads it, and
+    /// the entry is the decoded entry that holds the identifier and the arm it
+    /// selects, which presents nothing.
+    fn membership_key(&self, group: &GateGroup, chain_id: &str, key: u64) -> String {
+        let chain = self
+            .m()
+            .fields
+            .iter()
+            .find(|f| f.id == chain_id)
+            .expect("a membership names a chain of the codec");
+        let import = self
+            .input
+            .imports
+            .iter()
+            .find(|i| Some(i.alias.as_str()) == child_alias(chain))
+            .expect("a chain imports its entry codec");
+        let key_ty = key_type(self.name(), group);
+        let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
+        let entry_ty = format!("super::{}::{}", import.namespace, import.type_name);
+        let lifetime = if import.codec_is_borrowed {
+            "<'static>"
+        } else {
+            ""
+        };
+        // A bare entry is its carrier and, where it has one, the arm of its
+        // variant the identifier's tag bits select (`named_entry_is_bare`).
+        let carrier = import
+            .codec_fields
+            .first()
+            .expect("a bare entry is its carrier");
+        let body = match &import.codec_variant {
+            None => String::new(),
+            Some(variant) => {
+                let flag = carrier
+                    .flags
+                    .iter()
+                    .find(|f| variant.tag_flag.as_deref() == Some(f.name.as_str()))
+                    .expect("a bare entry's tag is a flag of its carrier");
+                let mask = if flag.width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << flag.width) - 1
+                };
+                let tag = key.checked_shr(flag.bit).unwrap_or(0) & mask;
+                let arm = variant
+                    .arms
+                    .iter()
+                    .find(|a| a.value == tag)
+                    .expect("a bare entry's tag selects an arm");
+                format!(
+                    ", body: super::{}::{}Variant::{}(Default::default())",
+                    import.namespace,
+                    import.type_name,
+                    filters::to_pascal_case(arm.body_alias.clone())
+                )
+            }
+        };
+        let test = format!("{} == {key}u64", self.entry_identifier(chain, "entry"));
+        format!(
+            "/// The kind of entry `{chain_id}.has(0x{key:X})` names: an entry whose identifier is\n\
+             /// 0x{key:X}, which is all of its value (docs/adr/0065 §6 R6a).\n\
+             #[allow(dead_code)]\n\
+             #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
+             pub struct {key_ty};\n\n\
+             impl<E: {entry_trait}> {RUNTIME_CODEC}::Key<E> for {key_ty} {{\n\
+             \x20   fn matches(entry: &E) -> bool {{\n\
+             \x20       {test}\n\
+             \x20   }}\n\
+             }}\n\n\
+             #[allow(dead_code)]\n\
+             impl {key_ty} {{\n\
+             \x20   /// The entry of the kind: its identifier, and nothing else to say.\n\
+             \x20   pub fn named() -> {entry_ty}{lifetime} {{\n\
+             \x20       {entry_ty} {{ {carrier}: 0x{key:X}{body} }}\n\
+             \x20   }}\n\
+             }}\n\n",
+            carrier = self.l().codec_field_id(&carrier.id),
+        )
+    }
+
+    /// How the form `form` (`None` for the parts) reads the chain of a group of
+    /// its membership in `arm`, `r` being a reference to it: the refined chain
+    /// as its walk, the refinement kept (docs/adr/0065 §6 R6a).
+    fn chain_member_read(
+        &self,
+        form: Option<Form>,
+        field: &CodecField,
+        arm: &GroupArm,
+        r: &str,
+    ) -> String {
+        let walk = if form == Some(Form::Owned) {
+            "list_iter()"
+        } else {
+            "iter()"
+        };
+        if arm.values == [true] || field.present_if.is_none() {
+            format!("{r}.{walk}")
+        } else {
+            format!("{r}.as_ref().map(|_e| _e.{walk})")
+        }
     }
 
     /// How the form `form` (`None` for the parts) reads an element of a group
@@ -1561,7 +1761,12 @@ impl<'a> Plan<'a> {
                     .iter()
                     .map(|f| {
                         let accessor = self.accessor(f);
-                        shorthand(&accessor, &self.member_read(form, f, &accessor))
+                        let read = if held_chain_key(group, f).is_some() {
+                            self.chain_member_read(form, f, arm, &accessor)
+                        } else {
+                            self.member_read(form, f, &accessor)
+                        };
+                        shorthand(&accessor, &read)
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -1590,7 +1795,18 @@ impl<'a> Plan<'a> {
     /// The accessor of each group in the source trait, the group with each
     /// element as the source presents it.
     fn group_accessor_type(&self, group: &GateGroup) -> String {
-        self.group_held_in(group, &|f| self.member_value_type(f))
+        self.group_held_in(group, &|f| {
+            // The chain of a membership as the one walk both arms refine
+            // (docs/adr/0065 §6 R6a).
+            match (held_chain_key(group, f), self.child(f)) {
+                (Some(_), Some(child)) => format!(
+                    "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
+                    child.trait_path,
+                    codec_totality::list_bound(f)
+                ),
+                _ => self.member_value_type(f),
+            }
+        })
     }
 
     /// The statement that binds each element of the groups to its local, as
@@ -1612,7 +1828,9 @@ impl<'a> Plan<'a> {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            if uniform && all.len() == 1 {
+            // A chain's membership holds its chain in each arm with the arm's
+            // refinement, so its arms bind apart (docs/adr/0065 §6 R6a).
+            if uniform && all.len() == 1 && group.member().is_none() {
                 let member = self.accessor(all[0]);
                 let patterns = group
                     .arms
@@ -1635,13 +1853,20 @@ impl<'a> Plan<'a> {
                 .map(|f| self.member_local(f))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let tuple = |ids: &[String]| {
+            // The chain of a membership is bound as its walk, each entry and
+            // the named one at its place, whichever arm holds it.
+            let tuple = |arm: &GroupArm| {
                 all.iter()
                     .map(|f| {
-                        if ids.contains(&f.id) {
-                            format!("Some({})", self.accessor(f))
-                        } else {
+                        let acc = self.accessor(f);
+                        if !arm.fields.contains(&f.id) {
                             "None".to_string()
+                        } else if held_chain_key(group, f).is_none() {
+                            format!("Some({acc})")
+                        } else if arm.values == [true] || f.present_if.is_none() {
+                            format!("Some({acc}.slots())")
+                        } else {
+                            format!("{acc}.map(|_e| _e.slots())")
                         }
                     })
                     .collect::<Vec<_>>()
@@ -1653,11 +1878,7 @@ impl<'a> Plan<'a> {
                 .map(|arm| {
                     let pattern =
                         format!("{} {{ {} }}", self.arm_path(group, arm), names(&arm.fields));
-                    format!(
-                        "    {} => ({}),",
-                        Self::held(group, &pattern),
-                        tuple(&arm.fields)
-                    )
+                    format!("    {} => ({}),", Self::held(group, &pattern), tuple(arm))
                 })
                 .collect();
             if group.absent.is_some() {
@@ -2101,7 +2322,13 @@ impl<'a> Plan<'a> {
                 "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    pub {accessor}: {ty},\n",
                 gate = gates_label(group),
                 accessor = self.group_accessor(group),
-                ty = self.group_held_in(group, &|f| self.parts_value_type(f)),
+                ty = self.group_held_in(group, &|f| {
+                    // The chain of a membership as the slice both arms refine.
+                    match (held_chain_key(group, f), self.child(f)) {
+                        (Some(_), Some(child)) => format!("&'a [{}]", child.parts_type),
+                        _ => self.parts_value_type(f),
+                    }
+                }),
             ));
         }
         let mut out = String::new();
@@ -3344,7 +3571,14 @@ impl<'a> Plan<'a> {
     // ── the wire: streamed layout ────────────────────────────────────
 
     fn streamed(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
-        let gated = field.present_if.is_some();
+        // The chain of a membership is read from the arm the value holds, as an
+        // `Option` of its walk whether or not it is itself gated
+        // (docs/adr/0065 §6 R6a).
+        let membership = self
+            .roles
+            .group_of(&field.id)
+            .filter(|group| held_chain_key(group, field).is_some());
+        let gated = field.present_if.is_some() || membership.is_some();
         // A field derived whole whose gate is its own is written where it is
         // present: the gate flag is derived from the field it gates, and a length
         // field that is itself gated is announced by the same flag.
@@ -3424,28 +3658,78 @@ impl<'a> Plan<'a> {
                         )
                     })
                     .collect();
-                match self.chain_end_flag(field) {
-                    // Every entry but the last says another follows: the flag is
-                    // derived from where the entry stands, and set as it is
-                    // written.
-                    Some(member) => {
-                        let count = self.count_local(field);
-                        body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
-                        body.push(format!(
+                // A chain whose membership a group holds is walked as slots:
+                // each entry written as it is, and the named one, whose
+                // identifier is all of it, written from the kind's entry. The
+                // identifier the named entry has is the key, which a bind of
+                // the entry after it reads.
+                if let Some(group) = membership {
+                    let key = held_chain_key(group, field).unwrap_or_default();
+                    let named = format!("{}::named()", key_type(self.name(), group));
+                    let named_updates: Vec<String> = binds
+                        .iter()
+                        .map(|(_, local, previous)| {
+                            format!("{local} = u8::from({key}u64 == {previous}u64);")
+                        })
+                        .collect();
+                    let (head, overrides) = match self.chain_end_flag(field) {
+                        Some(member) => (
+                            format!("for (_i, _s) in {value}.enumerate() {{"),
+                            format!(
+                                ", &{}::{member}(_i + 1 < {})",
+                                child.overrides_path,
+                                self.count_local(field)
+                            ),
+                        ),
+                        None => (format!("for _s in {value} {{"), String::new()),
+                    };
+                    let write = if overrides.is_empty() {
+                        "write_source"
+                    } else {
+                        "write_source_in"
+                    };
+                    body.push(head);
+                    body.push("    match _s {".to_string());
+                    body.push(format!("        {RUNTIME_CODEC}::Slot::Entry(_e) => {{"));
+                    body.push(format!(
+                        "            {}::{write}(&_e, w{args}{overrides}){pass};",
+                        child.type_name
+                    ));
+                    body.extend(updates.iter().map(|u| format!("        {u}")));
+                    body.push("        }".to_string());
+                    body.push(format!("        {RUNTIME_CODEC}::Slot::Named => {{"));
+                    body.push(format!(
+                        "            {}::{write}(&{named}, w{args}{overrides}){pass};",
+                        child.type_name
+                    ));
+                    body.extend(named_updates.iter().map(|u| format!("            {u}")));
+                    body.push("        }".to_string());
+                    body.push("    }".to_string());
+                    body.push("}".to_string());
+                } else {
+                    match self.chain_end_flag(field) {
+                        // Every entry but the last says another follows: the flag is
+                        // derived from where the entry stands, and set as it is
+                        // written.
+                        Some(member) => {
+                            let count = self.count_local(field);
+                            body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
+                            body.push(format!(
                             "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count})){pass};",
                             child.type_name, child.overrides_path
                         ));
+                        }
+                        None => {
+                            body.push(format!("for _e in {value} {{"));
+                            body.push(format!(
+                                "    {}::write_source(&_e, w{args}){pass};",
+                                child.type_name
+                            ));
+                        }
                     }
-                    None => {
-                        body.push(format!("for _e in {value} {{"));
-                        body.push(format!(
-                            "    {}::write_source(&_e, w{args}){pass};",
-                            child.type_name
-                        ));
-                    }
+                    body.extend(updates);
+                    body.push("}".to_string());
                 }
-                body.extend(updates);
-                body.push("}".to_string());
             }
             BitSize::Embed => {
                 let child = self

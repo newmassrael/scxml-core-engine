@@ -189,12 +189,14 @@ pub enum InputSource {
     Group,
 }
 
-/// What a gate reads: a flag-input of the codec, or a one-bit flag of one of
-/// its own carriers.
+/// What a gate reads: a flag-input of the codec, a one-bit flag of one of its
+/// own carriers, or whether a chain of it holds an entry of a kind whose
+/// identifier is all its value is (docs/adr/0065 §6 R6a).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GateVar {
     Input(String),
     Flag { carrier: String, flag: String },
+    Member { chain: String, key: u64 },
 }
 
 impl fmt::Display for GateVar {
@@ -202,6 +204,7 @@ impl fmt::Display for GateVar {
         match self {
             GateVar::Input(name) => f.write_str(name),
             GateVar::Flag { carrier, flag } => write!(f, "{carrier}.{flag}"),
+            GateVar::Member { chain, key } => write!(f, "{chain}.has(0x{key:X})"),
         }
     }
 }
@@ -246,6 +249,17 @@ impl GateGroup {
         self.arms.len() > 1
     }
 
+    /// The chain and the kind of entry the group's gate asks for, when its gate
+    /// is a chain's membership (docs/adr/0065 §6 R6a). Such a group holds the
+    /// chain in each arm: the others and the named entry's place where the
+    /// gate holds, the chain with no entry of the kind where it does not.
+    pub fn member(&self) -> Option<(&str, u64)> {
+        match self.gates.as_slice() {
+            [GateVar::Member { chain, key }] => Some((chain, *key)),
+            _ => None,
+        }
+    }
+
     /// Whether `field` is one of the group's elements.
     pub fn contains(&self, field: &str) -> bool {
         self.arms
@@ -282,6 +296,22 @@ impl GateGroup {
             gates: vec![gate],
             arms,
             absent,
+        }
+    }
+
+    /// The group of a chain's membership (docs/adr/0065 §6 R6a): an arm for
+    /// each value of the gate, each holding the chain before the fields present
+    /// under it, since the chain is what the gate is a fact of. A value always
+    /// holds one of the two.
+    fn of_member(gate: GateVar, chain: &str, set: Vec<String>, clear: Vec<String>) -> GateGroup {
+        let arm = |value: bool, fields: Vec<String>| GroupArm {
+            values: vec![value],
+            fields: std::iter::once(chain.to_string()).chain(fields).collect(),
+        };
+        GateGroup {
+            gates: vec![gate],
+            arms: vec![arm(true, set), arm(false, clear)],
+            absent: None,
         }
     }
 }
@@ -372,6 +402,30 @@ pub fn named_entry_is_bare(
     if !id.except.iter().all(|e| Some(e.as_str()) == chain_flag) {
         return false;
     }
+    // A key the identifier cannot hold, wider than its carrier or with a bit
+    // the identifier leaves out, names no entry: the gate is refused where the
+    // import is resolved, not held as a group.
+    let BitSize::Fixed { bits } = carrier.bit_size else {
+        return false;
+    };
+    if bits < 64 && key >> bits != 0 {
+        return false;
+    }
+    let left_out = carrier
+        .flags
+        .iter()
+        .filter(|f| id.except.contains(&f.name))
+        .fold(0u64, |mask, f| {
+            let ones = if f.width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << f.width) - 1
+            };
+            mask | ones.checked_shl(f.bit).unwrap_or(0)
+        });
+    if key & left_out != 0 {
+        return false;
+    }
     let Some(variant) = &shape.variant else {
         return true;
     };
@@ -395,6 +449,47 @@ pub fn named_entry_is_bare(
         .arms
         .iter()
         .any(|arm| arm.value == tag && shape.empty_arm_tags.contains(&arm.value))
+}
+
+/// The memberships of `model`'s chains whose named entry holds nothing but its
+/// identifier ([`named_entry_is_bare`]): each chain and identifier a gate of one
+/// clause asks for, where the entry codec, read through `inputs`, makes it so.
+fn bare_memberships(model: &CodecModel, inputs: &mut dyn InputImports) -> BTreeSet<(String, u64)> {
+    let mut bare = BTreeSet::new();
+    for field in &model.fields {
+        let Some(gate) = &field.present_if else {
+            continue;
+        };
+        let (PresentIfScope::Chain, None, Some(key)) = (gate.scope, &gate.or_with, gate.entry_id)
+        else {
+            continue;
+        };
+        let Some(chain) = model.fields.iter().find(|c| c.id == gate.field_id) else {
+            continue;
+        };
+        let BitSize::TlvChain {
+            entry_id: Some(id),
+            terminate_on,
+            ..
+        } = &chain.bit_size
+        else {
+            continue;
+        };
+        let Some(alias) = chain.tlv_chain_body_alias.as_deref() else {
+            continue;
+        };
+        let chain_flag = match terminate_on {
+            TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_name.as_str()),
+            TlvTerminateStrategy::ExhaustOrDepth => None,
+        };
+        if inputs
+            .entry_shape(alias)
+            .is_some_and(|shape| named_entry_is_bare(&shape, id, chain_flag, key))
+        {
+            bare.insert((chain.id.clone(), key));
+        }
+    }
+    bare
 }
 
 /// The imports a codec's generation resolved, each with the inputs it says
@@ -623,10 +718,11 @@ impl CodecRoles {
                 .as_ref()
                 .is_none_or(|input| !self.inputs.contains_key(input))
                 // A field of a disjunction's group is held with the arm that
-                // says its flags (docs/adr/0065 §6 R4c).
+                // says its flags (docs/adr/0065 §6 R4c), and one of a chain's
+                // membership with the arm that says the chain (R6a).
                 && !self
                     .group_of(&check.field)
-                    .is_some_and(|group| group.gates.len() > 1)
+                    .is_some_and(|group| group.gates.len() > 1 || group.member().is_some())
         })
     }
 
@@ -1083,7 +1179,8 @@ pub fn classify_with(
         groups: Vec::new(),
         unresolved,
     };
-    roles.groups = gate_groups(model, &roles, &derived_whole);
+    let bare = bare_memberships(model, inputs);
+    roles.groups = gate_groups(model, &roles, &derived_whole, &bare);
     // The flags of a disjunction that decides a group are derived from the arm
     // the value holds (docs/adr/0065 §6 R4c).
     for group in roles.groups.iter().filter(|g| g.gates.len() > 1) {
@@ -1175,6 +1272,7 @@ fn gate_groups(
     model: &CodecModel,
     roles: &CodecRoles,
     derived_whole: &BTreeSet<String>,
+    bare: &BTreeSet<(String, u64)>,
 ) -> Vec<GateGroup> {
     // The fields one flag decides, by its value: present while it holds, and
     // while it does not.
@@ -1186,7 +1284,7 @@ fn gate_groups(
         if derived_whole.contains(&field.id) {
             continue;
         }
-        let Some(var) = gate_var(model, gate) else {
+        let Some(var) = gate_var(model, gate, bare) else {
             continue;
         };
         let index = match sides.iter().position(|(g, _, _)| *g == var) {
@@ -1242,12 +1340,24 @@ fn gate_groups(
             sides[index].2.push(field);
         }
     }
+    // A chain's membership makes a group whatever it gates, since its arms hold
+    // the chain the gate is a fact of (docs/adr/0065 §6 R6a).
+    let (members, sides): (Vec<_>, Vec<_>) = sides
+        .into_iter()
+        .partition(|(gate, _, _)| matches!(gate, GateVar::Member { .. }));
     let mut groups: Vec<GateGroup> = sides
         .into_iter()
         .filter(|(_, set, clear)| set.len() + clear.len() >= 2)
         .map(|(gate, set, clear)| GateGroup::of_one(gate, set, clear))
         .collect();
-    groups.extend(disjunction_groups(model, roles, derived_whole));
+    groups.extend(members.into_iter().map(|(gate, set, clear)| {
+        let GateVar::Member { chain, .. } = &gate else {
+            unreachable!("the members are the chains' memberships");
+        };
+        let chain = chain.clone();
+        GateGroup::of_member(gate, &chain, set, clear)
+    }));
+    groups.extend(disjunction_groups(model, roles, derived_whole, bare));
     groups
 }
 
@@ -1261,6 +1371,7 @@ fn disjunction_groups(
     model: &CodecModel,
     roles: &CodecRoles,
     derived_whole: &BTreeSet<String>,
+    bare: &BTreeSet<(String, u64)>,
 ) -> Vec<GateGroup> {
     // Each disjunction as the flags its clauses read and whether each is
     // negated, with the fields it gates.
@@ -1279,7 +1390,7 @@ fn disjunction_groups(
                 or_with: None,
                 ..p.clone()
             };
-            match gate_var(model, &single) {
+            match gate_var(model, &single, bare) {
                 Some(var @ GateVar::Flag { .. }) => clauses.push((var, p.negate)),
                 Some(var) => {
                     every_clause_a_flag = false;
@@ -1362,11 +1473,22 @@ fn disjunction_groups(
 
 /// The flag a gate of one clause reads: a flag-input one bit wide, or a
 /// one-bit flag of a carrier of the codec. Any other gate decides no group.
-fn gate_var(model: &CodecModel, gate: &PresentIfPredicate) -> Option<GateVar> {
+fn gate_var(
+    model: &CodecModel,
+    gate: &PresentIfPredicate,
+    bare: &BTreeSet<(String, u64)>,
+) -> Option<GateVar> {
     if gate.or_with.is_some() {
         return None;
     }
     match gate.scope {
+        PresentIfScope::Chain => gate
+            .entry_id
+            .filter(|key| bare.contains(&(gate.field_id.clone(), *key)))
+            .map(|key| GateVar::Member {
+                chain: gate.field_id.clone(),
+                key,
+            }),
         PresentIfScope::Input => model
             .flag_inputs
             .iter()
@@ -1382,7 +1504,6 @@ fn gate_var(model: &CodecModel, gate: &PresentIfPredicate) -> Option<GateVar> {
                 carrier: gate.field_id.clone(),
                 flag: gate.flag_name.clone(),
             }),
-        _ => None,
     }
 }
 

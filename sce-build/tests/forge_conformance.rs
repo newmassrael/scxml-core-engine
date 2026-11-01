@@ -4378,8 +4378,12 @@ fn an_identifier_without_its_continuation_flag_finds_the_marker_wherever_it_stan
     const HARNESS: &str = r#"// Injected by an_identifier_without_its_continuation_flag_*.
 #[cfg(test)]
 mod tests {
-    use crate::codec_chain_has_marker::CodecChainHasMarker;
-    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+    use crate::codec_chain_has_marker::{
+        CodecChainHasMarker, CodecChainHasMarkerExtensionsHas0x12 as Has0x12,
+        CodecChainHasMarkerExtensionsHas0x12Key as MarkerKey,
+    };
+    use crate::codec_zenoh_ext_entry::{CodecZenohExtEntry, CodecZenohExtEntryVariant};
+    use ::sce_forge_runtime::codec::{Except, Placed, SceCursor};
 
     // The marker (0x12) is the last entry; the SLICED layout follows: a count
     // of 1 and one slice (kind 0, len 2, bytes AA BB).
@@ -4401,22 +4405,27 @@ mod tests {
         CodecChainHasMarker::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
+    // The marker's gate is a group of the chain (docs/adr/0065 §6 R6a): the
+    // slices are on the side that holds the marker, the payload on the other.
     fn assert_sliced(frame: &[u8]) {
         let v = decode_frame(frame);
-        assert!(v.payload_len.is_none() && v.payload.is_none());
-        assert_eq!(v.slice_count, Some(1));
-        let slices = v.slices.as_ref().expect("slices follow the marker");
-        assert_eq!(slices.len(), 1);
-        assert_eq!(slices[0].data, &[0xAA, 0xBB][..]);
-        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+        match &v.extensions_has_0x12 {
+            Has0x12::Has0x12 { slices, .. } => {
+                assert_eq!(slices.len(), 1);
+                assert_eq!(slices[0].data, &[0xAA, 0xBB][..]);
+            }
+            Has0x12::NotHas0x12 { .. } => panic!("the marker brings the slices"),
+        }
+        assert_eq!(v.encode_to_vec(), frame.to_vec());
     }
 
     fn assert_plain(frame: &[u8]) {
         let v = decode_frame(frame);
-        assert!(v.slice_count.is_none() && v.slices.is_none());
-        assert_eq!(v.payload_len, Some(2));
-        assert_eq!(v.payload, Some(&[0xAA, 0xBB][..]));
-        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+        match &v.extensions_has_0x12 {
+            Has0x12::NotHas0x12 { payload, .. } => assert_eq!(*payload, &[0xAA, 0xBB][..]),
+            Has0x12::Has0x12 { .. } => panic!("an entry that is not the marker leaves the payload"),
+        }
+        assert_eq!(v.encode_to_vec(), frame.to_vec());
     }
 
     #[test]
@@ -4440,29 +4449,31 @@ mod tests {
     fn an_absent_chain_has_no_marker() {
         let frame = [0x00u8, 0x01, 0xCC];
         let v = decode_frame(&frame);
-        assert!(v.extensions.is_none());
-        assert_eq!(v.payload, Some(&[0xCC][..]));
-        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+        match &v.extensions_has_0x12 {
+            Has0x12::NotHas0x12 { extensions, payload } => {
+                assert!(extensions.is_none());
+                assert_eq!(*payload, &[0xCC][..]);
+            }
+            Has0x12::Has0x12 { .. } => panic!("an absent chain holds no marker"),
+        }
+        assert_eq!(v.encode_to_vec(), frame.to_vec());
     }
 
     #[test]
-    fn the_encoder_reads_the_marker_through_the_same_mask() {
-        // The chain carries the marker with its continuation flag set; the
-        // plain layout is supplied. The encoder must see the marker, and so
-        // the contradiction, rather than read 0x92 as some other kind.
-        let mut v = decode_frame(&MARKER_THEN_ENTRY);
-        v.slice_count = None;
-        v.slices = None;
-        v.payload_len = Some(2);
-        v.payload = Some(&[0xAA, 0xBB]);
-        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
-
-        // The converse: the chain has no marker, so the plain layout is owed,
-        // and it is withheld.
-        let mut v = decode_frame(&SAME_ID_NOT_MANDATORY_THEN_ENTRY);
-        v.payload_len = None;
-        v.payload = None;
-        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
+    fn a_chain_and_its_layout_cannot_disagree() {
+        // The marker read through the same mask the gate reads (0x92 is the
+        // marker with its continuation flag set). A chain that holds it is no
+        // chain of the side without the marker, and a place after it is not
+        // its first: neither is a value, so the contradiction the encode once
+        // refused cannot be presented.
+        let marker = CodecZenohExtEntry {
+            header: 0x92,
+            body: CodecZenohExtEntryVariant::CodecZenohExtUnit(Default::default()),
+        };
+        let held = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[marker])
+            .expect("one entry");
+        assert!(Except::<_, MarkerKey, 4, 1>::new(held.clone()).is_none());
+        assert!(Placed::<_, MarkerKey, 4>::new(held, 1).is_none());
     }
 }
 "#;

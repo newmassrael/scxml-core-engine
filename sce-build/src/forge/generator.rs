@@ -7091,6 +7091,45 @@ pub(crate) const ORIGIN_PARAM: &str = "origin";
 /// nested bodies are projected the same way. The returned FIELD TYPE is the
 /// same either way — the origin changes how a container is made, not what it
 /// is.
+/// The entry type of the owned form of the list `f` and the projection of one
+/// decoded entry into it: a borrowed entry's own storage-generic mirror, into
+/// which the parent's profile is threaded, or a non-borrowed entry moved as it
+/// is (`Ok` as the projection, not a closure — `clippy::redundant_closure`).
+/// The owned form of a list, and of a chain a membership refines, project their
+/// entries alike (docs/adr/0065 §6 R2, R6a).
+fn rust_owned_list_entry(
+    f: &CodecField,
+    codec_name: &str,
+    imports: &[ImportContext],
+    l: &LangCtx,
+    origin: bool,
+) -> Result<(String, String), ForgeError> {
+    let alias = crate::forge::codec_totality::child_alias(f)
+        .expect("parser sets the body alias for every repeat / tlv-chain field");
+    let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
+    Ok(if import_codec_borrowed(imports, alias) {
+        (
+            format!("{body_type}Owned<{STORAGE_PARAM}>"),
+            if origin {
+                format!("|_e| _e.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})")
+            } else {
+                format!("|_e| _e.{OWNED_IN_FN}::<{STORAGE_PARAM}>()")
+            },
+        )
+    } else {
+        (body_type, "Ok".to_string())
+    })
+}
+
+/// The storage profile's container that holds the entries `entry` of the list
+/// `f` in its owned form, sized to the list's bound.
+fn rust_owned_list(f: &CodecField, entry: &str) -> String {
+    format!(
+        "{STORAGE_PARAM}::List<{entry}, {}>",
+        crate::forge::codec_totality::list_bound(f)
+    )
+}
+
 fn rust_owned_field_keys(
     f: &CodecField,
     codec_name: &str,
@@ -7123,38 +7162,19 @@ fn rust_owned_field_keys(
     let mut call_path: Option<String> = None;
 
     let (inner_ty, conv): (String, Conv) = if f.is_repeat() || f.is_tlv_chain() {
-        let alias = if f.is_repeat() {
-            f.repeat_body_alias.as_deref()
-        } else {
-            f.tlv_chain_body_alias.as_deref()
-        }
-        .expect("parser sets the body alias for every repeat / tlv-chain field");
-        let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
         // The list's bound, which the profile's container holds as its declared
         // capacity and a `Bounded` around it holds as a fact (docs/adr/0065 §6
         // R2): a growable profile's container is not bounded by its capacity.
         // A chain closed by an entry flag is one entry or more (R7).
-        let bound = crate::forge::codec_totality::list_bound(f);
         let bounds = crate::forge::codec_totality::list_bound_args(f);
-        let bounded = |entry: &str| {
-            format!("{RUNTIME_CODEC}::Bounded<{STORAGE_PARAM}::List<{entry}, {bound}>, {bounds}>")
-        };
-        // A borrowed body has its own storage-generic mirror and threads the
-        // parent's profile into it; a non-borrowed body is already owned and
-        // moves through element-wise unchanged (`Ok` as the projection, not a
-        // closure — `clippy::redundant_closure`).
-        if import_codec_borrowed(imports, alias) {
-            (
-                bounded(&format!("{body_type}Owned<{STORAGE_PARAM}>")),
-                Conv::List(if origin {
-                    format!("|_e| _e.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})")
-                } else {
-                    format!("|_e| _e.{OWNED_IN_FN}::<{STORAGE_PARAM}>()")
-                }),
-            )
-        } else {
-            (bounded(&body_type), Conv::List("Ok".to_string()))
-        }
+        let (entry, elem) = rust_owned_list_entry(f, codec_name, imports, l, origin)?;
+        (
+            format!(
+                "{RUNTIME_CODEC}::Bounded<{}, {bounds}>",
+                rust_owned_list(f, &entry)
+            ),
+            Conv::List(elem),
+        )
     } else if f.is_embed() {
         let alias = f
             .embed_body_alias
@@ -7311,7 +7331,8 @@ fn rust_group_storage(
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
     use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
-        group_accessor, group_arm_name, group_type, member_varies,
+        chain_arm_type, group_accessor, group_arm_name, group_type, held_chain_key, key_type,
+        member_varies,
     };
     let roles = crate::forge::codec_roles::classify(m, imports);
     if roles.groups.is_empty() {
@@ -7419,12 +7440,25 @@ fn rust_group_storage(
                 pattern
             }
         };
+        // The type an element has in one form, as `ty_key` says: the chain of a
+        // membership as the list both arms refine, which a view reads without
+        // the named entry (docs/adr/0065 §6 R6a).
+        let member_ty = |f: &CodecField, ty_key: &str| -> String {
+            let ty = present(&str_of(obj_of(f), ty_key).unwrap_or_default());
+            match (held_chain_key(group, f), ty_key) {
+                (None, _) => ty,
+                (Some(_), "view_rs_type") => {
+                    format!("{RUNTIME_CODEC}::Without<{}>", bounded_list(&ty))
+                }
+                (Some(_), _) => bounded_list(&ty),
+            }
+        };
         // The group's type in one form: each varying element as `ty_key` says.
         let type_in = |ty_key: &str| -> String {
             let args: Vec<String> = members
                 .iter()
                 .filter(|f| member_varies(f))
-                .map(|f| present(&str_of(obj_of(f), ty_key).unwrap_or_default()))
+                .map(|f| member_ty(f, ty_key))
                 .collect();
             let inner = if args.is_empty() {
                 ty.clone()
@@ -7464,6 +7498,11 @@ fn rust_group_storage(
                                         && &c.field_id == carrier
                                         && &c.flag_name == flag
                                 }
+                                crate::forge::codec_roles::GateVar::Member { chain, key } => {
+                                    c.scope == PresentIfScope::Chain
+                                        && &c.field_id == chain
+                                        && c.entry_id == Some(*key)
+                                }
                             };
                             if reads {
                                 return Some(c);
@@ -7481,11 +7520,58 @@ fn rust_group_storage(
                 present_if_test_literal(&m.fields, &holds, l.lang)
             })
             .collect();
-        let build = |fs: &[&CodecField]| -> String {
-            fs.iter()
+        // The chain of a membership, decoded whole into its local, as `arm`
+        // holds it (docs/adr/0065 §6 R6a): placed at its first entry of the
+        // kind where the gate holds, the chain with none where it does not. A
+        // view holds the chain over its bytes, so it reads the others without
+        // the named entry. The gate the decode tested says which, so neither
+        // construction can fail.
+        let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
+            let local = codec_field_decode_local(&f.id, l.lang);
+            let key = key_type(&struct_name, group);
+            let bound = crate::forge::codec_totality::list_bound(f);
+            let list = if f.present_if.is_some() {
+                format!("{local}.expect(\"the gate found the chain\").into_inner()")
+            } else {
+                format!("{local}.into_inner()")
+            };
+            if arm.values == [true] {
+                let place = if view {
+                    format!("{RUNTIME_CODEC}::place_first_in::<_, {key}, {bound}>({list})")
+                } else {
+                    format!("{RUNTIME_CODEC}::place_first::<_, {key}, {bound}, {bound}>({list})")
+                };
+                return format!(
+                    "{}: match {place} {{ Ok(_p) => _p, Err(_) => unreachable!(\"the gate found an entry of the kind\") }}",
+                    acc(f)
+                );
+            }
+            let refined = |list: &str| {
+                let list = if view {
+                    format!("{RUNTIME_CODEC}::Without::whole({list})")
+                } else {
+                    list.to_string()
+                };
+                format!("{RUNTIME_CODEC}::Except::new({list}).expect(\"the gate found no entry of the kind\")")
+            };
+            if f.present_if.is_some() {
+                format!(
+                    "{}: {local}.map(|_l| {})",
+                    acc(f),
+                    refined("_l.into_inner()")
+                )
+            } else {
+                format!("{}: {}", acc(f), refined(&list))
+            }
+        };
+        let build = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| -> String {
+            arm.1
+                .iter()
                 .map(|f| {
                     let local = codec_field_decode_local(&f.id, l.lang);
-                    if f.present_if.is_some() {
+                    if held_chain_key(group, f).is_some() {
+                        chain_built(f, arm.0, view)
+                    } else if f.present_if.is_some() {
                         format!("{}: {local}.unwrap_or_default()", acc(f))
                     } else {
                         shorthand(&acc(f), &local)
@@ -7494,37 +7580,44 @@ fn rust_group_storage(
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let built = |arm: &(&GroupArm, Vec<&CodecField>, String)| {
-            held(format!("{} {{ {} }}", arm.2, build(&arm.1)))
+        let built = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| {
+            held(format!("{} {{ {} }}", arm.2, build(arm, view)))
         };
-        let assign = if let [test] = tests.as_slice() {
-            // One gate: the arm it holds in, and the other arm or none.
-            let on = arms.iter().find(|a| a.0.values == [true]);
-            let off = arms.iter().find(|a| a.0.values == [false]);
-            let value = |arm: Option<&(&GroupArm, Vec<&CodecField>, String)>| {
-                arm.map_or_else(|| "None".to_string(), built)
-            };
-            format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))
-        } else {
-            // A disjunction: each arm under the values it names, and none
-            // under the one assignment that does not satisfy it.
-            let mut cases: Vec<String> = arms
-                .iter()
-                .map(|arm| {
-                    let values = arm
-                        .0
-                        .values
-                        .iter()
-                        .map(bool::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("({values}) => {},", built(arm))
-                })
-                .collect();
-            cases.push("_ => None,".to_string());
-            format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
+        let assign_in = |view: bool| -> String {
+            if let [test] = tests.as_slice() {
+                // One gate: the arm it holds in, and the other arm or none.
+                let on = arms.iter().find(|a| a.0.values == [true]);
+                let off = arms.iter().find(|a| a.0.values == [false]);
+                let value = |arm: Option<&(&GroupArm, Vec<&CodecField>, String)>| {
+                    arm.map_or_else(|| "None".to_string(), |arm| built(arm, view))
+                };
+                format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))
+            } else {
+                // A disjunction: each arm under the values it names, and none
+                // under the one assignment that does not satisfy it.
+                let mut cases: Vec<String> = arms
+                    .iter()
+                    .map(|arm| {
+                        let values = arm
+                            .0
+                            .values
+                            .iter()
+                            .map(bool::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("({values}) => {},", built(arm, view))
+                    })
+                    .collect();
+                cases.push("_ => None,".to_string());
+                format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
+            }
         };
-        entry.insert("assign_expr".into(), assign.into());
+        entry.insert("assign_expr".into(), assign_in(false).into());
+        // A view builds the chain of a membership over its bytes, which the
+        // eager decode's construction does not take (docs/adr/0065 §6 R6a).
+        if emit_views && group.member().is_some() {
+            entry.insert("view_assign_expr".into(), assign_in(true).into());
+        }
 
         // The owned form: each element projected as its field is.
         let owned_conv = |origin: bool| -> Result<String, ForgeError> {
@@ -7535,9 +7628,45 @@ fn rust_group_storage(
             // from its elements projected.
             let mut cases: Vec<(String, String)> = Vec::new();
             let mut fallible = false;
-            for (_, fs, path) in &arms {
+            for (arm, fs, path) in &arms {
                 let mut convs: Vec<String> = Vec::new();
                 for f in fs {
+                    if held_chain_key(group, f).is_some() {
+                        // The chain of a membership: its list projected, and the
+                        // refinement made again over the owned entries, which
+                        // keep each entry's identifier (docs/adr/0065 §6 R6a).
+                        let (_, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
+                        let collect = |list: &str| {
+                            format!(
+                                "::sce_forge_runtime::storage::try_collect_list({list}, {elem})?"
+                            )
+                        };
+                        let a = acc(f);
+                        let expr = if arm.values == [true] {
+                            format!(
+                                "{{ let (_r, _p) = {a}.into_parts(); {RUNTIME_CODEC}::Placed::from_list({}, _p).expect(\"the projection keeps each entry's identifier\") }}",
+                                collect("_r")
+                            )
+                        } else {
+                            let refined = |list: &str| {
+                                format!(
+                                    "{RUNTIME_CODEC}::Except::from_list({}).expect(\"the projection keeps each entry's identifier\")",
+                                    collect(list)
+                                )
+                            };
+                            if f.present_if.is_some() {
+                                format!(
+                                    "match {a} {{ Some(_l) => Some({}), None => None }}",
+                                    refined("_l.into_inner()")
+                                )
+                            } else {
+                                refined(&format!("{a}.into_inner()"))
+                            }
+                        };
+                        fallible = true;
+                        convs.push(format!("{a}: {expr}"));
+                        continue;
+                    }
                     let mut value = (*f).clone();
                     value.present_if = None;
                     let (_, expr) =
@@ -7582,15 +7711,38 @@ fn rust_group_storage(
                 .iter()
                 .filter(|f| member_varies(f))
                 .map(|f| {
+                    // The chain of a membership as the list both arms refine.
+                    if held_chain_key(group, f).is_some() {
+                        return rust_owned_list_entry(f, &m.name, imports, l, false)
+                            .map(|(entry, _)| rust_owned_list(f, &entry));
+                    }
                     let mut value = (*f).clone();
                     value.present_if = None;
                     rust_owned_field_keys(&value, &m.name, imports, l, false, None).map(|(t, _)| t)
                 })
                 .collect::<Result<_, _>>()?;
+            // A group whose elements take the storage profile's containers is
+            // named once for the owned form, `{Group}Owned<S>`, as the form's
+            // own types are, so its field reads as one type and not as the
+            // whole instantiation. An alias does not check the bounds of its
+            // parameter, so its containers are named through the profile's
+            // trait.
             let inner = if args.is_empty() {
                 ty.clone()
             } else {
-                format!("{ty}<{}>", args.join(", "))
+                let alias = format!("{ty}Owned");
+                entry.insert(
+                    "rs_owned_alias".into(),
+                    format!(
+                        "/// The group `{ty}` as `{struct_name}Owned` holds it, in the storage\n\
+                         /// profile `{STORAGE_PARAM}`.\n\
+                         #[allow(dead_code)]\n\
+                         pub type {alias}<{STORAGE_PARAM}> = {};",
+                        qualify_storage(&format!("{ty}<{}>", args.join(", ")))
+                    )
+                    .into(),
+                );
+                format!("{alias}<{STORAGE_PARAM}>")
             };
             if optional {
                 format!("Option<{inner}>")
@@ -7600,22 +7752,53 @@ fn rust_group_storage(
         };
         entry.insert("rs_owned_type".into(), owned_ty.into());
 
+        // The chain of a membership built in the destination's list from the
+        // entries `fill` makes of `list` (a reference to the source's list),
+        // refined again as `arm` holds it, which the entries' identifiers,
+        // kept by the projection, make so (docs/adr/0065 §6 R6a).
+        let chain_into =
+            |f: &CodecField, arm: &GroupArm, src: &str, fill: &dyn Fn(&str) -> String| -> String {
+                let expect = ".expect(\"the projection keeps each entry's identifier\")";
+                if arm.values == [true] {
+                    return format!(
+                        "{RUNTIME_CODEC}::Placed::new({}, {src}.place()){expect}",
+                        fill(&format!("{src}.rest()"))
+                    );
+                }
+                let refined =
+                    |list: &str| format!("{RUNTIME_CODEC}::Except::new({}){expect}", fill(list));
+                if f.present_if.is_some() {
+                    format!(
+                        "match {src} {{ Some(_l) => Some({}), None => None }}",
+                        refined("_l.inner()")
+                    )
+                } else {
+                    refined(&format!("{src}.inner()"))
+                }
+            };
         // A projection into a destination: each element built in a local of
         // the destination's type, then the side made of them.
         let into_dest = |lifetime: Option<(&str, &str)>,
-                         stmt: &dyn Fn(&CodecField, &str, &str) -> Result<String, ForgeError>|
+                         stmt: &dyn Fn(&CodecField, &str, &str) -> Result<String, ForgeError>,
+                         fill: &dyn Fn(&CodecField, &str) -> String|
          -> Result<String, ForgeError> {
             if !varies {
                 return Ok(format!("_out.{accessor} = self.{accessor};"));
             }
             let mut cases: Vec<String> = Vec::new();
-            for (_, fs, path) in &arms {
+            for (arm, fs, path) in &arms {
                 let mut body = String::new();
                 for f in fs {
                     let local = format!("_o_{}", acc(f));
                     let mut t = present(&str_of(obj_of(f), "rs_type").unwrap_or_default());
                     if let Some((from, to)) = lifetime {
                         t = t.replace(from, to);
+                    }
+                    if held_chain_key(group, f).is_some() {
+                        let t = chain_arm_type(&struct_name, group, f, arm, &bounded_list(&t));
+                        let value = chain_into(f, arm, &acc(f), &|list| fill(f, list));
+                        body.push_str(&format!("                let {local}: {t} = {value};\n"));
+                        continue;
                     }
                     body.push_str(&format!(
                         "                let mut {local}: {t} = Default::default();\n                {}\n",
@@ -7641,29 +7824,97 @@ fn rust_group_storage(
                 cases.concat()
             ))
         };
-        let as_borrowed = into_dest(Some(("'a", "'o")), &|f, src, dest| {
-            let mut value = f.clone();
-            value.present_if = None;
-            rust_as_borrowed_field_into_stmt(&value, imports, l, Some((src, dest)))
-        })?;
+        let as_borrowed = into_dest(
+            Some(("'a", "'o")),
+            &|f, src, dest| {
+                let mut value = f.clone();
+                value.present_if = None;
+                rust_as_borrowed_field_into_stmt(&value, imports, l, Some((src, dest)))
+            },
+            // An owned chain's entries re-borrowed into the builder's list.
+            &|f, list| {
+                let elem = rust_as_borrowed_list_entry(
+                    imports,
+                    crate::forge::codec_totality::child_alias(f).unwrap_or_default(),
+                );
+                format!(
+                    "{{ let mut _v = HeaplessVec::new(); {RUNTIME_CODEC}::try_project_bounded_into(&mut _v, {list}, |_e| {elem})?; _v }}"
+                )
+            },
+        )?;
         entry.insert("rs_as_borrowed_into_stmt".into(), as_borrowed.into());
 
         if emit_views {
             entry.insert("view_rs_type".into(), type_in("view_rs_type").into());
-            let into_builder = into_dest(None, &|f, src, dest| {
-                let entry_type = match crate::forge::codec_totality::child_alias(f) {
-                    Some(alias) if !f.is_embed() => {
-                        resolve_repeat_body_type(&m.name, alias, imports, l.lang)?
-                    }
-                    _ => String::new(),
-                };
-                Ok(rust_view::into_builder_member(f, src, dest, &entry_type))
-            })?;
+            let into_builder = into_dest(
+                None,
+                &|f, src, dest| {
+                    let entry_type = match crate::forge::codec_totality::child_alias(f) {
+                        Some(alias) if !f.is_embed() => {
+                            resolve_repeat_body_type(&m.name, alias, imports, l.lang)?
+                        }
+                        _ => String::new(),
+                    };
+                    Ok(rust_view::into_builder_member(f, src, dest, &entry_type))
+                },
+                // A view's chain walked into the builder's list, each entry
+                // built where it sits from its view.
+                &|_, list| {
+                    format!(
+                        "{{ let mut _v = HeaplessVec::new(); for _e in {RUNTIME_CODEC}::Entries::entries({list}) {{ _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() {{ _e.into_builder(_slot)?; }} }} _v }}"
+                    )
+                },
+            )?;
             entry.insert("view_into_builder_stmt".into(), into_builder.into());
         }
         stored.push(serde_json::Value::Object(entry));
     }
     Ok((stored, wire))
+}
+
+/// `ty` with each container of the storage profile named through the profile's
+/// trait (`<S as CodecStorage>::List<..>` for `S::List<..>`): the spelling a type
+/// alias needs, since an alias does not check the bound its parameter would
+/// give the shorter path.
+fn qualify_storage(ty: &str) -> String {
+    let short = format!("{STORAGE_PARAM}::");
+    let qualified = format!("<{STORAGE_PARAM} as {RUNTIME_CODEC}::CodecStorage>::");
+    let mut out = String::with_capacity(ty.len());
+    let mut rest = ty;
+    while let Some(at) = rest.find(&short) {
+        let before = rest[..at].chars().next_back();
+        out.push_str(&rest[..at]);
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == ':') {
+            out.push_str(&short);
+        } else {
+            out.push_str(&qualified);
+        }
+        rest = &rest[at + short.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The list a `Bounded` type `ty` holds (`Bounded<L, MAX, MIN>`, spelled with
+/// or without the runtime's path): its first type argument, read at the top
+/// level of the angle brackets. A chain whose membership a group holds keeps
+/// the list and leaves the bounds to the arm's refinement (docs/adr/0065 §6
+/// R6a).
+fn bounded_list(ty: &str) -> String {
+    let args = ty
+        .strip_prefix(&format!("{RUNTIME_CODEC}::Bounded<"))
+        .or_else(|| ty.strip_prefix("Bounded<"))
+        .expect("a list field's type is a Bounded");
+    let mut depth = 0usize;
+    for (at, c) in args.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => return args[..at].to_string(),
+            _ => {}
+        }
+    }
+    unreachable!("a Bounded names its list and its bound")
 }
 
 /// The field `name` of a struct literal set to `value`: the shorthand where the
@@ -7714,6 +7965,21 @@ fn replace_place(text: &str, place: &str, local: &str) -> String {
 /// fallible (`?`); the enclosing method is `try_as_borrowed_into -> Result`
 /// exactly when [`codec_self_as_borrowed_fallible`] holds, so the `?` here
 /// always lands in a `Result` context. Rust-only.
+/// The projection of one owned entry of a list whose entry codec is imported
+/// as `alias` into the borrowed view's entry: a borrowed entry re-borrowed
+/// (its own projection, fallible where it holds a list), a non-borrowed one
+/// cloned. A list and a chain a membership refines project alike
+/// (docs/adr/0065 §6 R6a).
+fn rust_as_borrowed_list_entry(imports: &[ImportContext], alias: &str) -> &'static str {
+    if !import_codec_borrowed(imports, alias) {
+        "Ok(_e.clone())"
+    } else if import_codec_as_borrowed_fallible(imports, alias) {
+        "_e.try_as_borrowed()"
+    } else {
+        "Ok(_e.as_borrowed())"
+    }
+}
+
 fn rust_as_borrowed_field_into_stmt(
     f: &CodecField,
     imports: &[ImportContext],
@@ -7743,13 +8009,7 @@ fn rust_as_borrowed_field_into_stmt(
             f.tlv_chain_body_alias.as_deref()
         }
         .expect("parser sets the body alias for every repeat / tlv-chain field");
-        let elem = if !import_codec_borrowed(imports, alias) {
-            "Ok(_e.clone())"
-        } else if import_codec_as_borrowed_fallible(imports, alias) {
-            "_e.try_as_borrowed()"
-        } else {
-            "Ok(_e.as_borrowed())"
-        };
+        let elem = rust_as_borrowed_list_entry(imports, alias);
         // A builder's list of one entry or more is a `Bounded` filled where it
         // sits through its `refill` (docs/adr/0065 §6 R7); the owned list it is
         // projected from holds as many entries.

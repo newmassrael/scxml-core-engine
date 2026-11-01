@@ -506,10 +506,17 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
         ],
     ),
     // The marker extension (0x12) in the chain brings the slice count in place
-    // of the payload; without the chain the payload is on the wire.
+    // of the payload; without the chain the payload is on the wire. The third
+    // frame has the marker between two other extensions (0x92: the marker with
+    // a successor), the place a value holds and writes back
+    // (docs/adr/0065 §6 R6a).
     (
         "codec_chain_has_marker",
-        &[&[0x80, 0x12, 0x00], &[0x00, 0x01, 0xAA]],
+        &[
+            &[0x80, 0x12, 0x00],
+            &[0x00, 0x01, 0xAA],
+            &[0x80, 0x81, 0x92, 0x03, 0x00],
+        ],
     ),
     // An entry that follows the marker (0x4) has the long value; the others the
     // short one. The second frame has the entry's tag too.

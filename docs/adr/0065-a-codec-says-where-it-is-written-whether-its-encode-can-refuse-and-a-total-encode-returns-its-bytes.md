@@ -343,6 +343,22 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   `new` against the bound, the end of the list and the first-occurrence rule). The encode walks a `Placed` as
   `Slots`, each entry and `Slot::Named` at the place, and a walk whose entries disagree with their count panics
   as a bounded walk does.
+  *R6a landed 2026-11-01.* The runtime's types first took the chain's bounds: `Except<L, K, MAX, MIN>` counts the
+  chain, `Placed<L, K, MAX>`'s `MAX` is the chain's, so both arms hold the one list `L`, and either is walked as
+  `Slots`; `place_first` splits a decoded chain at its first entry of the kind, and `Without` reads a view's
+  chain without the named entry, since a span of bytes cannot leave a middle entry out.
+  - `codec_roles::named_entry_is_bare` says whether the entry a gate names is its identifier alone: the identifier
+    is a whole flags carrier, the flags it leaves out are the chain's own, the carrier is the entry's one field,
+    and the variant arm the identifier's tag selects presents nothing. Both import paths supply the entry's shape
+    (`EntryShape`), so the analysis and the generation agree.
+  - Such a gate is `GateVar::Member`, and its group holds the chain in both arms before the fields of each side;
+    the gate stays in `checks` for an encode that holds no group, and `source_checks` leaves it out.
+  - The source trait presents the group with the chain as one `BoundedIter` both arms refine, so a hand-written
+    source cannot present a chain that disagrees with its fields. The encode binds the chain as `Slots` from the
+    arm the value holds and writes `Slot::Named` from the kind's entry (`{Group}Key::named()`, the decoded entry
+    with the identifier and the empty arm). A delegating `Either` over the entry's source was not possible: a
+    variant's source holds references to its arm bodies, which such a value would have to make itself.
+  - `chain_has_marker`, the conformance mirror of the consumer's `put`, became total and lost its declaration.
 - **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
   clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
   grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte

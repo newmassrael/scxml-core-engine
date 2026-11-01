@@ -461,6 +461,55 @@ fn a_negated_gate_is_derived_from_the_absence() {
 }
 
 #[test]
+fn a_chains_membership_of_a_bare_entry_is_a_group_that_holds_the_chain() {
+    // The marker 0x12 is all its value is, so the gate on it is a group whose
+    // arms each hold the chain, refined, with the fields of each side, and no
+    // check is left for a source (docs/adr/0065 §6 R6a). The check stays for an
+    // encode that holds no group.
+    let roles = roles_of("codec_chain_has_marker");
+    let group = roles
+        .groups
+        .iter()
+        .find(|g| g.member().is_some())
+        .unwrap_or_else(|| panic!("{}", roles.table()));
+    assert_eq!(group.member(), Some(("extensions", 0x12)));
+    let fields: Vec<(&[bool], &[String])> = group
+        .arms
+        .iter()
+        .map(|a| (a.values.as_slice(), a.fields.as_slice()))
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            (
+                &[true][..],
+                &["extensions".to_string(), "slices".to_string()][..]
+            ),
+            (
+                &[false][..],
+                &["extensions".to_string(), "payload".to_string()][..]
+            ),
+        ]
+    );
+    assert!(group.absent.is_none());
+    assert!(roles.source_checks().next().is_none(), "{}", roles.table());
+    assert!(!roles.checks.is_empty(), "{}", roles.table());
+}
+
+#[test]
+fn a_chains_membership_of_an_entry_with_content_stays_a_check() {
+    // `has(0x2)` names an entry by its 4-bit id alone, which leaves the entry
+    // its mandatory bit and its body: that is R6b, and the gate stays a check.
+    let roles = roles_of("codec_chain_has_envelope");
+    assert!(
+        roles.groups.iter().all(|g| g.member().is_none()),
+        "{}",
+        roles.table()
+    );
+    assert!(roles.source_checks().next().is_some(), "{}", roles.table());
+}
+
+#[test]
 fn a_disjunction_of_the_codecs_own_flags_is_a_group_of_its_assignments() {
     // Each assignment that satisfies the gate is an arm, and each flag is
     // derived from the arm a value holds (docs/adr/0065 §6 R4c). The gate stays

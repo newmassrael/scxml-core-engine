@@ -1,0 +1,34 @@
+# Mutation cases for "a chain gate on a bare entry holds the chain in its arms".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_gate_on_a_bare_entry_holds_the_chain_in_its_arms.cases`.
+#
+# A gate `chain.has(k)` whose named entry holds nothing but its identifier is a
+# group of the chain (docs/adr/0065 §6 R6a): where the gate holds, the value
+# holds the other entries and the named entry's place, and the encode writes
+# the named entry there; where it does not, the chain has no entry of the kind.
+# The conformance crate generates its codecs from the documents when it
+# builds, so each case reaches the codec the `memberships` tests decode and
+# encode: a walk that writes the named entry after the others, which moves the
+# marker of a frame that holds it between two entries, and a judgement that
+# finds no entry bare, which leaves the gate a check the document no longer
+# declares, so the codec does not generate.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets backends/rust/forge-runtime/src/membership.rs sce-build/src/forge/codec_roles.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "the named entry is written after the others" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''            place: Some(self.place),''',
+     r'''            place: Some(self.rest.entry_count()),''')
+PY
+
+mutation_case "no named entry is bare" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''    if id.carrier.is_some() || shape.fields.len() != 1 {''',
+     r'''    if true || id.carrier.is_some() || shape.fields.len() != 1 {''')
+PY

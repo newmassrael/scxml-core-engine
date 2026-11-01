@@ -272,7 +272,9 @@ pub use crate::storage::*;
 pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // A list of at most its bound (docs/adr/0065 §6 R2), spelled from the same path.
 pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Entries};
-pub use crate::membership::{place_first, Except, Key, Placed, SkipAt, Slot, Slots, Without};
+pub use crate::membership::{
+    place_first, place_first_in, Except, Key, OfKind, Placed, SkipAt, Slot, Slots, Without,
+};
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     /// A fixed-capacity `from_slice` past its bound is the same

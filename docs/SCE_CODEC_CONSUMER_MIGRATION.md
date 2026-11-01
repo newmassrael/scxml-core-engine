@@ -163,3 +163,20 @@ Landing: the commit that adds this section.
   bound of the others. Neither type had a user outside the runtime.
 - The runtime adds `place_first` (a decoded chain placed at its first entry of the kind), `Without` and `SkipAt` (a
   list read without one entry, which a view holds), and `Except::slots`, so either arm is walked as `Slots`.
+
+## A gate on a chain's bare entry is a group of the chain (ADR 0065 §6 R6a)
+
+Landing: the commit that adds this section.
+
+- A field gated on `chain.has(k)`, where the entry of kind `k` is its identifier alone (the identifier is the
+  entry's whole flags carrier less the chain's own flag, and the variant arm it selects presents nothing), is
+  held with the chain in one group: `{Codec}{Chain}Has0x{k}`, accessor `{chain}_has_0x{k}`, arms `Has0x{k}` and
+  `NotHas0x{k}`. The chain and the gated fields are no longer fields of their own.
+- In `Has0x{k}` the chain is `Placed<L, {Codec}{Chain}Has0x{k}Key, MAX>`: the other entries and the place of the
+  named entry among them. Build it with `Placed::new(others, place)` (or `Placed::from_list` for a storage
+  profile's list); the encode writes the named entry at the place. In `NotHas0x{k}` it is
+  `Option<Except<L, Key, MAX, MIN>>` (no `Option` for an ungated chain), built with `Except::new(list)`.
+- A decode reads the chain whole and places it at its first entry of the kind, so a frame is written back with
+  its entries where they came.
+- A document whose only refusal was this gate drops `sce:encode-may-fail`; the conformance `chain_has_marker`
+  did. A consumer's `put` that gates its payload on the shared-memory marker follows the same shape.

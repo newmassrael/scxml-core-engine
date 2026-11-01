@@ -806,6 +806,58 @@ mod unknown_tags {
     }
 }
 
+// A gate on a chain's content whose named entry holds nothing but its
+// identifier is a group of the chain (docs/adr/0065 §6 R6a): where the gate
+// holds, the value holds the other entries and the named entry's place among
+// them, and writes the named entry there; where it does not, the chain holds no
+// entry of the kind. The fields the gate decides cannot disagree with the chain.
+mod memberships {
+    use super::codecs::codec_chain_has_marker::{
+        CodecChainHasMarker, CodecChainHasMarkerExtensionsHas0x12 as Has0x12,
+    };
+    use sce_forge_runtime::codec::{SceCursor, VecSink};
+
+    fn encode(value: &CodecChainHasMarker<'_>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let Ok(()) = CodecChainHasMarker::encode_source(value, &mut VecSink::new(&mut bytes));
+        bytes
+    }
+
+    #[test]
+    fn the_named_entry_is_held_at_its_place_and_written_back_there() {
+        // E set; extension 1 with a successor, the marker with a successor,
+        // extension 3, the last; no slices.
+        let frame = [0x80, 0x81, 0x92, 0x03, 0x00];
+        let value = CodecChainHasMarker::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        match &value.extensions_has_0x12 {
+            Has0x12::Has0x12 { extensions, .. } => {
+                assert_eq!(extensions.place(), 1);
+                assert_eq!(extensions.rest().len(), 2);
+            }
+            Has0x12::NotHas0x12 { .. } => panic!("the chain holds the marker"),
+        }
+        assert_eq!(encode(&value), frame);
+    }
+
+    #[test]
+    fn a_chain_without_the_named_entry_is_held_as_one_with_none_of_its_kind() {
+        // E clear: no chain, so no marker, and the payload follows.
+        let frame = [0x00, 0x01, 0xAA];
+        let value = CodecChainHasMarker::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        match &value.extensions_has_0x12 {
+            Has0x12::NotHas0x12 {
+                extensions,
+                payload,
+            } => {
+                assert!(extensions.is_none());
+                assert_eq!(*payload, &[0xAA][..]);
+            }
+            Has0x12::Has0x12 { .. } => panic!("the chain is absent"),
+        }
+        assert_eq!(encode(&value), frame);
+    }
+}
+
 // A chain closed by an entry flag is one entry or more: every entry but the
 // last has the flag set, so the grammar has no word for none. A frame that ends
 // before the chain's first entry is short, gated or not (docs/adr/0065 §6 R7).

@@ -40,8 +40,8 @@ PY
 
 mutation_case "an encode writes the elements of the side the value does not hold" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                        if ids.contains(&f.id) {
-                            format!("Some({})", self.accessor(f))''',
-     r'''                        if !ids.contains(&f.id) {
-                            format!("Some({})", self.accessor(f))''')
+     r'''                        if !arm.fields.contains(&f.id) {
+                            "None".to_string()''',
+     r'''                        if arm.fields.contains(&f.id) {
+                            "None".to_string()''')
 PY

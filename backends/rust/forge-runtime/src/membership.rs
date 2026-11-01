@@ -34,6 +34,69 @@ pub trait Key<E: ?Sized> {
     fn matches(entry: &E) -> bool;
 }
 
+/// A list whose entries can each be asked whether it is of the kind `K`: what
+/// the constructors of [`Except`] and [`Placed`] check a list by.
+///
+/// Each list a codec holds implements it with the bound its own entries need
+/// (`K: Key<T>` for a list of `T`, `K: Key<W::Entry<'a>>` for a view's). One
+/// bound over every lifetime a walk could borrow its list for would hold only
+/// for entries that borrow nothing, which a decoded entry does.
+pub trait OfKind<K> {
+    /// Whether each entry, in order, is of the kind.
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_;
+
+    /// The place of the first entry of the kind, or `None` when there is none.
+    fn first_of_kind(&self) -> Option<usize> {
+        self.kinds().position(|of_kind| of_kind)
+    }
+}
+
+impl<T, K: Key<T>> OfKind<K> for &[T] {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.iter().map(|e| K::matches(e))
+    }
+}
+
+impl<T, const N: usize, K: Key<T>> OfKind<K> for heapless::Vec<T, N> {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.iter().map(|e| K::matches(e))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, K: Key<T>> OfKind<K> for alloc::vec::Vec<T> {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.iter().map(|e| K::matches(e))
+    }
+}
+
+impl<'a, W: crate::view::ListWalk<C>, const C: usize, K: Key<W::Entry<'a>>> OfKind<K>
+    for crate::view::ListView<'a, W, C>
+{
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.iter().map(|e| K::matches(&e))
+    }
+}
+
+impl<I: Iterator + Clone, const MAX: usize, const MIN: usize, K: Key<I::Item>> OfKind<K>
+    for BoundedIter<I, MAX, MIN>
+{
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.clone().map(|e| K::matches(&e))
+    }
+}
+
+impl<L: OfKind<K>, K> OfKind<K> for Without<L> {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        let skip = self.skip;
+        self.list
+            .kinds()
+            .enumerate()
+            .filter(move |(at, _)| Some(*at) != skip)
+            .map(|(_, of_kind)| of_kind)
+    }
+}
+
 /// A chain of at most `MAX` entries and at least `MIN`, held as the list `L`,
 /// none of whose entries is of the kind `K`.
 pub struct Except<L, K, const MAX: usize, const MIN: usize = 0> {
@@ -46,9 +109,9 @@ impl<L: Entries, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
     /// `None` when it holds more or fewer entries or one of the kind.
     pub fn new(list: L) -> Option<Self>
     where
-        K: for<'s> Key<<L::Iter<'s> as Iterator>::Item>,
+        L: OfKind<K>,
     {
-        if !(MIN..=MAX).contains(&list.entry_count()) || list.entries().any(|e| K::matches(&e)) {
+        if !(MIN..=MAX).contains(&list.entry_count()) || list.first_of_kind().is_some() {
             return None;
         }
         Some(Self {
@@ -58,8 +121,10 @@ impl<L: Entries, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
     }
 
     /// The chain as its walk: the same entries with their count, still none of
-    /// the kind.
-    pub fn iter(&self) -> Except<BoundedIter<L::Iter<'_>, MAX, MIN>, K, MAX, MIN> {
+    /// the kind. The walk states the chain's most entries alone, as a walk of
+    /// the other arm does, so both arms' walks are one type; the fewest stay
+    /// this type's.
+    pub fn iter(&self) -> Except<BoundedIter<L::Iter<'_>, MAX>, K, MAX, MIN> {
         Except {
             list: BoundedIter::counted(self.list.entries(), self.list.entry_count()),
             kind: PhantomData,
@@ -91,6 +156,40 @@ impl<L, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
     /// The list.
     pub fn inner(&self) -> &L {
         &self.list
+    }
+
+    /// The list, without its refinement.
+    pub fn into_inner(self) -> L {
+        self.list
+    }
+
+    /// A storage profile's list as a chain with no entry of the kind `K` inside
+    /// the bounds, read through its slice, or `None` when it is not one.
+    pub fn from_list<T>(list: L) -> Option<Self>
+    where
+        L: crate::storage::SceList<T>,
+        K: Key<T>,
+    {
+        let entries = list.as_slice();
+        if !(MIN..=MAX).contains(&entries.len()) || entries.iter().any(|e| K::matches(e)) {
+            return None;
+        }
+        Some(Self {
+            list,
+            kind: PhantomData,
+        })
+    }
+
+    /// A storage profile's chain as its walk, read through its slice.
+    pub fn list_iter<T>(&self) -> Except<BoundedIter<core::slice::Iter<'_, T>, MAX>, K, MAX, MIN>
+    where
+        L: crate::storage::SceList<T>,
+    {
+        let entries = self.list.as_slice();
+        Except {
+            list: BoundedIter::counted(entries.iter(), entries.len()),
+            kind: PhantomData,
+        }
     }
 }
 
@@ -146,10 +245,10 @@ impl<L: Entries, K, const MAX: usize> Placed<L, K, MAX> {
     /// then that one, not the one at `place`).
     pub fn new(rest: L, place: usize) -> Option<Self>
     where
-        K: for<'s> Key<<L::Iter<'s> as Iterator>::Item>,
+        L: OfKind<K>,
     {
         let count = rest.entry_count();
-        if count >= MAX || place > count || rest.entries().take(place).any(|e| K::matches(&e)) {
+        if count >= MAX || place > count || rest.first_of_kind().is_some_and(|at| at < place) {
             return None;
         }
         Some(Self {
@@ -200,6 +299,69 @@ impl<L, K, const MAX: usize> Placed<L, K, MAX> {
     pub fn place(&self) -> usize {
         self.place
     }
+
+    /// The others and the place, without the refinement.
+    pub fn into_parts(self) -> (L, usize) {
+        (self.rest, self.place)
+    }
+
+    /// A storage profile's list of the others with the named entry at `place`,
+    /// read through its slice, or `None` when they do not make such a chain
+    /// ([`Self::new`]).
+    pub fn from_list<T>(rest: L, place: usize) -> Option<Self>
+    where
+        L: crate::storage::SceList<T>,
+        K: Key<T>,
+    {
+        let entries = rest.as_slice();
+        if entries.len() >= MAX
+            || place > entries.len()
+            || entries[..place].iter().any(|e| K::matches(e))
+        {
+            return None;
+        }
+        Some(Self {
+            rest,
+            place,
+            kind: PhantomData,
+        })
+    }
+
+    /// A storage profile's chain as its walk, read through its slice.
+    pub fn list_iter<T>(&self) -> Placed<BoundedIter<core::slice::Iter<'_, T>, MAX>, K, MAX>
+    where
+        L: crate::storage::SceList<T>,
+    {
+        let entries = self.rest.as_slice();
+        Placed {
+            rest: BoundedIter::counted(entries.iter(), entries.len()),
+            place: self.place,
+            kind: PhantomData,
+        }
+    }
+}
+
+/// A list a view holds whole as the others of a chain that holds an entry of
+/// the kind `K`, read without its first entry of the kind, which stands at the
+/// place; `Err` gives the list back when it holds none, or when the others are
+/// past the bound.
+pub fn place_first_in<L: Entries + OfKind<K>, K, const MAX: usize>(
+    list: L,
+) -> Result<Placed<Without<L>, K, MAX>, L> {
+    let Some(place) = list.first_of_kind() else {
+        return Err(list);
+    };
+    if list.entry_count() > MAX {
+        return Err(list);
+    }
+    Ok(Placed {
+        rest: Without {
+            list,
+            skip: Some(place),
+        },
+        place,
+        kind: PhantomData,
+    })
 }
 
 impl<L: Clone, K, const MAX: usize> Clone for Placed<L, K, MAX> {
@@ -295,13 +457,10 @@ impl<I: Iterator> ExactSizeIterator for Slots<I> {}
 /// place of the first entry of the kind, the entry taken out where it stood;
 /// `Err` gives the chain back when it holds no entry of the kind, or when the
 /// others are past the bound.
-pub fn place_first<T, K, const N: usize, const MAX: usize>(
+pub fn place_first<T, K: Key<T>, const N: usize, const MAX: usize>(
     mut list: heapless::Vec<T, N>,
-) -> Result<Placed<heapless::Vec<T, N>, K, MAX>, heapless::Vec<T, N>>
-where
-    K: for<'s> Key<&'s T>,
-{
-    let Some(place) = list.iter().position(|e| K::matches(&e)) else {
+) -> Result<Placed<heapless::Vec<T, N>, K, MAX>, heapless::Vec<T, N>> {
+    let Some(place) = list.iter().position(|e| K::matches(e)) else {
         return Err(list);
     };
     list.remove(place);
@@ -379,22 +538,19 @@ impl<L: Entries + Default> Default for Without<L> {
     }
 }
 
-impl<L: Entries> PartialEq for Without<L>
-where
-    for<'s> <L::Iter<'s> as Iterator>::Item: PartialEq,
-{
-    /// Two lists are equal when they read the same entries in the same order.
+impl<L: PartialEq> PartialEq for Without<L> {
+    /// The same list read without the same entry.
     fn eq(&self, other: &Self) -> bool {
-        self.entry_count() == other.entry_count() && self.entries().eq(other.entries())
+        self.skip == other.skip && self.list == other.list
     }
 }
 
-impl<L: Entries> core::fmt::Debug for Without<L>
-where
-    for<'s> <L::Iter<'s> as Iterator>::Item: core::fmt::Debug,
-{
+impl<L: core::fmt::Debug> core::fmt::Debug for Without<L> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_list().entries(self.entries()).finish()
+        f.debug_struct("Without")
+            .field("list", &self.list)
+            .field("skip", &self.skip)
+            .finish()
     }
 }
 
@@ -423,8 +579,15 @@ impl<I: Iterator> Iterator for SkipAt<I> {
 mod tests {
     use super::*;
 
-    /// The kind of an even number.
+    /// The kind of an even number, over a number and over a reference to one,
+    /// as a generated kind is over every form of its entry.
     struct Even;
+
+    impl Key<u8> for Even {
+        fn matches(entry: &u8) -> bool {
+            *entry % 2 == 0
+        }
+    }
 
     impl Key<&u8> for Even {
         fn matches(entry: &&u8) -> bool {
