@@ -352,6 +352,32 @@ where
     crate::storage::try_collect_list(src.into().into_inner(), f).map(Bounded)
 }
 
+impl<I, const MAX: usize, const MIN: usize> BoundedIter<I, MAX, MIN> {
+    /// `entries` with the count `remaining` that a list already inside the
+    /// bounds was checked to hold: a refined list re-expressed as its walk.
+    pub(crate) fn counted(entries: I, remaining: usize) -> Self {
+        Self {
+            iter: entries,
+            remaining,
+        }
+    }
+}
+
+impl<I: Iterator + Clone, const MAX: usize, const MIN: usize> Entries for BoundedIter<I, MAX, MIN> {
+    type Iter<'s>
+        = Self
+    where
+        Self: 's;
+
+    fn entry_count(&self) -> usize {
+        self.remaining
+    }
+
+    fn entries(&self) -> Self::Iter<'_> {
+        self.clone()
+    }
+}
+
 impl<I: Iterator + Clone, const MAX: usize, const MIN: usize> BoundedIter<I, MAX, MIN> {
     /// `entries` as the entries of a list of at most `MAX` and at least `MIN`,
     /// counted once from a clone, or `None` when there are more or fewer.

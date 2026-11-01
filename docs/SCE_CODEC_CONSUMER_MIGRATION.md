@@ -152,3 +152,13 @@ Landing: `c56b2aae14`.
   No generated codec uses them yet and nothing a consumer wrote changes. They are the types a codec gated on
   `chain.has(k)` will hold once R6a lands: the chain without the named entry where the gate does not hold, and the
   other entries with the named entry's place where it does.
+
+## The refined chains take the chain's bounds (ADR 0065 §6 R6, runtime)
+
+Landing: the commit that adds this section.
+
+- `Except<L, K>` is `Except<L, K, MAX, MIN = 0>`: it counts the chain against its bounds, as `Bounded` does, so it
+  holds the bare list. `Placed<L, K, MAX>`'s `MAX` is the chain's bound, the named entry included, where it was the
+  bound of the others. Neither type had a user outside the runtime.
+- The runtime adds `place_first` (a decoded chain placed at its first entry of the kind), `Without` and `SkipAt` (a
+  list read without one entry, which a view holds), and `Except::slots`, so either arm is walked as `Slots`.
