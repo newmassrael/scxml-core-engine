@@ -52,9 +52,6 @@ func DecodeCodecChainPrevGated(cursor *codec.SceCursor) (*CodecChainPrevGated, e
 		var _prev_entries_after_marker byte
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
-			if cursor.Remaining() == 0 {
-				break
-			}
 			_elem, err := codec_chain_prev_entry.DecodeCodecChainPrevEntry(cursor, _prev_entries_after_marker, byte((Head >> 0) & 0x1))
 			if err != nil {
 				return nil, err

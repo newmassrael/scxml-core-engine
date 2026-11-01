@@ -53,7 +53,6 @@ struct CodecChainHasTagged {
         entries.reserve(3);
         bool _more = false;
         for (std::size_t _i = 0; _i < 3; ++_i) {
-            if (cursor.remaining() == 0) break;
             auto _elem = ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;
             _more = _elem->more();

@@ -44,7 +44,6 @@ struct CodecZenohQueryValue {
         std::uint8_t _prev_exts_after_shm = 0;
         bool _more = false;
         for (std::size_t _i = 0; _i < 4; ++_i) {
-            if (cursor.remaining() == 0) break;
             auto _elem = ::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry::decode(cursor, _prev_exts_after_shm);
             if (!_elem.has_value()) return std::nullopt;
             _more = _elem->z();

@@ -98,7 +98,6 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t
             out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
-                if (sce_forge_cursor_remaining(cursor) == 0) break;
                 sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 size_t _just = out->extensions.value.len;

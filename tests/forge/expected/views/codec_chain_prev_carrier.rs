@@ -97,7 +97,6 @@ impl CodecChainPrevCarrier {
             let mut _prev_entries_after_marker: u8 = 0;
             let mut _more = false;
             for _ in 0..4u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainPrevEntry::decode(cursor, _prev_entries_after_marker, head & 0x1)?;
                 _more = _entry.z();
                 _prev_entries_after_marker = u8::from(u64::from(_entry.ext_id()) == 4u64);
@@ -413,7 +412,6 @@ impl<'a> CodecChainPrevCarrierView<'a> {
             let mut _prev_entries_after_marker: u8 = 0;
             let mut _more = false;
             for _ in 0..4u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainPrevEntryView::decode(cursor, _prev_entries_after_marker, head & 0x1)?;
                 _more = _entry.z();
                 _prev_entries_after_marker = u8::from(u64::from(_entry.ext_id()) == 4u64);

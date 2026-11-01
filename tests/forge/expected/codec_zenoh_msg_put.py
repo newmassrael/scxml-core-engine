@@ -64,8 +64,6 @@ class CodecZenohMsgPut:
                 f_extensions = []
                 _more = False
                 for _ in range(8):
-                    if cursor.remaining() == 0:
-                        break
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None

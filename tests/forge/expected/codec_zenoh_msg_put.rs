@@ -128,7 +128,6 @@ impl<'a> CodecZenohMsgPut<'a> {
             let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 8>::new());
             let mut _more = false;
             for _ in 0..8u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecZenohExtEntry::decode(cursor)?;
                 _more = _entry.z();
                 // Bounded by max-depth on both sides — loop count and `_vec`

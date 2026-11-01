@@ -58,7 +58,6 @@ static inline sce_forge_codec_status_t codec_chain_flag_forward_decode(sce_forge
             out->entries.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
-                if (sce_forge_cursor_remaining(cursor) == 0) break;
                 sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries.value.data[out->entries.value.len], wide);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 size_t _just = out->entries.value.len;

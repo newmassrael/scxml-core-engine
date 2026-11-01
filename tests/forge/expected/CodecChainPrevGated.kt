@@ -113,7 +113,6 @@ data class CodecChainPrevGated(
                 var _prev_entries_after_marker: UByte = 0.toUByte()
                 var _more = false
                 for (_i in 0 until 4) {
-                    if (cursor.remaining() == 0) break
                     val _entry = CodecChainPrevEntry.decode(cursor, _prev_entries_after_marker, (((head.toInt() shr 0) and 0x1).toUByte())) ?: return null
                     _more = _entry.Z()
                     _prev_entries_after_marker = if (((_entry.header).toULong() and 127UL) == 4UL) 1.toUByte() else 0.toUByte()

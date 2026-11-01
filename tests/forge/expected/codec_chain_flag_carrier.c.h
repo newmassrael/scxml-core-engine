@@ -53,7 +53,6 @@ static inline sce_forge_codec_status_t codec_chain_flag_carrier_decode(sce_forge
         out->entries_len = 0;
         bool _more = false;
         for (size_t _i = 0; _i < 4; ++_i) {
-            if (sce_forge_cursor_remaining(cursor) == 0) break;
             sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries[out->entries_len], (uint8_t)((out->head >> 0) & 0x1));
             if (_st != SCE_FORGE_CODEC_OK) return _st;
             size_t _just = out->entries_len;

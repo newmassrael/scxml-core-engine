@@ -47,7 +47,6 @@ static inline sce_forge_codec_status_t codec_zenoh_query_value_decode(sce_forge_
         uint8_t _prev_exts_after_shm = 0;
         bool _more = false;
         for (size_t _i = 0; _i < 4; ++_i) {
-            if (sce_forge_cursor_remaining(cursor) == 0) break;
             sce_forge_codec_status_t _st = codec_zenoh_value_entry_decode(cursor, &out->exts[out->exts_len], _prev_exts_after_shm);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
             size_t _just = out->exts_len;

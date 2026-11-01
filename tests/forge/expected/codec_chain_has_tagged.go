@@ -51,9 +51,6 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 	Entries := make([]codec_chain_has_tagged_entry.CodecChainHasTaggedEntry, 0, 3)
 	_more := false
 	for _i := 0; _i < int(3); _i++ {
-		if cursor.Remaining() == 0 {
-			break
-		}
 		_elem, err := codec_chain_has_tagged_entry.DecodeCodecChainHasTaggedEntry(cursor)
 		if err != nil {
 			return nil, err

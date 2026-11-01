@@ -47,8 +47,6 @@ class CodecChainPrevGated:
                 _prev_entries_after_marker = 0
                 _more = False
                 for _ in range(4):
-                    if cursor.remaining() == 0:
-                        break
                     _elem = CodecChainPrevEntry.decode(cursor, _prev_entries_after_marker, ((f_head >> 0) & 0x1))
                     if _elem is None:
                         return None

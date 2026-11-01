@@ -51,7 +51,6 @@ struct CodecChainFlagCarrier {
         entries.reserve(4);
         bool _more = false;
         for (std::size_t _i = 0; _i < 4; ++_i) {
-            if (cursor.remaining() == 0) break;
             auto _elem = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry::decode(cursor, static_cast<std::uint8_t>((head >> 0) & 0x1));
             if (!_elem.has_value()) return std::nullopt;
             _more = _elem->z();

@@ -48,9 +48,6 @@ func DecodeCodecChainFlagCarrier(cursor *codec.SceCursor) (*CodecChainFlagCarrie
 	Entries := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, 4)
 	_more := false
 	for _i := 0; _i < int(4); _i++ {
-		if cursor.Remaining() == 0 {
-			break
-		}
 		_elem, err := codec_chain_flag_entry.DecodeCodecChainFlagEntry(cursor, byte((Head >> 0) & 0x1))
 		if err != nil {
 			return nil, err

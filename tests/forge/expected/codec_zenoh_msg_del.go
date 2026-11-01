@@ -74,9 +74,6 @@ func DecodeCodecZenohMsgDel(cursor *codec.SceCursor) (*CodecZenohMsgDel, error) 
 		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 8)
 		_more := false
 		for _i := 0; _i < int(8); _i++ {
-			if cursor.Remaining() == 0 {
-				break
-			}
 			_elem, err := codec_zenoh_ext_entry.DecodeCodecZenohExtEntry(cursor)
 			if err != nil {
 				return nil, err

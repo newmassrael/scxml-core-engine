@@ -47,8 +47,6 @@ class CodecChainHasTagged:
             f_entries = []
             _more = False
             for _ in range(3):
-                if cursor.remaining() == 0:
-                    break
                 _elem = CodecChainHasTaggedEntry.decode(cursor)
                 if _elem is None:
                     return None

@@ -54,8 +54,6 @@ class CodecZenohDeclare:
                 f_extensions = []
                 _more = False
                 for _ in range(4):
-                    if cursor.remaining() == 0:
-                        break
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None

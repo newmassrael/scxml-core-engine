@@ -53,7 +53,6 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_envelope_decode(sce_forge
         out->extensions_len = 0;
         bool _more = false;
         for (size_t _i = 0; _i < 8; ++_i) {
-            if (sce_forge_cursor_remaining(cursor) == 0) break;
             sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
             size_t _just = out->extensions_len;

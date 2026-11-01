@@ -76,7 +76,6 @@ data class CodecZenohQueryValue(
                 var _prev_exts_after_shm: UByte = 0.toUByte()
                 var _more = false
                 for (_i in 0 until 4) {
-                    if (cursor.remaining() == 0) break
                     val _entry = CodecZenohValueEntry.decode(cursor, _prev_exts_after_shm) ?: return null
                     _more = _entry.Z()
                     _prev_exts_after_shm = if ((_entry.extId()).toULong() == 4UL) 1.toUByte() else 0.toUByte()

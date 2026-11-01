@@ -37,9 +37,6 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 	var _prev_exts_after_shm byte
 	_more := false
 	for _i := 0; _i < int(4); _i++ {
-		if cursor.Remaining() == 0 {
-			break
-		}
 		_elem, err := codec_zenoh_value_entry.DecodeCodecZenohValueEntry(cursor, _prev_exts_after_shm)
 		if err != nil {
 			return nil, err

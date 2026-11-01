@@ -93,7 +93,6 @@ impl CodecChainFlagCarrier {
             _vec.clear();
             let mut _more = false;
             for _ in 0..4u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainFlagEntry::decode(cursor, head & 0x1)?;
                 _more = _entry.z();
                 // Bounded by max-depth on both sides — loop count and `_vec`

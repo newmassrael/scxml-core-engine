@@ -87,7 +87,6 @@ impl<'a> CodecZenohQueryValue<'a> {
             let mut _prev_exts_after_shm: u8 = 0;
             let mut _more = false;
             for _ in 0..4u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecZenohValueEntry::decode(cursor, _prev_exts_after_shm)?;
                 _more = _entry.z();
                 _prev_exts_after_shm = u8::from(u64::from(_entry.ext_id()) == 4u64);

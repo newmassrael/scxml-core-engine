@@ -97,7 +97,6 @@ impl CodecChainFlagForward {
             let _vec = _out.entries.insert(HeaplessVec::<CodecChainFlagEntry, 4>::new());
             let mut _more = false;
             for _ in 0..4u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainFlagEntry::decode(cursor, wide)?;
                 _more = _entry.z();
                 // Bounded by max-depth on both sides — loop count and `_vec`

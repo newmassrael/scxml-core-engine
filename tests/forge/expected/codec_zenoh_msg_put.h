@@ -71,7 +71,6 @@ struct CodecZenohMsgPut {
             _list.reserve(8);
             bool _more = false;
             for (std::size_t _i = 0; _i < 8; ++_i) {
-                if (cursor.remaining() == 0) break;
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
                 if (!_elem.has_value()) return std::nullopt;
                 _more = _elem->z();

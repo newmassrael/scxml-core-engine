@@ -42,8 +42,6 @@ class CodecZenohQueryValue:
             _prev_exts_after_shm = 0
             _more = False
             for _ in range(4):
-                if cursor.remaining() == 0:
-                    break
                 _elem = CodecZenohValueEntry.decode(cursor, _prev_exts_after_shm)
                 if _elem is None:
                     return None

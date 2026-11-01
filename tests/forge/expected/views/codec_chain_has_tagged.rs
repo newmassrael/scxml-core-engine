@@ -98,7 +98,6 @@ impl CodecChainHasTagged {
             _vec.clear();
             let mut _more = false;
             for _ in 0..3u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainHasTaggedEntry::decode(cursor)?;
                 _more = _entry.more();
                 // Bounded by max-depth on both sides — loop count and `_vec`
@@ -464,7 +463,6 @@ impl<'a> CodecChainHasTaggedView<'a> {
             let mut _count: u32 = 0;
             let mut _more = false;
             for _ in 0..3u32 {
-                if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainHasTaggedEntryView::decode(cursor)?;
                 _more = _entry.more();
                 _count += 1;

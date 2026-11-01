@@ -117,7 +117,6 @@ data class CodecChainHasTagged(
             val entries: MutableList<CodecChainHasTaggedEntry> = mutableListOf<CodecChainHasTaggedEntry>().also {
                 var _more = false
                 for (_i in 0 until 3) {
-                    if (cursor.remaining() == 0) break
                     val _entry = CodecChainHasTaggedEntry.decode(cursor) ?: return null
                     _more = _entry.more()
                     it.add(_entry)
