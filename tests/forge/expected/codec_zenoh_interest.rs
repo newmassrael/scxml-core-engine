@@ -463,6 +463,11 @@ impl<'a> CodecZenohInterest<'a> {
 // so no call site repeats a `sce:max-size` / `sce:max-count` constant.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 use super::codec_zenoh_interest_body::CodecZenohInterestBodyOwned;
+/// The group `CodecZenohInterestHeaderCurrentOrFuture` as `CodecZenohInterestOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecZenohInterestHeaderCurrentOrFutureOwned<S> = CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBodyOwned<S>>;
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
@@ -471,7 +476,7 @@ use super::codec_zenoh_interest_body::CodecZenohInterestBodyOwned;
 pub struct CodecZenohInterestOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub id: u64,
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBodyOwned<S>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFutureOwned<S>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
 }
 

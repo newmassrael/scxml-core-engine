@@ -375,13 +375,18 @@ impl<'a> CodecZenohValueZbuf<'a> {
 // Naming it once is also what lets each field's declared capacity infer,
 // so no call site repeats a `sce:max-size` / `sce:max-count` constant.
 use super::codec_zenoh_value_slice::CodecZenohValueSliceOwned;
+/// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohValueSliceOwned<S>, 4>, 4>, <S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>>;
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohValueZbufOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohValueSliceOwned<S>, 4>, 4>, S::Bytes<32>>,
+    pub after_shm: CodecZenohValueZbufAfterShmOwned<S>,
     pub slice_count: Option<u64>,
 }
 

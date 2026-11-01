@@ -353,6 +353,11 @@ impl<'a> CodecExtEncodingInfo<'a> {
 // types, which cannot be run backwards to recover the profile from a value.
 // Naming it once is also what lets each field's declared capacity infer,
 // so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+/// The group `CodecExtEncodingInfoCombinedIdHasSchema` as `CodecExtEncodingInfoOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecExtEncodingInfoCombinedIdHasSchemaOwned<S> = CodecExtEncodingInfoCombinedIdHasSchema<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<64>>;
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
@@ -360,7 +365,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecExtEncodingInfoOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub combined_id: u32,
-    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<S::Bytes<64>>,
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchemaOwned<S>,
 }
 
 #[allow(dead_code)]

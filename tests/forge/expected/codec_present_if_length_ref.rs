@@ -358,6 +358,11 @@ impl<'a> CodecPresentIfLengthRef<'a> {
 // types, which cannot be run backwards to recover the profile from a value.
 // Naming it once is also what lets each field's declared capacity infer,
 // so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+/// The group `CodecPresentIfLengthRefFlagsHasPayload` as `CodecPresentIfLengthRefOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecPresentIfLengthRefFlagsHasPayloadOwned<S> = CodecPresentIfLengthRefFlagsHasPayload<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>>;
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
@@ -365,7 +370,7 @@ impl<'a> CodecPresentIfLengthRef<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecPresentIfLengthRefOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub flags: u8,
-    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<S::Bytes<32>>,
+    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayloadOwned<S>,
 }
 
 #[allow(dead_code)]
