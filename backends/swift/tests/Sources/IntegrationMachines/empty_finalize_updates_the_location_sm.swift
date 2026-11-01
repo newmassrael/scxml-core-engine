@@ -841,7 +841,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
             invokeID: "inv_empty",
             parentSessionID: sessionID,
             autoforward: false,
-            finalizeScript: "if (_scxml_truthy(_event.data) and (_event.data.tally ~= nil)) then\\n  tally = _event.data.tally\\nend"
+            finalizeScript: "if (_scxml_truthy(_event.data) and (_event.data.tally ~= nil)) then\n  tally = _event.data.tally\nend"
         )
         // W3C SCXML 6.4: the child's delayed sends are measured on this machine's
         // clock, so a delay on either side of the boundary is the same instant and a
@@ -901,7 +901,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
             invokeID: "inv_unmatched",
             parentSessionID: sessionID,
             autoforward: false,
-            finalizeScript: "if (_scxml_truthy(_event.data) and (_event.data.keeper ~= nil)) then\\n  keeper = _event.data.keeper\\nend"
+            finalizeScript: "if (_scxml_truthy(_event.data) and (_event.data.keeper ~= nil)) then\n  keeper = _event.data.keeper\nend"
         )
         // W3C SCXML 6.4: the child's delayed sends are measured on this machine's
         // clock, so a delay on either side of the boundary is the same instant and a

@@ -212,7 +212,7 @@
             invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
             parentSessionID: sessionID,
             autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
-            finalizeScript: "{{ (invoke_info.finalize_content | to_lua_script | escape_swift) if (ecmascript_datamodel and invoke_info.finalize_content) else '' }}"
+            finalizeScript: "{% if ecmascript_datamodel and invoke_info.finalize_content %}{{ invoke_info.finalize_content | to_lua_script | escape_swift }}{% endif %}"
         )
         // W3C SCXML 6.4: the child's delayed sends are measured on this machine's
         // clock, so a delay on either side of the boundary is the same instant and a
