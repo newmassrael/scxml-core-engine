@@ -255,7 +255,14 @@ fn main() {
     let source_fixtures = Path::new(&manifest_dir).join("fixtures");
     println!("cargo:rerun-if-changed={}", source_fixtures.display());
     for fixture in generate_stripped_fixtures(
-        &["codec_source_leaf", "codec_source_parent_tag"],
+        &[
+            "codec_source_leaf",
+            "codec_source_parent_tag",
+            "codec_every_arm_says_near",
+            "codec_every_arm_says_far",
+            "codec_every_arm_says",
+            "codec_every_arm_says_parent",
+        ],
         &source_fixtures,
         &out_dir,
         &options,

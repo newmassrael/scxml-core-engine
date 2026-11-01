@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4d): a variant, every arm of which
+     says the flag input the codec hands it. A value holds one arm, so one thing
+     says the input in any value: the codec says it, and it is total. Its tag is
+     the caller's. Imported by codec_every_arm_says_parent.scxml. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_every_arm_says">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <sce:import src="codec_every_arm_says_near.scxml" kind="codec" as="codec_every_arm_says_near">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
+  <sce:import src="codec_every_arm_says_far.scxml" kind="codec" as="codec_every_arm_says_far">
+    <sce:flag-bind input="bare" source="N"/>
+  </sce:import>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_every_arm_says_far"/>
+      <sce:arm value="0x01" type="codec_every_arm_says_near" default="true"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

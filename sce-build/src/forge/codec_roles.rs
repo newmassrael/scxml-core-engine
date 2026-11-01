@@ -187,6 +187,11 @@ pub enum InputSource {
     /// The group the input decides ([`GateGroup`]): the input is set exactly
     /// when the value holds the group's side present while it holds.
     Group,
+    /// The variant, every arm of which the codec hands the input on to and
+    /// says it (docs/adr/0065 §6 R4d): a value holds one arm, so one thing says
+    /// the input in any value. `arms` maps the alias of each arm's codec to the
+    /// input of it that is bound.
+    EveryArm { arms: BTreeMap<String, String> },
 }
 
 /// What a gate reads: a flag-input of the codec, a one-bit flag of one of its
@@ -885,6 +890,7 @@ impl CodecRoles {
                 } => format!("absence-of({field})"),
                 InputSource::Forward { embed, input, .. } => format!("input-of({embed}.{input})"),
                 InputSource::Group => format!("side-of(group {name})"),
+                InputSource::EveryArm { .. } => "input-of(every arm)".to_string(),
             };
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
         }
@@ -1295,11 +1301,13 @@ pub fn classify_with(
                 continue;
             }
             for site in &held_codec.sites {
-                let derived_from_it = matches!(
-                    (inputs_said.get(name), site),
-                    (Some(InputSource::Forward { embed, .. }), BindSite::Embed { field })
-                        if embed == field
-                );
+                let derived_from_it = match (inputs_said.get(name), site) {
+                    (Some(InputSource::Forward { embed, .. }), BindSite::Embed { field }) => {
+                        embed == field
+                    }
+                    (Some(InputSource::EveryArm { .. }), BindSite::Arm) => true,
+                    _ => false,
+                };
                 if !derived_from_it {
                     input_checks.push(InputCheck {
                         binder: Binder {
@@ -1917,9 +1925,10 @@ fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCod
 
 /// The flag-inputs of `model` its value says (docs/adr/0065 §6 R4a): those
 /// exactly one thing says, a presented field gated on the input alone, the
-/// group of the fields it decides (§6 R4b), or the one body, always there, it
-/// is handed on to, whose codec says it. A length or a count gated with its
-/// content is derived whole and says nothing.
+/// group of the fields it decides (§6 R4b), the one body, always there, it is
+/// handed on to, whose codec says it, or the variant, every arm of which it is
+/// handed on to and whose codec says it (§6 R4d). A length or a count gated
+/// with its content is derived whole and says nothing.
 fn said_inputs(
     model: &CodecModel,
     held: &[HeldCodec],
@@ -1965,6 +1974,14 @@ fn said_inputs(
                 field: field.to_string(),
                 when_clear: *when_clear,
             }),
+            ([], forwards, false) if every_arm_says(model, forwards) => {
+                Some(InputSource::EveryArm {
+                    arms: forwards
+                        .iter()
+                        .map(|(h, bind)| (h.alias.clone(), bind.input.clone()))
+                        .collect(),
+                })
+            }
             ([], [(h, bind)], false) if h.says(&bind.input) => match h.sites.as_slice() {
                 [BindSite::Embed { field }]
                     if model
@@ -1987,6 +2004,34 @@ fn said_inputs(
         }
     }
     said
+}
+
+/// Whether `forwards`, the binds that hand one input on, say it through the
+/// variant of `model`: each is held in arms alone and says the one input it is
+/// bound, and every arm, the default among them, is the codec of one of them.
+/// A value holds one arm, so one thing says the input in any value. A variant
+/// with an arm that says nothing is not this: that arm's value does not say the
+/// input, and the parent still has to be handed it.
+fn every_arm_says(model: &CodecModel, forwards: &[(&HeldCodec, &FlagBind)]) -> bool {
+    let Some(variant) = &model.variant else {
+        return false;
+    };
+    let one_bind_each = forwards
+        .iter()
+        .map(|(h, _)| h.alias.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
+        == forwards.len();
+    !forwards.is_empty()
+        && one_bind_each
+        && forwards
+            .iter()
+            .all(|(h, bind)| h.sites == [BindSite::Arm] && h.says(&bind.input))
+        && variant
+            .arms
+            .iter()
+            .chain(variant.default_arm.iter())
+            .all(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))
 }
 
 /// Whether a clause of `gate` reads the flag-input `name`.

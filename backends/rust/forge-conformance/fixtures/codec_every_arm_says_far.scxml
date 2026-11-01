@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4d): the other arm of
+     codec_every_arm_says. Its value says its flag input under another name and
+     at the other polarity: `bare` is set exactly when its route is absent, so a
+     reading that took the first arm's answer for both gets this arm wrong. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_every_arm_says_far">
+  <sce:flag-inputs>
+    <sce:flag-input name="bare" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="route" sce:type="uint16" sce:byte="0" sce:bit-size="16"
+               sce:present-if="!bare"/>
+  </datamodel>
+</scxml>

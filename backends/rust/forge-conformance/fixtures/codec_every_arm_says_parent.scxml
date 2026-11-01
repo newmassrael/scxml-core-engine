@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4d): a codec that holds
+     codec_every_arm_says. Its header's `N` is the input the arm says and its `M`
+     the arm's tag, so a value presents the arm and neither bit is the value's to
+     get wrong. Wire shape: one header byte, then the arm's body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_every_arm_says_parent">
+  <sce:import src="codec_every_arm_says.scxml" kind="codec" as="codec_every_arm_says">
+    <sce:variant-dispatch flag="header.M"/>
+    <sce:flag-bind input="N" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_every_arm_says" sce:byte="1"/>
+  </datamodel>
+</scxml>

@@ -914,6 +914,37 @@ impl<'a> Plan<'a> {
                 );
                 self.gate_value(group, 0, &held)
             }
+            InputSource::EveryArm { arms } => {
+                let said: Vec<String> = self
+                    .arms()
+                    .iter()
+                    .map(|arm| {
+                        format!(
+                            "{}{} => {}::input_{}(_b),",
+                            arm.cfg_prefix(),
+                            self.arm_pattern(arm),
+                            arm.child.type_name,
+                            filters::to_snake_case(arms[&arm.alias].clone())
+                        )
+                    })
+                    .collect();
+                format!(
+                    "match {}::body({value}) {{ {} }}",
+                    self.trait_name,
+                    said.join(" ")
+                )
+            }
+        }
+    }
+
+    /// The pattern that binds `_b` to the body of `arm` in the value of the
+    /// variant.
+    fn arm_pattern(&self, arm: &Arm) -> String {
+        let enum_name = self.body_enum();
+        if arm.value.is_some() {
+            format!("{enum_name}::{}(_b)", arm.variant_name)
+        } else {
+            format!("{enum_name}::Default {{ body: _b, .. }}")
         }
     }
 
@@ -944,6 +975,7 @@ impl<'a> Plan<'a> {
                         input.name
                     )
                 }
+                InputSource::EveryArm { .. } => "the input the arm it holds says".to_string(),
             };
             out.push_str(&format!(
                 "\x20   /// The flag-input `{name}` that `src` says: {by}.\n\
@@ -1080,18 +1112,17 @@ impl<'a> Plan<'a> {
                 }
             }
             BindSite::Arm => {
-                let enum_name = self.body_enum();
                 let mut arms: Vec<String> = self
                     .arms()
                     .iter()
                     .filter(|arm| arm.alias == binder.alias)
                     .map(|arm| {
-                        let pattern = if arm.value.is_some() {
-                            format!("{enum_name}::{}(_b)", arm.variant_name)
-                        } else {
-                            format!("{enum_name}::Default {{ body: _b, .. }}")
-                        };
-                        format!("{}{pattern} => {} != _h,", arm.cfg_prefix(), says("_b"))
+                        format!(
+                            "{}{} => {} != _h,",
+                            arm.cfg_prefix(),
+                            self.arm_pattern(arm),
+                            says("_b")
+                        )
                     })
                     .collect();
                 arms.push("_ => false,".to_string());
@@ -3140,14 +3171,9 @@ impl<'a> Plan<'a> {
         if self.m().variant.is_none() {
             return;
         }
-        let enum_name = self.body_enum();
         lines.push("match src.body() {".to_string());
         for arm in self.arms() {
-            let pattern = if arm.value.is_some() {
-                format!("{enum_name}::{}(_b)", arm.variant_name)
-            } else {
-                format!("{enum_name}::Default {{ body: _b, .. }}")
-            };
+            let pattern = self.arm_pattern(&arm);
             // An arm under a build feature is written in every rendering, its
             // refusal recorded as any arm's (docs/adr/0065), and compiled where
             // the feature is on (docs/adr/0072).
@@ -3697,14 +3723,11 @@ impl<'a> Plan<'a> {
                     }
                 }
                 BindSite::Arm => {
-                    let enum_name = self.body_enum();
                     for arm in self.arms().iter().filter(|a| a.alias == binder.alias) {
-                        let pattern = if arm.value.is_some() {
-                            format!("{enum_name}::{}(_b)", arm.variant_name)
-                        } else {
-                            format!("{enum_name}::Default {{ body: _b, .. }}")
-                        };
-                        arms.push((format!("{}{pattern}", arm.cfg_prefix()), says(binder, "_b")));
+                        arms.push((
+                            format!("{}{}", arm.cfg_prefix(), self.arm_pattern(arm)),
+                            says(binder, "_b"),
+                        ));
                     }
                 }
                 BindSite::List { .. } => {

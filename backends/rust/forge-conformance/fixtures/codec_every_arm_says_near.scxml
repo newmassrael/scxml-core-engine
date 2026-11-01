@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4d): one arm of
+     codec_every_arm_says. Its value says the flag input `N`, set exactly when
+     its suffix is there. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_every_arm_says_near">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="suffix_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="N"/>
+    <sce:field id="suffix" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="suffix_len" sce:max-size="8" sce:present-if="N"/>
+  </datamodel>
+</scxml>

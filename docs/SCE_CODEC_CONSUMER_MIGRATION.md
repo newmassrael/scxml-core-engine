@@ -295,3 +295,20 @@ Landing: the commit that adds this section.
   `repeat_unconditional_count` did.
 - Three lists of one count, two lists that are both gated, and two that are always present stay a check, and the
   declaration stays right for them.
+
+## A flag input every arm of a variant says is said by the value (ADR 0065 §6 R4d)
+
+Landing: the commit that adds this section.
+
+- In Rust, a codec whose `<sce:variant>` hands a flag input to every arm, the default among them, where each arm's
+  codec says that input, now says it too. Its `encode`, `measure` and `encode_source` no longer take the input, and
+  `{Codec}::input_{i}(src)` returns the one the arm says. `decode` still takes it, since the parent reads the bit
+  first.
+- A codec that holds it follows R4a: a carrier flag bound to the input is derived from the body, so a value's copy of
+  that bit is ignored on the wire, and a codec that hands the input on says it too. Drop the argument at each call.
+- A codec whose only refusal was that a held arm could say the input otherwise is now total: its `encode_to_vec`
+  returns `Vec<u8>`, and its `sce:encode-may-fail` is untrue and refused. Run the check of the introduction over every
+  document and drop each declaration it reports as untrue; a parent that held only such codecs drops its own.
+- A variant with an arm that does not say the input is unchanged: the parent hands the input, and the arm that says
+  it is held to it.
+- The other backends do not change: their encode is still handed every input.

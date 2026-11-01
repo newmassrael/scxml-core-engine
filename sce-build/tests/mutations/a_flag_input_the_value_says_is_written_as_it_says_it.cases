@@ -27,6 +27,12 @@ edit("sce-build/src/forge/generator/rust_source.rs",
                     format!("!{present}")''')
 PY
 
+mutation_case "an arm's input is read under the parent's name for it" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                            filters::to_snake_case(arms[&arm.alias].clone())''',
+     r'''                            filters::to_snake_case(name.to_string())''')
+PY
+
 mutation_case "a bound flag keeps the bit the value presents" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                    Derivation::BoundInput { binders } => {

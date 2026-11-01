@@ -40,3 +40,18 @@ edit("sce-build/src/forge/codec_roles.rs",
      r'''            ([], [(h, bind)], false) if h.says(&bind.input) => match h.sites.as_slice() {''',
      r'''            ([], [(h, bind)], false) if h.says(&bind.input) && h.alias.is_empty() => match h.sites.as_slice() {''')
 PY
+
+# A value holds one arm, so an input every arm says is said by the value (§6 R4d).
+mutation_case "an input every arm says is not said by the value" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''            ([], forwards, false) if every_arm_says(model, forwards) => {''',
+     r'''            ([], forwards, false) if every_arm_says(model, forwards) && forwards.is_empty() => {''')
+PY
+
+# An arm that says nothing leaves the input to the parent, so the arm that does say
+# it can disagree: the codec that declares the refusal stops refusing.
+mutation_case "an arm that says nothing counts as saying the input" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''            .all(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))''',
+     r'''            .any(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))''')
+PY

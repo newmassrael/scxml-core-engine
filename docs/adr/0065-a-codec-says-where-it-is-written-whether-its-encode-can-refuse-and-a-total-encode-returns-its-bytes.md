@@ -306,6 +306,17 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     (`flags_wants_a_or_wants_b`). A disjunction over an input or a chain's membership stays a check; the latter is
     R6. Three documents became total: `present_if_disjunction`, the Zenoh `interest`, and the network envelope that
     holds it.
+  - **R4d, an input every arm says.** A variant whose every arm, the default among them, the codec hands an input on
+    to, and whose codec says it, says the input: an attribute synthesized over a sum is the arm's, and a value holds
+    one arm, so exactly one thing says it in any value. R4a's rule is that rule, read over the arms.
+    *Landed 2026-11-01, after R1.* `InputSource::EveryArm` holds, for each arm's codec, the input of it that is bound,
+    since an arm may name the input otherwise, and `input_{i}` matches on the arm. No arm is held to a handed value,
+    since none is handed, and a parent derives the flag from the embedded variant by R4a's rule unchanged. A variant
+    with an arm that does not say the input is not this: a value in that arm says nothing, so the parent still hands
+    the input and the arm that says it is held to it. A second bind of one input on one arm's import is not this
+    either, since two inputs of one arm can disagree. A consumer's parent-tag dispatcher for its wire expressions is
+    the case that asked for this, and it and nine of the codecs above it became total. Its `request` did not: that
+    holds a query whose extension chain keeps its refusal, where one arm of three says an input the chain supplies.
 
   Other backends keep their checks until they take the source interface. Their encode is still handed every input.
 - **R5, a shared count.** Lists that share one count are presented as one list whose entries carry each list's item,
