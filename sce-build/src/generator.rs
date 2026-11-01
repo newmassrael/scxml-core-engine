@@ -4267,7 +4267,7 @@ pub(crate) fn swift_invoke_unlowered(
     let info = match invoke {
         crate::model::Invoke::Scxml(info) => info,
         crate::model::Invoke::Hybrid(info) => {
-            return swift_hybrid_invoke_unlowered(info, statically_lowered)
+            return swift_hybrid_invoke_unlowered(info, statically_lowered, is_ecma)
         }
         crate::model::Invoke::MeshRpc(_) => {
             return Some("a Mesh remote-procedure <invoke>".to_string())
@@ -4412,6 +4412,7 @@ fn first_swift_unlowered_host_argument(
 fn swift_hybrid_invoke_unlowered(
     info: &crate::model::HybridInvokeInfo,
     statically_lowered: bool,
+    is_ecma: bool,
 ) -> Option<String> {
     if !info.contentexpr.is_empty() {
         return Some("an <invoke> whose child a contentexpr computes".to_string());
@@ -4419,18 +4420,26 @@ fn swift_hybrid_invoke_unlowered(
     if info.candidates.is_empty() {
         return Some("an <invoke srcexpr> that declares no sce:candidates".to_string());
     }
-    if !statically_lowered {
+    // §scxml-6.4: an `ecmascript` parent reads the `srcexpr` with its engine as the invocation
+    // starts, hands the arguments to the candidate the value names as it does to a fixed child,
+    // and writes the id to the `idlocation`. A `sce-static` one computes the value from its own
+    // fields, and any other model has no language to write the expression in.
+    if !statically_lowered && !is_ecma {
         return Some(
-            "an <invoke srcexpr> in a document that is not datamodel=\"sce-static\"".to_string(),
+            "an <invoke srcexpr> in a document that is neither datamodel=\"sce-static\" nor \
+             \"ecmascript\""
+                .to_string(),
         );
     }
-    if !info.common.base.idlocation.is_empty() {
+    if !is_ecma && !info.common.base.idlocation.is_empty() {
         return Some("an <invoke srcexpr idlocation>".to_string());
     }
+    // A candidate that runs an engine of its own is a child an `ecmascript` parent hands its
+    // values to as JSON; a `sce-static` parent has no way to give it one.
     if info
         .candidates
         .iter()
-        .any(|c| c.child_needs_script_engine || c.child_declares_host_duties)
+        .any(|c| (!is_ecma && c.child_needs_script_engine) || c.child_declares_host_duties)
     {
         return Some(
             "an <invoke srcexpr> with a candidate that runs a script engine or states a duty"
@@ -4703,12 +4712,14 @@ fn swift_ecmascript_cause_unlowered(
         // model of the parent: an `ecmascript` one hands each value to the child as JSON.
         | Cause::StaticInvokeNamelist { .. }
         | Cause::ChildInvokeNeedsScriptEngine { .. }
+        // A `srcexpr` is read by the engine as the invocation starts, and the candidates the
+        // document declares are what it can name; what a hybrid invoke cannot lower (a
+        // `contentexpr`, no declared candidates, a candidate that states a duty) is refused
+        // where the invoke is read, by `swift_hybrid_invoke_unlowered`.
+        | Cause::HybridInvoke { .. }
         | Cause::GlobalScript => None,
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
-        }
-        Cause::HybridInvoke { invoke_id } => {
-            named("an <invoke> resolved by an expression", invoke_id)
         }
         Cause::MeshRpcSrcExpr { invoke_id } | Cause::MeshRpcRequestExpr { invoke_id } => {
             named("a Mesh <invoke> evaluated at its start", invoke_id)

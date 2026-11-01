@@ -84,8 +84,20 @@
    child that runs no script engine has no variable to take a value, so what it is handed is read
    (for its errors) and not given. A namelist that names something other than a declared
    variable ends the element before this macro runs (`namelist_bad`, below). #}
-{% macro ecma_seed_child(invoke_info, model, machine_name, indent) %}
-{% set takes = invoke_info.child_needs_script_engine %}
+{# The first name of a namelist that is not a declared variable, or nothing: such a name is not a
+   readable location, which the build decides once (W3C SCXML 6.4). #}
+{% macro first_undeclared_name(namelist) -%}
+{%- set found = namespace(name='') -%}
+{%- for namelist_id in (namelist or '') | split -%}
+{%- if namelist_id is not declared_name and not found.name -%}{%- set found.name = namelist_id -%}{%- endif -%}
+{%- endfor -%}
+{{- found.name -}}
+{%- endmacro %}
+{# `child_takes` says whether the child the values go to runs an engine that can take them; it is
+   the invoke's own `child_needs_script_engine` unless the caller names the child (a hybrid invoke
+   names its candidates one by one). #}
+{% macro ecma_seed_child(invoke_info, model, machine_name, indent, child_takes=none) %}
+{% set takes = invoke_info.child_needs_script_engine if child_takes is none else child_takes %}
 {% if invoke_info.params or (invoke_info.namelist and invoke_info.namelist | trim) %}
 {% if takes %}
 {{ indent }}var seeds: [String: LuaSeed] = [:]
@@ -222,11 +234,7 @@
    `idlocation` written, and the `<param>`s are not evaluated. #}
 {% set namelist_bad = namespace(name='') %}
 {% if ecmascript_datamodel %}
-{% for namelist_id in (invoke_info.namelist or '') | split %}
-{% if namelist_id is not declared_name and not namelist_bad.name %}
-{% set namelist_bad.name = namelist_id %}
-{% endif %}
-{% endfor %}
+{% set namelist_bad.name = first_undeclared_name(invoke_info.namelist) | trim %}
 {% endif %}
 
     /// Starts the session of `<invoke>` `{{ invoke_info.invoke_id }}` (W3C SCXML 6.4).
@@ -288,10 +296,27 @@
     /// value `srcexpr` computes names, by its document stem, one of the candidates the
     /// invoke declares (docs/SCE_ACCEPTED_SUBSET.md §2.13), which is the one started.
     private func sceStartInvoke{{ invoke_info.field_suffix | to_pascal_case }}(_ pending: PendingInvoke<{{ machine_name }}State>, engine: Engine<{{ machine_name }}Policy>) {
+{% set hybrid_namelist_bad = (first_undeclared_name(invoke_info.namelist) | trim) if ecmascript_datamodel else '' %}
+{% if hybrid_namelist_bad %}
+        // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
+        // here, whatever the `srcexpr` would have named: one error.execution however many names are
+        // bad, no session starts, and no `<param>` is read.
+        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+{% else %}
         // §scxml-6.4: the `srcexpr` is read now, as the invocation starts, so what the
         // entry actions of the state left is what it names. One that cannot be
         // evaluated is an attribute that cannot be: `error.execution`, and nothing starts.
-{% if invoke_info.native_src_fails %}
+{% if ecmascript_datamodel %}
+        // Under `datamodel="ecmascript"` the engine reads it, as ECMAScript converts the value
+        // to a string, and the arguments are read only for the candidate it chose (6.4.3).
+        guard let sceValue = evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") else {
+{% if 'error.execution' in model.events %}
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
+{% endif %}
+            return
+        }
+        let sceSelected = documentStem(sceValue)
+{% elif invoke_info.native_src_fails %}
         let sceSelected: String
         do {
             let sceFailure = Failure()
@@ -315,7 +340,18 @@
             // The stem names the document the build wrote a child for, and its
             // arguments are read only now that the value has chosen it (6.4.3).
             let childPolicy = {{ candidate.stem | to_pascal_case }}Policy({{ 'actions: ' ~ candidate.child_host_call if candidate.child_host_call else '' }})
+{% if ecmascript_datamodel %}
+{% if invoke_info.idlocation %}
+            // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names
+            // before the child starts.
+            if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
+                raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+            }
+{% endif %}
+{{ ecma_seed_child(invoke_info, model, machine_name, '            ', candidate.child_needs_script_engine) }}
+{% else %}
 {{ seed_child(candidate.stem | to_pascal_case ~ 'Policy', candidate.seeds, candidate.unkept, model, machine_name, '            ') }}
+{% endif %}
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
@@ -344,6 +380,7 @@
         sceStarted.initialize()
         sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = sceStarted
         sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+{% endif %}
     }
 {% endif %}
 
@@ -368,7 +405,7 @@
 {% endfor %}
 {% for invoke_info in host_invokes %}
 
-    /// Starts `<invoke type="{{ invoke_info.invoke_type | escape_swift }}" id="{{ invoke_info.invoke_id | escape_swift }}">`
+    /// Starts `<invoke type="{{ invoke_info.invoke_type }}" id="{{ invoke_info.invoke_id }}">`
     /// (W3C SCXML 6.4.1): the invoker the host registered for the type is handed the
     /// request, under the id the DOCUMENT wrote, which is the name `done.invoke.<id>`
     /// carries. A type the host declared and never registered an invoker for is the same

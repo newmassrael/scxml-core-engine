@@ -444,18 +444,10 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
         swift_refusal!("a delayed BasicHTTP `<send>`"),
     ),
     (
-        "a_hybrid_invoke_carries_its_arguments",
-        swift_refusal!("an `<invoke srcexpr>` outside a `datamodel=\"sce-static\"` document"),
-    ),
-    (
         "a_mesh_request_reaches_the_router",
         swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
     ),
     ("flat_lifecycle", swift_refusal!("the transition function")),
-    (
-        "invoke_candidate_selects_the_child",
-        swift_refusal!("an `<invoke srcexpr>` outside a `datamodel=\"sce-static\"` document"),
-    ),
     (
         "invoke_expression_failure_is_reported",
         swift_refusal!("an `<invoke srcexpr>` that declares no `sce:candidates`"),
