@@ -14,22 +14,26 @@ import SceLua
 import SceRuntime
 import Testing
 
-@Test func theBadPairsAreDroppedAndTheDoneEventsStillArrive() {
-    // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine. The run
-    // needs nothing from the host.
-    let policy = ABadDonedataPairIsIgnoredPolicy()
-    let engine = Engine(policy: policy)
-    engine.initialize()
+// One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
+@Suite struct ABadDonedataPairIsIgnored {
+    @Test func theBadPairsAreDroppedAndTheDoneEventsStillArrive() {
+        // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine. The run
+        // needs nothing from the host.
+        let policy = ABadDonedataPairIsIgnoredPolicy()
+        let engine = Engine(policy: policy)
+        engine.initialize()
 
-    let seen = "errors=\(String(describing: policy.readScriptValue("errors"))) "
-        + "shape=\(String(describing: policy.readScriptValue("shape"))) (wanted 2 / 1)"
-    #expect(
-        engine.getCurrentState() == .done,
-        "done.state.p must still arrive and carry the run to `done`. \(seen)")
-    #expect(
-        policy.readScriptValue("errors") == .integer(2),
-        "each ignored pair raises its own error.execution. \(seen)")
-    #expect(
-        policy.readScriptValue("shape") == .integer(1),
-        "done.state.r1 must carry the surviving pair and neither ignored one. \(seen)")
+        let seen =
+            "errors=\(String(describing: policy.readScriptValue("errors"))) "
+            + "shape=\(String(describing: policy.readScriptValue("shape"))) (wanted 2 / 1)"
+        #expect(
+            engine.getCurrentState() == .done,
+            "done.state.p must still arrive and carry the run to `done`. \(seen)")
+        #expect(
+            policy.readScriptValue("errors") == .integer(2),
+            "each ignored pair raises its own error.execution. \(seen)")
+        #expect(
+            policy.readScriptValue("shape") == .integer(1),
+            "done.state.r1 must carry the surviving pair and neither ignored one. \(seen)")
+    }
 }
