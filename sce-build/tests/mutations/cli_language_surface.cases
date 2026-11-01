@@ -49,12 +49,13 @@ edit("sce-build/src/cli_language.rs",
      "                            .any(|emits| emits == *language)\n                                && *language != Language::C11\n")
 PY
 
-# Re-aimed 2026-10-22: the refusing arm also names `Language::Swift`, which
-# no route that writes files serves; Python still moves into it.
+# Re-aimed 2026-11-01: Swift is served by `generate-integration` now (one sweep, so it
+# has an arm of its own and no suffix), and the refusing arm is cpp and c11; Python
+# still moves into it.
 mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     '        Language::Python => "_python",\n        Language::Cpp | Language::C11 | Language::Swift => error_format.emit_and_exit(',
-     '        Language::Cpp | Language::C11 | Language::Swift | Language::Python => error_format.emit_and_exit(')
+     '        Language::Python => "_python",\n        // Swift is one sweep over every stem, not a script each: see\n        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.\n        Language::Swift => "",\n        Language::Cpp | Language::C11 => error_format.emit_and_exit(',
+     '        Language::Swift => "",\n        Language::Cpp | Language::C11 | Language::Python => error_format.emit_and_exit(')
 PY
 
 mutation_case "the refusal offers every backend instead of the route's own" <<'PY'
@@ -69,11 +70,11 @@ edit("sce-build/src/cli_language.rs",
      '        format!("{lead}.")')
 PY
 
-# Re-aimed 2026-10-23: the reason now names Swift and takes the emitless
-# sentence as an argument; the mutant still drops the whole reason.
+# Re-aimed 2026-11-01: Swift is served now, so the reason names cpp and c11 alone and
+# takes the emitless sentence as an argument; the mutant still drops the whole reason.
 mutation_case "a restricted route stops saying why it is restricted" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. swift is absent because its integration \\\n                 fixtures are not generated yet{}",\n                emitless_sentence(". ", " too"),\n            )),',
+     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate{}",\n                emitless_sentence(". ", " too"),\n            )),',
      '            LanguageRoute::GenerateIntegration => None,')
 PY
 

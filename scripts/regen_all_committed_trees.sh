@@ -89,11 +89,12 @@ stage "W3C committed trees"
 "$CODEGEN" generate-w3c -l go
 "$CODEGEN" generate-w3c -l python
 
-stage "Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
+stage "Integration trees (Rust / Kotlin / Go / Swift committed; Python gitignored)"
 "$CODEGEN" generate-integration -l rust
 "$CODEGEN" generate-integration -l kotlin
 "$CODEGEN" generate-integration -l go
 "$CODEGEN" generate-integration -l python
+"$CODEGEN" generate-integration -l swift
 
 stage "Forge round-trip Go codec tree"
 backends/go/forge-runtime/round_trip/generate.sh

@@ -87,6 +87,7 @@ for package in "${PACKAGES[@]}"; do
             scripts/regen_swift_statecharts.sh
             scripts/regen_static_datamodel_swift.sh
             scripts/regen_swift_ecmascript.sh
+            scripts/regen_swift_integration.sh
             echo "== swift test: backends/swift/tests"
             # A tree another lane left on this machine is built with the rest, and not run here;
             # the numerical conformance tests are the Forge lane's (`forge` above).

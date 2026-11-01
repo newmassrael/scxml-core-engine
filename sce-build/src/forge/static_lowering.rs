@@ -11648,7 +11648,7 @@ impl SwiftTarget {
         };
         if !send.send_type.is_empty() && !scxml_processor(&send.send_type) {
             if send.send_type.contains("BasicHTTPEventProcessor") && send.types.is_empty() {
-                return Self::unlowered_http_send(send);
+                return Self::unlowered_http_send(send, false);
             }
             return Some(format!("a <send type=\"{}\">", send.send_type));
         }
@@ -11682,8 +11682,12 @@ impl SwiftTarget {
     /// Swift engine has not got, a `<content>` is a body of another kind, and a target,
     /// event or type an expression computes is a request whose address is known only
     /// when it runs.
-    fn unlowered_http_send(send: &Action) -> Option<String> {
-        if send.target.is_empty() || !send.targetexpr.is_empty() {
+    ///
+    /// `target_may_be_absent` is whether a send that names no target is lowered: a `sce-static`
+    /// document is not (its lowering has nowhere to send it), and an `ecmascript` or `null`
+    /// one is, as the error.communication §scxml-C-2 makes of it.
+    pub(crate) fn unlowered_http_send(send: &Action, target_may_be_absent: bool) -> Option<String> {
+        if (send.target.is_empty() && !target_may_be_absent) || !send.targetexpr.is_empty() {
             return Some("a BasicHTTP <send> whose target is not a URL the document writes".into());
         }
         if !send.delay.is_empty() || !send.delayexpr.is_empty() {

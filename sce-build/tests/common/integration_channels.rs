@@ -35,6 +35,7 @@ pub enum Channel {
     Python,
     Kotlin,
     C11,
+    Swift,
 }
 
 impl Channel {
@@ -47,6 +48,7 @@ impl Channel {
         Channel::Python,
         Channel::Kotlin,
         Channel::C11,
+        Channel::Swift,
     ];
 
     /// The generated backend this channel builds and runs, or `None` for the
@@ -63,6 +65,7 @@ impl Channel {
             Channel::Python => Some(Language::Python),
             Channel::Kotlin => Some(Language::Kotlin),
             Channel::C11 => Some(Language::C11),
+            Channel::Swift => Some(Language::Swift),
         }
     }
 
@@ -76,6 +79,7 @@ impl Channel {
             Channel::Python => "Python",
             Channel::Kotlin => "Kotlin",
             Channel::C11 => "C11",
+            Channel::Swift => "Swift",
         }
     }
 }
@@ -241,6 +245,13 @@ pub fn sites(stem: &str) -> Vec<Site> {
             "backends/c/tests/CMakeLists.txt",
             format!("sce_generate_static_integration_c_test({stem}"),
         ),
+        // Swift writes every stem it lowers in one sweep (`scripts/regen_swift_integration.sh`),
+        // so the site is the machine the sweep wrote for the stem, not a script of its own.
+        file(
+            Role::Generation(Channel::Swift),
+            "Swift generated machine",
+            format!("backends/swift/tests/Sources/IntegrationMachines/{stem}_sm.swift"),
+        ),
         // Assertion. These are the silent ones.
         file(
             Role::Driver(Channel::Rust),
@@ -266,6 +277,12 @@ pub fn sites(stem: &str) -> Vec<Site> {
             Role::Driver(Channel::C11),
             "C11 AOT driver",
             format!("backends/c/tests/integration/test_{stem}.c"),
+        ),
+        // SwiftPM compiles every file of a test target, so there is no registration beside it.
+        file(
+            Role::Driver(Channel::Swift),
+            "Swift AOT driver",
+            format!("backends/swift/tests/Tests/IntegrationTests/{camel}Tests.swift"),
         ),
         file(
             Role::Driver(Channel::CppInterpreter),
@@ -401,6 +418,149 @@ pub fn channel_cannot_host(stem: &str, channel: Channel) -> Option<Exemption> {
                          `tests/mesh/brake_invoke.scxml`.",
             })
         }
+        (stem, Channel::Swift) => swift_cannot_host(stem),
         _ => None,
     }
+}
+
+/// The reason a stem Swift refuses is exempt, spelled once: what the generator refuses it for.
+macro_rules! swift_refusal {
+    ($what:literal) => {
+        concat!(
+            "`generate -l swift` refuses the document by name (generate/unsupported-feature): ",
+            $what,
+            " has no Swift codegen path yet"
+        )
+    };
+}
+
+/// The stems the Swift backend refuses by name (`generate/unsupported-feature`), each with the
+/// reason it is exempt, which says what it is refused for. Every entry is a lowering not built yet, never a defect of the engine, and is
+/// deleted when the construct is built: `a_swift_exemption_still_holds` asks the generator, so an
+/// entry for a stem Swift now writes is red.
+pub const SWIFT_REFUSED: &[(&str, &str)] = &[
+    (
+        "a_bad_invoke_argument_is_reported_once",
+        swift_refusal!("an `<invoke>` with a `<param>` or a namelist"),
+    ),
+    (
+        "a_delayed_http_send_is_posted_when_due",
+        swift_refusal!("a delayed BasicHTTP `<send>`"),
+    ),
+    (
+        "a_hybrid_invoke_carries_its_arguments",
+        swift_refusal!("an `<invoke srcexpr>` outside a `datamodel=\"sce-static\"` document"),
+    ),
+    (
+        "a_mesh_request_reaches_the_router",
+        swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
+    ),
+    (
+        "an_error_ends_the_block_it_was_raised_in",
+        swift_refusal!("a `<cancel>` expression"),
+    ),
+    (
+        "an_invoke_left_before_it_starts_raises_nothing",
+        swift_refusal!("an `<invoke type>` no host declares"),
+    ),
+    ("flat_lifecycle", swift_refusal!("the transition function")),
+    (
+        "invoke_candidate_selects_the_child",
+        swift_refusal!("an `<invoke srcexpr>` outside a `datamodel=\"sce-static\"` document"),
+    ),
+    (
+        "invoke_expression_failure_is_reported",
+        swift_refusal!("an `<invoke srcexpr>` that declares no `sce:candidates`"),
+    ),
+    (
+        "invoke_unsupported_type",
+        swift_refusal!("an `<invoke type>` no host declares"),
+    ),
+    (
+        "nested_lifecycle",
+        swift_refusal!("the transition function"),
+    ),
+    (
+        "send_namelist_over_http",
+        swift_refusal!("a BasicHTTP `<send>` whose target is not a URL the document writes"),
+    ),
+];
+
+/// The stems the Swift backend writes and whose driver is not written yet, a debt register that
+/// shrinks: each slice that writes a driver deletes its stem here, and
+/// `a_swift_exemption_still_holds` is red for a stem that is listed and has one. The channel
+/// generates and compiles every stem below; what it has not done is ask the machine whether it
+/// behaves.
+pub const SWIFT_DRIVER_PENDING: &[&str] = &[
+    "a_bad_send_argument_discards_its_message",
+    "a_bad_send_param_ends_its_block",
+    "a_child_may_send_many_events_in_one_tick",
+    "a_child_reply_arrives_without_a_tick",
+    "a_computed_event_name_is_matched_like_any_other",
+    "a_delayed_send_reaches_what_its_target_names",
+    "a_delay_is_a_css2_time",
+    "ancestor_entry_is_not_default_entry",
+    "an_error_inside_a_foreach_ends_its_block",
+    "an_event_keeps_the_name_it_was_sent_under",
+    "a_payload_rides_on_its_own_event",
+    "a_peer_named_at_run_time_reaches_the_router",
+    "a_self_sent_event_names_its_origin",
+    "a_send_content_expr_is_the_payload",
+    "a_send_reaches_only_what_its_target_names",
+    "a_target_expression_is_routed_as_its_literal_is",
+    "autoforward_dequeue_point",
+    "autoforward_done_invoke",
+    "autoforward_event_fields",
+    "autoforward_internal_queue",
+    "cancelling_an_invoke_raises_nothing",
+    "discarded_event_is_observable",
+    "donedata_late_completion",
+    "donedata_local_invoke",
+    "empty_finalize_updates_the_location",
+    "error_cascade_is_bounded",
+    "event_data_arrives_as_sent",
+    "event_descriptor_spellings_agree",
+    "eventless_macrostep_is_bounded",
+    "event_origin_is_a_location",
+    "event_type_names_its_queue",
+    "host_event_reaches_the_child",
+    "internal_chain_is_bounded",
+    "invoke_param_error_starts_the_child",
+    "invoke_param_seeds_declared_child_data",
+    "invoke_precedes_dequeue_midrun",
+    "invoke_precedes_external_dequeue",
+    "late_data_binds_on_first_entry",
+    "late_tick_honours_cancel",
+    "nested_final_not_terminal",
+    "onexit_runs_before_the_state_leaves",
+    "parallel_completion_raises_done_state",
+    "parallel_done_state_is_delivered",
+    "parallel_regions_take_own_transitions",
+    "parallel_self_transition_keeps_its_leaf",
+    "send_param_payload",
+    "session_ids_are_distinct",
+    "targetless_transition_completes_macrostep",
+    "the_run_ends_by_exiting_every_state",
+    "typed_reader_names",
+    "undecodable_payload_is_reported",
+    "unhandled_error_is_observable",
+    "unseen_event_is_reported",
+    "wildcard_in_document_order",
+    "xml_data_is_a_dom_tree",
+];
+
+/// Whether, and why, the Swift channel cannot host `stem`.
+fn swift_cannot_host(stem: &str) -> Option<Exemption> {
+    if let Some((_, reason)) = SWIFT_REFUSED.iter().find(|(refused, _)| *refused == stem) {
+        return Some(Exemption {
+            scope: Suspends::GenerationAndAssertion,
+            reason,
+        });
+    }
+    SWIFT_DRIVER_PENDING.contains(&stem).then_some(Exemption {
+        scope: Suspends::Assertion,
+        reason: "the Swift channel generates and compiles this stem, and its driver is not \
+                 written yet: a stem listed in `SWIFT_DRIVER_PENDING` is a debt, deleted by the \
+                 slice that writes the driver",
+    })
 }

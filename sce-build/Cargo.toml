@@ -1118,6 +1118,13 @@ name = "a_swift_machine_runs_a_host_invoke"
 path = "tests/a_swift_machine_runs_a_host_invoke.rs"
 required-features = ["cli"]
 
+# What the Swift integration channel declines (`SWIFT_REFUSED`, `SWIFT_DRIVER_PENDING`) is still
+# true. It asks `sce-codegen check -l swift`, so it carries the `cli` gate.
+[[test]]
+name = "a_swift_integration_exemption_still_holds"
+path = "tests/a_swift_integration_exemption_still_holds.rs"
+required-features = ["cli"]
+
 # The Swift backend's `datamodel="ecmascript"` machines: the guards, `<data>` initialisers,
 # `<assign>`, `<send>` and `<cancel>` it lowers to Lua for the `SceLua` engine, and what it refuses
 # by name. It runs `sce-codegen generate`, so it carries the `cli` gate.

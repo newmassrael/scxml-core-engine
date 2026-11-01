@@ -188,6 +188,7 @@ impl LanguageRoute {
                 Language::Kotlin,
                 Language::Go,
                 Language::Python,
+                Language::Swift,
             ],
         }
     }
@@ -214,8 +215,7 @@ impl LanguageRoute {
             LanguageRoute::GenerateIntegration => Some(format!(
                 "cpp and c11 are absent because their integration fixtures emit at CMake build \
                  time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate. swift is absent because its integration \
-                 fixtures are not generated yet{}",
+                 for this subcommand to regenerate{}",
                 emitless_sentence(". ", " too"),
             )),
             LanguageRoute::GenerateConformance => (self.languages().len() < Language::ALL.len())

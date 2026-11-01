@@ -121,5 +121,26 @@ let package = Package(
                 .product(name: "SceLua", package: "runtime"),
             ]
         ),
+        // The canonical fixtures of `integration_resources/` that the backend lowers
+        // (`scripts/regen_swift_integration.sh`), the Swift channel of the integration suite, and the
+        // hand-written driver of each. The documents are of every datamodel, so the target links
+        // the script engine and the forge runtime alike.
+        .target(
+            name: "IntegrationMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+                .product(name: "SceForgeRuntime", package: "forge-runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "IntegrationTests",
+            dependencies: [
+                "IntegrationMachines",
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceLua", package: "runtime"),
+                .product(name: "SceForgeRuntime", package: "forge-runtime"),
+            ]
+        ),
     ] + w3cTargets + ecma262LoweredTargets
 )

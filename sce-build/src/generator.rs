@@ -4480,9 +4480,16 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 /// change the route the element was lowered for. A BasicHTTP send's body is the form its
 /// `<param>`s make, so a `<content expr>` there has nowhere to go. A `null` document has no
 /// expression language to write any of them in.
-fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<&'static str> {
+///
+/// A BasicHTTP send is judged as a `sce-static` document's is
+/// ([`crate::forge::static_lowering::SwiftTarget::unlowered_http_send`]), whatever the data model:
+/// the template posts it at once to the URL the document writes with its `<param>`s as the form, so
+/// a delay, a target an expression computes, a `<content>` body and the other axes that rule names
+/// are not lowered. Without it a delayed send is posted at once, which is the answer the document
+/// did not ask for, and a computed target is a machine that does not compile.
+fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<String> {
     let over_http = send.send_type.contains("BasicHTTPEventProcessor");
-    [
+    let expression = [
         ("<send typeexpr>", &send.typeexpr, true),
         ("<send contentexpr>", &send.contentexpr, !over_http),
         ("<send eventexpr>", &send.eventexpr, true),
@@ -4492,7 +4499,12 @@ fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<&'
     ]
     .into_iter()
     .find(|(_, expr, lowered_for_ecma)| !expr.is_empty() && !(is_ecma && *lowered_for_ecma))
-    .map(|(what, _, _)| what)
+    .map(|(what, _, _)| what.to_string());
+    expression.or_else(|| {
+        (over_http && send.types.is_empty())
+            .then(|| crate::forge::static_lowering::SwiftTarget::unlowered_http_send(send, true))
+            .flatten()
+    })
 }
 
 /// Whether `actions` hold, at any depth, an executable element the Swift
@@ -4504,7 +4516,7 @@ fn first_unlowered_swift_action(
     for action in actions {
         if action.action_type == "send" {
             if let Some(what) = swift_send_unlowered(action, is_ecma) {
-                return Some((what.to_string(), action.source_location.clone()));
+                return Some((what, action.source_location.clone()));
             }
         }
         if !swift_lowers_action_type(&action.action_type, is_ecma) {

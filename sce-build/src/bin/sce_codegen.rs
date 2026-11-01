@@ -2603,6 +2603,10 @@ enum Commands {
     ///   - Kotlin:  `backends/kotlin/tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
     ///   - Go:      `backends/go/tests/integration/<stem>/`                  (committed)
     ///   - Python:  `backends/python/tests/integration/<stem>/`              (.gitignored, CI regen)
+    ///   - Swift:   `backends/swift/tests/Sources/IntegrationMachines/`      (committed, one sweep)
+    ///
+    /// Swift is one sweep over every stem the backend lowers
+    /// (`scripts/regen_swift_integration.sh`), so `--stem` is refused for it.
     ///
     /// Python mirrors the W3C IRP pattern: `generate-w3c -l python`
     /// is already `.gitignored` + CI-regenerated, and the integration
@@ -12614,7 +12618,10 @@ fn cmd_generate_integration(
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
         Language::Python => "_python",
-        Language::Cpp | Language::C11 | Language::Swift => error_format.emit_and_exit(
+        // Swift is one sweep over every stem, not a script each: see
+        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.
+        Language::Swift => "",
+        Language::Cpp | Language::C11 => error_format.emit_and_exit(
             &CliError::UnsupportedLanguage {
                 lang: lang.canonical_name().to_string(),
                 route: LanguageRoute::GenerateIntegration,
@@ -12674,8 +12681,28 @@ fn cmd_generate_integration(
         error_format.emit_and_exit(&refusal, "");
     }
 
-    for stem in &stems {
-        let script = project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh"));
+    // Swift writes every stem in one sweep, which decides for itself which stems the backend
+    // lowers, so a single stem cannot be asked of it: the sweep would regenerate them all and
+    // report success for the one that was asked about.
+    if lang == Language::Swift && stem.is_some() {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "generate-integration",
+            detail: "--stem is not honoured for swift: its channel is one sweep over every stem \
+                     (scripts/regen_swift_integration.sh), and a run that accepted the flag \
+                     would rewrite them all"
+                .to_string(),
+        });
+    }
+    let scripts: Vec<std::path::PathBuf> = if lang == Language::Swift {
+        vec![project_root.join("scripts/regen_swift_integration.sh")]
+    } else {
+        stems
+            .iter()
+            .map(|stem| project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh")))
+            .collect()
+    };
+
+    for script in &scripts {
         if !script.exists() {
             cli_exit(CliError::ReadInput {
                 path: script.display().to_string(),
@@ -12686,7 +12713,7 @@ fn cmd_generate_integration(
             });
         }
         let mut command = std::process::Command::new("bash");
-        command.arg(&script).current_dir(&project_root);
+        command.arg(script).current_dir(&project_root);
         // The two selections reach the stem script as environment rather than
         // as arguments, and that is the point rather than a shortcut: the
         // script decides its own `generate` command line, and 38 of them do.

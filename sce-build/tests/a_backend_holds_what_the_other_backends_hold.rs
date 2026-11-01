@@ -390,7 +390,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // stale check removes it then; the list is what is left of the backend.
     //
     // The CLI routes that write files serve the backends that write something.
-    (Language::Swift, "`generate-integration` route", Why::NotYet(SWIFT_NO_EMITTER)),
     // The kind matrix.
     (Language::Swift, "forge kind `statechart`", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "forge kind `transform`", Why::NotYet(SWIFT_NO_FORGE)),
@@ -439,7 +438,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
-    (Language::Swift, "integration channel", Why::NotYet(SWIFT_NO_EMITTER)),
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),
     (Language::Swift, "host Mesh core over `wss`", Why::NotYet(SWIFT_NO_MESH)),
@@ -451,8 +449,9 @@ const SWIFT_NO_EMITTER: &str =
     "Swift writes a statechart in part, a datamodel null one, a sce-static one or an ecmascript \
      one, and refuses by name what it does not lower yet \
      (`generator::reject_swift_unsupported_features`); its W3C suite is written by `generate-w3c` \
-     for the `simple` harness and held by the `w3c-swift` gate, and the integration suite and the \
-     conformance suites are built after it";
+     for the `simple` harness and held by the `w3c-swift` gate, its integration fixtures are \
+     written by `generate-integration` for the stems it lowers, and the whole statechart is built \
+     after them";
 
 /// Swift lowers a sce-static machine in part and refuses the rest by name
 /// (`generator::lowers_static_datamodel_in_part`).

@@ -141,14 +141,18 @@ fn an_http_send_writes_no_json_for_its_pairs() {
 }
 
 /// A delay needs a scheduler of HTTP requests, and a body of another kind needs a
-/// `<content>` the form does not carry: each is named in a refusal and not written wrong.
+/// `<content>` the form does not carry: each is named in a refusal and not written wrong, whatever
+/// data model the document is of. The send template is one, so a delayed send of an `ecmascript`
+/// document was posted at once, which is the answer its document did not ask for, and a target an
+/// expression computed was a machine that did not compile (measured 2026-11-01, by the integration
+/// stem `a_delayed_http_send_is_posted_when_due`).
 #[test]
 fn an_http_send_with_a_delay_or_a_body_is_refused_by_name() {
-    let document = |send: &str| {
+    let document = |send: &str, datamodel: &str| {
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="idle" datamodel="sce-static" name="http_refused">
+       version="1.0" initial="idle" datamodel="{datamodel}" name="http_refused">
   <state id="idle">
     <transition event="go" type="internal">
       {send}
@@ -159,36 +163,49 @@ fn an_http_send_with_a_delay_or_a_body_is_refused_by_name() {
         )
     };
     let basic = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
-    for (send, construct) in [
-        (
-            format!(
-                r#"<send event="note" delay="1s" type="{basic}" target="http://example.invalid/hook"/>"#
+    for datamodel in ["sce-static", "ecmascript", "null"] {
+        let mut sends = vec![
+            (
+                format!(
+                    r#"<send event="note" delay="1s" type="{basic}" target="http://example.invalid/hook"/>"#
+                ),
+                "a delayed BasicHTTP <send>",
             ),
-            "a delayed BasicHTTP <send>",
-        ),
-        (
-            format!(
-                r#"<send event="note" type="{basic}" target="http://example.invalid/hook"><content>body</content></send>"#
+            (
+                format!(
+                    r#"<send event="note" type="{basic}" target="http://example.invalid/hook"><content>body</content></send>"#
+                ),
+                "a BasicHTTP <send> with <content>",
             ),
-            "a BasicHTTP <send> with <content>",
-        ),
-    ] {
-        let text = document(&send);
-        let (status, files, said) =
-            generate("http_refused.scxml", &[("http_refused.scxml", &text)]);
-        assert_eq!(
-            status,
-            Some(7),
-            "{construct} is refused, not written: {said}"
-        );
-        assert!(
-            said.contains(construct),
-            "the refusal names {construct}: {said}"
-        );
-        assert!(
-            files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
-            "a refused document writes no machine: {:?}",
-            files.iter().map(|f| &f.0).collect::<Vec<_>>()
-        );
+        ];
+        // A target an expression computes is read by a script engine, which a `null` document
+        // has none of, and which a `sce-static` one holds to the routes it declares.
+        if datamodel == "ecmascript" {
+            sends.push((
+                format!(
+                    r#"<send event="note" type="{basic}" targetexpr="'http://example.invalid/hook'"/>"#
+                ),
+                "a BasicHTTP <send> whose target is not a URL the document writes",
+            ));
+        }
+        for (send, construct) in sends {
+            let text = document(&send, datamodel);
+            let (status, files, said) =
+                generate("http_refused.scxml", &[("http_refused.scxml", &text)]);
+            assert_eq!(
+                status,
+                Some(7),
+                "{construct} of a `{datamodel}` document is refused, not written: {said}"
+            );
+            assert!(
+                said.contains(construct),
+                "the refusal of a `{datamodel}` document names {construct}: {said}"
+            );
+            assert!(
+                files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
+                "a refused document writes no machine: {:?}",
+                files.iter().map(|f| &f.0).collect::<Vec<_>>()
+            );
+        }
     }
 }
