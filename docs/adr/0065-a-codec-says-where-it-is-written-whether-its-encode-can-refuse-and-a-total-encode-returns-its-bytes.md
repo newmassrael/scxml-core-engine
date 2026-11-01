@@ -304,6 +304,57 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
 - **R6, a gate on a chain's content** (`chain.has(id)`, SCE_FORGE.md §4.6.2). Where the entry the gate names carries
   no content of its own, the entry is derived from the field's presence. Where it does carry content, the relation
   is a dependent pair, and the codec keeps `may-fail` until this ADR's open question is answered.
+  *Designed 2026-11-01, after the open question.* The answer is no: two documents name an entry with content, so
+  R6 takes the dependent pair, and an entry with no content is its case where the content is nothing.
+  - **The language.** A chain is a sequence of entries, at most `D` long, and `has(k)` is a predicate of the
+    sequence. The sequences it holds for factor in exactly one way, at the first entry whose identifier is `k`:
+    `(E∖k)^a · k · E^b` with `a + b ≤ D − 1`, where `E∖k` is an entry whose identifier is not `k`. The sequences it
+    does not hold for are `(E∖k)^c` with `c ≤ D`. The first is a list with one place marked, the one-hole context of
+    a list (Huet's zipper, the derivative of the list type), with the entry at that place.
+  - **The value.** The gate is a variable of the group machinery of R4 (`GateVar::Member`), so the fields it
+    decides form a group whose arms are its cases, and a disjunction with a flag (`has(7) || header.wide`) or a
+    second key is an R4c group over several variables. The chain is an element of every arm, since its type
+    differs between them. The arm where the gate holds holds `Placed<L, D − 1, 1>`: the other entries and the place
+    of the named one among them. The arm where it does not holds `Bounded<Except<L, k>, D>`. A group over several
+    keys holds one place for each key its arm holds set.
+  - **The place is part of the value.** The protocols these documents describe do not order a chain's entries
+    (a Zenoh sender writes source info, shared memory and attachment in that order, so the marker of a `put` is
+    in the middle of a chain that has an attachment). A fixed place for the derived entry would write a frame that
+    a decode accepted in another order with its entries moved, which law 4 forbids, or would make the decode
+    refuse it. With the place in the value, every frame the decode accepts is written back as it came.
+  - **The checks are at the constructors.** `Placed::new` checks the place against the entries and that no entry
+    before the place has the identifier `k`; `Except::new` checks the identifier; each counts against its bound
+    as `Bounded` does. They return `CodecError` and are the one place left that can.
+  - **The named entry.** Its content is the entry's codec specialised at `k`: the identifier's bits are fixed, and
+    where the identifier holds a variant's tag, the arm of that tag is the body. Where nothing is left, as for the
+    Zenoh marker `0x12` (identifier 2, mandatory, unit encoding; `Z` is the chain's own flag), the arm holds the
+    place alone. The encode writes the entry from the identifier and the content, and the decode builds the
+    content from the entry it finds there.
+  - **The chain's own gate.** A chain that is itself gated (`header.E`) is absent exactly when it holds no entry
+    (R7), so the arm where the gate holds has its chain present, and the flag is derived from the arm and the
+    other entries.
+- **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
+  clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
+  grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte
+  for an ungated chain, and setting a gated chain's flag from `Some` before writing no byte. The decode stops
+  when the frame ends before the first entry and builds the empty list. An empty chain is therefore read back only
+  where nothing follows it on the wire; elsewhere the decode reads the next field as an entry, which is a value the
+  encode accepted and the decode does not reproduce (ADR 0058 §5 law 1), and no refusal names it. Whether a frame
+  is accepted then depends on what follows the chain, which is no grammar of the chain. Found 2026-11-01 while
+  reading the chains R6 names; it comes before R6 in the order of work, since R6's arms hold their chains in its
+  form.
+  - The decode refuses a chain that the frame ends before its first entry (`NeedMoreBytes`), as it refuses one that
+    ends after an entry whose flag is set. This narrows what the decode accepts, by frames no sender of the
+    grammar writes, and it is the one change of this ADR that does. The stop at the end of the frame belongs to a
+    chain that ends with the frame (`terminate-on` not `entry-flag`), whose loop the entry-flag chain shares in
+    every backend's generator. The decode is not the source interface, and every backend decodes the same frames,
+    so the six backends change it in one step.
+  - The list of an ungated chain is bounded below by one, checked by its constructor as `Bounded` checks its
+    maximum.
+  - A chain gated by a flag that nothing else reads is held as a list in which no entry is the absent chain, in
+    place of the `Option`, and the flag is derived from whether it holds an entry.
+  - A source that presented a present empty chain wrote no frame its decode reproduces, so law 4 does not keep its
+    bytes.
 
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.
@@ -369,11 +420,14 @@ The mutation round for step 1 kills five mutants:
    widening of §5, and the declarations across the tree. The goldens are regenerated once. The conformance sweep
    holds laws 1 to 4, and the mutation round holds the five mutants above.
 2. R1. Then R2, R3, R4 and R5, each one step, each removing the declarations it makes untrue.
-3. R6, after the open question.
+3. R7, then R6.
 4. The other five backends, as each takes the source interface (ADR 0058 §6), with the same signatures in their
    idiom: a total encode returns its bytes, and a `may-fail` one returns the backend's failure.
 
 ## Questions left open
 
-- Whether every `chain.has(id)` gate in the tree names an entry with no content of its own (R6). It is answered by
-  reading the documents when R6 starts.
+- Whether every `chain.has(id)` gate in the tree names an entry with no content of its own (R6). *Answered
+  2026-11-01: no.* The Zenoh `put` of the consumer and `chain_has_marker` name the marker `0x12`, whose identifier
+  is the whole entry header but its continuation flag, so nothing is left. `chain_has_envelope` names `0x2` by the
+  4-bit identifier alone, which leaves the mandatory bit and the body, and `chain_has_tagged` names entries that
+  carry a body byte. R6 therefore takes the dependent pair.
