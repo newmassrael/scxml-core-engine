@@ -4,9 +4,12 @@
 /*
  * A generated codec holds a byte string, a text, a list or a TLV chain in an array
  * of its declared bound beside a length the caller sets. The encode of a length
- * above that bound is refused with SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE before the
- * first byte is written: it neither leaves the payload out of a frame that
- * reports success nor reads past the array. A length at the bound is written whole.
+ * above that bound is refused before the first byte is written, with the status a
+ * decode of that frame gives (docs/adr/0058 law 3, docs/adr/0077 §4): a byte
+ * string's or a text's SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE, a list's
+ * SCE_FORGE_CODEC_TOO_MANY_ELEMENTS, a chain's SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW.
+ * It neither leaves the payload out of a frame that reports success nor reads
+ * past the array. A length at the bound is written whole.
  * Each case takes one shape of the generated encode: a positional tail and
  * length-ref, a streaming text (its length held by a sibling), a gated byte string
  * (held in the optional value of the bytes), a repeat and a TLV chain.
@@ -172,7 +175,7 @@ static void a_repeat_above_its_bound_is_refused(void) {
     v.frags_len = sizeof v.frags / sizeof v.frags[0] + 1;
     memset(buf, CANARY, sizeof buf);
     len = 99;
-    CHECK(codec_repeat_basic_encode_to_buf(&v, buf, sizeof buf, &len) == SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
+    CHECK(codec_repeat_basic_encode_to_buf(&v, buf, sizeof buf, &len) == SCE_FORGE_CODEC_TOO_MANY_ELEMENTS,
           "a list above its bound is refused");
     CHECK(len == 0, "a refused list leaves the writer where it began");
     CHECK(untouched(buf, sizeof buf), "a refused list writes no byte, not even its count");
@@ -194,7 +197,7 @@ static void a_tlv_chain_above_its_bound_is_refused(void) {
     v.extensions_len = sizeof v.extensions / sizeof v.extensions[0] + 1;
     memset(buf, CANARY, sizeof buf);
     len = 99;
-    CHECK(codec_tlv_chain_basic_encode_to_buf(&v, buf, sizeof buf, &len) == SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
+    CHECK(codec_tlv_chain_basic_encode_to_buf(&v, buf, sizeof buf, &len) == SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW,
           "a chain above its bound is refused");
     CHECK(len == 0, "a refused chain leaves the writer where it began");
     CHECK(untouched(buf, sizeof buf), "a refused chain writes no byte, not even its header");
