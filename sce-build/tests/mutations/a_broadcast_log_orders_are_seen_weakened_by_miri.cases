@@ -1,0 +1,111 @@
+# Mutation cases for "a broadcast log's orders are seen weakened by Miri".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_broadcast_log_orders_are_seen_weakened_by_miri.cases`.
+#
+# The oracle of `a_broadcast_log_orders_every_slot_hand_over.cases` is the loom
+# models, which explore every interleaving and every outcome the C11 memory model
+# allows within a bound. This casefile has a second tool judge the same protocol: the
+# real-thread tests of `backends/rust/forge-runtime/tests/broadcast_log_threads.rs`
+# under Miri, which interprets the run, checks every access for undefined
+# behaviour and, given several seeds, explores the weak-memory outcomes a relaxed
+# load may return (ADR 0062, "What the thread tests under Miri establish"). The two
+# do not see the same weakenings by the same route, and the ADR measured which of
+# the protocol's orders Miri sees by weakening each by hand and running the test;
+# this casefile is that measurement made repeatable, so that the mutation round of
+# CI can judge it and the table in the ADR does not rest on one run on one machine.
+#
+# The runner is the cargo one with `mutation_under_miri`: the suite named by
+# `mutation_tests` is executed by `cargo miri test` instead of by its test binaries,
+# on the nightly this repository pins for the sanitizer runs
+# (`scripts/lib/queue_sanitizer.sh`, which the `forge-rust` gate reads too, so the
+# round and the gate cannot judge two builds). Miri's seeds are declared where the
+# gate declares them: eight, `-Zmiri-many-seeds=0..8`. Miri is deterministic for a
+# seed, so a case that is CAUGHT here is CAUGHT again on the same nightly.
+#
+# The nine cases below are the nine weakenings the ADR's table records as caught.
+# Two orders are not claimed, as in the loom casefile and for the same reason: the
+# done stamp's release and the acquire of the head's reload after a mismatch are
+# not observable (the loom casefile gives the argument), and a second tool failing
+# to see them is evidence for that argument, not a proof of it. What a case that is
+# CAUGHT here shows is that Miri can see that fault on those schedules; an order
+# that were not caught would not be shown safe, and Miri's emulation does not
+# produce every outcome the memory model allows (it does not reorder a load before
+# an earlier store, for one).
+#
+# Anchors are literal slices of the source, the ones of the loom casefile; an edit
+# that moves one is reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
+mutation_env "RUSTUP_TOOLCHAIN=$QUEUE_SANITIZER_NIGHTLY" "MIRIFLAGS=-Zmiri-many-seeds=0..8"
+mutation_under_miri
+mutation_timeout 900
+mutation_tests -p sce-forge-runtime --test broadcast_log_threads
+mutation_targets backends/rust/forge-runtime/src/broadcast_log_core.rs
+mutation_oracles backends/rust/forge-runtime/tests/broadcast_log_threads.rs
+
+# ── The publisher's orders ──────────────────────────────────────────
+
+mutation_case "the publisher stores the busy stamp without releasing the head before it" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''            BroadcastLog::<W, SLOTS, L>::busy(n),
+            Ordering::Release,''',
+     r'''            BroadcastLog::<W, SLOTS, L>::busy(n),
+            Ordering::Relaxed,''')
+PY
+
+mutation_case "the publisher writes the words without a release fence after the busy stamp" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        fence(Ordering::Release);''',
+     r'''        /* no release fence */''')
+PY
+
+mutation_case "the publisher moves the head without releasing the slot" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''L::store(&self.log.head.0, next, Ordering::Release);''',
+     r'''L::store(&self.log.head.0, next, Ordering::Relaxed);''')
+PY
+
+# ── The reader's orders ─────────────────────────────────────────────
+
+mutation_case "a reader loads the head without acquiring the slot behind it" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        } else {
+            L::load(&self.head.0, Ordering::Acquire)
+        };''',
+     r'''        } else {
+            L::load(&self.head.0, Ordering::Relaxed)
+        };''')
+PY
+
+mutation_case "a reader loads the first stamp without acquiring" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''let first = L::load(&slot.stamp, Ordering::Acquire);''',
+     r'''let first = L::load(&slot.stamp, Ordering::Relaxed);''')
+PY
+
+mutation_case "a reader copies the words without an acquire fence before the second stamp" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''            fence(Ordering::Acquire);''',
+     r'''            /* no acquire fence */''')
+PY
+
+mutation_case "a reader loads the second stamp without acquiring" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''if L::load(&slot.stamp, Ordering::Acquire) == first {''',
+     r'''if L::load(&slot.stamp, Ordering::Relaxed) == first {''')
+PY
+
+# ── What the stamp and the window mean ──────────────────────────────
+
+mutation_case "a reader accepts any written stamp instead of the sequence it wants" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        if first == Self::done(r) {''',
+     r'''        if first != L::UNWRITTEN {''')
+PY
+
+mutation_case "a reader reads an entry a whole ring behind the head as retained" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        if behind >= SLOTS as u64 {''',
+     r'''        if behind > SLOTS as u64 {''')
+PY
