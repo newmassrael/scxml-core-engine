@@ -104,12 +104,15 @@ fn the_rust_backend_writes_one_machine_for_every_build() {
     );
     let code = std::fs::read_to_string(out.join("machine_sm.rs")).expect("the machine");
     assert!(
-        code.contains(r#"#[cfg(feature = "session-unicast-accept")] Accepting,"#),
+        code.contains(r#"#[cfg(feature = "session-unicast-accept")] Accepting ="#),
         "the gated state is a variant under its presence"
     );
+    // A state's number is its place in the build's own states, so `open` is
+    // written once for each number it has, each under the builds that give it.
+    let open: Vec<&str> = code.lines().filter(|l| l.contains(" Open = ")).collect();
     assert!(
-        code.contains(r#"#[cfg(feature = "session-unicast")] Open,"#),
-        "the gated state is a variant under its presence"
+        open.len() == 2 && open.iter().all(|l| l.contains("#[cfg(")),
+        "every declaration of the gated state is under its presence: {open:?}"
     );
     let check = sce_codegen(&["check", path(&machine), "-l", "rust"]);
     assert!(

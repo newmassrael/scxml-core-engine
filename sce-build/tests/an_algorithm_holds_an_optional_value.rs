@@ -497,7 +497,7 @@ fn every_backend_generates_the_record_of_an_optional_day() {
             "kotlin" => "val day: Long?",
             "python" => "day: Optional[int]",
             "c11" => "sce_optional_int64_t day;",
-            "cpp" => "std::optional<int64_t> day;",
+            "cpp" => "std::optional<int64_t> day{};",
             "go" => "Day optional.Of[int64]",
             other => panic!("no field for {other}"),
         };

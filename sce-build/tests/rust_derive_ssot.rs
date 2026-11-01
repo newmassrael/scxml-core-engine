@@ -428,7 +428,7 @@ fn statechart_state_event_enums_emit_ssot_defaults() {
         "exactly one #[default] marker (the initial state); got:\n{src}"
     );
     assert!(
-        src.contains("#[default]\n    Red,"),
+        src.contains("#[default]\n    Red = 0,"),
         "the #[default] marker must sit on the initial-state variant Red; got:\n{src}"
     );
 }

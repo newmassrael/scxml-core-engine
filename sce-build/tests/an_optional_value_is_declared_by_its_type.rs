@@ -690,8 +690,8 @@ fn every_backend_holds_an_optional_number_field_in_its_optional_type() {
             "cpp",
             vec![
                 "#include <optional>",
-                "std::optional<int64_t> day;",
-                "std::optional<bool> done;",
+                "std::optional<int64_t> day{};",
+                "std::optional<bool> done{};",
             ],
         ),
         (

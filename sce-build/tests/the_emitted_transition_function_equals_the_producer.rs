@@ -1298,7 +1298,15 @@ fn active(engine: &Engine<Policy>) -> Vec<&'static str> {{
         .into_iter()
         .map(Policy::get_state_name)
         .collect();
-    names.reverse();
+    names.sort_unstable();
+    names
+}}
+
+/// The configuration of `state`, which is a set (§scxml-3.11), in the order
+/// [`active`] holds a machine's.
+fn configuration(state: tf::State) -> Vec<&'static str> {{
+    let mut names = tf::configuration(state).to_vec();
+    names.sort_unstable();
     names
 }}
 
@@ -1331,7 +1339,7 @@ fn path_to(target: tf::State) -> Option<Vec<tf::Event>> {{
 fn main() {{
     assert_eq!(
         active(&fresh()),
-        tf::configuration(tf::INITIAL),
+        configuration(tf::INITIAL),
         "the machine does not start where the function does"
     );
     let mut pairs = 0usize;
@@ -1355,7 +1363,7 @@ fn main() {{
             }}
             assert_eq!(
                 active(&engine),
-                tf::configuration(state),
+                configuration(state),
                 "the path to {{}} leaves the machine elsewhere",
                 state.as_str()
             );
@@ -1371,7 +1379,7 @@ fn main() {{
                     );
                     assert_eq!(
                         active(&engine),
-                        tf::configuration(state),
+                        configuration(state),
                         "{{pair}}: the machine moved on an event it discarded"
                     );
                 }}
@@ -1391,7 +1399,7 @@ fn main() {{
                     }} else {{
                         assert_eq!(
                             active(&engine),
-                            tf::configuration(to),
+                            configuration(to),
                             "{{pair}}: the machine is not where the function says"
                         );
                     }}
