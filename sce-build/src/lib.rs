@@ -5483,8 +5483,6 @@ fn compute_codec_recursive_max_bytes(
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> u32 {
-    use forge::model::BitSize;
-
     // Resolve a single import alias to the imported codec's full
     // recursive max-bytes. Returns `None` on filesystem / parse / kind
     // mismatch / cycle — caller (the variant / repeat / tlv branches
@@ -5532,8 +5530,7 @@ fn compute_codec_recursive_max_bytes(
             .filter_map(|f| {
                 let alias = f.repeat_body_alias.as_deref()?;
                 let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
-                let count = forge::limits::resolve_max_count(f.max_count);
-                Some(body_max.saturating_mul(count))
+                Some(body_max.saturating_mul(f.storage_entries()))
             })
             .sum();
         let tlv_chain_body_max: u32 = cm
@@ -5543,11 +5540,7 @@ fn compute_codec_recursive_max_bytes(
             .filter_map(|f| {
                 let alias = f.tlv_chain_body_alias.as_deref()?;
                 let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
-                let max_depth = match &f.bit_size {
-                    BitSize::TlvChain { max_depth, .. } => *max_depth,
-                    _ => return None,
-                };
-                Some(body_max.saturating_mul(max_depth))
+                Some(body_max.saturating_mul(f.storage_entries()))
             })
             .sum();
         cm.max_frame_bytes() + repeat_body_max + tlv_chain_body_max

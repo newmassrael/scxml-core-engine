@@ -7179,10 +7179,7 @@ fn rust_owned_list_entry(
 /// The storage profile's container that holds the entries `entry` of the list
 /// `f` in its owned form, sized to the list's bound.
 fn rust_owned_list(f: &CodecField, entry: &str) -> String {
-    format!(
-        "{STORAGE_PARAM}::List<{entry}, {}>",
-        crate::forge::codec_totality::list_bound(f)
-    )
+    format!("{STORAGE_PARAM}::List<{entry}, {}>", f.storage_entries())
 }
 
 fn rust_owned_field_keys(
@@ -7280,7 +7277,7 @@ fn rust_owned_field_keys(
         match f.sce_type {
             SceType::Bytes | SceType::String => {
                 let text = matches!(f.sce_type, SceType::String);
-                let max = crate::forge::limits::resolve_bytes_max(f.max_size);
+                let max = f.storage_bytes();
                 let container = format!(
                     "{STORAGE_PARAM}::{}<{max}>",
                     if text { "Str" } else { "Bytes" }
@@ -8785,7 +8782,7 @@ fn render_codec(
                     // backends own their elements. Applied at type
                     // positions only (`::decode` calls stay bare).
                     let body_lt = rust_codec_body_lifetime(lang, imports, alias);
-                    let max_count = crate::forge::limits::resolve_max_count(f.max_count);
+                    let max_count = f.storage_entries();
                     obj.insert("max_count".into(), max_count.into());
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
                     obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
@@ -9354,7 +9351,7 @@ fn render_codec(
                         obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else {
-                    let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
+                    let resolved = f.storage_bytes();
                     obj.insert("max_size".into(), resolved.into());
                     let kind = match &f.bit_size {
                         BitSize::Tail => "tail",
@@ -9988,8 +9985,7 @@ fn render_codec(
                     .iter()
                     .find(|i| i.alias == alias)
                     .and_then(|i| i.codec_max_bytes)?;
-                let count = crate::forge::limits::resolve_max_count(f.max_count);
-                Some(body_max.saturating_mul(count))
+                Some(body_max.saturating_mul(f.storage_entries()))
             })
             .sum();
         // RFC §synth-5-B B3 TLV chain primitive: each tlv-chain field
@@ -10010,11 +10006,7 @@ fn render_codec(
                     .iter()
                     .find(|i| i.alias == alias)
                     .and_then(|i| i.codec_max_bytes)?;
-                let max_depth = match &f.bit_size {
-                    BitSize::TlvChain { max_depth, .. } => *max_depth,
-                    _ => unreachable!("filter selected is_tlv_chain"),
-                };
-                Some(body_max.saturating_mul(max_depth))
+                Some(body_max.saturating_mul(f.storage_entries()))
             })
             .sum();
         m.max_frame_bytes() + repeat_body_max + tlv_chain_body_max
@@ -17773,7 +17765,7 @@ fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
     if field.declared_bound().is_some() {
         return String::new();
     }
-    let capacity = crate::forge::limits::resolve_max_count(field.max_count);
+    let capacity = field.storage_entries();
     format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
 }
 
@@ -17784,7 +17776,7 @@ fn c11_list_room(field: &CodecField, fields: &[CodecField], len: &str, indent: &
     if field.declared_bound().is_some() {
         return repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent);
     }
-    let capacity = crate::forge::limits::resolve_max_count(field.max_count);
+    let capacity = field.storage_entries();
     format!("if ({len} >= {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
 }
 
@@ -17831,7 +17823,7 @@ fn length_block_indent(lang: crate::generator::Language, gated: bool) -> &'stati
 /// whose declared bound is its array's needs none. Followed by a newline and
 /// `indent`, or empty.
 fn c11_storage_check(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
-    let capacity = u64::from(crate::forge::limits::resolve_bytes_max(field.max_size));
+    let capacity = u64::from(field.storage_bytes());
     let proven = field
         .length_bound(fields)
         .and_then(|b| b.max)
@@ -30593,11 +30585,8 @@ fn c11_gated_list_member(body_type: &str, max: u32) -> String {
 /// array (a number, an embedded body) has no such condition.
 fn c11_over_bound_condition(id: &str, field: &CodecField) -> Option<String> {
     let bound = match &field.bit_size {
-        BitSize::Tail | BitSize::LengthRef => {
-            crate::forge::limits::resolve_bytes_max(field.max_size)
-        }
-        BitSize::Repeat { .. } => crate::forge::limits::resolve_max_count(field.max_count),
-        BitSize::TlvChain { max_depth, .. } => *max_depth,
+        BitSize::Tail | BitSize::LengthRef => field.storage_bytes(),
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => field.storage_entries(),
         BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
     };
     if field.present_if.is_some() {
@@ -30640,7 +30629,7 @@ fn c11_optional_declared(held: &str, present: &SceType, alias: &str) -> C11Optio
 /// text is held as its UTF-8 bytes and their length, as an ungated one is: the
 /// buffer is not NUL-terminated, so a text of the whole bound is a value.
 fn c11_gated_bytes_optional(field: &CodecField) -> C11Optional {
-    let bound = crate::forge::limits::resolve_bytes_max(field.max_size);
+    let bound = field.storage_bytes();
     c11_optional_declared(
         &crate::forge::static_lowering::c_bytes_storage_type(bound),
         &SceType::Bytes,

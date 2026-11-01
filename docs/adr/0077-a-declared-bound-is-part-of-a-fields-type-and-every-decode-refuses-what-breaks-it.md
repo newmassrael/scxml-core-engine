@@ -237,8 +237,9 @@ the other side: a total encode has only the sink's error (ADR 0065 §4), and a c
 decode. So:
 
 - **The bound** is `sce:max-size`, `max-count` and `max-depth`, as §1 reads them: the protocol's, in the document, the
-  same on every profile. It stays what §2 guards, what `Bounded<L, MAX, MIN>` states, and what the encode holds. Past
-  it a frame is malformed (`LengthOutOfRange`, `TooManyElements`).
+  same on every profile, and absent where the protocol states none. It stays what §2 guards, what
+  `Bounded<L, MAX, MIN>` states, and what the encode holds. Past it a frame is malformed (`LengthOutOfRange`,
+  `TooManyElements`).
 - **The capacity** is what a storing form holds: inline owned storage, a list decoded eagerly, a C11 array, a
   broadcast-log slot. It is the deployment's, so it is not in the codec document. It is read from the deploy input:
 
@@ -274,16 +275,28 @@ backend that stores.**
 
 This lands in steps, each its own commit and guide section:
 
-1. The split with no change of behaviour: `CodecField` answers its capacity apart from its bound, every storing reader
-   moves to it, and `CapacityExceeded` joins `CodecError` on each backend.
-2. The deploy input, and the parser admitting a field with no bound.
+1. The split with no change of behaviour: `CodecField` answers what a storing form holds apart from its bound, and
+   every storing reader moves to it. The regeneration changes nothing, which is the proof.
+2. The deploy input, `CapacityExceeded` on each backend, and the parser admitting a field with no bound.
 3. Eager lists on the storage profile, and owned forms bound to growable profiles where a field has no capacity.
 4. The consumer moves each field by what the protocol says.
 
-*Open, and the owner's:* whether a chain's `max-depth` and a locator's `max-count` are the protocol's or a policy. The
-protocol's chain has no bound, so a depth of 8 reads as a capacity, but refusing a frame past 8 extensions may be what
-a node should do on the wire. This is a judgement about the protocol, and no rule here settles it. Until it is
-decided each stays a bound, as it is today.
+*Decided by the owner on 2026-11-02: a chain's `max-depth` and a list's `max-count` are the protocol's or they are
+nothing.* The upstream codec of the consumer's protocol reads an extension chain with `while has_ext` and no limit,
+and a locator list with a `usize` length, so a frame with 9 extensions is one a conforming peer may send. A depth of 8
+in the document would call it corrupt, the defect above in another field. A node that refuses past 8 is making a
+choice about itself, which is a capacity. There is no third category: a policy limit is reported as this node's
+refusal, not as a malformed frame. So:
+
+- `max-depth` and `max-count` become optional, stated only where the protocol bounds the list. A walk stores nothing
+  and reads at most its frame, so an unbounded chain costs a view no more than a bounded one.
+- A list with no bound is `MAX = usize::MAX`, so `Bounded`, `Chain` and `Aligned` hold it with no second shape.
+- `on-overflow` leaves the document with the capacity: what a node does past what it holds is the node's. It defaults
+  to refusing, and `TlvChainOverflow` is `CapacityExceeded`.
+- `truncate` is removed. It drops entries silently, so a re-encode differs from its frame, and dropping a mandatory
+  extension breaks the protocol. No document in the tree uses it; one test does.
+- The width of a length field stays a bound of the language by §1. Upstream bounds a locator and an encoding schema to
+  `u8` and a key suffix to `u16`, so those are 255, 255 and 65535 and not unbounded, whatever a capacity says.
 
 ## Alternatives
 

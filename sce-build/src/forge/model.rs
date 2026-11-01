@@ -2746,6 +2746,23 @@ impl CodecField {
         }
     }
 
+    /// How many bytes a form that stores this byte or text field holds: a C11
+    /// array, an inline owned buffer, a broadcast-log slot (docs/adr/0077 §7). A
+    /// form that stores nothing, a borrowed decode or a view, reads the bound
+    /// ([`Self::length_bound`]) and not this.
+    pub fn storage_bytes(&self) -> u32 {
+        crate::forge::limits::resolve_bytes_max(self.max_size)
+    }
+
+    /// How many entries a form that stores this list holds: a C11 array, an
+    /// inline owned list, a list decoded eagerly (docs/adr/0077 §7).
+    pub fn storage_entries(&self) -> u32 {
+        match &self.bit_size {
+            BitSize::TlvChain { max_depth, .. } => *max_depth,
+            _ => crate::forge::limits::resolve_max_count(self.max_count),
+        }
+    }
+
     /// The lengths (bytes of a `tail` or `length-ref` field) or counts
     /// (entries of a `<sce:repeat>` or `<sce:tlv-chain>`) this field's value
     /// may have: the declared bound intersected with what the field that
@@ -3325,7 +3342,7 @@ impl CodecModel {
             .map(|f| match &f.bit_size {
                 BitSize::Vle { width_bits } => vle_cap_bytes(*width_bits),
                 BitSize::Repeat { .. } | BitSize::TlvChain { .. } => 0,
-                _ => crate::forge::limits::resolve_bytes_max(f.max_size),
+                _ => f.storage_bytes(),
             })
             .sum();
         self.min_frame_bytes() + var_max
