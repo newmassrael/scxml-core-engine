@@ -1575,6 +1575,48 @@ check over 100 histories each and their sizes are not printed.
 Each recorded history still passes the checker's own well-formedness test, so a recorder that wrote a malformed history would
 have been refused, not judged.
 
+### What the Swift row landed (2026-11-01)
+
+The Swift codec (positional fixed-width integers, landed by the session that owns the Swift backend) removed the reason the log
+had no Swift row: the element of a log names a codec, and Swift had none. The log is now generated for Swift for every element
+that codec lowers, which has no caller input, so its entry is the length word and the payload words with no context word and
+no tag. The matrix registers `(BroadcastLog, Swift)` as written in part (`ships_in_part`), and an element the codec does not
+lower is refused by name before anything is written, from one fact, `BroadcastLogElementFacts::swift_unlowered`, which reads
+the answer `swift_codec_unlowered` already gives for a codec import, so the list of unlowered constructs exists once. The
+refusal text is `broadcast-log 'event_ring': the element 'event_record' cannot be stored by the Swift template: codec
+'event_record': a flag input has no Swift lowering yet`, and likewise for a variant, a CBOR codec, a bit-field and a
+variable-length field.
+
+The runtime is one file, `backends/swift/forge-runtime/Sources/SceForgeRuntime/BroadcastLog.swift`, the 64-bit row over
+`Synchronization` (`Atomic<UInt64>`): one allocation of cells made at `init`, because `Atomic` is noncopyable and cannot sit in
+an `Array`, and the sizes are runtime values, because this tools version has no value generics. It is `@unchecked Sendable`, sound
+for the reason the other rows are: after `init` only atomics change and one publisher is enforced by `publisher()`, an
+`exchange` on a flag. Every load, store and fence has the order of `broadcast_log_core.rs` (busy stamp store and the fence
+after it release, words relaxed, done stamp and head release; the head, the stamps and the reload of the head acquire; the
+fence before the second stamp acquire; the deferred reader's bind one acquire load of the head, which the read goes on
+with), read from the source and not assumed. It has no `InlineArray`, no `Foundation` and no availability annotation. The
+typed read has a fourth case, `unreadable`, as Kotlin's has, covering a stored length above the bound and bytes that do not
+decode, because the Swift codec's error type has no case for a length out of range and was not edited.
+
+A target whose atomics select the narrow row is refused for Swift as `generate/unsupported-feature`, naming the target triple
+and saying the Swift forge runtime has the 64-bit row only: promoting it would generate code over atomics the device does not
+have. The row is chosen through `rust_broadcast_log_row`, the function `judged_broadcast_log_row` calls first, and not through
+the judgement itself, which would judge a 32-bit stamp no Swift module keeps and tell a narrow-target deploy that its wrap bound
+is unstated instead of what Swift lacks.
+
+Results on build machines: the Swift forge-runtime package runs 99 tests, 26 of them the log's (contract tests modelled on
+Kotlin's, five of the deferred reader, and four threaded stresses over a small ring, a three-slot log and a wide
+entry), and all pass on Swift 6.4; the generated module over a fixed-width element compiles and its seven tests pass
+(constants, round trip, the entry as the length word and the bytes little-endian eight to a word, a reader lapped by exactly
+two, a length above the bound refused, a short frame unreadable and not out of range, the publisher given to one holder at
+a time); `broadcast_log_kind` runs 168; the backend parity test runs 9; clippy over the workspace is clean. The regeneration
+wrote two new Swift units for the log fixtures, and moved the `source-hash` line of 674 other generated trees and nothing
+else (every changed line was checked); what moved the hash was not traced, and an earlier regeneration that added a Rust
+template moved none. The stress tests are probabilistic by nature: a
+weakened fence is found by them only on some runs, as for the other languages' stress runs, and the orders are held by the
+loom and GenMC runs of the algorithm they copy. No mutation casefile covers the Swift row: every case would need an oracle command
+that names `swift test`, which the casefile format does not declare.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1586,14 +1628,14 @@ generation and conformance runs and their ARMv6-M and ARMv7-M builds (see their 
 
 What is left:
 
-- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a log row, and the row is blocked on something
-  outside the log: the element of a log names a codec document (`broadcast-log/element-type-not-a-kind`), and the Swift
-  backend has no codec emitter (`ForgeKind::Codec` and `ForgeKind::Queue` are not emitted for Swift, and its forge runtime has
-  no codec, queue or log support). A runtime core alone would leave no typed header
-  to refuse or accept, so the row waits for a Swift codec. When it exists the row is mechanical: its runtime already imports
-  `Synchronization` (`Atomic<T>` with explicit orderings), a build machine has a Swift toolchain, and the Rust core, the two C
-  headers and the C++ class are the four texts to copy. It is written without `InlineArray`, which needs a newer toolchain than
-  the package's tools version and carries an availability annotation on Apple platforms.
+- **Swift holds the log in part**, and what is left follows its codec. The Swift codec lowers positional fixed-width integer
+  fields and refuses everything else by name (flag inputs, variants, bit-fields, present-if, repeat, TLV chain, embed,
+  variable length, cbor, content-line), so the log refuses an element whose codec holds any of those, naming the codec and the
+  construct. Each construct the Swift codec comes to lower widens the elements the log takes, and a flag input or a variant
+  adds the context words, which the Swift template has not been written to store: it would be the Kotlin template's
+  context block over the same runtime. The 64-bit row is the only one (see the section above), so a deploy whose target
+  selects the narrow row is refused for Swift. `broadcast-log/runtime-missing` is produced by nothing today: it stays in the
+  contract as the answer for a language added to `Language` whose runtime has no log row.
 - **Narrow rows for Kotlin, Go and Python** do not exist: the targets they run on offer 64-bit atomics, and a target that did
   not would take the row of Rust, C11 and C++.
 - **Queues over a CBOR element that borrows.** The Rust CBOR owned form made the type a queue or a bounded collection names
