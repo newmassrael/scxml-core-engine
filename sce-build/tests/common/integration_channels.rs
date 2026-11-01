@@ -445,10 +445,6 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
     ),
     ("flat_lifecycle", swift_refusal!("the transition function")),
     (
-        "invoke_expression_failure_is_reported",
-        swift_refusal!("an `<invoke srcexpr>` that declares no `sce:candidates`"),
-    ),
-    (
         "nested_lifecycle",
         swift_refusal!("the transition function"),
     ),

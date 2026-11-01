@@ -427,6 +427,35 @@ fn values_handed_to_a_child_without_an_engine_are_read_and_not_given() {
     );
 }
 
+/// §scxml-6.4 + SCE Accepted Subset §2.13: an `<invoke srcexpr>` that declares no `sce:candidates`
+/// has no finite set of children to choose among, so its child is the stub the build writes for it
+/// (an immediate `<final>`); the expression is read to classify its errors, and a failure to read it
+/// is `error.execution` with nothing started.
+#[test]
+fn an_invoke_srcexpr_with_no_candidates_reads_the_expression_and_starts_the_stub() {
+    let body = r##"
+  <datamodel><data id="where" expr="'x.scxml'"/></datamodel>
+  <state id="s0">
+    <invoke type="scxml" srcexpr="where"/>
+    <transition event="done.invoke" target="done"/>
+  </state>
+  <final id="done"/>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains(r#"guard evaluateText("where") != nil else {"#),
+        "the expression is read, and a failure to read it ends the start: {machine}"
+    );
+    assert!(
+        machine.contains("ProbeHybrid0Policy()"),
+        "the child is the stub of the invoke: {machine}"
+    );
+    assert!(
+        !machine.contains("documentStem("),
+        "no candidate is chosen by the value: {machine}"
+    );
+}
+
 /// §scxml-6.4: a namelist name that is not a declared variable is not a readable location, which
 /// ends the element: one error.execution however many names are bad, and no session starts.
 #[test]

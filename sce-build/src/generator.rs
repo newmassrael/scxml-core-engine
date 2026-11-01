@@ -4417,7 +4417,11 @@ fn swift_hybrid_invoke_unlowered(
     if !info.contentexpr.is_empty() {
         return Some("an <invoke> whose child a contentexpr computes".to_string());
     }
-    if info.candidates.is_empty() {
+    // §scxml-6.4: with no candidates declared the child is the stub the build writes beside the
+    // machine (an immediate `<final>`, [`crate::model::HybridInvokeInfo::stub_document`]); the
+    // expression is read to classify its errors, and the stub is what starts. Only an engine
+    // reads an expression, so a document of another data model has nothing to evaluate it with.
+    if info.candidates.is_empty() && (!is_ecma || info.common.child_name.is_empty()) {
         return Some("an <invoke srcexpr> that declares no sce:candidates".to_string());
     }
     // §scxml-6.4: an `ecmascript` parent reads the `srcexpr` with its engine as the invocation

@@ -309,13 +309,21 @@
 {% if ecmascript_datamodel %}
         // Under `datamodel="ecmascript"` the engine reads it, as ECMAScript converts the value
         // to a string, and the arguments are read only for the candidate it chose (6.4.3).
+{% if invoke_info.candidates %}
         guard let sceValue = evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") else {
+{% else %}
+        // No candidate is declared, so the value names nothing the build could have written a
+        // child for: it is read to classify its errors, and the stub the build wrote starts.
+        guard evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") != nil else {
+{% endif %}
 {% if 'error.execution' in model.events %}
             engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
 {% endif %}
             return
         }
+{% if invoke_info.candidates %}
         let sceSelected = documentStem(sceValue)
+{% endif %}
 {% elif invoke_info.native_src_fails %}
         let sceSelected: String
         do {
@@ -334,7 +342,29 @@
 {% endif %}
         // W3C SCXML C.1: the child is known by the id its parent mints for it.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
+{% if not invoke_info.candidates %}
+        // §scxml-6.4: the child is the stub document of this invoke (an immediate `<final>`), so
+        // `done.invoke` arrives whatever the expression would have named. Its arguments are read
+        // for the errors they can cost and given to nobody: the stub declares no variable.
+        let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy()
+{% if invoke_info.idlocation %}
+        // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names
+        // before the child starts.
+        if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
+            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+        }
+{% endif %}
+{{ ecma_seed_child(invoke_info, model, machine_name, '        ', false) }}
+        let stubSession = InvokedSession(
+            policy: childPolicy,
+            sessionID: childSessionID,
+            queue: ParentEventQueue()
+        )
+        stubSession.engine.setClock(engine.clock())
+        let sceStarted: any ChildEngine = stubSession
+{% else %}
         let sceStarted: any ChildEngine
+{% endif %}
 {% for candidate in invoke_info.candidates %}
         {{ 'if' if loop.first else '} else if' }} sceSelected.utf8.elementsEqual("{{ candidate.stem | escape_swift }}".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -360,6 +390,7 @@
             session.engine.setClock(engine.clock())
             sceStarted = session
 {% endfor %}
+{% if invoke_info.candidates %}
         } else {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
@@ -369,6 +400,7 @@
 {% endif %}
             return
         }
+{% endif %}
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = ChildSession(
             sessionID: childSessionID,

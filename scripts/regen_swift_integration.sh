@@ -80,6 +80,14 @@ for stem in "${LOWERED[@]}"; do
         [ "$document" = "$INPUT_ROOT/$stem/$stem.scxml" ] && continue
         "$CODEGEN" generate "$document" -l swift -o "$TMP/$stem/"
     done
+    # The stub a hybrid `<invoke>` that declares no candidates starts (W3C SCXML 6.4): `generate`
+    # writes it, for every backend, beside the machine it belongs to, and the machine of the stub is
+    # the child the parent instantiates. Matched by the name the build gives it, so a child the
+    # stem carries and `generate` copied there is not generated twice.
+    for stub in "$TMP/$stem"/*_hybrid[0-9]*.scxml; do
+        [ -e "$stub" ] || continue
+        "$CODEGEN" generate "$stub" -l swift -o "$TMP/$stem/"
+    done
 done
 
 mkdir -p "$GENERATED_DIR"
