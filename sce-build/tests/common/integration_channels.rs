@@ -491,13 +491,7 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
 /// `a_swift_exemption_still_holds` is red for a stem that is listed and has one. The channel
 /// generates and compiles every stem below; what it has not done is ask the machine whether it
 /// behaves.
-pub const SWIFT_DRIVER_PENDING: &[&str] = &[
-    "a_delayed_send_reaches_what_its_target_names",
-    "a_peer_named_at_run_time_reaches_the_router",
-    "a_send_reaches_only_what_its_target_names",
-    "a_target_expression_is_routed_as_its_literal_is",
-    "typed_reader_names",
-];
+pub const SWIFT_DRIVER_PENDING: &[&str] = &["typed_reader_names"];
 
 /// Whether, and why, the Swift channel cannot host `stem`.
 fn swift_cannot_host(stem: &str) -> Option<Exemption> {

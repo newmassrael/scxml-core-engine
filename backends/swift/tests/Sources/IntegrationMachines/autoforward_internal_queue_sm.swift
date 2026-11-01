@@ -320,6 +320,8 @@ public final class AutoforwardInternalQueuePolicy: InvocablePolicy {
     public var needsDataModelInit: Bool { false }
     public var hasInvokeSupport: Bool { true }
     public var hasChildTick: Bool { true }
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    public var needsParent: Bool { false }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { true }
 

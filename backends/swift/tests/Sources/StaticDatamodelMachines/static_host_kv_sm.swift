@@ -574,6 +574,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     public var needsDataModelInit: Bool { false }
     public var hasInvokeSupport: Bool { true }
     public var hasChildTick: Bool { false }
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    public var needsParent: Bool { false }
 
     /// The `<invoke>`s a host runs (W3C SCXML 6.4.1): their `done.invoke.<id>` is
     /// accepted only through the engine's `completeHostInvoke`.

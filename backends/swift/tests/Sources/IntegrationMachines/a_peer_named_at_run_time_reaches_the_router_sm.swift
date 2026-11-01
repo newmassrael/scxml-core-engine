@@ -294,6 +294,8 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     public var needsDataModelInit: Bool { true }
     public var hasInvokeSupport: Bool { false }
     public var hasChildTick: Bool { false }
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    public var needsParent: Bool { false }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { false }
 
@@ -631,6 +633,17 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
                         break sceBlock
                     }
                     let sendEventData = ""
+                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
+                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
+                    // is what every channel does with no router registered: a send to a host processor
+                    // nobody serves, one error.execution, and the block goes on (the other targets of
+                    // the block are still this session's).
+                    if isMeshTarget(sendTarget) {
+                        var sendError = EventWithMetadata.platformError(APeerNamedAtRunTimeReachesTheRouterEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
+                        sendError.metadata.sendID = "__send_0"
+                        engine.raise(sendError)
+
+                    } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
                     // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
@@ -658,6 +671,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
                     }
                 }
 
@@ -697,6 +711,17 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
                         break sceBlock
                     }
                     let sendEventData = ""
+                    // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
+                    // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
+                    // is what every channel does with no router registered: a send to a host processor
+                    // nobody serves, one error.execution, and the block goes on (the other targets of
+                    // the block are still this session's).
+                    if isMeshTarget(sendTarget) {
+                        var sendError = EventWithMetadata.platformError(APeerNamedAtRunTimeReachesTheRouterEvent.errorExecution, message: "<send type='sce:mesh'> names a processor the host declared but never registered")
+                        sendError.metadata.sendID = "__send_1"
+                        engine.raise(sendError)
+
+                    } else {
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
                     // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
@@ -724,6 +749,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
                     }
                 }
             }

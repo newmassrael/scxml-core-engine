@@ -162,10 +162,12 @@ public final class Engine<Policy: StatePolicy> {
     /// it, cleared when a run starts. See `terminalState`.
     public private(set) var terminalState: State?
 
-    /// Says §scxml-D-exitInterpreter has run for this run: the configuration is
-    /// empty. `currentState` still names the state the run was last in (`State` has
-    /// no "none"), so `getActiveStates` answers from this flag and not from it.
-    private var interpreterExited = false
+    /// Says the configuration is empty: no run has entered its initial configuration
+    /// yet (§scxml-3.13), or §scxml-D-exitInterpreter has run for the last one.
+    /// `currentState` still names the state the run was last in, or the initial one
+    /// before any run (`State` has no "none"), so `getActiveStates` answers from this
+    /// flag and not from it.
+    private var configurationEmpty = true
 
     /// The states whose `<data>` this run has already bound under late binding:
     /// `s.isFirstEntry` (§scxml-D-enterStates) is false for exactly these. The rule
@@ -335,7 +337,7 @@ public final class Engine<Policy: StatePolicy> {
 
         isRunning = true
         clearTerminalState()
-        interpreterExited = false
+        configurationEmpty = false
         lateBoundStates = nil
 
         // §scxml-5.3: Initialize datamodel before any state entry
@@ -428,7 +430,7 @@ public final class Engine<Policy: StatePolicy> {
         }
 
         currentState = current
-        interpreterExited = false
+        configurationEmpty = false
         // The restored states were entered by the run being resumed, so their
         // late-bound <data> is that run's: the host restores it, and a later re-entry
         // must not bind it again (§scxml-D-enterStates isFirstEntry).
@@ -598,7 +600,7 @@ public final class Engine<Policy: StatePolicy> {
     /// the run entered a top-level `<final>`, or the host stops a run that has not
     /// ended. Runs once per run.
     private func exitInterpreter() {
-        if interpreterExited {
+        if configurationEmpty {
             return
         }
         let configuration = getActiveStates()
@@ -610,7 +612,7 @@ public final class Engine<Policy: StatePolicy> {
         for state in statesToExit {
             policy.executeExitActions(state, engine: self, configurationBeforeExit: configuration)
         }
-        interpreterExited = true
+        configurationEmpty = true
         isRunning = false
     }
 
@@ -628,11 +630,12 @@ public final class Engine<Policy: StatePolicy> {
         if policy.hasActiveStates {
             return policy.getActiveStates()
         }
-        // §scxml-D-exitInterpreter: a run that has ended has no configuration. (A
-        // policy that keeps its own active set emptied it state by state above; this
-        // one derives the set from `currentState`, which still names the final, so the
-        // answer has to be given here.)
-        if interpreterExited {
+        // §scxml-D-exitInterpreter: a run that has ended has no configuration, and a
+        // machine no run has started yet has none either. (A policy that keeps its own
+        // active set emptied it state by state above; this one derives the set from
+        // `currentState`, which still names the final, or the initial state before any
+        // run, so the answer has to be given here.)
+        if configurationEmpty {
             return []
         }
         // Walk from the current state up to the root.

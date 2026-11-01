@@ -481,6 +481,8 @@ public final class StructureRegionsPolicy: InvocablePolicy {
     public var needsDataModelInit: Bool { false }
     public var hasInvokeSupport: Bool { false }
     public var hasChildTick: Bool { false }
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    public var needsParent: Bool { false }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { false }
 
