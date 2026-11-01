@@ -885,14 +885,16 @@ fn forge_rust_codec_repeat_unconditional_count_runtime() {
     const HARNESS: &str = r#"// Injected by forge_rust_codec_repeat_unconditional_count_runtime.
 #[cfg(test)]
 mod tests {
-    use crate::codec_repeat_unconditional_count::CodecRepeatUnconditionalCount as Ls;
+    use crate::codec_repeat_unconditional_count::{
+        CodecRepeatUnconditionalCount as Ls, CodecRepeatUnconditionalCountOptionsH as Lists,
+    };
     use ::sce_forge_runtime::codec::SceCursor;
 
     fn roundtrip(frame: &[u8]) -> Ls {
         let mut cursor = SceCursor::new(frame);
         let view = Ls::decode(&mut cursor).expect("decode linkstate frame");
         assert_eq!(
-            view.encode_to_vec().expect("encode").as_slice(),
+            view.encode_to_vec().as_slice(),
             frame,
             "re-encode must be byte-exact"
         );
@@ -905,26 +907,33 @@ mod tests {
         let frame = [0x00u8, 0x02, 0xCA, 0xFE, 0xBE, 0xEF];
         let ls = roundtrip(&frame);
         assert_eq!(ls.links_len, 2);
-        assert_eq!(ls.links.len(), 2);
-        assert!(ls.weights.is_none(), "weights absent when options.H clear");
+        match &ls.options_h {
+            Lists::NotH { links } => assert_eq!(links.len(), 2),
+            Lists::H { .. } => panic!("weights absent when options.H clear"),
+        }
     }
 
     #[test]
     fn weights_borrow_unconditional_count_when_flag_set() {
         // options.H=1: the unconditional links_len=2 drives BOTH links and
-        // the gated weights (no own count on the wire).
+        // the gated weights (no own count on the wire), so the two are one
+        // value of one count (docs/adr/0065 §6 R5).
         let frame = [
             0x01u8, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22,
         ];
         let ls = roundtrip(&frame);
         assert_eq!(ls.links_len, 2);
-        assert_eq!(ls.links.len(), 2);
-        let weights = ls.weights.expect("weights present when options.H set");
-        assert_eq!(
-            weights.len(),
-            2,
-            "weights count borrowed from unconditional links_len"
-        );
+        match &ls.options_h {
+            Lists::H { links_weights } => {
+                assert_eq!(links_weights.first().len(), 2);
+                assert_eq!(
+                    links_weights.second().len(),
+                    2,
+                    "weights count borrowed from unconditional links_len"
+                );
+            }
+            Lists::NotH { .. } => panic!("weights present when options.H set"),
+        }
     }
 }
 "#;

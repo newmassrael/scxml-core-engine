@@ -26,8 +26,8 @@ mutation_oracles sce-build/tests/codec_totality.rs
 
 mutation_case "no gate makes a group" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''        .filter(|(_, set, clear)| set.len() + clear.len() >= 2)''',
-     r'''        .filter(|(_, set, clear)| set.len() + clear.len() >= usize::MAX)''')
+     r'''        .filter(|(_, (_, set, clear))| set.len() + clear.len() >= 2)''',
+     r'''        .filter(|(_, (_, set, clear))| set.len() + clear.len() >= usize::MAX)''')
 PY
 
 mutation_case "a stated length stays beside its content" <<'PY'

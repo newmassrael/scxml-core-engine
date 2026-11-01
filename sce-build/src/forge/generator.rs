@@ -7440,8 +7440,8 @@ fn rust_group_storage(
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
     use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
-        chain_arm_type, chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
-        key_type, member_varies,
+        aligned_name, chain_arm_type, chain_optional_in, group_accessor, group_arm_name,
+        group_type, holds_chain, key_type, member_varies,
     };
     let roles = crate::forge::codec_roles::classify(m, imports);
     if roles.groups.is_empty() {
@@ -7492,14 +7492,17 @@ fn rust_group_storage(
                 let built = replace_place(stmt, &place, &local);
                 // A decode that builds a gated element in place starts from
                 // none, and one that fills an ungated list in place (its
-                // `refill`, docs/adr/0065 §6 R7) from the list's default; one
-                // that assigns it on every path declares it unassigned. The
-                // statement is the one an element outside a group is decoded
-                // by, which assigns its field on every path; the local it
-                // assigns here is declared first, as that field was.
+                // `refill`, docs/adr/0065 §6 R7, or a borrow of it) from the
+                // list's default; one that assigns it on every path declares it
+                // unassigned. The statement is the one an element outside a
+                // group is decoded by, which assigns its field on every path;
+                // the local it assigns here is declared first, as that field
+                // was.
                 let declared = if stmt.contains(&format!("{place}.insert(")) {
                     format!("let mut {local}: {ty} = None;\n        {built}")
-                } else if stmt.contains(&format!("{place}.refill(")) {
+                } else if stmt.contains(&format!("{place}.refill("))
+                    || stmt.contains(&format!("&mut {place}"))
+                {
                     format!("let mut {local}: {ty} = Default::default();\n        {built}")
                 } else {
                     format!(
@@ -7537,7 +7540,11 @@ fn rust_group_storage(
                 };
                 (
                     arm,
-                    arm.fields.iter().filter_map(|id| field_of(id)).collect(),
+                    arm.fields
+                        .iter()
+                        .filter(|id| !group.is_second_in(arm, id))
+                        .filter_map(|id| field_of(id))
+                        .collect(),
                     path,
                 )
             })
@@ -7584,7 +7591,20 @@ fn rust_group_storage(
                 inner
             }
         };
-        let names = |fs: &[&CodecField]| fs.iter().map(|f| acc(f)).collect::<Vec<_>>().join(", ");
+        // Two lists of one count are one element of an arm that holds both
+        // (docs/adr/0065 §6 R5), named after the two.
+        let second_in =
+            |arm: &GroupArm, f: &CodecField| group.second_of(arm, &f.id).and_then(field_of);
+        let held_name = |arm: &GroupArm, f: &CodecField| match second_in(arm, f) {
+            Some(second) => aligned_name(&acc(f), &acc(second)),
+            None => acc(f),
+        };
+        let names = |arm: &GroupArm, fs: &[&CodecField]| {
+            fs.iter()
+                .map(|f| held_name(arm, f))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
 
         let mut entry = serde_json::Map::new();
         entry.insert("id".into(), accessor.clone().into());
@@ -7689,6 +7709,13 @@ fn rust_group_storage(
                     let local = codec_field_decode_local(&f.id, l.lang);
                     if holds_chain(group, f) {
                         chain_built(f, arm.0, view)
+                    } else if let Some(second) = second_in(arm.0, f) {
+                        // The one count read both lists, and the gate the second.
+                        format!(
+                            "{}: {RUNTIME_CODEC}::Aligned::new({local}, {}.expect(\"the gate read the list\")).expect(\"one count read both lists\")",
+                            held_name(arm.0, f),
+                            codec_field_decode_local(&second.id, l.lang),
+                        )
                     } else if f.present_if.is_some() {
                         format!("{}: {local}.unwrap_or_default()", acc(f))
                     } else {
@@ -7789,15 +7816,31 @@ fn rust_group_storage(
                         convs.push(format!("{a}: {expr}"));
                         continue;
                     }
-                    let mut value = (*f).clone();
-                    value.present_if = None;
-                    let (_, expr) =
-                        rust_owned_field_keys(&value, m, imports, l, origin, Some(&acc(f)))?;
+                    let projected = |f: &CodecField| -> Result<String, ForgeError> {
+                        let mut value = f.clone();
+                        value.present_if = None;
+                        rust_owned_field_keys(&value, m, imports, l, origin, Some(&acc(f)))
+                            .map(|(_, expr)| expr)
+                    };
+                    if let Some(second) = second_in(arm, f) {
+                        // Two lists of one count: each projected as a list is,
+                        // which keeps its count (docs/adr/0065 §6 R5).
+                        let (first_expr, second_expr) = (projected(f)?, projected(second)?);
+                        fallible |= first_expr.contains('?') || second_expr.contains('?');
+                        let name = held_name(arm, f);
+                        convs.push(format!(
+                            "{name}: {{ let ({}, {}) = {name}.into_parts(); {RUNTIME_CODEC}::Aligned::new({first_expr}, {second_expr}).expect(\"a projection keeps a list's count\") }}",
+                            acc(f),
+                            acc(second),
+                        ));
+                        continue;
+                    }
+                    let expr = projected(f)?;
                     fallible |= expr.contains('?');
                     convs.push(shorthand(&acc(f), &expr));
                 }
                 cases.push((
-                    format!("{path} {{ {} }}", names(fs)),
+                    format!("{path} {{ {} }}", names(arm, fs)),
                     format!("{path} {{ {} }}", convs.join(", ")),
                 ));
             }
@@ -7923,17 +7966,44 @@ fn rust_group_storage(
                         body.push_str(&format!("                let {local}: {t} = {value};\n"));
                         continue;
                     }
+                    // Each of two lists of one count is projected as a list is,
+                    // from where the arm holds it (docs/adr/0065 §6 R5).
+                    let second = second_in(arm, f);
+                    let first_src = match second {
+                        Some(_) => format!("{}.first()", held_name(arm, f)),
+                        None => acc(f),
+                    };
                     body.push_str(&format!(
                         "                let mut {local}: {t} = Default::default();\n                {}\n",
-                        stmt(f, &acc(f), &local)?
+                        stmt(f, &first_src, &local)?
                     ));
+                    if let Some(second) = second {
+                        let mut t = present(&str_of(obj_of(second), "rs_type").unwrap_or_default());
+                        if let Some((from, to)) = lifetime {
+                            t = t.replace(from, to);
+                        }
+                        let local = format!("_o_{}", acc(second));
+                        let src = format!("{}.second()", held_name(arm, f));
+                        body.push_str(&format!(
+                            "                let mut {local}: {t} = Default::default();\n                {}\n",
+                            stmt(second, &src, &local)?
+                        ));
+                    }
                 }
                 let built = fs
                     .iter()
-                    .map(|f| format!("{}: _o_{}", acc(f), acc(f)))
+                    .map(|f| match second_in(arm, f) {
+                        Some(second) => format!(
+                            "{}: {RUNTIME_CODEC}::Aligned::new(_o_{}, _o_{}).expect(\"a projection keeps a list's count\")",
+                            held_name(arm, f),
+                            acc(f),
+                            acc(second),
+                        ),
+                        None => format!("{}: _o_{}", acc(f), acc(f)),
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let pattern = held(format!("{path} {{ {} }}", names(fs)));
+                let pattern = held(format!("{path} {{ {} }}", names(arm, fs)));
                 let value = held(format!("{path} {{ {built} }}"));
                 cases.push(format!(
                     "            {pattern} => {{\n{body}                _out.{accessor} = {value};\n            }}\n"

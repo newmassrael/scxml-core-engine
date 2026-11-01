@@ -236,6 +236,10 @@ pub struct GateGroup {
     /// The values of the gates while the value holds no arm, when it may hold
     /// none.
     pub absent: Option<Vec<bool>>,
+    /// The list always present and the list one gate decides, when they share
+    /// one count (docs/adr/0065 §6 R5): the first is in every arm, and an arm
+    /// that holds the second holds both as one value of one count.
+    pub aligned: Option<(String, String)>,
 }
 
 /// One arm of a [`GateGroup`].
@@ -252,6 +256,24 @@ impl GateGroup {
     /// Whether the group has more than one arm, so that a value says which.
     pub fn is_sum(&self) -> bool {
         self.arms.len() > 1
+    }
+
+    /// The list `field` shares its count with in `arm`, when `field` is the
+    /// first of the two lists of one count and the arm holds the second
+    /// (docs/adr/0065 §6 R5).
+    pub fn second_of(&self, arm: &GroupArm, field: &str) -> Option<&str> {
+        self.aligned
+            .as_ref()
+            .filter(|(first, second)| first == field && arm.fields.contains(second))
+            .map(|(_, second)| second.as_str())
+    }
+
+    /// Whether `field` is the second of the two lists of one count in `arm`,
+    /// held with the first ([`GateGroup::second_of`]).
+    pub fn is_second_in(&self, arm: &GroupArm, field: &str) -> bool {
+        self.aligned
+            .as_ref()
+            .is_some_and(|(_, second)| second == field && arm.fields.iter().any(|f| f == field))
     }
 
     /// The chain whose memberships are gates of the group, when some are
@@ -332,6 +354,7 @@ impl GateGroup {
             gates: vec![gate],
             arms,
             absent,
+            aligned: None,
         }
     }
 }
@@ -773,6 +796,16 @@ impl CodecRoles {
         self.groups.iter().find(|g| g.contains(field))
     }
 
+    /// Whether `list` says the count it shares through the list a group holds
+    /// it with, so that it is no second source of the number (docs/adr/0065 §6
+    /// R5).
+    pub fn counted_with_another(&self, list: &str) -> bool {
+        self.groups
+            .iter()
+            .filter_map(|g| g.aligned.as_ref())
+            .any(|(_, second)| second == list)
+    }
+
     /// The group the gate `gate` decides.
     pub fn group_of_gate(&self, gate: &GateVar) -> Option<&GateGroup> {
         self.groups
@@ -869,6 +902,9 @@ impl CodecRoles {
                 .collect();
             if let Some(absent) = &group.absent {
                 arms.push(format!("{} (none)", value(absent)));
+            }
+            if let Some((first, second)) = &group.aligned {
+                arms.push(format!("one count ({first}, {second})"));
             }
             out.push_str(&format!(
                 "  group  {}  {}\n",
@@ -1398,14 +1434,63 @@ fn gate_groups(
             sides[index].2.push(field);
         }
     }
+    // A list one gate decides that shares its count with a list always present
+    // is on the side where the gate holds with that list, which is on both
+    // sides: the count is the one list's, and the other has no count of its own
+    // to disagree with it (docs/adr/0065 §6 R5).
+    let mut aligned: Vec<(usize, String, String)> = Vec::new();
+    for (index, (_, set, clear)) in sides.iter_mut().enumerate() {
+        let shared = set
+            .iter()
+            .chain(clear.iter())
+            .find_map(|gated| Some((gated.clone(), one_count_list(model, gated)?)));
+        if let Some((second, first)) = shared {
+            set.insert(0, first.clone());
+            clear.insert(0, first.clone());
+            aligned.push((index, first, second));
+        }
+    }
     let mut groups: Vec<GateGroup> = sides
         .into_iter()
-        .filter(|(_, set, clear)| set.len() + clear.len() >= 2)
-        .map(|(gate, set, clear)| GateGroup::of_one(gate, set, clear))
+        .enumerate()
+        .filter(|(_, (_, set, clear))| set.len() + clear.len() >= 2)
+        .map(|(index, (gate, set, clear))| GateGroup {
+            aligned: aligned
+                .iter()
+                .find(|(side, _, _)| *side == index)
+                .map(|(_, first, second)| (first.clone(), second.clone())),
+            ..GateGroup::of_one(gate, set, clear)
+        })
         .collect();
     groups.extend(members);
     groups.extend(disjunction_groups(model, roles, derived_whole, held));
     groups
+}
+
+/// The list always present that the gated list `gated` shares its count with,
+/// when they are the only two lists of that count (docs/adr/0065 §6 R5). Three
+/// lists of one count, or two that are both gated, stay as they are: the one
+/// number is then a check.
+fn one_count_list(model: &CodecModel, gated: &str) -> Option<String> {
+    let count_of = |f: &CodecField| match &f.bit_size {
+        BitSize::Repeat {
+            count_ref: CountRef::LengthField(count),
+        } => Some(count.clone()),
+        _ => None,
+    };
+    let list = model.fields.iter().find(|f| f.id == gated)?;
+    let count = count_of(list)?;
+    let sharing: Vec<&CodecField> = model
+        .fields
+        .iter()
+        .filter(|f| count_of(f).as_ref() == Some(&count))
+        .collect();
+    match sharing.as_slice() {
+        [first, second] if first.present_if.is_none() && second.id == list.id => {
+            Some(first.id.clone())
+        }
+        _ => None,
+    }
 }
 
 /// The atoms the gate `gate` reads, each with whether its clause is negated, in
@@ -1605,6 +1690,7 @@ fn membership_groups(
             gates,
             arms,
             absent: None,
+            aligned: None,
         });
     }
     groups
@@ -1715,6 +1801,7 @@ fn disjunction_groups(
                 gates: clauses.iter().map(|(v, _)| v.clone()).collect(),
                 arms,
                 absent: Some(clauses.iter().map(|(_, negate)| *negate).collect()),
+                aligned: None,
             }
         })
         .collect()

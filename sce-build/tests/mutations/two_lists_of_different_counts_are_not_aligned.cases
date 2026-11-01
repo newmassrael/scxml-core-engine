@@ -1,0 +1,21 @@
+# Mutation cases for "two lists of different counts are not aligned".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/two_lists_of_different_counts_are_not_aligned.cases`.
+#
+# `Aligned` is two lists of one count (docs/adr/0065 §6 R5), and its constructor
+# is the one check of that. A constructor that admits two lists of different
+# counts would let a value write a number that disagrees with one of them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/bounded.rs
+mutation_oracles backends/rust/forge-runtime/src/bounded.rs
+
+mutation_case "two lists of different counts are held" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''        (first.count() == second.count()).then_some(Self { first, second })''',
+     r'''        (first.count() >= second.count()).then_some(Self { first, second })''')
+PY

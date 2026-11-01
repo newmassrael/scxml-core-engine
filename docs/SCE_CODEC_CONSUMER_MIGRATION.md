@@ -278,3 +278,20 @@ Landing: the commit that adds this section.
 - `Bounded`'s `Default` is one impl over the new `Fewest` trait, which every list a bound holds implements. A
   `Bounded<&[T], MAX>` of anything but bytes has no default.
 - The other backends do not change: their CBOR templates refuse these sizes as they did.
+
+## Two lists of one count are one value (ADR 0065 §6 R5)
+
+Landing: the commit that adds this section.
+
+- A list always present and a list one flag gates, sharing one count, are held with the flag in one group, named
+  as any gate's group (`{Codec}{Carrier}{Flag}`, accessor `{carrier}_{flag}`, arms `{Flag}` and `Not{Flag}`). The two
+  lists are no longer fields of their own.
+- Where the gate holds, the arm holds `Aligned<A, B>` under the two lists' names joined (`links_weights`). Build it
+  with `Aligned::new(first, second)`, which answers `None` for two lists of different counts, and read it with
+  `first()`, `second()` and `into_parts()`. Where it does not, the arm holds the first list alone.
+- `Aligned` takes each form's own lists: a `heapless::Vec`, a `Bounded` slice for the parts, a view's list, or a
+  `BoundedIter` for a hand-written source. The encode no longer compares the two, so it no longer refuses with
+  `InconsistentSource`, and a document whose only refusal was this drops `sce:encode-may-fail`; the conformance
+  `repeat_unconditional_count` did.
+- Three lists of one count, two lists that are both gated, and two that are always present stay a check, and the
+  declaration stays right for them.

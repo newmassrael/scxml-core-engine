@@ -920,6 +920,74 @@ mod memberships {
     }
 }
 
+// Two lists that share one count: the gate decides the second whole, and the
+// value holds the two as one value of one count, so the number written cannot
+// disagree with either (docs/adr/0065 §6 R5).
+mod shared_counts {
+    use super::codecs::codec_repeat_elem::CodecRepeatElemParts;
+    use super::codecs::codec_repeat_unconditional_count::{
+        CodecRepeatUnconditionalCount, CodecRepeatUnconditionalCountOptionsH as Lists,
+        CodecRepeatUnconditionalCountParts,
+    };
+    use sce_forge_runtime::codec::{Aligned, Bounded, SceCursor, VecSink};
+
+    fn encode(value: &CodecRepeatUnconditionalCount) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let Ok(()) =
+            CodecRepeatUnconditionalCount::encode_source(value, &mut VecSink::new(&mut bytes));
+        bytes
+    }
+
+    #[test]
+    fn two_lists_of_one_count_are_held_as_one_value_and_written_as_two_runs() {
+        let frame = [0x01, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22];
+        let value =
+            CodecRepeatUnconditionalCount::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        match &value.options_h {
+            Lists::H { links_weights } => {
+                assert_eq!(links_weights.len(), 2);
+                assert_eq!(links_weights.second()[1].seq, 0x2222);
+            }
+            Lists::NotH { .. } => panic!("the flag is set"),
+        }
+        assert_eq!(encode(&value), frame);
+    }
+
+    #[test]
+    fn the_flag_and_the_count_are_the_arms_to_say() {
+        let frame = [0x00, 0x01, 0xCA, 0xFE];
+        let value =
+            CodecRepeatUnconditionalCount::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        assert!(matches!(value.options_h, Lists::NotH { .. }));
+        assert_eq!(encode(&value), frame);
+        let default = CodecRepeatUnconditionalCount::default();
+        assert_eq!(encode(&default), [0x00, 0x00]);
+    }
+
+    #[test]
+    fn a_source_presents_two_lists_of_one_count_or_none() {
+        let links = [
+            CodecRepeatElemParts { seq: 1 },
+            CodecRepeatElemParts { seq: 2 },
+        ];
+        let weights = [CodecRepeatElemParts { seq: 3 }];
+        let of = |list| Bounded::<&[CodecRepeatElemParts], 64>::new(list).expect("within it");
+        // Two lists of different counts are no value a source can present.
+        assert!(Aligned::new(of(&links), of(&weights)).is_none());
+        let aligned = Aligned::new(of(&links), of(&links)).expect("one count");
+        let parts = CodecRepeatUnconditionalCountParts {
+            options: 0,
+            options_h: Lists::H {
+                links_weights: aligned,
+            },
+        };
+        let mut bytes = Vec::new();
+        let Ok(()) =
+            CodecRepeatUnconditionalCount::encode_source(&parts, &mut VecSink::new(&mut bytes));
+        assert_eq!(bytes, [0x01, 0x02, 0, 1, 0, 2, 0, 1, 0, 2]);
+    }
+}
+
 // A chain closed by an entry flag is one entry or more: every entry but the
 // last has the flag set, so the grammar has no word for none. A frame that ends
 // before the chain's first entry is short, gated or not (docs/adr/0065 §6 R7).

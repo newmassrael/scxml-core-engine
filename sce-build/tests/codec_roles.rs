@@ -758,7 +758,9 @@ fn the_table_of_a_length_prefixed_field() {
 #[test]
 fn a_count_two_lists_share_is_one_derivation_whose_sources_agree() {
     // zenoh's LinkState: `links_len` is written once and counts both `links` and
-    // the gated `weights`. One derivation with two sources, not two derivations.
+    // the gated `weights`. One derivation with two sources, not two derivations,
+    // and a group of the flag holds the two as one value of one count, so the
+    // sources cannot disagree where a group holds them (docs/adr/0065 §6 R5).
     let roles = roles_of("codec_repeat_unconditional_count");
     assert!(roles.ambiguous().is_empty(), "{}", roles.table());
     assert_eq!(
@@ -767,6 +769,8 @@ fn a_count_two_lists_share_is_one_derivation_whose_sources_agree() {
         "{}",
         roles.table()
     );
+    assert!(roles.counted_with_another("weights"));
+    assert!(!roles.counted_with_another("links"));
     assert_eq!(
         roles.table(),
         "codec codec_repeat_unconditional_count\n  \
@@ -774,7 +778,8 @@ fn a_count_two_lists_share_is_one_derivation_whose_sources_agree() {
          options.H  derived  presence-of(weights)\n  \
          links_len  derived  count-of(links, weights) [the sources agree in size]\n  \
          links      presented\n  \
-         weights    presented\n"
+         weights    presented\n  \
+         group  options.H  1 (links, weights)  0 (links)  one count (links, weights)\n"
     );
 }
 

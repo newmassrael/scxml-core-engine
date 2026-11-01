@@ -82,6 +82,12 @@ mod codecs {
     pub mod codec_chain_has_tagged {
         include!(concat!(env!("OUT_DIR"), "/codec_chain_has_tagged.rs"));
     }
+    pub mod codec_repeat_unconditional_count {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/codec_repeat_unconditional_count.rs"
+        ));
+    }
     pub mod codec_embed_basic {
         include!(concat!(env!("OUT_DIR"), "/codec_embed_basic.rs"));
     }
@@ -168,6 +174,9 @@ use codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicView};
 use codecs::codec_repeat_flag_carrier::{CodecRepeatFlagCarrier, CodecRepeatFlagCarrierView};
 use codecs::codec_repeat_present_if_basic::{
     CodecRepeatPresentIfBasic, CodecRepeatPresentIfBasicView,
+};
+use codecs::codec_repeat_unconditional_count::{
+    CodecRepeatUnconditionalCount, CodecRepeatUnconditionalCountView,
 };
 use codecs::codec_tlv_chain_basic::{CodecTlvChainBasic, CodecTlvChainBasicView};
 use codecs::codec_tlv_chain_present_if_basic::{
@@ -416,6 +425,20 @@ fn bodies_that_hold_lists_are_scanned_inside_a_list_and_behind_a_gate() {
         14
     );
     assert!(accepted > 50, "only {accepted} frames were accepted");
+}
+
+/// Two lists of one count, the second gated: a view holds both over their own
+/// spans of bytes as one value (docs/adr/0065 §6 R5).
+#[test]
+fn two_lists_of_one_count_are_held_over_their_own_spans() {
+    let accepted = sweep!(
+        CodecRepeatUnconditionalCount,
+        CodecRepeatUnconditionalCountView,
+        &[0x00, 0x01, 0x02, 0x03, 0x11],
+        8000,
+        12
+    );
+    assert!(accepted > 100, "only {accepted} frames were accepted");
 }
 
 /// Fields gated on whether a chain holds an entry of some identifier are

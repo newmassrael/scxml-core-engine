@@ -656,6 +656,88 @@ impl<I: Iterator, const MAX: usize, const MIN: usize> ExactSizeIterator
 {
 }
 
+/// A list that knows how many entries it holds: what [`Aligned::new`] compares.
+pub trait Counted {
+    /// How many entries the list holds.
+    fn count(&self) -> usize;
+}
+
+impl<L: Entries, const MAX: usize, const MIN: usize> Counted for Bounded<L, MAX, MIN> {
+    fn count(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<L: Entries> Counted for L {
+    fn count(&self) -> usize {
+        self.entry_count()
+    }
+}
+
+/// Two lists of one count (docs/adr/0065 §6 R5): a codec that writes one number
+/// for two lists holds both as this, so the number cannot disagree with either.
+///
+/// The two lists stay what the wire makes them, two runs of entries, so a view
+/// holds two spans of bytes and nothing is copied to pair them. The value is made
+/// by a constructor that compares them once, as [`Bounded`] is, and has no
+/// mutable access, so it stays what it was checked to be.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Aligned<A, B> {
+    first: A,
+    second: B,
+}
+
+impl<A, B> Aligned<A, B> {
+    /// `first` and `second` as two lists of one count, or `None` when their
+    /// counts differ.
+    pub fn new(first: A, second: B) -> Option<Self>
+    where
+        A: Counted,
+        B: Counted,
+    {
+        (first.count() == second.count()).then_some(Self { first, second })
+    }
+
+    /// The first list.
+    pub fn first(&self) -> &A {
+        &self.first
+    }
+
+    /// The second list.
+    pub fn second(&self) -> &B {
+        &self.second
+    }
+
+    /// The two lists, without the fact that they are of one count.
+    pub fn into_parts(self) -> (A, B) {
+        (self.first, self.second)
+    }
+
+    /// How many entries each list holds.
+    pub fn len(&self) -> usize
+    where
+        A: Counted,
+    {
+        self.first.count()
+    }
+
+    /// Whether both lists are empty.
+    pub fn is_empty(&self) -> bool
+    where
+        A: Counted,
+    {
+        self.len() == 0
+    }
+}
+
+impl<A: Counted + Default, B: Counted + Default> Default for Aligned<A, B> {
+    /// Two default lists. The lists a count is shared by have no fewest entries,
+    /// so both start empty.
+    fn default() -> Self {
+        Self::new(A::default(), B::default()).expect("two lists with no fewest start empty")
+    }
+}
+
 /// The one panic of a list walk, shared by every instance so that each costs a
 /// call and not a message of its own.
 #[cold]
@@ -667,6 +749,25 @@ pub(crate) fn entries_changed() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_lists_of_one_count_are_held_and_two_of_different_counts_are_not() {
+        let three = Bounded::<&[u8], 4>::new(&[1, 2, 3]).expect("within the bound");
+        let also_three = Bounded::<&[u16], 8>::new(&[4, 5, 6]).expect("within the bound");
+        let two = Bounded::<&[u16], 8>::new(&[4, 5]).expect("within the bound");
+        assert!(Aligned::new(three, two).is_none());
+        let aligned = Aligned::new(three, also_three).expect("one count");
+        assert_eq!(aligned.len(), 3);
+        // A list and a source's walks are held the same way.
+        let walks = Aligned::new(aligned.first().iter(), aligned.second().iter());
+        let (first, second) = walks.expect("a walk keeps its list's count").into_parts();
+        assert!(first.eq([&1, &2, &3]));
+        assert!(second.eq([&4, &5, &6]));
+        assert!(Aligned::new(&[1u8][..], heapless::Vec::<u16, 2>::new()).is_none());
+        // The default holds two empty lists, whose counts agree.
+        let empty = Aligned::<heapless::Vec<u8, 4>, heapless::Vec<u16, 8>>::default();
+        assert!(empty.is_empty());
+    }
 
     #[test]
     fn a_list_within_its_bound_is_held_and_one_past_it_is_not() {

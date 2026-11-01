@@ -505,6 +505,15 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
             &[0x01, 0x09, 0x01, 0xAA, 0x03, 0x00, 0xBB, 0x22],
         ],
     ),
+    // Two lists of one count, the second gated: the first frame holds the links
+    // alone, the second the links and as many weights (docs/adr/0065 §6 R5).
+    (
+        "codec_repeat_unconditional_count",
+        &[
+            &[0x00, 0x02, 0xCA, 0xFE, 0xBE, 0xEF],
+            &[0x01, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22],
+        ],
+    ),
     // The marker extension (0x12) in the chain brings the slice count in place
     // of the payload; without the chain the payload is on the wire. The third
     // frame has the marker between two other extensions (0x92: the marker with

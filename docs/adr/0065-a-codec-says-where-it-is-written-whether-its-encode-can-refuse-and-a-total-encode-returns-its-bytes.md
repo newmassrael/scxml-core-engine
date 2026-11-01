@@ -310,6 +310,22 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   Other backends keep their checks until they take the source interface. Their encode is still handed every input.
 - **R5, a shared count.** Lists that share one count are presented as one list whose entries carry each list's item,
   the second one optional when its list is gated.
+
+  *R5 landed 2026-11-01, and replaced the sentence above.* An `Option` on each entry lets a value give some entries
+  a second item and others none, which the wire cannot carry: one refusal would have left for another. The gate
+  decides the second list whole, so it is a sum (`options.H`): the arm where it holds holds both lists as one value,
+  and the other holds the first list alone.
+  - That value is `Aligned<A, B>`, two lists its constructor holds to one count, with no mutable access, as `Bounded`
+    is. `Σ n. Vec n A × Vec n B` and `Vec n (A × B)` are the same type, and the first is the one the wire has: two
+    runs of entries, which a view holds as two spans of bytes with nothing copied to pair them.
+  - `gate_groups` puts the list that is always present on both sides of the gate, and the group says the two are
+    aligned. The second list is then no second source of the number (`counted_with_another`): the count is the first
+    list's, and the encode has nothing to compare.
+  - The `Derivation` keeps both lists, and `checks` is unchanged, for an encode that holds no group.
+  - Three lists of one count, two lists that are both gated, and two that are always present stay a check: no
+    document in the tree is one, and each stays correct as a check.
+  - `repeat_unconditional_count`, the conformance mirror of a link state's weights, became total and lost its
+    declaration.
 - **R6, a gate on a chain's content** (`chain.has(id)`, SCE_FORGE.md §4.6.2). Where the entry the gate names carries
   no content of its own, the entry is derived from the field's presence. Where it does carry content, the relation
   is a dependent pair, and the codec keeps `may-fail` until this ADR's open question is answered.

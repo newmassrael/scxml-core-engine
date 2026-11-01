@@ -732,7 +732,7 @@ fn derived(
         }
         Derivation::CountOf { lists } => lists
             .iter()
-            .filter(|l| field_of(l).is_some())
+            .filter(|l| field_of(l).is_some() && !roles.counted_with_another(l))
             .map(|l| (l.clone(), gated(l)))
             .collect(),
         // The length of a body that is not there is the wire's zero, so a

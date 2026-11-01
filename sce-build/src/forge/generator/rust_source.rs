@@ -450,6 +450,12 @@ pub(crate) fn key_type(codec: &str, chain: &str, key: u64) -> String {
     )
 }
 
+/// The name an arm holds two lists of one count under (docs/adr/0065 §6 R5): the
+/// two lists' names.
+pub(crate) fn aligned_name(first: &str, second: &str) -> String {
+    format!("{first}_{second}")
+}
+
 /// Whether `field` is the chain whose memberships are gates of `group`.
 pub(crate) fn holds_chain(group: &GateGroup, field: &CodecField) -> bool {
     group.chain() == Some(field.id.as_str())
@@ -1407,6 +1413,37 @@ impl<'a> Plan<'a> {
             .filter_map(|id| self.m().fields.iter().find(|f| &f.id == id))
     }
 
+    /// The list `field` shares its count with in `arm`, when the arm holds the
+    /// two as one (docs/adr/0065 §6 R5).
+    fn second_of<'s>(
+        &'s self,
+        group: &GateGroup,
+        arm: &GroupArm,
+        field: &CodecField,
+    ) -> Option<&'s CodecField> {
+        let second = group.second_of(arm, &field.id)?;
+        self.m().fields.iter().find(|f| f.id == second)
+    }
+
+    /// The elements of `arm` as a form holds them: its fields, less a list held
+    /// with the list it shares its count with.
+    fn arm_held<'s>(
+        &'s self,
+        group: &'s GateGroup,
+        arm: &'s GroupArm,
+    ) -> impl Iterator<Item = &'s CodecField> {
+        self.group_fields(&arm.fields)
+            .filter(|f| !group.is_second_in(arm, &f.id))
+    }
+
+    /// The name `field`, an element of `arm` ([`Self::arm_held`]), goes by there.
+    fn held_name(&self, group: &GateGroup, arm: &GroupArm, field: &CodecField) -> String {
+        match self.second_of(group, arm, field) {
+            Some(second) => aligned_name(&self.accessor(field), &self.accessor(second)),
+            None => self.accessor(field),
+        }
+    }
+
     /// The group's elements, each once.
     fn group_members(&self, group: &GateGroup) -> Vec<&CodecField> {
         group
@@ -1527,14 +1564,25 @@ impl<'a> Plan<'a> {
                 }
             };
             let fields_of = |arm: &GroupArm, indent: &str| -> String {
-                self.group_fields(&arm.fields)
+                self.arm_held(group, arm)
                     .map(|f| {
+                        // Two lists of one count are one element of the arm
+                        // (docs/adr/0065 §6 R5).
+                        let (what, ty) = match self.second_of(group, arm, f) {
+                            Some(second) => (
+                                format!("`{}` and `{}` lists, of one count", f.id, second.id),
+                                format!(
+                                    "{RUNTIME_CODEC}::Aligned<{}, {}>",
+                                    member_ty(f, arm),
+                                    member_ty(second, arm)
+                                ),
+                            ),
+                            None => (format!("`{}` field", f.id), member_ty(f, arm)),
+                        };
                         format!(
-                            "{indent}/// The `{id}` field.\n{indent}{vis}{acc}: {ty},\n",
-                            id = f.id,
+                            "{indent}/// The {what}.\n{indent}{vis}{acc}: {ty},\n",
                             vis = if indent.len() == 4 { "pub " } else { "" },
-                            acc = self.accessor(f),
-                            ty = member_ty(f, arm),
+                            acc = self.held_name(group, arm, f),
                         )
                     })
                     .collect()
@@ -1657,8 +1705,8 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>()
             .join(", ");
         let default_fields: String = self
-            .group_fields(&arm.fields)
-            .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
+            .arm_held(group, arm)
+            .map(|f| format!("{}: Default::default(), ", self.held_name(group, arm, f)))
             .collect();
         format!(
             "impl{default_generics} Default for {name}{generics} {{\n\
@@ -1994,18 +2042,26 @@ impl<'a> Plan<'a> {
             .arms
             .iter()
             .map(|arm| {
-                let fields: Vec<&CodecField> = self.group_fields(&arm.fields).collect();
+                let fields: Vec<&CodecField> = self.arm_held(group, arm).collect();
                 let names = fields
                     .iter()
-                    .map(|f| self.accessor(f))
+                    .map(|f| self.held_name(group, arm, f))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let reads = fields
                     .iter()
                     .map(|f| {
-                        let accessor = self.accessor(f);
+                        let accessor = self.held_name(group, arm, f);
                         let read = if holds_chain(group, f) {
                             self.chain_member_read(form, group, f, arm, &accessor)
+                        } else if let Some(second) = self.second_of(group, arm, f) {
+                            // Each list read as the form reads a list, the two
+                            // walks of the one count they were held to.
+                            format!(
+                                "{RUNTIME_CODEC}::Aligned::new({}, {}).expect(\"a walk keeps its list's count\")",
+                                self.member_read(form, f, &format!("{accessor}.first()")),
+                                self.member_read(form, second, &format!("{accessor}.second()")),
+                            )
                         } else {
                             self.member_read(form, f, &accessor)
                         };
@@ -2065,9 +2121,9 @@ impl<'a> Plan<'a> {
                 .arms
                 .iter()
                 .all(|arm| all.iter().all(|f| arm.fields.contains(&f.id)));
-            let names = |ids: &[String]| {
-                self.group_fields(ids)
-                    .map(|f| self.accessor(f))
+            let names = |arm: &GroupArm| {
+                self.arm_held(group, arm)
+                    .map(|f| self.held_name(group, arm, f))
                     .collect::<Vec<_>>()
                     .join(", ")
             };
@@ -2129,9 +2185,26 @@ impl<'a> Plan<'a> {
                 .arms
                 .iter()
                 .map(|arm| {
-                    let pattern =
-                        format!("{} {{ {} }}", self.arm_path(group, arm), names(&arm.fields));
-                    format!("    {} => ({}),", Self::held(group, &pattern), tuple(arm))
+                    let pattern = format!("{} {{ {} }}", self.arm_path(group, arm), names(arm));
+                    // Two lists of one count are taken apart here, each written
+                    // as a list is (docs/adr/0065 §6 R5).
+                    let parts = self.arm_held(group, arm).find_map(|f| {
+                        let second = self.second_of(group, arm, f)?;
+                        Some(format!(
+                            "let ({}, {}) = {}.into_parts(); ",
+                            self.accessor(f),
+                            self.accessor(second),
+                            self.held_name(group, arm, f)
+                        ))
+                    });
+                    match parts {
+                        Some(parts) => format!(
+                            "    {} => {{ {parts}({}) }}",
+                            Self::held(group, &pattern),
+                            tuple(arm)
+                        ),
+                        None => format!("    {} => ({}),", Self::held(group, &pattern), tuple(arm)),
+                    }
                 })
                 .collect();
             if group.absent.is_some() {
@@ -3349,9 +3422,11 @@ impl<'a> Plan<'a> {
         derived: &mut Derived,
     ) {
         let local = self.local("_d_", id);
-        // The lists that name this element agree in size or no frame says both.
+        // The lists that name this element agree in size or no frame says both;
+        // one held with another is of its count already (docs/adr/0065 §6 R5).
         let numbers: Vec<Measure> = lists
             .iter()
+            .filter(|list| !self.roles.counted_with_another(list))
             .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
             .map(|field| Measure {
                 number: self.count_local(field),
@@ -3838,12 +3913,17 @@ impl<'a> Plan<'a> {
     fn streamed(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
         // The chain of the memberships is read from the arm the value holds, as
         // an `Option` of its walk whether or not it is itself gated
-        // (docs/adr/0065 §6 R6a).
+        // (docs/adr/0065 §6 R6a), and so is the list a count is shared with,
+        // which every arm holds (R5).
         let membership = self
             .roles
             .group_of(&field.id)
             .filter(|group| holds_chain(group, field));
-        let gated = field.present_if.is_some() || membership.is_some();
+        let aligned = self
+            .roles
+            .group_of(&field.id)
+            .is_some_and(|group| group.aligned.as_ref().is_some_and(|(f, _)| *f == field.id));
+        let gated = field.present_if.is_some() || membership.is_some() || aligned;
         // A field derived whole whose gate is its own is written where it is
         // present: the gate flag is derived from the field it gates, and a length
         // field that is itself gated is announced by the same flag.

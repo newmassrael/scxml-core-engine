@@ -1,0 +1,30 @@
+# Mutation cases for "two lists of one count are one value".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/two_lists_of_one_count_are_one_value.cases`.
+#
+# A list always present and a list one gate decides, sharing one count, are held
+# with the gate in one group, so the number written has one source
+# (docs/adr/0065 §6 R5). The first case makes no such group, and the second
+# keeps the held list a second source of the number: either leaves a refusal the
+# document no longer states, and the test that holds every codec to its
+# statement fails.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test codec_totality
+mutation_targets sce-build/src/forge/codec_roles.rs sce-build/src/forge/codec_totality.rs
+mutation_oracles sce-build/tests/codec_totality.rs
+
+mutation_case "two lists of one count make no group" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''        [first, second] if first.present_if.is_none() && second.id == list.id => {''',
+     r'''        [first, second] if false && first.present_if.is_none() && second.id == list.id => {''')
+PY
+
+mutation_case "a list held with another stays a source of the count" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''            .filter(|l| field_of(l).is_some() && !roles.counted_with_another(l))''',
+     r'''            .filter(|l| field_of(l).is_some())''')
+PY
