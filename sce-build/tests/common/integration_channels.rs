@@ -440,10 +440,6 @@ macro_rules! swift_refusal {
 /// entry for a stem Swift now writes is red.
 pub const SWIFT_REFUSED: &[(&str, &str)] = &[
     (
-        "a_delayed_http_send_is_posted_when_due",
-        swift_refusal!("a delayed BasicHTTP `<send>`"),
-    ),
-    (
         "a_mesh_request_reaches_the_router",
         swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
     ),
@@ -456,19 +452,18 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
         "nested_lifecycle",
         swift_refusal!("the transition function"),
     ),
-    (
-        "send_namelist_over_http",
-        swift_refusal!("a BasicHTTP `<send>` whose target is not a URL the document writes"),
-    ),
 ];
 
 /// The stems the Swift backend writes and whose driver is not written yet, a debt register that
 /// shrinks: each slice that writes a driver deletes its stem here, and
 /// `a_swift_exemption_still_holds` is red for a stem that is listed and has one. The channel
 /// generates and compiles every stem below; what it has not done is ask the machine whether it
-/// behaves. Empty today: every stem the backend writes has a driver, so a stem registered later
-/// either gets one or is refused by name in `SWIFT_REFUSED`.
-pub const SWIFT_DRIVER_PENDING: &[&str] = &[];
+/// behaves. A stem registered later either gets a driver or is refused by name in `SWIFT_REFUSED`.
+///
+/// `send_namelist_over_http` reads the form back out of an echoed event, through the address
+/// `_ioprocessors['basichttp'].location` publishes, which the host declares for its deployment
+/// (the other channels' `BasicHTTPAccessURI`); a Swift policy has no such setting yet.
+pub const SWIFT_DRIVER_PENDING: &[&str] = &["send_namelist_over_http"];
 
 /// Whether, and why, the Swift channel cannot host `stem`.
 fn swift_cannot_host(stem: &str) -> Option<Exemption> {

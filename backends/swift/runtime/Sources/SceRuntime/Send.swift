@@ -102,6 +102,12 @@ public func isMeshTarget(_ target: String) -> Bool {
     meshPeer(target) != nil
 }
 
+/// Whether a `<send>` over BasicHTTP names a place it can post to: an `http://` or `https://` URL
+/// (§scxml-C-2). Compared byte by byte, so the answer does not depend on how the text is normalized.
+public func isHTTPURL(_ target: String) -> Bool {
+    target.utf8.starts(with: "http://".utf8) || target.utf8.starts(with: "https://".utf8)
+}
+
 /// Where a `<send>` to the SCXML Event I/O Processor goes (§scxml-6.2.4, §scxml-C-1).
 public enum SendTargetKind: Sendable, Equatable {
     /// The sending session's own external queue.

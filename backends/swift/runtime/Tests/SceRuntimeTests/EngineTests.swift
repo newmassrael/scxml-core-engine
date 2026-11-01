@@ -637,6 +637,41 @@ private final class ParentNeedingPolicy {}
     engine.performHTTPSend(target: "http://localhost/x", eventName: "go", content: "", params: [:], sendID: "")
 }
 
+@Test func aDelayedHttpSendIsPostedWhenItsDelayIsOverAndAnEarlierCancelDropsIt() {
+    let (engine, _, clock) = makeEngine { _ in }
+    var seen: [HttpSendRequest] = []
+    engine.setHTTPSendCallback { request in
+        seen.append(request)
+        return nil
+    }
+    engine.initialize()
+
+    // A wait of zero is no deferral: the request is made before the call returns.
+    engine.scheduleHTTPSend(
+        delay: .zero, target: "http://h/now", eventName: "now", params: [:], sendID: "now", origin: "")
+    #expect(seen.map(\.target) == ["http://h/now"])
+
+    engine.scheduleHTTPSend(
+        delay: .milliseconds(100), target: "http://h/later", eventName: "later", params: ["k": ["v"]],
+        sendID: "later", origin: "")
+    engine.scheduleHTTPSend(
+        delay: .milliseconds(100), target: "http://h/dropped", eventName: "dropped", params: [:],
+        sendID: "dropped", origin: "")
+    #expect(engine.cancelEvent(sendID: "dropped"))
+    #expect(seen.count == 1)
+
+    clock.advance(99)
+    engine.tick()
+    #expect(seen.count == 1)
+
+    clock.advance(1)
+    engine.tick()
+    #expect(seen.map(\.target) == ["http://h/now", "http://h/later"])
+    #expect(seen.last?.params["k"] == ["v"])
+    #expect(seen.last?.sendID == "later")
+    #expect(seen.last?.eventName == "later")
+}
+
 // MARK: - The donedata stash
 
 @Test func theDonedataAFinalStashedIsWhatAParentReadsBack() {

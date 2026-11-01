@@ -9893,6 +9893,11 @@
         {
           "file": "sce-build/src/scxml_send_delay.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "symbol": "unlowered_http_send",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

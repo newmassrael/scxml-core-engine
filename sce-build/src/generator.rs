@@ -4495,12 +4495,12 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 /// `<param>`s make, so a `<content expr>` there has nowhere to go. A `null` document has no
 /// expression language to write any of them in.
 ///
-/// A BasicHTTP send is judged as a `sce-static` document's is
+/// A BasicHTTP send is judged by the rule a `sce-static` document's is
 /// ([`crate::forge::static_lowering::SwiftTarget::unlowered_http_send`]), whatever the data model:
-/// the template posts it at once to the URL the document writes with its `<param>`s as the form, so
-/// a delay, a target an expression computes, a `<content>` body and the other axes that rule names
-/// are not lowered. Without it a delayed send is posted at once, which is the answer the document
-/// did not ask for, and a computed target is a machine that does not compile.
+/// the template posts it to the URL the document writes, or an `ecmascript` document's engine
+/// computes, with its `<param>`s as the form, at once or when the delay is over. A `<content>` body
+/// and the other axes that rule names are not lowered. Without the rule a body would be dropped,
+/// which is the answer the document did not ask for.
 fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<String> {
     let over_http = send.send_type.contains("BasicHTTPEventProcessor");
     let expression = [
@@ -4516,7 +4516,9 @@ fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<St
     .map(|(what, _, _)| what.to_string());
     expression.or_else(|| {
         (over_http && send.types.is_empty())
-            .then(|| crate::forge::static_lowering::SwiftTarget::unlowered_http_send(send, true))
+            .then(|| {
+                crate::forge::static_lowering::SwiftTarget::unlowered_http_send(send, true, is_ecma)
+            })
             .flatten()
     })
 }

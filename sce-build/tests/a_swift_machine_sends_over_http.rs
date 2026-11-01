@@ -140,19 +140,14 @@ fn an_http_send_writes_no_json_for_its_pairs() {
     );
 }
 
-/// A delay needs a scheduler of HTTP requests, and a body of another kind needs a
-/// `<content>` the form does not carry: each is named in a refusal and not written wrong, whatever
-/// data model the document is of. The send template is one, so a delayed send of an `ecmascript`
-/// document was posted at once, which is the answer its document did not ask for, and a target an
-/// expression computed was a machine that did not compile (measured 2026-11-01, by the integration
-/// stem `a_delayed_http_send_is_posted_when_due`).
-#[test]
-fn an_http_send_with_a_delay_or_a_body_is_refused_by_name() {
-    let document = |send: &str, datamodel: &str| {
-        format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+const BASIC_HTTP: &str = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+
+/// A document of `datamodel` whose one transition runs `send`.
+fn http_document(send: &str, datamodel: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="idle" datamodel="{datamodel}" name="http_refused">
+       version="1.0" initial="idle" datamodel="{datamodel}" name="http_probe">
   <state id="idle">
     <transition event="go" type="internal">
       {send}
@@ -160,52 +155,96 @@ fn an_http_send_with_a_delay_or_a_body_is_refused_by_name() {
   </state>
 </scxml>
 "#
-        )
-    };
-    let basic = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+    )
+}
+
+/// A body of another kind needs a `<content>` the form does not carry: it is named in a refusal
+/// and not written wrong, whatever data model the document is of.
+#[test]
+fn an_http_send_with_a_body_is_refused_by_name() {
+    let send = format!(
+        r#"<send event="note" type="{BASIC_HTTP}" target="http://example.invalid/hook"><content>body</content></send>"#
+    );
     for datamodel in ["sce-static", "ecmascript", "null"] {
-        let mut sends = vec![
-            (
-                format!(
-                    r#"<send event="note" delay="1s" type="{basic}" target="http://example.invalid/hook"/>"#
-                ),
-                "a delayed BasicHTTP <send>",
-            ),
-            (
-                format!(
-                    r#"<send event="note" type="{basic}" target="http://example.invalid/hook"><content>body</content></send>"#
-                ),
-                "a BasicHTTP <send> with <content>",
-            ),
-        ];
-        // A target an expression computes is read by a script engine, which a `null` document
-        // has none of, and which a `sce-static` one holds to the routes it declares.
-        if datamodel == "ecmascript" {
-            sends.push((
-                format!(
-                    r#"<send event="note" type="{basic}" targetexpr="'http://example.invalid/hook'"/>"#
-                ),
-                "a BasicHTTP <send> whose target is not a URL the document writes",
-            ));
-        }
-        for (send, construct) in sends {
-            let text = document(&send, datamodel);
-            let (status, files, said) =
-                generate("http_refused.scxml", &[("http_refused.scxml", &text)]);
-            assert_eq!(
-                status,
-                Some(7),
-                "{construct} of a `{datamodel}` document is refused, not written: {said}"
-            );
-            assert!(
-                said.contains(construct),
-                "the refusal of a `{datamodel}` document names {construct}: {said}"
-            );
-            assert!(
-                files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
-                "a refused document writes no machine: {:?}",
-                files.iter().map(|f| &f.0).collect::<Vec<_>>()
-            );
-        }
+        let text = http_document(&send, datamodel);
+        let (status, files, said) = generate("http_probe.scxml", &[("http_probe.scxml", &text)]);
+        assert_eq!(
+            status,
+            Some(7),
+            "a body of a `{datamodel}` document is refused, not written: {said}"
+        );
+        assert!(
+            said.contains("a BasicHTTP <send> with <content>"),
+            "the refusal of a `{datamodel}` document names the body: {said}"
+        );
+        assert!(
+            files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
+            "a refused document writes no machine: {:?}",
+            files.iter().map(|f| &f.0).collect::<Vec<_>>()
+        );
     }
+}
+
+/// §scxml-6.2.4 + §scxml-C-2: a delay is a property of the send, not of the processor it names. A
+/// delay the document writes hands the request to the engine's scheduler, which makes it when the
+/// wait is over and lets `<cancel>` reach it; before the scheduler existed the template posted it
+/// at once (measured 2026-11-01, by the integration stem `a_delayed_http_send_is_posted_when_due`).
+#[test]
+fn a_delayed_http_send_is_handed_to_the_scheduler() {
+    let send = format!(
+        r#"<send event="note" delay="1s" type="{BASIC_HTTP}" target="http://example.invalid/hook"/>"#
+    );
+    for datamodel in ["sce-static", "ecmascript", "null"] {
+        let text = http_document(&send, datamodel);
+        let (status, files, said) = generate("http_probe.scxml", &[("http_probe.scxml", &text)]);
+        assert_eq!(
+            status,
+            Some(0),
+            "a delayed send of a `{datamodel}` document is written: {said}"
+        );
+        let written = &files
+            .iter()
+            .find(|(name, _)| name == "http_probe_sm.swift")
+            .expect("the machine is a file of the run")
+            .1;
+        assert!(
+            written.contains("engine.scheduleHTTPSend(")
+                && written.contains("Duration.milliseconds(1000)"),
+            "the delay goes to the scheduler, in milliseconds:\n{written}"
+        );
+        assert!(
+            !written.contains("engine.performHTTPSend("),
+            "nothing is posted before the wait is over:\n{written}"
+        );
+    }
+}
+
+/// §scxml-6.2.4 + §scxml-C-2: an `ecmascript` document's `targetexpr` and `delayexpr` are read by
+/// its engine as the send is made, and the value must be an http(s) URL. (A `sce-static` document
+/// never gets this far: its validation holds a computed target to the routes it declares.)
+#[test]
+fn an_http_target_and_delay_an_expression_computes_are_read_by_the_engine() {
+    let send = format!(
+        r#"<send event="note" type="{BASIC_HTTP}" targetexpr="'http://example.invalid/hook'" delayexpr="'10ms'"/>"#
+    );
+    let text = http_document(&send, "ecmascript");
+    let (status, files, said) = generate("http_probe.scxml", &[("http_probe.scxml", &text)]);
+    assert_eq!(
+        status,
+        Some(0),
+        "an engine-computed send is written: {said}"
+    );
+    let written = &files
+        .iter()
+        .find(|(name, _)| name == "http_probe_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(
+        written,
+        &[
+            "if !isHTTPURL(sendTarget)",
+            "engine.scheduleHTTPSend(",
+            "target: sendTarget",
+        ],
+    );
 }

@@ -1169,7 +1169,46 @@ public final class Engine<Policy: StatePolicy> {
             return delivered
         case .parent:
             return policy.deliverToParent(eventName: route.eventName, eventData: eventData)
+        case .httpPost:
+            // §scxml-C-2: the request the send made, to the transport the host registered.
+            performHTTPSend(
+                target: route.httpTarget,
+                eventName: route.eventName,
+                content: "",
+                params: route.httpParams,
+                sendID: sendID
+            )
+            return true
         }
+    }
+
+    /// Schedules a BasicHTTP POST to be made when `delay` is over (§scxml-6.2.4 + §scxml-C-2).
+    /// Returns the send id, which `<cancel sendid>` reaches while the POST waits (§scxml-6.3).
+    ///
+    /// A delay postpones a send; it does not change where it goes, so the URL and the form are
+    /// those of the moment the send was made. A wait of zero is no deferral: the POST is made
+    /// now, before this returns, and nothing is queued.
+    @discardableResult
+    public func scheduleHTTPSend(
+        delay: Duration,
+        target: String,
+        eventName: String,
+        params: [String: [String]],
+        sendID: String,
+        origin: String
+    ) -> String {
+        if delay <= .zero {
+            performHTTPSend(target: target, eventName: eventName, content: "", params: params, sendID: sendID)
+            return sendID
+        }
+        return scheduleRoutedEvent(
+            nil,
+            delay: delay,
+            sendID: sendID,
+            eventData: "",
+            origin: origin,
+            route: ScheduledRoute(kind: .httpPost, eventName: eventName, httpTarget: target, httpParams: params)
+        )
     }
 
     /// Schedules a delayed send whose target is not this session's own external queue

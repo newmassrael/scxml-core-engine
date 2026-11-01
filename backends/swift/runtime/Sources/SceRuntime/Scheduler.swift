@@ -14,6 +14,10 @@ public enum RouteKind: Sendable, Equatable {
 
     /// A child session named by its id: its published location (§scxml-C-1).
     case session
+
+    /// A BasicHTTP POST (§scxml-C-2): the request the send made, handed to the host's
+    /// transport when the delay is over.
+    case httpPost
 }
 
 /// Where a delayed `<send>`'s event goes when it comes due (§scxml-6.2).
@@ -35,11 +39,24 @@ public struct ScheduledRoute: Sendable, Equatable {
     /// Names the child session, for `.session`.
     public var sessionID: String
 
-    public init(kind: RouteKind, eventName: String, invokeID: String = "", sessionID: String = "") {
+    /// The URL a `.httpPost` route posts to, read when the send was made (§scxml-6.2.4: a
+    /// `targetexpr` is evaluated then, not when the delay is over).
+    public var httpTarget: String
+
+    /// The form a `.httpPost` route posts: each `<param>` and namelist name with its values, in
+    /// the order the send gave them (§scxml-C-2).
+    public var httpParams: [String: [String]]
+
+    public init(
+        kind: RouteKind, eventName: String, invokeID: String = "", sessionID: String = "",
+        httpTarget: String = "", httpParams: [String: [String]] = [:]
+    ) {
         self.kind = kind
         self.eventName = eventName
         self.invokeID = invokeID
         self.sessionID = sessionID
+        self.httpTarget = httpTarget
+        self.httpParams = httpParams
     }
 }
 

@@ -11648,7 +11648,7 @@ impl SwiftTarget {
         };
         if !send.send_type.is_empty() && !scxml_processor(&send.send_type) {
             if send.send_type.contains("BasicHTTPEventProcessor") && send.types.is_empty() {
-                return Self::unlowered_http_send(send, false);
+                return Self::unlowered_http_send(send, false, false);
             }
             return Some(format!("a <send type=\"{}\">", send.send_type));
         }
@@ -11677,21 +11677,31 @@ impl SwiftTarget {
 impl SwiftTarget {
     /// What of a BasicHTTP `<send>` (§scxml-C-2) this target has no lowering for yet.
     ///
-    /// The send that is lowered posts at once to a URL the document writes, with the
-    /// `<param>`s it names as the form. A delay needs a scheduler of HTTP requests the
-    /// Swift engine has not got, a `<content>` is a body of another kind, and a target,
-    /// event or type an expression computes is a request whose address is known only
-    /// when it runs.
+    /// The send that is lowered posts to a URL with the `<param>`s it names as the form, at
+    /// once or, for a delay the document writes, when the engine's scheduler says the wait is
+    /// over. A `<content>` is a body of another kind, and an event or type an expression
+    /// computes is a request whose kind is known only when it runs.
     ///
     /// `target_may_be_absent` is whether a send that names no target is lowered: a `sce-static`
     /// document is not (its lowering has nowhere to send it), and an `ecmascript` or `null`
     /// one is, as the error.communication §scxml-C-2 makes of it.
-    pub(crate) fn unlowered_http_send(send: &Action, target_may_be_absent: bool) -> Option<String> {
-        if (send.target.is_empty() && !target_may_be_absent) || !send.targetexpr.is_empty() {
+    ///
+    /// `engine_computes` is whether the document has an engine that reads an expression: a
+    /// target or a delay an expression computes is read by it as the send is made (§scxml-6.2.4),
+    /// where a `sce-static` document holds its targets to the routes it declares and a `null`
+    /// one has no expression language.
+    pub(crate) fn unlowered_http_send(
+        send: &Action,
+        target_may_be_absent: bool,
+        engine_computes: bool,
+    ) -> Option<String> {
+        if (send.target.is_empty() && !target_may_be_absent)
+            || (!send.targetexpr.is_empty() && !engine_computes)
+        {
             return Some("a BasicHTTP <send> whose target is not a URL the document writes".into());
         }
-        if !send.delay.is_empty() || !send.delayexpr.is_empty() {
-            return Some("a delayed BasicHTTP <send>".into());
+        if !send.delayexpr.is_empty() && !engine_computes {
+            return Some("a BasicHTTP <send> whose delay an expression computes".into());
         }
         if !send.content.is_empty() || !send.contentexpr.is_empty() {
             return Some("a BasicHTTP <send> with <content>".into());

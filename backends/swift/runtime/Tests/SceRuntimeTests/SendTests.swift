@@ -41,6 +41,15 @@ import Testing
 }
 
 @Test(arguments: [
+    ("http://host/x", true), ("https://host/x", true), ("HTTP://host/x", false),
+    ("ftp://host/x", false), ("#_parent", false), ("", false), ("undefined", false),
+    ("http:/host", false),
+])
+func aBasicHttpSendPostsOnlyToAnHttpUrl(target: String, want: Bool) {
+    #expect(isHTTPURL(target) == want, "\(target.debugDescription)")
+}
+
+@Test(arguments: [
     ("", SendTarget(kind: .unreachable)),
     ("undefined", SendTarget(kind: .unreachable)),
     ("!bad", SendTarget(kind: .unsupported)),

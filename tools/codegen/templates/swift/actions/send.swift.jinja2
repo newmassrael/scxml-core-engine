@@ -425,7 +425,7 @@
 {% else %}
                     let sendEventData = ""
 {% endif %}
-{% if computed_target or routed_target %}
+{% if (computed_target or routed_target) and not is_http %}
 {% if ecma_target %}
                     // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
                     // a peer is not a local session. This runtime has no Mesh router to hand it to, so it
@@ -465,7 +465,7 @@
 {% if ecma_target %}
                     }
 {% endif %}
-{% elif is_http and not action.target %}
+{% elif is_http and not action.target and not computed_target %}
                     // W3C SCXML C.2: a BasicHTTP send names where it goes with its `target`, and one
                     // that names none has nowhere to go: the build decided it once, and the send is
                     // an error.communication on the internal queue, handed to no transport.
@@ -477,13 +477,42 @@
                     // W3C SCXML C.2: a BasicHTTP send. The engine hands the request to the transport
                     // the host registered (`setHTTPSendCallback`); a document with no `<content>`
                     // leaves the body to the pairs, so none is given.
+{% if computed_target %}
+                    // W3C SCXML 6.2.4 + C.2: a `targetexpr` is read when the send is made, as ECMAScript
+                    // converts the value to a string, and a delay does not change where the request
+                    // goes. BasicHTTP posts to a URL, so any other value names nothing this processor
+                    // can reach: error.communication, and the error ends the block (4.9).
+                    if !isHTTPURL(sendTarget) {
+{{ send_error('error.communication', '"<send> over BasicHTTP resolved a target that is not an http(s) URL"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    } else {
+{% endif %}
+{% if delay_swift %}
+                    // W3C SCXML 6.2.4 + C.2: a delay is a property of the send, not of the processor it
+                    // names. The request is made when the wait is over, `<cancel>` reaches it while it
+                    // waits, and a wait of zero is no deferral.
+                    engine.scheduleHTTPSend(
+                        delay: {{ delay_swift }},
+                        target: {{ 'sendTarget' if computed_target else '"' ~ (action.target | escape_swift) ~ '"' }},
+                        eventName: {{ event_name_swift }},
+                        params: {{ 'sendForm' if sends_params else '[:]' }},
+                        sendID: {{ send_id_swift }},
+                        origin: self.sessionID
+                    )
+{% else %}
                     engine.performHTTPSend(
-                        target: "{{ action.target | escape_swift }}",
+                        target: {{ 'sendTarget' if computed_target else '"' ~ (action.target | escape_swift) ~ '"' }},
                         eventName: {{ event_name_swift }},
                         content: "",
                         params: {{ 'sendForm' if sends_params else '[:]' }},
                         sendID: {{ send_id_swift }}
                     )
+{% endif %}
+{% if computed_target %}
+                    }
+{% endif %}
 {% elif static_target == '#_internal' %}
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.
