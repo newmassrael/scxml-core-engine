@@ -4,11 +4,14 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_chain_gate_on_an_entry_with_content_holds_the_chain_whole.cases`.
 #
-# A gate `chain.has(k)` on a gated chain whose named entry carries content is a
-# group of the chain (docs/adr/0065 §6 R6b): where the gate holds, the value
-# holds the chain whole with the entry where it stands; where it does not, the
-# chain has no entry of the kind. The case drops the group for such an entry,
-# which leaves the envelope's gate a check the `roles` test finds.
+# The gates on a chain's entries, and the one-bit flags joined with them, decide
+# the fields they reach together (docs/adr/0065 §6 R6b): one group of an arm for
+# each assignment of them, each holding the chain whole with the kinds the arm
+# sets and none it clears, listed the most atoms set first. The first case
+# makes no group of a chain's memberships, which leaves the gates of the marker,
+# the envelope and `chain_has_tagged` checks the `roles` tests find; the second
+# groups one atom past the bound, which the test of that bound finds; the third
+# lists the arms the other way round, which the tests that pin the arms find.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -17,8 +20,20 @@ mutation_tests -p sce-build --features cli --test codec_roles
 mutation_targets sce-build/src/forge/codec_roles.rs
 mutation_oracles sce-build/tests/codec_roles.rs
 
-mutation_case "an entry with content makes no group" <<'PY'
+mutation_case "a chain's memberships make no group" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''        if bare || chain.present_if.is_some() {''',
-     r'''        if bare {''')
+     r'''                GateVar::Member { .. } => of_chain(var),''',
+     r'''                GateVar::Member { .. } => false,''')
+PY
+
+mutation_case "a group is made of more atoms than a value can say" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''        let decidable = atoms.len() <= MOST_GROUP_ATOMS''',
+     r'''        let decidable = atoms.len() <= MOST_GROUP_ATOMS + 1''')
+PY
+
+mutation_case "the arms are listed the fewest atoms set first" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''                std::cmp::Reverse(values.iter().filter(|v| **v).count()),''',
+     r'''                values.iter().filter(|v| **v).count(),''')
 PY

@@ -364,8 +364,19 @@ fn member_word(key: u64) -> String {
 
 /// The gates of a group as words of a name: the input, the carrier and its
 /// flag, or the chain and the kind it is asked for; several flags of one
-/// carrier as the carrier and the flags, each joined by `or`.
+/// carrier as the carrier and the flags, each joined by `or`. A group of a
+/// chain's memberships is the chain, the kinds, then the other gates
+/// (docs/adr/0065 §6 R6b): its gates are decided together, not joined.
 fn gate_words(group: &GateGroup) -> String {
+    if let Some(chain) = group.chain() {
+        let mut words = vec![chain.to_string()];
+        words.extend(group.gates.iter().map(|g| match g {
+            GateVar::Input(name) => name.clone(),
+            GateVar::Flag { carrier, flag } => format!("{carrier}_{flag}"),
+            GateVar::Member { key, .. } => member_word(*key),
+        }));
+        return words.join("_");
+    }
     let flag_of = |gate: &GateVar| match gate {
         GateVar::Input(name) => name.clone(),
         GateVar::Flag { flag, .. } => flag.clone(),
@@ -429,24 +440,33 @@ pub(crate) fn group_type(codec: &str, group: &GateGroup) -> String {
     }
 }
 
-/// The type that names the kind of entry a chain's membership asks for
-/// (docs/adr/0065 §6 R6a): the group's type and `Key`.
-pub(crate) fn key_type(codec: &str, group: &GateGroup) -> String {
-    format!("{}Key", group_type(codec, group))
+/// The type that names the kind of entry `key` the chain `chain` of the codec
+/// `codec` is asked for (docs/adr/0065 §6 R6a): the codec, the chain and the
+/// kind, and `Key`, the name a group of that one membership has with `Key`.
+pub(crate) fn key_type(codec: &str, chain: &str, key: u64) -> String {
+    format!(
+        "{codec}{}Key",
+        pascal_words(&format!("{chain}_{}", member_word(key)))
+    )
 }
 
-/// The key a group of a chain's membership asks for, when `field` is its chain.
-pub(crate) fn held_chain_key(group: &GateGroup, field: &CodecField) -> Option<u64> {
-    group
-        .member()
-        .filter(|(chain, _)| *chain == field.id)
-        .map(|(_, key)| key)
+/// Whether `field` is the chain whose memberships are gates of `group`.
+pub(crate) fn holds_chain(group: &GateGroup, field: &CodecField) -> bool {
+    group.chain() == Some(field.id.as_str())
 }
 
-/// The type the chain `field` of a group of its membership has in `arm`, held
-/// as `list` (docs/adr/0065 §6 R6a): the others and the named entry's place
-/// where the gate holds, the chain with no entry of the kind where it does not,
-/// as an `Option` when the chain is itself gated. Both hold the one list.
+/// Whether the chain `field` of a group of its memberships may be absent in
+/// `arm`: the chain is itself gated, and the arm holds no kind of entry, which
+/// an absent chain holds none of either.
+pub(crate) fn chain_optional_in(group: &GateGroup, field: &CodecField, arm: &GroupArm) -> bool {
+    field.present_if.is_some() && group.kinds_in(arm).0.is_empty()
+}
+
+/// The type the chain `field` of a group of its memberships has in `arm`, held
+/// as `list` (docs/adr/0065 §6 R6a, R6b): the chain whole with an entry of each
+/// kind the arm sets and of none it clears, as an `Option` where it may be
+/// absent; where the one gate on a bare entry holds, the others and the named
+/// entry's place. Every arm holds the one list.
 pub(crate) fn chain_arm_type(
     codec: &str,
     group: &GateGroup,
@@ -454,26 +474,35 @@ pub(crate) fn chain_arm_type(
     arm: &GroupArm,
     list: &str,
 ) -> String {
-    let key = key_type(codec, group);
-    let bound = codec_totality::list_bound(field);
-    // A bare entry is derived and its place held; an entry with content is
-    // held where it stands, the chain whole (R6b).
-    if arm.values == [true] {
-        let refinement = if group.member_is_bare() {
-            "Placed"
-        } else {
-            "Having"
-        };
-        return format!("{RUNTIME_CODEC}::{refinement}<{list}, {key}, {bound}>");
+    let (held, not) = group.kinds_in(arm);
+    if group.member_is_bare() && !held.is_empty() {
+        return format!(
+            "{RUNTIME_CODEC}::Placed<{list}, {}, {}>",
+            key_type(codec, &field.id, held[0]),
+            codec_totality::list_bound(field)
+        );
     }
-    let except = format!(
-        "{RUNTIME_CODEC}::Except<{list}, {key}, {}>",
+    let kinds = |keys: &[u64]| match keys {
+        [] => "()".to_string(),
+        [key] => format!("({},)", key_type(codec, &field.id, *key)),
+        keys => format!(
+            "({})",
+            keys.iter()
+                .map(|key| key_type(codec, &field.id, *key))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    let chain = format!(
+        "{RUNTIME_CODEC}::Chain<{list}, {}, {}, {}>",
+        kinds(&held),
+        kinds(&not),
         codec_totality::list_bound_args(field)
     );
-    if field.present_if.is_some() {
-        format!("Option<{except}>")
+    if chain_optional_in(group, field, arm) {
+        format!("Option<{chain}>")
     } else {
-        except
+        chain
     }
 }
 
@@ -1240,19 +1269,23 @@ impl<'a> Plan<'a> {
             .find(|f| f.id == clause.field_id)
             .expect("the parser found the chain a gate reads");
         let value = clause.entry_id.expect("a chain clause names an identifier");
-        // A chain whose membership a group holds: the gate on the group's kind
-        // is the arm the value holds, and any other kind is looked for in its
-        // walk (docs/adr/0065 §6 R6). A bare entry's chain is walked as slots,
-        // whose named entry has the group's key; one with content is walked as
-        // the chain it is, its entries read as any chain's.
+        // A chain whose memberships a group holds: the gate on one of the
+        // group's kinds is the arm the value holds, and any other kind is
+        // looked for in its walk (docs/adr/0065 §6 R6). A bare entry's chain is
+        // walked as slots, whose named entry has the group's key; one with
+        // content is walked as the chain it is, its entries read as any chain's.
         let membership = self
             .roles
             .group_of(&chain.id)
-            .filter(|group| held_chain_key(group, chain).is_some());
-        if let Some(group) = membership.filter(|group| held_chain_key(group, chain) == Some(value))
-        {
+            .filter(|group| holds_chain(group, chain));
+        if let Some((group, index)) = membership.and_then(|group| {
+            group
+                .members()
+                .find(|(_, key)| *key == value)
+                .map(|(index, _)| (group, index))
+        }) {
             let held = format!("src.{}()", self.group_accessor(group));
-            return self.gate_value(group, 0, &held);
+            return self.gate_value(group, index, &held);
         }
         let found = if membership.is_some_and(GateGroup::member_is_bare) {
             format!(
@@ -1482,10 +1515,10 @@ impl<'a> Plan<'a> {
             } else {
                 format!("<{}>", params.join(", "))
             };
-            // The chain of a membership is the one list in both arms, refined as
-            // the arm says (docs/adr/0065 §6 R6a).
+            // The chain of the memberships is the one list in every arm, refined
+            // as the arm says (docs/adr/0065 §6 R6a).
             let member_ty = |f: &CodecField, arm: &GroupArm| {
-                if held_chain_key(group, f).is_some() {
+                if holds_chain(group, f) {
                     chain_arm_type(self.name(), group, f, arm, &Self::member_param(f))
                 } else if Self::member_varies(f) {
                     Self::member_param(f)
@@ -1539,56 +1572,47 @@ impl<'a> Plan<'a> {
                     codec = self.name(),
                 ));
                 // A form holds a group a value always holds an arm of as it is,
-                // and starts it at the arm where every gate is clear. A chain
-                // that is always present has no chain without an entry to
-                // start from where the gate is clear, since it holds one entry
-                // or more, so its membership starts where the gate holds, with
-                // the named entry alone (docs/adr/0065 §6 R6a).
+                // and starts it at the arm where every gate is clear.
                 let always_present_chain = group
-                    .member()
-                    .and_then(|(chain, _)| self.m().fields.iter().find(|f| f.id == chain))
+                    .chain()
+                    .and_then(|chain| self.m().fields.iter().find(|f| f.id == chain))
                     .filter(|chain| chain.present_if.is_none());
                 if group.absent.is_none() {
-                    let arm = match always_present_chain {
-                        Some(_) => &group.arms[0],
-                        None => group
-                            .arms
-                            .iter()
-                            .find(|a| a.values.iter().all(|v| !v))
-                            .unwrap_or(&group.arms[0]),
-                    };
-                    let default_params = params
-                        .iter()
-                        .map(|p| match always_present_chain {
-                            Some(chain) if *p == Self::member_param(chain) => {
-                                format!("{p}: Default + {RUNTIME_CODEC}::Entries")
-                            }
-                            _ => format!("{p}: Default"),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let default_fields: String = self
-                        .group_fields(&arm.fields)
-                        .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
-                        .collect();
-                    out.push_str(&format!(
-                        "impl{default_generics} Default for {name}{generics} {{\n\
-                         \x20   /// The arm held while {condition}, each field at its type's default.\n\
-                         \x20   fn default() -> Self {{\n\
-                         \x20       Self::{arm_name} {{ {default_fields}}}\n\
-                         \x20   }}\n\
-                         }}\n\n",
-                        default_generics = if params.is_empty() {
-                            String::new()
-                        } else {
-                            format!("<{default_params}>")
-                        },
-                        condition = arm_condition(group, &arm.values),
-                        arm_name = group_arm_name(group, arm),
-                    ));
+                    out.push_str(&match always_present_chain {
+                        // A chain that is always present holds one entry or
+                        // more, and its default the default entries, whose
+                        // kinds say the arm (docs/adr/0065 §6 R6b).
+                        Some(chain) if !group.member_is_bare() => {
+                            self.chain_default(group, chain, &name, &generics, &params)
+                        }
+                        // The one gate on a bare entry starts where it holds,
+                        // with the named entry alone (R6a).
+                        Some(chain) => self.arm_default(
+                            group,
+                            &group.arms[0],
+                            &name,
+                            &generics,
+                            &params,
+                            Some(chain),
+                        ),
+                        None => self.arm_default(
+                            group,
+                            group
+                                .arms
+                                .iter()
+                                .find(|a| a.values.iter().all(|v| !v))
+                                .unwrap_or(&group.arms[0]),
+                            &name,
+                            &generics,
+                            &params,
+                            None,
+                        ),
+                    });
                 }
-                if let Some((chain, key)) = group.member() {
-                    out.push_str(&self.membership_key(group, chain, key));
+                if let Some(chain) = group.chain() {
+                    for (_, key) in group.members() {
+                        out.push_str(&self.membership_key(group, chain, key));
+                    }
                 }
             } else {
                 let arm = &group.arms[0];
@@ -1606,6 +1630,151 @@ impl<'a> Plan<'a> {
             }
         }
         out
+    }
+
+    /// The `Default` of the group `group`, the type `name` with `generics`
+    /// (the parameters `params`): the arm `arm`, each field at its type's
+    /// default. `bare_chain` is the chain the one gate on a bare entry holds
+    /// where it holds, whose default is the named entry alone (docs/adr/0065 §6
+    /// R6a).
+    fn arm_default(
+        &self,
+        group: &GateGroup,
+        arm: &GroupArm,
+        name: &str,
+        generics: &str,
+        params: &[String],
+        bare_chain: Option<&CodecField>,
+    ) -> String {
+        let default_params = params
+            .iter()
+            .map(|p| match bare_chain {
+                Some(chain) if *p == Self::member_param(chain) => {
+                    format!("{p}: Default + {RUNTIME_CODEC}::Entries")
+                }
+                _ => format!("{p}: Default"),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let default_fields: String = self
+            .group_fields(&arm.fields)
+            .map(|f| format!("{}: Default::default(), ", self.accessor(f)))
+            .collect();
+        format!(
+            "impl{default_generics} Default for {name}{generics} {{\n\
+             \x20   /// The arm held while {condition}, each field at its type's default.\n\
+             \x20   fn default() -> Self {{\n\
+             \x20       Self::{arm_name} {{ {default_fields}}}\n\
+             \x20   }}\n\
+             }}\n\n",
+            default_generics = if params.is_empty() {
+                String::new()
+            } else {
+                format!("<{default_params}>")
+            },
+            condition = arm_condition(group, &arm.values),
+            arm_name = group_arm_name(group, arm),
+        )
+    }
+
+    /// The `Default` of the group `group` of the memberships of `chain`, which
+    /// is always present (docs/adr/0065 §6 R6b), the type `name` with
+    /// `generics` (the parameters `params`): the chain's own default, one entry
+    /// or more, in the arm its entries' kinds select among those where every
+    /// other gate is clear, each field at its type's default. The kinds of the
+    /// default entries are the entry codec's to say (a variant's default arm
+    /// can set the identifier), so they are asked of the entries as a decode
+    /// asks them, and the arm found is the one whose refinement they satisfy.
+    fn chain_default(
+        &self,
+        group: &GateGroup,
+        chain: &CodecField,
+        name: &str,
+        generics: &str,
+        params: &[String],
+    ) -> String {
+        let list = Self::member_param(chain);
+        let bounded = format!(
+            "{RUNTIME_CODEC}::Bounded<{list}, {}>",
+            codec_totality::list_bound_args(chain)
+        );
+        let keys: Vec<String> = group
+            .members()
+            .map(|(_, key)| key_type(self.name(), &chain.id, key))
+            .collect();
+        let default_params = params
+            .iter()
+            .map(|p| {
+                if *p == list {
+                    p.clone()
+                } else {
+                    format!("{p}: Default")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let of_kinds: String = keys
+            .iter()
+            .map(|k| format!(" + {RUNTIME_CODEC}::OfKind<{k}>"))
+            .collect();
+        let tests = keys
+            .iter()
+            .map(|k| {
+                format!("<{list} as {RUNTIME_CODEC}::OfKind<{k}>>::first_of_kind(&_list).is_some()")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let others_clear = |arm: &&GroupArm| {
+            group
+                .gates
+                .iter()
+                .zip(&arm.values)
+                .all(|(gate, value)| matches!(gate, GateVar::Member { .. }) || !value)
+        };
+        let cases: String = group
+            .arms
+            .iter()
+            .filter(others_clear)
+            .map(|arm| {
+                let values = group
+                    .members()
+                    .map(|(index, _)| arm.values[index].to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let fields = self
+                    .group_fields(&arm.fields)
+                    .map(|f| {
+                        if holds_chain(group, f) {
+                            format!(
+                                "{}: {RUNTIME_CODEC}::Chain::new(_list).expect(\"the default entries are of the kinds found\")",
+                                self.accessor(f)
+                            )
+                        } else {
+                            format!("{}: Default::default()", self.accessor(f))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "            ({values},) => Self::{} {{ {fields} }},\n",
+                    group_arm_name(group, arm)
+                )
+            })
+            .collect();
+        format!(
+            "impl<{default_params}> Default for {name}{generics}\n\
+             where\n\
+             \x20   {bounded}: Default,\n\
+             \x20   {list}: {RUNTIME_CODEC}::Entries{of_kinds},\n\
+             {{\n\
+             \x20   /// The chain's default, in the arm its entries' kinds select with every\n\
+             \x20   /// other gate clear, each field at its type's default.\n\
+             \x20   fn default() -> Self {{\n\
+             \x20       let _list = <{bounded} as Default>::default().into_inner();\n\
+             \x20       match ({tests},) {{\n{cases}        }}\n\
+             \x20   }}\n\
+             }}\n\n"
+        )
     }
 
     /// The type that names the kind of entry the membership `group` of the
@@ -1630,7 +1799,7 @@ impl<'a> Plan<'a> {
             .iter()
             .find(|i| Some(i.alias.as_str()) == child_alias(chain))
             .expect("a chain imports its entry codec");
-        let key_ty = key_type(self.name(), group);
+        let key_ty = key_type(self.name(), chain_id, key);
         let entry_ty = format!("super::{}::{}", import.namespace, import.type_name);
         let lifetime = if import.codec_is_borrowed {
             "<'static>"
@@ -1699,7 +1868,7 @@ impl<'a> Plan<'a> {
             .iter()
             .find(|i| Some(i.alias.as_str()) == child_alias(chain))
             .expect("a chain imports its entry codec");
-        let key_ty = key_type(self.name(), group);
+        let key_ty = key_type(self.name(), chain_id, key);
         let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
         let test = format!("{} == {key}u64", self.entry_identifier(chain, "entry"));
         let what = if group.member_is_bare() {
@@ -1721,12 +1890,13 @@ impl<'a> Plan<'a> {
         )
     }
 
-    /// How the form `form` (`None` for the parts) reads the chain of a group of
-    /// its membership in `arm`, `r` being a reference to it: the refined chain
-    /// as its walk, the refinement kept (docs/adr/0065 §6 R6a).
+    /// How the form `form` (`None` for the parts) reads the chain of the group
+    /// `group` of its memberships in `arm`, `r` being a reference to it: the
+    /// refined chain as its walk, the refinement kept (docs/adr/0065 §6 R6a).
     fn chain_member_read(
         &self,
         form: Option<Form>,
+        group: &GateGroup,
         field: &CodecField,
         arm: &GroupArm,
         r: &str,
@@ -1736,7 +1906,7 @@ impl<'a> Plan<'a> {
         } else {
             "iter()"
         };
-        if arm.values == [true] || field.present_if.is_none() {
+        if !chain_optional_in(group, field, arm) {
             format!("{r}.{walk}")
         } else {
             format!("{r}.as_ref().map(|_e| _e.{walk})")
@@ -1834,8 +2004,8 @@ impl<'a> Plan<'a> {
                     .iter()
                     .map(|f| {
                         let accessor = self.accessor(f);
-                        let read = if held_chain_key(group, f).is_some() {
-                            self.chain_member_read(form, f, arm, &accessor)
+                        let read = if holds_chain(group, f) {
+                            self.chain_member_read(form, group, f, arm, &accessor)
                         } else {
                             self.member_read(form, f, &accessor)
                         };
@@ -1869,10 +2039,10 @@ impl<'a> Plan<'a> {
     /// element as the source presents it.
     fn group_accessor_type(&self, group: &GateGroup) -> String {
         self.group_held_in(group, &|f| {
-            // The chain of a membership as the one walk both arms refine
+            // The chain of the memberships as the one walk every arm refines
             // (docs/adr/0065 §6 R6a).
-            match (held_chain_key(group, f), self.child(f)) {
-                (Some(_), Some(child)) => format!(
+            match (holds_chain(group, f), self.child(f)) {
+                (true, Some(child)) => format!(
                     "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
                     child.trait_path,
                     codec_totality::list_bound(f)
@@ -1901,9 +2071,9 @@ impl<'a> Plan<'a> {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            // A chain's membership holds its chain in each arm with the arm's
-            // refinement, so its arms bind apart (docs/adr/0065 §6 R6a).
-            if uniform && all.len() == 1 && group.member().is_none() {
+            // A chain's memberships hold the chain in each arm with the arm's
+            // refinement, so their arms bind apart (docs/adr/0065 §6 R6a).
+            if uniform && all.len() == 1 && group.chain().is_none() {
                 let member = self.accessor(all[0]);
                 let patterns = group
                     .arms
@@ -1934,7 +2104,7 @@ impl<'a> Plan<'a> {
                         let acc = self.accessor(f);
                         if !arm.fields.contains(&f.id) {
                             "None".to_string()
-                        } else if held_chain_key(group, f).is_none() {
+                        } else if !holds_chain(group, f) {
                             format!("Some({acc})")
                         } else {
                             // A bare entry's chain is walked as slots, the named
@@ -1945,7 +2115,7 @@ impl<'a> Plan<'a> {
                             } else {
                                 "into_inner()"
                             };
-                            if arm.values == [true] || f.present_if.is_none() {
+                            if !chain_optional_in(group, f, arm) {
                                 format!("Some({acc}.{walk})")
                             } else {
                                 format!("{acc}.map(|_e| _e.{walk})")
@@ -2412,9 +2582,10 @@ impl<'a> Plan<'a> {
                 gate = gates_label(group),
                 accessor = self.group_accessor(group),
                 ty = self.group_held_in(group, &|f| {
-                    // The chain of a membership as the slice both arms refine.
-                    match (held_chain_key(group, f), self.child(f)) {
-                        (Some(_), Some(child)) => format!("&'a [{}]", child.parts_type),
+                    // The chain of the memberships as the slice every arm
+                    // refines.
+                    match (holds_chain(group, f), self.child(f)) {
+                        (true, Some(child)) => format!("&'a [{}]", child.parts_type),
                         _ => self.parts_value_type(f),
                     }
                 }),
@@ -3157,7 +3328,10 @@ impl<'a> Plan<'a> {
                 continue;
             }
             let read = self.read_src(field);
-            let count = if field.present_if.is_some() {
+            // A group's element is read from the arm the value holds, where it
+            // may be absent whether or not it is itself gated (`read_src`).
+            let optional = field.present_if.is_some() || self.roles.group_of(&field.id).is_some();
+            let count = if optional {
                 format!("{read}.map_or(0, |_l| _l.len())")
             } else {
                 format!("{read}.len()")
@@ -3662,13 +3836,13 @@ impl<'a> Plan<'a> {
     // ── the wire: streamed layout ────────────────────────────────────
 
     fn streamed(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
-        // The chain of a membership is read from the arm the value holds, as an
-        // `Option` of its walk whether or not it is itself gated
+        // The chain of the memberships is read from the arm the value holds, as
+        // an `Option` of its walk whether or not it is itself gated
         // (docs/adr/0065 §6 R6a).
         let membership = self
             .roles
             .group_of(&field.id)
-            .filter(|group| held_chain_key(group, field).is_some());
+            .filter(|group| holds_chain(group, field));
         let gated = field.present_if.is_some() || membership.is_some();
         // A field derived whole whose gate is its own is written where it is
         // present: the gate flag is derived from the field it gates, and a length
@@ -3755,8 +3929,11 @@ impl<'a> Plan<'a> {
                 // identifier the named entry has is the key, which a bind of
                 // the entry after it reads.
                 if let Some(group) = membership.filter(|group| group.member_is_bare()) {
-                    let key = held_chain_key(group, field).unwrap_or_default();
-                    let named = format!("{}::named()", key_type(self.name(), group));
+                    let (_, key) = group
+                        .members()
+                        .next()
+                        .expect("the one gate on a bare entry is a membership");
+                    let named = format!("{}::named()", key_type(self.name(), &field.id, key));
                     let named_updates: Vec<String> = binds
                         .iter()
                         .map(|(_, local, previous)| {

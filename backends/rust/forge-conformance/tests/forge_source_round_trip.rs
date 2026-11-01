@@ -862,6 +862,62 @@ mod memberships {
         }
         assert_eq!(encode(&value), frame);
     }
+
+    use super::codecs::codec_chain_has_tagged::{
+        CodecChainHasTagged, CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide as Tagged,
+    };
+
+    fn encode_tagged(value: &CodecChainHasTagged) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let Ok(()) = CodecChainHasTagged::encode_source(value, &mut VecSink::new(&mut bytes));
+        bytes
+    }
+
+    #[test]
+    fn the_gates_on_a_chains_entries_and_a_flag_hold_the_arm_their_values_select() {
+        // Not wide; an entry of kind 9 with a successor, then one of kind 7:
+        // `priority` follows for the 7, and no `checksum` for the 9. The arm
+        // says `wide` is clear, so the header is written back with it clear.
+        let frame = [0x00, 0x09, 0x01, 0xAA, 0x07, 0x00, 0xBB, 0x42];
+        let value = CodecChainHasTagged::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        match &value.entries_has_0x7_has_0x9_header_wide {
+            Tagged::Has0x7Has0x9 { entries, priority } => {
+                assert_eq!(entries.len(), 2);
+                assert_eq!(*priority, 0x42);
+            }
+            other => panic!("kinds 7 and 9, not wide: {other:?}"),
+        }
+        assert_eq!(encode_tagged(&value), frame);
+    }
+
+    #[test]
+    fn a_flag_joined_with_a_chains_gate_is_the_arms_to_say() {
+        // Wide, and an entry of kind 1 alone: `priority` follows for `wide`,
+        // and `checksum` for the missing 9.
+        let frame = [0x01, 0x01, 0x00, 0xCC, 0x05, 0x12, 0x34];
+        let value = CodecChainHasTagged::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        match &value.entries_has_0x7_has_0x9_header_wide {
+            Tagged::Wide {
+                priority, checksum, ..
+            } => assert_eq!((*priority, *checksum), (0x05, 0x1234)),
+            other => panic!("neither kind, wide: {other:?}"),
+        }
+        assert_eq!(encode_tagged(&value), frame);
+    }
+
+    #[test]
+    fn the_default_value_holds_the_chains_default_in_the_arm_it_selects() {
+        // The chain's default is one default entry, of kind 0, so neither gate
+        // holds and `wide` starts clear.
+        let value = CodecChainHasTagged::default();
+        assert!(matches!(
+            value.entries_has_0x7_has_0x9_header_wide,
+            Tagged::Neither { .. }
+        ));
+        let bytes = encode_tagged(&value);
+        let decoded = CodecChainHasTagged::decode(&mut SceCursor::new(&bytes)).expect("a frame");
+        assert_eq!(decoded, value);
+    }
 }
 
 // A chain closed by an entry flag is one entry or more: every entry but the

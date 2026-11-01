@@ -379,6 +379,32 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   on a gated chain. Where such an entry's gate holds, the arm holds `Having` and its walk is the chain's, so the
   encode, the decode and the view read the chain as any chain; only the refinement is new. `chain_has_envelope`
   became total and lost its declaration.
+
+  *R6b-2 landed 2026-11-01, and replaced part of the design above.* The design held one refinement for each key an
+  arm holds, and left the gate in a disjunction a separate problem. `chain_has_tagged` showed one structure behind
+  R6a, R6b-1 and both: a field's gate is a formula over atoms, the chain's memberships and the one-bit flags of the
+  codec's own carriers joined with them, and the value is the sum over the atoms' assignments, a truth table.
+  - `membership_groups` takes the least set of a chain's atoms closed under the gates that read one, and makes one
+    group with an arm for every assignment: the chain, refined by what the arm sets and clears, the fields whose
+    gates hold, and a stated length where its content is absent. `chain_has_tagged` has three atoms and eight arms.
+    A flag among them is derived from the arm (R4c), and every arm holds the chain, so a value always holds one. R6a
+    and R6b-1 are the case of one atom, with the same arms.
+  - A flat sum is the choice over a decision tree that shares arms: `priority` turns on `has(7)` and `wide` together
+    and the chain on `has(7)` and `has(9)`, so the atoms do not factor into independent parts, and a value that
+    held them apart could disagree with itself.
+  - The runtime's refinement is one type, `Chain<L, H, A, MAX, MIN>`, over sets of kinds (`Kinds`, tuples of up to
+    eight). `Except` is its `H = ()` and `Having` its `A = ()`, and both are gone: three copies of one check.
+  - A chain that is always present holds one entry or more, so a value's default is the chain's own default in the
+    arm its entries' kinds select with every flag clear. The kinds are asked of the entries at run time, as a decode
+    asks them, because the identifier of a default entry is the entry codec's to say (a variant's default arm can
+    set it) and the generator would otherwise state it a second time.
+  - A bare entry keeps `Placed` only as a chain's one gate. Among other gates it is held where it stands: one place
+    says where the first entry of one kind is, and the chain whole says it of every kind.
+  - The identifier is now judged before the statement of totality, since the refusals a codec has are those of the
+    entries its identifier tells apart; a document with no such identifier used to get a verdict about them first.
+  - The gates stay checks where a gate reads two chains' entries, an input or a flag something else derives, or
+    where the atoms number more than eight (256 arms). No document in the tree is one, and each stays correct as a
+    check. `chain_has_tagged` became total and lost its declaration, the last chain gate in the tree to do so.
 - **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
   clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
   grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte

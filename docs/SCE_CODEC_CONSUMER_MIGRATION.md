@@ -228,3 +228,34 @@ Landing: the commit that adds this section.
   `std::optional<std::vector<std::uint8_t>>`, Go `EncodeToBytes` returns `([]byte, error)` and Kotlin
   `encodeToByteArray` returns `ByteArray?`. Python's `encode` raises the error. A broadcast log's `publish`
   refuses such an element with it, where it was `BufferOverflow`.
+
+## The gates on a chain's entries are one group, and `Chain` holds its chain (ADR 0065 §6 R6b-2)
+
+Landing: the commit that adds this section.
+
+- The runtime's `Except<L, K, MAX, MIN>` and `Having<L, K, MAX>` are gone. `Chain<L, H, A, MAX, MIN>` replaces both:
+  `H` and `A` are tuples of kinds, the chain holds an entry of each kind of `H` and of none of `A`.
+  - `Except<L, K, MAX, MIN>` is `Chain<L, (), (K,), MAX, MIN>`.
+  - `Having<L, K, MAX>` is `Chain<L, (K,), (), MAX, MIN>`, with the chain's fewest entries stated.
+  - `Chain::new`, `from_list`, `iter`, `list_iter`, `inner`, `into_inner`, `len` and `is_empty` do what the two types'
+    methods did, and `new` still answers `None` for a chain that is not one. `Placed` is unchanged.
+- A chain that is always present now holds its memberships as a group too, whatever its entries hold, as a gated
+  chain's do. The chain and every field its gates reach are no longer fields of their own. A chain a gate reads with
+  no group before this landing changes shape here; a `sce:encode-may-fail` that was there for this gate alone is now
+  refused and is dropped.
+- Every gate on one chain's entries is in one group, with each one-bit flag of the codec's own carriers a gate joins
+  with one (`chain.has(7) || header.wide`). It has an arm for every assignment of them.
+  - The group is `{Codec}{Chain}Has0x{a}Has0x{b}{Carrier}{Flag}`, accessor `{chain}_has_0x{a}_has_0x{b}_{carrier}_{flag}`:
+    the kinds, then the flags. A group of one kind keeps the name R6a gave it.
+  - An arm is named by what it sets, `Has0x{a}Wide`, and `Neither` is the arm that sets nothing. One gate keeps
+    `Has0x{k}` and `NotHas0x{k}`.
+  - Each kind has its own type, `{Codec}{Chain}Has0x{k}Key`, the name a group of that kind alone gave it.
+  - The flag leaves the value: the encode writes it from the arm, and the carrier's other bits stay the value's.
+- A value's default is the chain's own default in the arm its entries' kinds select with every flag clear, and each
+  field at its type's default. The bare entry's chain of R6a, the one gate on an entry that is its identifier alone,
+  keeps `Placed` and its default, the named entry alone. A bare entry among other gates is held where it stands, in
+  `Chain`, like any entry.
+- The gates stay checks, and `sce:encode-may-fail` stays right, where a gate reads two chains' entries, an input, or a
+  flag something else derives, or where one chain's atoms number more than eight, which is 256 arms.
+- A chain's identifier is judged before the codec's `sce:encode-may-fail`, so a document whose identifier names
+  nothing of its entry codec is told that first.

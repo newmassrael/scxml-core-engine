@@ -4,24 +4,28 @@
 //! Lists refined by the kind of entry a chain's gate names (docs/adr/0065 §6 R6).
 //!
 //! A field gated on `chain.has(k)` is on the wire exactly when an entry of the
-//! kind `k` is in the chain. The chains that gate holds for factor in one way, at
-//! the first entry of the kind: the entries before it, none of the kind, then
-//! that entry, then any entries. The chains it does not hold for have no entry of
-//! the kind. A value made of these types says which of the two it is by the type
-//! it holds, so the fields the gate decides cannot disagree with the chain:
+//! kind `k` is in the chain. The gates on one chain's entries, and the flags
+//! joined with them, decide its fields by their values together, so a value holds
+//! one arm for each assignment of them, and the arm says of each kind whether the
+//! chain has an entry of it. A value made of these types says which arm it is by
+//! the type it holds, so the fields the gates decide cannot disagree with the
+//! chain:
 //!
-//! - [`Except`] is a chain none of whose entries is of the kind, where the gate
-//!   does not hold.
+//! - [`Chain`] is the chain whole with an entry of each kind of one set and of
+//!   none of another ([`Kinds`]): the arm's, for entries with content, which the
+//!   value holds where they stand.
 //! - [`Placed`] is the other entries and the place of the first entry of the kind
-//!   among them, where the gate holds. The place is part of the value, since the
-//!   protocols these chains carry do not order their entries: a frame is written
-//!   back with its entries where they came.
+//!   among them, where the one gate on a bare entry holds: the entry's identifier
+//!   is all it is, so the codec derives it and the value holds its place. The
+//!   place is part of the value, since the protocols these chains carry do not
+//!   order their entries: a frame is written back with its entries where they
+//!   came.
 //!
-//! Both hold the list `L` the same way, so the two arms of a value hold one list
+//! Both hold the list `L` the same way, so the arms of a value hold one list
 //! type, and both count it against the chain's bounds. Each is made by a
 //! constructor that checks it once, as [`crate::bounded::Bounded`] is, and has no
-//! mutable access, so it stays what it was checked to be. The encode walks
-//! either as [`Slots`].
+//! mutable access, so it stays what it was checked to be. The encode of a bare
+//! entry's chain walks either as [`Slots`].
 
 use core::marker::PhantomData;
 
@@ -35,7 +39,7 @@ pub trait Key<E: ?Sized> {
 }
 
 /// A list whose entries can each be asked whether it is of the kind `K`: what
-/// the constructors of [`Except`] and [`Placed`] check a list by.
+/// the constructors of [`Chain`] and [`Placed`] check a list by.
 ///
 /// Each list a codec holds implements it with the bound its own entries need
 /// (`K: Key<T>` for a list of `T`, `K: Key<W::Entry<'a>>` for a view's). One
@@ -78,6 +82,16 @@ impl<'a, W: crate::view::ListWalk<C>, const C: usize, K: Key<W::Entry<'a>>> OfKi
     }
 }
 
+impl<'a, W: crate::view::ListWalk<C>, const C: usize, K: Key<W::Entry<'a>>> OfKind<K>
+    for crate::view::NonEmptyListView<'a, W, C>
+where
+    W::Entry<'a>: Clone,
+{
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.entries().map(|e| K::matches(&e))
+    }
+}
+
 impl<I: Iterator + Clone, const MAX: usize, const MIN: usize, K: Key<I::Item>> OfKind<K>
     for BoundedIter<I, MAX, MIN>
 {
@@ -97,41 +111,102 @@ impl<L: OfKind<K>, K> OfKind<K> for Without<L> {
     }
 }
 
-/// A chain of at most `MAX` entries and at least `MIN`, held as the list `L`,
-/// none of whose entries is of the kind `K`.
-pub struct Except<L, K, const MAX: usize, const MIN: usize = 0> {
-    list: L,
-    kind: PhantomData<fn() -> K>,
+/// A set of kinds of entry, written as a tuple of [`Key`]s (`()`, `(K,)`,
+/// `(K1, K2)`, up to eight): what a [`Chain`] holds an entry of each of, or of
+/// none. A set is asked of a list through [`OfKind`], so it holds for every list
+/// each of its kinds can be asked of.
+pub trait Kinds<L> {
+    /// Whether `list` holds an entry of each kind of the set.
+    fn each_in(list: &L) -> bool;
+
+    /// Whether `list` holds an entry of none of the set's kinds.
+    fn none_in(list: &L) -> bool;
 }
 
-impl<L: Entries, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
-    /// `list` as a chain with no entry of the kind `K` inside the bounds, or
-    /// `None` when it holds more or fewer entries or one of the kind.
+impl<L> Kinds<L> for () {
+    fn each_in(_: &L) -> bool {
+        true
+    }
+
+    fn none_in(_: &L) -> bool {
+        true
+    }
+}
+
+macro_rules! kinds_of_tuple {
+    ($($kind:ident),+) => {
+        impl<L, $($kind),+> Kinds<L> for ($($kind,)+)
+        where
+            $(L: OfKind<$kind>,)+
+        {
+            fn each_in(list: &L) -> bool {
+                $(<L as OfKind<$kind>>::first_of_kind(list).is_some())&&+
+            }
+
+            fn none_in(list: &L) -> bool {
+                $(<L as OfKind<$kind>>::first_of_kind(list).is_none())&&+
+            }
+        }
+    };
+}
+
+kinds_of_tuple!(K1);
+kinds_of_tuple!(K1, K2);
+kinds_of_tuple!(K1, K2, K3);
+kinds_of_tuple!(K1, K2, K3, K4);
+kinds_of_tuple!(K1, K2, K3, K4, K5);
+kinds_of_tuple!(K1, K2, K3, K4, K5, K6);
+kinds_of_tuple!(K1, K2, K3, K4, K5, K6, K7);
+kinds_of_tuple!(K1, K2, K3, K4, K5, K6, K7, K8);
+
+/// A chain of at most `MAX` entries and at least `MIN`, held whole as the list
+/// `L`, that holds an entry of each kind of the set `H` and an entry of none of
+/// the set `A` (docs/adr/0065 §6 R6b): the chain one arm of the gates on its
+/// entries holds, which says of each kind those gates ask for whether the chain
+/// has one. The value holds each entry where it stands, so the first entry of a
+/// kind is where the list has it, and nothing apart from the list says so.
+///
+/// A chain with no gate of its own holds one entry or more, and the arm where
+/// every gate is clear holds such a chain with none of the kinds; the arms
+/// where some gate holds hold an entry of the kind whatever the chain's fewest.
+pub struct Chain<L, H, A, const MAX: usize, const MIN: usize = 0> {
+    list: L,
+    kinds: PhantomData<fn() -> (H, A)>,
+}
+
+impl<L: Entries, H, A, const MAX: usize, const MIN: usize> Chain<L, H, A, MAX, MIN> {
+    /// `list` as a chain inside the bounds with an entry of each kind of `H`
+    /// and of none of `A`, or `None` when it holds more or fewer entries, lacks
+    /// a kind of `H`, or holds one of `A`.
     pub fn new(list: L) -> Option<Self>
     where
-        L: OfKind<K>,
+        H: Kinds<L>,
+        A: Kinds<L>,
     {
-        if !(MIN..=MAX).contains(&list.entry_count()) || list.first_of_kind().is_some() {
+        if !(MIN..=MAX).contains(&list.entry_count()) || !H::each_in(&list) || !A::none_in(&list) {
             return None;
         }
         Some(Self {
             list,
-            kind: PhantomData,
+            kinds: PhantomData,
         })
     }
 
-    /// The chain as its walk: the same entries with their count, still none of
-    /// the kind. The walk states the chain's most entries alone, as a walk of
-    /// the other arm does, so both arms' walks are one type; the fewest stay
-    /// this type's.
-    pub fn iter(&self) -> Except<BoundedIter<L::Iter<'_>, MAX>, K, MAX, MIN> {
-        Except {
+    /// The chain as its walk: the same entries with their count, the same
+    /// kinds held and not. The walk states the chain's most entries alone, as
+    /// the walk of every other arm does, so the arms' walks are one type; the
+    /// fewest stay this type's.
+    pub fn iter(&self) -> Chain<BoundedIter<L::Iter<'_>, MAX>, H, A, MAX, MIN> {
+        Chain {
             list: BoundedIter::counted(self.list.entries(), self.list.entry_count()),
-            kind: PhantomData,
+            kinds: PhantomData,
         }
     }
 
-    /// The entries in order, with no named entry among them.
+    /// The entries in order, with no named entry among them: the walk of a
+    /// chain that has no entry of the kind of a bare entry a gate names
+    /// (docs/adr/0065 §6 R6a), which the arm where the gate holds walks as
+    /// [`Placed::slots`].
     pub fn slots(&self) -> Slots<L::Iter<'_>> {
         Slots {
             rest: self.list.entries(),
@@ -152,7 +227,7 @@ impl<L: Entries, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
     }
 }
 
-impl<L, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
+impl<L, H, A, const MAX: usize, const MIN: usize> Chain<L, H, A, MAX, MIN> {
     /// The list.
     pub fn inner(&self) -> &L {
         &self.list
@@ -163,167 +238,60 @@ impl<L, K, const MAX: usize, const MIN: usize> Except<L, K, MAX, MIN> {
         self.list
     }
 
-    /// A storage profile's list as a chain with no entry of the kind `K` inside
-    /// the bounds, read through its slice, or `None` when it is not one.
+    /// A storage profile's list as a chain inside the bounds with an entry of
+    /// each kind of `H` and of none of `A`, read through its slice, or `None`
+    /// when it is not one.
     pub fn from_list<T>(list: L) -> Option<Self>
     where
         L: crate::storage::SceList<T>,
-        K: Key<T>,
+        H: for<'s> Kinds<&'s [T]>,
+        A: for<'s> Kinds<&'s [T]>,
     {
         let entries = list.as_slice();
-        if !(MIN..=MAX).contains(&entries.len()) || entries.iter().any(|e| K::matches(e)) {
+        if !(MIN..=MAX).contains(&entries.len()) || !H::each_in(&entries) || !A::none_in(&entries) {
             return None;
         }
         Some(Self {
             list,
-            kind: PhantomData,
+            kinds: PhantomData,
         })
     }
 
     /// A storage profile's chain as its walk, read through its slice.
-    pub fn list_iter<T>(&self) -> Except<BoundedIter<core::slice::Iter<'_, T>, MAX>, K, MAX, MIN>
+    pub fn list_iter<T>(&self) -> Chain<BoundedIter<core::slice::Iter<'_, T>, MAX>, H, A, MAX, MIN>
     where
         L: crate::storage::SceList<T>,
     {
         let entries = self.list.as_slice();
-        Except {
+        Chain {
             list: BoundedIter::counted(entries.iter(), entries.len()),
-            kind: PhantomData,
+            kinds: PhantomData,
         }
     }
 }
 
-impl<L: Clone, K, const MAX: usize, const MIN: usize> Clone for Except<L, K, MAX, MIN> {
+impl<L: Clone, H, A, const MAX: usize, const MIN: usize> Clone for Chain<L, H, A, MAX, MIN> {
     fn clone(&self) -> Self {
         Self {
             list: self.list.clone(),
-            kind: PhantomData,
+            kinds: PhantomData,
         }
     }
 }
 
-impl<L: Copy, K, const MAX: usize, const MIN: usize> Copy for Except<L, K, MAX, MIN> {}
+impl<L: Copy, H, A, const MAX: usize, const MIN: usize> Copy for Chain<L, H, A, MAX, MIN> {}
 
-impl<L: PartialEq, K, const MAX: usize, const MIN: usize> PartialEq for Except<L, K, MAX, MIN> {
-    fn eq(&self, other: &Self) -> bool {
-        self.list == other.list
-    }
-}
-
-impl<L: core::fmt::Debug, K, const MAX: usize, const MIN: usize> core::fmt::Debug
-    for Except<L, K, MAX, MIN>
+impl<L: PartialEq, H, A, const MAX: usize, const MIN: usize> PartialEq
+    for Chain<L, H, A, MAX, MIN>
 {
-    /// The list as it prints: the refinement is a fact about it.
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.list.fmt(f)
-    }
-}
-
-/// A chain of at most `MAX` entries, held whole as the list `L`, that holds an
-/// entry of the kind `K` (docs/adr/0065 §6 R6b): where a gate on an entry with
-/// content holds. The value holds the named entry where it stands among the
-/// others, so the place is where the first entry of the kind is, and nothing
-/// apart from the list says it.
-pub struct Having<L, K, const MAX: usize> {
-    list: L,
-    kind: PhantomData<fn() -> K>,
-}
-
-impl<L: Entries, K, const MAX: usize> Having<L, K, MAX> {
-    /// `list` as a chain that holds an entry of the kind `K` inside the bound,
-    /// or `None` when it holds more entries than the bound or none of the kind.
-    pub fn new(list: L) -> Option<Self>
-    where
-        L: OfKind<K>,
-    {
-        if list.entry_count() > MAX || list.first_of_kind().is_none() {
-            return None;
-        }
-        Some(Self {
-            list,
-            kind: PhantomData,
-        })
-    }
-
-    /// The chain as its walk: the same entries with their count, still holding
-    /// one of the kind, a walk of the type the other arm's walk is.
-    pub fn iter(&self) -> Having<BoundedIter<L::Iter<'_>, MAX>, K, MAX> {
-        Having {
-            list: BoundedIter::counted(self.list.entries(), self.list.entry_count()),
-            kind: PhantomData,
-        }
-    }
-
-    /// How many entries the chain holds, one or more.
-    pub fn len(&self) -> usize {
-        self.list.entry_count()
-    }
-
-    /// Whether the chain holds no entry, which it never does.
-    pub fn is_empty(&self) -> bool {
-        false
-    }
-}
-
-impl<L, K, const MAX: usize> Having<L, K, MAX> {
-    /// The list.
-    pub fn inner(&self) -> &L {
-        &self.list
-    }
-
-    /// The list, without its refinement.
-    pub fn into_inner(self) -> L {
-        self.list
-    }
-
-    /// A storage profile's list as a chain that holds an entry of the kind `K`
-    /// inside the bound, read through its slice, or `None` when it is not one.
-    pub fn from_list<T>(list: L) -> Option<Self>
-    where
-        L: crate::storage::SceList<T>,
-        K: Key<T>,
-    {
-        let entries = list.as_slice();
-        if entries.len() > MAX || !entries.iter().any(|e| K::matches(e)) {
-            return None;
-        }
-        Some(Self {
-            list,
-            kind: PhantomData,
-        })
-    }
-
-    /// A storage profile's chain as its walk, read through its slice.
-    pub fn list_iter<T>(&self) -> Having<BoundedIter<core::slice::Iter<'_, T>, MAX>, K, MAX>
-    where
-        L: crate::storage::SceList<T>,
-    {
-        let entries = self.list.as_slice();
-        Having {
-            list: BoundedIter::counted(entries.iter(), entries.len()),
-            kind: PhantomData,
-        }
-    }
-}
-
-impl<L: Clone, K, const MAX: usize> Clone for Having<L, K, MAX> {
-    fn clone(&self) -> Self {
-        Self {
-            list: self.list.clone(),
-            kind: PhantomData,
-        }
-    }
-}
-
-impl<L: Copy, K, const MAX: usize> Copy for Having<L, K, MAX> {}
-
-impl<L: PartialEq, K, const MAX: usize> PartialEq for Having<L, K, MAX> {
     fn eq(&self, other: &Self) -> bool {
         self.list == other.list
     }
 }
 
-impl<L: core::fmt::Debug, K, const MAX: usize> core::fmt::Debug for Having<L, K, MAX> {
+impl<L: core::fmt::Debug, H, A, const MAX: usize, const MIN: usize> core::fmt::Debug
+    for Chain<L, H, A, MAX, MIN>
+{
     /// The list as it prints: the refinement is a fact about it.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.list.fmt(f)
@@ -706,17 +674,52 @@ mod tests {
         }
     }
 
+    /// The kind of a number below 3, beside [`Even`] as a second kind one
+    /// chain is asked for.
+    struct Small;
+
+    impl Key<u8> for Small {
+        fn matches(entry: &u8) -> bool {
+            *entry < 3
+        }
+    }
+
+    impl Key<&u8> for Small {
+        fn matches(entry: &&u8) -> bool {
+            **entry < 3
+        }
+    }
+
     #[test]
     fn a_chain_with_no_entry_of_the_kind_is_held_inside_its_bounds() {
-        assert!(Except::<&[u8], Even, 3>::new(&[1, 3, 5][..]).is_some());
-        assert!(Except::<&[u8], Even, 3>::new(&[1, 4][..]).is_none());
-        assert!(Except::<&[u8], Even, 2>::new(&[1, 3, 5][..]).is_none());
+        assert!(Chain::<&[u8], (), (Even,), 3>::new(&[1, 3, 5][..]).is_some());
+        assert!(Chain::<&[u8], (), (Even,), 3>::new(&[1, 4][..]).is_none());
+        assert!(Chain::<&[u8], (), (Even,), 2>::new(&[1, 3, 5][..]).is_none());
         let empty: &[u8] = &[];
-        assert!(Except::<&[u8], Even, 3>::new(empty).is_some());
-        assert!(Except::<&[u8], Even, 3, 1>::new(empty).is_none());
-        let chain = Except::<&[u8], Even, 3>::new(&[1, 3][..]).expect("a chain");
+        assert!(Chain::<&[u8], (), (Even,), 3>::new(empty).is_some());
+        assert!(Chain::<&[u8], (), (Even,), 3, 1>::new(empty).is_none());
+        let chain = Chain::<&[u8], (), (Even,), 3>::new(&[1, 3][..]).expect("a chain");
         assert!(chain.slots().eq([Slot::Entry(&1), Slot::Entry(&3)]));
         assert_eq!(chain.iter().len(), 2);
+    }
+
+    #[test]
+    fn a_chain_holds_an_entry_of_each_kind_it_has_and_of_none_it_has_not() {
+        // 4 is even and not small; 1 is small and not even; 2 is both.
+        assert!(Chain::<&[u8], (Even, Small), (), 3>::new(&[4, 1][..]).is_some());
+        assert!(Chain::<&[u8], (Even, Small), (), 3>::new(&[2][..]).is_some());
+        assert!(Chain::<&[u8], (Even, Small), (), 3>::new(&[4, 5][..]).is_none());
+        assert!(Chain::<&[u8], (Even,), (Small,), 3>::new(&[4, 5][..]).is_some());
+        assert!(Chain::<&[u8], (Even,), (Small,), 3>::new(&[4, 1][..]).is_none());
+        assert!(Chain::<&[u8], (), (Even, Small), 3>::new(&[3, 5][..]).is_some());
+        assert!(Chain::<&[u8], (), (Even, Small), 3>::new(&[3, 1][..]).is_none());
+        // The walk keeps the entries and their kinds.
+        let chain = Chain::<&[u8], (Even,), (Small,), 3>::new(&[5, 4][..]).expect("a chain");
+        assert!(chain.iter().into_inner().eq([&5, &4]));
+        let list = heapless::Vec::<u8, 4>::from_slice(&[3, 4]).expect("two");
+        assert!(Chain::<_, (Even,), (Small,), 4>::from_list(list).is_some());
+        let list = heapless::Vec::<u8, 4>::from_slice(&[3, 4]).expect("two");
+        assert!(Chain::<_, (Small,), (), 4>::from_list(list).is_none());
     }
 
     #[test]
@@ -769,13 +772,13 @@ mod tests {
 
     #[test]
     fn a_chain_held_whole_holds_an_entry_of_the_kind_inside_its_bound() {
-        let having = Having::<&[u8], Even, 3>::new(&[1, 4, 3][..]).expect("an even entry");
+        let having = Chain::<&[u8], (Even,), (), 3>::new(&[1, 4, 3][..]).expect("an even entry");
         assert_eq!(having.len(), 3);
         assert_eq!(having.iter().into_inner().len(), 3);
-        assert!(Having::<&[u8], Even, 3>::new(&[1, 3][..]).is_none());
-        assert!(Having::<&[u8], Even, 2>::new(&[1, 4, 3][..]).is_none());
+        assert!(Chain::<&[u8], (Even,), (), 3>::new(&[1, 3][..]).is_none());
+        assert!(Chain::<&[u8], (Even,), (), 2>::new(&[1, 4, 3][..]).is_none());
         let list = heapless::Vec::<u8, 4>::from_slice(&[3, 2]).expect("two");
-        assert!(Having::<_, Even, 4>::from_list(list).is_some());
+        assert!(Chain::<_, (Even,), (), 4>::from_list(list).is_some());
     }
 
     #[test]

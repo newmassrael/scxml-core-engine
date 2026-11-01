@@ -419,6 +419,73 @@ fn disjunction_flags_in_xml(path: &Path) -> BTreeSet<ElementId> {
     derived
 }
 
+/// The flags joined with a chain's membership in a gate, read out of the XML
+/// (docs/adr/0065 §6 R6b): a one-bit flag of a carrier of the document that a
+/// gate names beside `<chain>.has(…)`, where every gate that names it names
+/// nothing but one-bit flags and that chain's memberships. Each is derived from
+/// the arm the value holds.
+fn membership_flags_in_xml(path: &Path) -> BTreeSet<ElementId> {
+    let text = std::fs::read_to_string(path).expect("the document");
+    let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
+    let whole = fields_derived_whole(&doc);
+    let one_bit: BTreeSet<String> = doc
+        .descendants()
+        .filter(|n| is_sce(n, "flags"))
+        .flat_map(|carrier| {
+            let id = carrier.attribute("id").unwrap_or_default().to_string();
+            carrier
+                .children()
+                .filter(|f| is_sce(f, "flag"))
+                .filter(|f| f.attribute("width").is_none_or(|w| w == "1"))
+                .filter_map(move |f| Some(format!("{id}.{}", f.attribute("name")?)))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let chains: BTreeSet<&str> = doc
+        .descendants()
+        .filter(|n| is_sce(n, "tlv-chain"))
+        .filter_map(|n| n.attribute("id"))
+        .collect();
+    let clauses_of = |gate: &str| -> Vec<String> {
+        gate.split("||")
+            .map(|c| c.trim().trim_start_matches('!').trim().to_string())
+            .collect()
+    };
+    let chain_of = |clause: &str| {
+        clause
+            .split_once(".has(")
+            .map(|(chain, _)| chain.to_string())
+            .filter(|chain| chains.contains(chain.as_str()))
+    };
+    let gates: Vec<Vec<String>> = doc
+        .descendants()
+        .filter(|n| n.is_element())
+        .filter(|n| n.attribute("id").is_none_or(|id| !whole.contains(id)))
+        .filter_map(|n| n.attribute((SCE_NS, "present-if")))
+        .map(clauses_of)
+        .collect();
+    let mut derived = BTreeSet::new();
+    for gate in &gates {
+        let Some(chain) = gate.iter().find_map(|c| chain_of(c)) else {
+            continue;
+        };
+        for flag in gate.iter().filter(|c| one_bit.contains(*c)) {
+            let joined_only = gates.iter().filter(|g| g.contains(flag)).all(|g| {
+                g.iter()
+                    .all(|c| one_bit.contains(c) || chain_of(c).as_deref() == Some(&chain))
+            });
+            if joined_only {
+                let (field, name) = flag.split_once('.').expect("a carrier's flag");
+                derived.insert(ElementId::Flag {
+                    field: field.to_string(),
+                    flag: name.to_string(),
+                });
+            }
+        }
+    }
+    derived
+}
+
 #[test]
 fn the_classification_agrees_with_the_declarations_in_the_document() {
     for (path, roles) in codecs() {
@@ -427,6 +494,7 @@ fn the_classification_agrees_with_the_declarations_in_the_document() {
         declared.extend(dispatched_in_xml(&path));
         declared.extend(bound_to_a_said_input_in_xml(&path));
         declared.extend(disjunction_flags_in_xml(&path));
+        declared.extend(membership_flags_in_xml(&path));
         assert_eq!(
             derived,
             declared,
@@ -470,9 +538,11 @@ fn a_chains_membership_of_a_bare_entry_is_a_group_that_holds_the_chain() {
     let group = roles
         .groups
         .iter()
-        .find(|g| g.member().is_some())
+        .find(|g| g.chain().is_some())
         .unwrap_or_else(|| panic!("{}", roles.table()));
-    assert_eq!(group.member(), Some(("extensions", 0x12)));
+    assert_eq!(group.chain(), Some("extensions"));
+    assert_eq!(group.members().collect::<Vec<_>>(), [(0, 0x12)]);
+    assert!(group.member_is_bare());
     let fields: Vec<(&[bool], &[String])> = group
         .arms
         .iter()
@@ -505,25 +575,68 @@ fn a_chains_membership_of_an_entry_with_content_is_a_group_that_holds_it() {
     let group = roles
         .groups
         .iter()
-        .find(|g| g.member().is_some())
+        .find(|g| g.chain().is_some())
         .unwrap_or_else(|| panic!("{}", roles.table()));
-    assert_eq!(group.member(), Some(("extensions", 0x2)));
+    assert_eq!(group.chain(), Some("extensions"));
+    assert_eq!(group.members().collect::<Vec<_>>(), [(0, 0x2)]);
     assert!(!group.member_is_bare());
     assert!(roles.source_checks().next().is_none(), "{}", roles.table());
 }
 
 #[test]
-fn a_membership_of_an_always_present_chain_stays_a_check() {
-    // Both arms of a chain that is always present hold an entry or more, so a
-    // value's default needs the default entry in the arm its identifier
-    // selects, which is R6b-2; until then its gates stay checks.
+fn the_gates_on_a_chains_entries_and_the_flags_joined_with_them_are_one_group() {
+    // `priority` is present where `entries.has(7) || header.wide`, `checksum`
+    // where `!entries.has(9)`. The three atoms decide both fields together, so
+    // they make one group of an arm for each assignment of them, each holding
+    // the chain, which is always present, and the fields whose gates hold
+    // (docs/adr/0065 §6 R6b). `wide` is derived from the arm, and no check is
+    // left for a source.
     let roles = roles_of("codec_chain_has_tagged");
+    let group = roles
+        .groups
+        .iter()
+        .find(|g| g.chain().is_some())
+        .unwrap_or_else(|| panic!("{}", roles.table()));
+    assert_eq!(group.chain(), Some("entries"));
+    assert_eq!(group.members().collect::<Vec<_>>(), [(0, 7), (1, 9)]);
+    assert_eq!(group.gates[2].to_string(), "header.wide");
+    assert!(group.absent.is_none());
+    let field = |id: &str| id.to_string();
+    let arms: Vec<(&[bool], &[String])> = group
+        .arms
+        .iter()
+        .map(|a| (a.values.as_slice(), a.fields.as_slice()))
+        .collect();
+    let with_priority = [field("entries"), field("priority")];
+    let with_checksum = [field("entries"), field("checksum")];
+    let with_both = [field("entries"), field("priority"), field("checksum")];
+    assert_eq!(
+        arms,
+        [
+            (&[true, true, true][..], &with_priority[..]),
+            (&[true, true, false][..], &with_priority[..]),
+            (&[true, false, true][..], &with_both[..]),
+            (&[false, true, true][..], &with_priority[..]),
+            (&[true, false, false][..], &with_both[..]),
+            (&[false, true, false][..], &[field("entries")][..]),
+            (&[false, false, true][..], &with_both[..]),
+            (&[false, false, false][..], &with_checksum[..]),
+        ]
+    );
+    let (held, not) = group.kinds_in(&group.arms[2]);
+    assert_eq!((held, not), (vec![7], vec![9]));
     assert!(
-        roles.groups.iter().all(|g| g.member().is_none()),
+        matches!(
+            roles.role_of(&ElementId::Flag {
+                field: "header".into(),
+                flag: "wide".into(),
+            }),
+            Some(Role::Derived(_))
+        ),
         "{}",
         roles.table()
     );
-    assert!(roles.source_checks().next().is_some(), "{}", roles.table());
+    assert!(roles.source_checks().next().is_none(), "{}", roles.table());
 }
 
 #[test]
@@ -546,13 +659,73 @@ fn a_disjunction_of_the_codecs_own_flags_is_a_group_of_its_assignments() {
 }
 
 #[test]
-fn a_disjunction_with_a_clause_that_is_no_flag_is_a_check() {
+fn more_gates_on_a_chain_than_a_value_says_stay_checks() {
+    // A value holds an arm for each assignment of a chain's gates, and the
+    // runtime's sets of kinds go up to eight (docs/adr/0065 §6 R6b). Up to that
+    // the gates are a group, so the encode refuses nothing and the declaration
+    // that it may is refused; past it they stay checks, which the declaration
+    // states, and the document compiles.
+    let compile = |kinds: u32| {
+        let fields: String = (1..=kinds)
+            .map(|k| {
+                format!(
+                    r#"<sce:field id="f{k}" sce:type="uint8" sce:byte="{k}" sce:bit-size="8"
+                                  sce:present-if="entries.has({k})"/>"#
+                )
+            })
+            .collect();
+        let scxml = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                      sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="many_kinds">
+                 <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
+                 <datamodel>
+                   <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
+                                  max-depth="3" on-overflow="reject"
+                                  terminate-on="entry-flag" entry-flag-name="more"
+                                  entry-id="entry_type"/>
+                   {fields}
+                 </datamodel>
+               </scxml>"#
+        );
+        sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("many_kinds"),
+            sce_build::generator::Language::Rust,
+            &resources(),
+            &ForgeCompileOptions::default(),
+        )
+    };
+    let Err(refused) = compile(8) else {
+        panic!("eight kinds are a group, so the declaration is refused");
+    };
+    assert!(
+        refused.error.to_string().contains("refuses no value"),
+        "{}",
+        refused.error
+    );
+    compile(9).unwrap_or_else(|e| panic!("nine kinds stay checks: {}", e.error));
+}
+
+#[test]
+fn a_disjunction_with_a_chains_membership_is_one_group_with_the_chain() {
+    // `entries.has(7) || header.wide` is no disjunction of the codec's own
+    // flags (R4c), and the chain's memberships decide it with `wide`: one group
+    // of the three atoms, listed as atoms, not joined (docs/adr/0065 §6 R6b).
+    // The checks stay for an encode that holds no group.
     let roles = roles_of("codec_chain_has_tagged");
     assert!(!roles.checks.is_empty(), "{}", roles.table());
+    let table = roles.table();
     assert!(
-        roles.table().contains("is present exactly when") && roles.table().contains("||"),
-        "{}",
-        roles.table()
+        table.contains(
+            "header.wide   derived  arm-of(entries.has(0x7), entries.has(0x9), header.wide)"
+        ),
+        "{table}"
+    );
+    assert!(
+        table.contains(
+            "group  entries.has(0x7), entries.has(0x9), header.wide  111 (entries, priority)"
+        ),
+        "{table}"
     );
 }
 

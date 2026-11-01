@@ -7440,8 +7440,8 @@ fn rust_group_storage(
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
     use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
-        chain_arm_type, group_accessor, group_arm_name, group_type, held_chain_key, key_type,
-        member_varies,
+        chain_arm_type, chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
+        key_type, member_varies,
     };
     let roles = crate::forge::codec_roles::classify(m, imports);
     if roles.groups.is_empty() {
@@ -7490,13 +7490,17 @@ fn rust_group_storage(
                     .unwrap_or_default()
                     .to_string();
                 let built = replace_place(stmt, &place, &local);
-                // A decode that builds the element in place starts from none;
-                // one that assigns it on every path declares it unassigned.
-                // The statement is the one an element outside a group is
-                // decoded by, which assigns its field on every path; the local
-                // it assigns here is declared first, as that field was.
+                // A decode that builds a gated element in place starts from
+                // none, and one that fills an ungated list in place (its
+                // `refill`, docs/adr/0065 §6 R7) from the list's default; one
+                // that assigns it on every path declares it unassigned. The
+                // statement is the one an element outside a group is decoded
+                // by, which assigns its field on every path; the local it
+                // assigns here is declared first, as that field was.
                 let declared = if stmt.contains(&format!("{place}.insert(")) {
                     format!("let mut {local}: {ty} = None;\n        {built}")
+                } else if stmt.contains(&format!("{place}.refill(")) {
+                    format!("let mut {local}: {ty} = Default::default();\n        {built}")
                 } else {
                     format!(
                         "#[allow(clippy::needless_late_init)]\n        let {local}: {ty};\n        {built}"
@@ -7549,17 +7553,17 @@ fn rust_group_storage(
                 pattern
             }
         };
-        // The type an element has in one form, as `ty_key` says: the chain of a
-        // membership as the list both arms refine, which a view reads without
-        // the named entry (docs/adr/0065 §6 R6a).
+        // The type an element has in one form, as `ty_key` says: the chain of
+        // the memberships as the list every arm refines, which a view of a bare
+        // entry's chain reads without the named entry (docs/adr/0065 §6 R6a).
         let member_ty = |f: &CodecField, ty_key: &str| -> String {
             let ty = present(&str_of(obj_of(f), ty_key).unwrap_or_default());
-            match (held_chain_key(group, f), ty_key) {
-                (None, _) => ty,
-                (Some(_), "view_rs_type") if group.member_is_bare() => {
+            match (holds_chain(group, f), ty_key) {
+                (false, _) => ty,
+                (true, "view_rs_type") if group.member_is_bare() => {
                     format!("{RUNTIME_CODEC}::Without<{}>", bounded_list(&ty))
                 }
-                (Some(_), _) => bounded_list(&ty),
+                (true, _) => bounded_list(&ty),
             }
         };
         // The group's type in one form: each varying element as `ty_key` says.
@@ -7631,15 +7635,15 @@ fn rust_group_storage(
                 present_if_test_literal(&m.fields, &holds, l.lang)
             })
             .collect();
-        // The chain of a membership, decoded whole into its local, as `arm`
-        // holds it (docs/adr/0065 §6 R6a): placed at its first entry of the
-        // kind where the gate holds, the chain with none where it does not. A
-        // view holds the chain over its bytes, so it reads the others without
-        // the named entry. The gate the decode tested says which, so neither
-        // construction can fail.
+        // The chain of the memberships, decoded whole into its local, as `arm`
+        // holds it (docs/adr/0065 §6 R6a, R6b): the chain whole, with the kinds
+        // the arm sets and none it clears, absent where it may be; where the
+        // one gate on a bare entry holds, placed at its first entry of the
+        // kind. A view of a bare entry's chain holds it over its bytes, so it
+        // reads the others without the named entry. The gates the decode
+        // tested say which, so no construction can fail.
         let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
             let local = codec_field_decode_local(&f.id, l.lang);
-            let key = key_type(&struct_name, group);
             let bound = crate::forge::codec_totality::list_bound(f);
             let list = if f.present_if.is_some() {
                 format!("{local}.expect(\"the gate found the chain\").into_inner()")
@@ -7647,15 +7651,9 @@ fn rust_group_storage(
                 format!("{local}.into_inner()")
             };
             let bare = group.member_is_bare();
-            if arm.values == [true] && !bare {
-                // An entry with content stays where it stands: the chain whole,
-                // which the gate found an entry of the kind in (R6b).
-                return format!(
-                    "{}: {RUNTIME_CODEC}::Having::new({list}).expect(\"the gate found an entry of the kind\")",
-                    acc(f)
-                );
-            }
-            if arm.values == [true] {
+            let (held, _) = group.kinds_in(arm);
+            if bare && !held.is_empty() {
+                let key = key_type(&struct_name, &f.id, held[0]);
                 let place = if view {
                     format!("{RUNTIME_CODEC}::place_first_in::<_, {key}, {bound}>({list})")
                 } else {
@@ -7672,9 +7670,9 @@ fn rust_group_storage(
                 } else {
                     list.to_string()
                 };
-                format!("{RUNTIME_CODEC}::Except::new({list}).expect(\"the gate found no entry of the kind\")")
+                format!("{RUNTIME_CODEC}::Chain::new({list}).expect(\"the gates found the chain's kinds as the arm says\")")
             };
-            if f.present_if.is_some() {
+            if chain_optional_in(group, f, arm) {
                 format!(
                     "{}: {local}.map(|_l| {})",
                     acc(f),
@@ -7689,7 +7687,7 @@ fn rust_group_storage(
                 .iter()
                 .map(|f| {
                     let local = codec_field_decode_local(&f.id, l.lang);
-                    if held_chain_key(group, f).is_some() {
+                    if holds_chain(group, f) {
                         chain_built(f, arm.0, view)
                     } else if f.present_if.is_some() {
                         format!("{}: {local}.unwrap_or_default()", acc(f))
@@ -7714,7 +7712,8 @@ fn rust_group_storage(
                 format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))
             } else {
                 // A disjunction: each arm under the values it names, and none
-                // under the one assignment that does not satisfy it.
+                // under the one assignment that does not satisfy it. A chain's
+                // memberships have an arm under every assignment.
                 let mut cases: Vec<String> = arms
                     .iter()
                     .map(|arm| {
@@ -7728,14 +7727,16 @@ fn rust_group_storage(
                         format!("({values}) => {},", built(arm, view))
                     })
                     .collect();
-                cases.push("_ => None,".to_string());
+                if optional {
+                    cases.push("_ => None,".to_string());
+                }
                 format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
             }
         };
         entry.insert("assign_expr".into(), assign_in(false).into());
-        // A view builds the chain of a membership over its bytes, which the
+        // A view builds the chain of the memberships over its bytes, which the
         // eager decode's construction does not take (docs/adr/0065 §6 R6a).
-        if emit_views && group.member().is_some() {
+        if emit_views && group.chain().is_some() {
             entry.insert("view_assign_expr".into(), assign_in(true).into());
         }
 
@@ -7751,10 +7752,11 @@ fn rust_group_storage(
             for (arm, fs, path) in &arms {
                 let mut convs: Vec<String> = Vec::new();
                 for f in fs {
-                    if held_chain_key(group, f).is_some() {
-                        // The chain of a membership: its list projected, and the
-                        // refinement made again over the owned entries, which
-                        // keep each entry's identifier (docs/adr/0065 §6 R6a).
+                    if holds_chain(group, f) {
+                        // The chain of the memberships: its list projected, and
+                        // the refinement made again over the owned entries,
+                        // which keep each entry's identifier (docs/adr/0065 §6
+                        // R6a).
                         let (_, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
                         let collect = |list: &str| {
                             format!(
@@ -7762,12 +7764,7 @@ fn rust_group_storage(
                             )
                         };
                         let a = acc(f);
-                        let expr = if arm.values == [true] && !group.member_is_bare() {
-                            format!(
-                                "{RUNTIME_CODEC}::Having::from_list({}).expect(\"the projection keeps each entry's identifier\")",
-                                collect(&format!("{a}.into_inner()"))
-                            )
-                        } else if arm.values == [true] {
+                        let expr = if group.member_is_bare() && arm.values == [true] {
                             format!(
                                 "{{ let (_r, _p) = {a}.into_parts(); {RUNTIME_CODEC}::Placed::from_list({}, _p).expect(\"the projection keeps each entry's identifier\") }}",
                                 collect("_r")
@@ -7775,11 +7772,11 @@ fn rust_group_storage(
                         } else {
                             let refined = |list: &str| {
                                 format!(
-                                    "{RUNTIME_CODEC}::Except::from_list({}).expect(\"the projection keeps each entry's identifier\")",
+                                    "{RUNTIME_CODEC}::Chain::from_list({}).expect(\"the projection keeps each entry's identifier\")",
                                     collect(list)
                                 )
                             };
-                            if f.present_if.is_some() {
+                            if chain_optional_in(group, f, arm) {
                                 format!(
                                     "match {a} {{ Some(_l) => Some({}), None => None }}",
                                     refined("_l.into_inner()")
@@ -7836,8 +7833,9 @@ fn rust_group_storage(
                 .iter()
                 .filter(|f| member_varies(f))
                 .map(|f| {
-                    // The chain of a membership as the list both arms refine.
-                    if held_chain_key(group, f).is_some() {
+                    // The chain of the memberships as the list every arm
+                    // refines.
+                    if holds_chain(group, f) {
                         return rust_owned_list_entry(f, &m.name, imports, l, false)
                             .map(|(entry, _)| rust_owned_list(f, &entry));
                     }
@@ -7877,28 +7875,22 @@ fn rust_group_storage(
         };
         entry.insert("rs_owned_type".into(), owned_ty.into());
 
-        // The chain of a membership built in the destination's list from the
-        // entries `fill` makes of `list` (a reference to the source's list),
-        // refined again as `arm` holds it, which the entries' identifiers,
-        // kept by the projection, make so (docs/adr/0065 §6 R6a).
+        // The chain of the memberships built in the destination's list from
+        // the entries `fill` makes of `list` (a reference to the source's
+        // list), refined again as `arm` holds it, which the entries'
+        // identifiers, kept by the projection, make so (docs/adr/0065 §6 R6a).
         let chain_into =
             |f: &CodecField, arm: &GroupArm, src: &str, fill: &dyn Fn(&str) -> String| -> String {
                 let expect = ".expect(\"the projection keeps each entry's identifier\")";
-                if arm.values == [true] && !group.member_is_bare() {
-                    return format!(
-                        "{RUNTIME_CODEC}::Having::new({}){expect}",
-                        fill(&format!("{src}.inner()"))
-                    );
-                }
-                if arm.values == [true] {
+                if group.member_is_bare() && arm.values == [true] {
                     return format!(
                         "{RUNTIME_CODEC}::Placed::new({}, {src}.place()){expect}",
                         fill(&format!("{src}.rest()"))
                     );
                 }
                 let refined =
-                    |list: &str| format!("{RUNTIME_CODEC}::Except::new({}){expect}", fill(list));
-                if f.present_if.is_some() {
+                    |list: &str| format!("{RUNTIME_CODEC}::Chain::new({}){expect}", fill(list));
+                if chain_optional_in(group, f, arm) {
                     format!(
                         "match {src} {{ Some(_l) => Some({}), None => None }}",
                         refined("_l.inner()")
@@ -7925,7 +7917,7 @@ fn rust_group_storage(
                     if let Some((from, to)) = lifetime {
                         t = t.replace(from, to);
                     }
-                    if held_chain_key(group, f).is_some() {
+                    if holds_chain(group, f) {
                         let t = chain_arm_type(&struct_name, group, f, arm, &bounded_list(&t));
                         let value = chain_into(f, arm, &acc(f), &|list| fill(f, list));
                         body.push_str(&format!("                let {local}: {t} = {value};\n"));
@@ -11587,7 +11579,12 @@ fn resolve_variant_arm_body_type(
 /// Each is a refusal with no repair a tool could apply — the author chooses
 /// which flag or field is the identifier — so each is
 /// `validation/attribute-rule-violated` on the chain's own row.
-fn validate_cross_codec_chain_entry_id(
+///
+/// The codec's totality is judged by the entries its identifiers tell apart
+/// (docs/adr/0065 §6 R6), so the compile judges these first, before the
+/// statement of totality; the enrichment of a codec judges them again for the
+/// paths that generate without that compile.
+pub(crate) fn validate_cross_codec_chain_entry_id(
     parent: &CodecModel,
     imports: &[ImportContext],
 ) -> Result<(), ForgeError> {

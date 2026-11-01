@@ -4027,7 +4027,11 @@ pub fn compile_forge_from_parsed(
     // A codec states whether its encode can refuse a value (docs/adr/0065):
     // the statement is held to the refusals the encode has, once, before any
     // language is rendered, for the reason the checks above give.
+    // The refusals are those of the entries a chain's identifier tells apart,
+    // so an identifier that names nothing of its entry codec is refused first.
     if let forge::model::ForgeDocument::Codec(m) = &parsed.document {
+        forge::generator::validate_cross_codec_chain_entry_id(m, &import_ctx)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::codec_totality::check(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }

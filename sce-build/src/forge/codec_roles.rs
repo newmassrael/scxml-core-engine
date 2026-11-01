@@ -223,6 +223,10 @@ impl fmt::Display for GateVar {
 /// that does not. A length stated while its content is absent is in the arm
 /// where the content is not. A gate with one element keeps the element as it
 /// is; a group has two elements or more, or more than one arm.
+///
+/// The gates on a chain's entries, and the flags joined with them, make an arm
+/// for every assignment of them (R6), each holding the chain refined by the
+/// memberships it sets and clears, so a value always holds one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateGroup {
     /// The flags that decide the group, in the order its gate names them.
@@ -250,20 +254,44 @@ impl GateGroup {
         self.arms.len() > 1
     }
 
-    /// The chain and the kind of entry the group's gate asks for, when its gate
-    /// is a chain's membership (docs/adr/0065 §6 R6a). Such a group holds the
-    /// chain in each arm: the others and the named entry's place where the
-    /// gate holds, the chain with no entry of the kind where it does not.
-    pub fn member(&self) -> Option<(&str, u64)> {
-        match self.gates.as_slice() {
-            [GateVar::Member { chain, key, .. }] => Some((chain, *key)),
+    /// The chain whose memberships are gates of the group, when some are
+    /// (docs/adr/0065 §6 R6a, R6b). Such a group holds the chain in each arm,
+    /// refined by the memberships the arm sets and clears.
+    pub fn chain(&self) -> Option<&str> {
+        self.gates.iter().find_map(|gate| match gate {
+            GateVar::Member { chain, .. } => Some(chain.as_str()),
             _ => None,
-        }
+        })
     }
 
-    /// Whether the group's gate is a chain's membership of a bare entry
+    /// The memberships among the group's gates, each as its place among them
+    /// and the kind of entry it asks for, in the order of [`GateGroup::gates`].
+    pub fn members(&self) -> impl Iterator<Item = (usize, u64)> + '_ {
+        self.gates
+            .iter()
+            .enumerate()
+            .filter_map(|(index, gate)| match gate {
+                GateVar::Member { key, .. } => Some((index, *key)),
+                _ => None,
+            })
+    }
+
+    /// The kinds of entry the chain holds an entry of in `arm`, and those it
+    /// holds none of, each in the order of [`GateGroup::gates`].
+    pub fn kinds_in(&self, arm: &GroupArm) -> (Vec<u64>, Vec<u64>) {
+        let (held, not): (Vec<_>, Vec<_>) =
+            self.members().partition(|(index, _)| arm.values[*index]);
+        (
+            held.into_iter().map(|(_, key)| key).collect(),
+            not.into_iter().map(|(_, key)| key).collect(),
+        )
+    }
+
+    /// Whether the group's one gate is a chain's membership of a bare entry
     /// (docs/adr/0065 §6 R6a), whose arm where it holds holds the entry's
-    /// place, not the entry (R6b).
+    /// place, not the entry. A bare entry among other gates is held where it
+    /// stands, as an entry with content is (R6b): one place says where the
+    /// first entry of one kind is, and the chain whole says it of every kind.
     pub fn member_is_bare(&self) -> bool {
         matches!(self.gates.as_slice(), [GateVar::Member { bare: true, .. }])
     }
@@ -304,22 +332,6 @@ impl GateGroup {
             gates: vec![gate],
             arms,
             absent,
-        }
-    }
-
-    /// The group of a chain's membership (docs/adr/0065 §6 R6a): an arm for
-    /// each value of the gate, each holding the chain before the fields present
-    /// under it, since the chain is what the gate is a fact of. A value always
-    /// holds one of the two.
-    fn of_member(gate: GateVar, chain: &str, set: Vec<String>, clear: Vec<String>) -> GateGroup {
-        let arm = |value: bool, fields: Vec<String>| GroupArm {
-            values: vec![value],
-            fields: std::iter::once(chain.to_string()).chain(fields).collect(),
-        };
-        GateGroup {
-            gates: vec![gate],
-            arms: vec![arm(true, set), arm(false, clear)],
-            absent: None,
         }
     }
 }
@@ -476,21 +488,18 @@ pub fn named_entry_is_bare(
         .any(|arm| arm.value == tag && shape.empty_arm_tags.contains(&arm.value))
 }
 
-/// The memberships of `model`'s chains whose named entry holds nothing but its
-/// identifier ([`named_entry_is_bare`]), each with whether it does: each chain
-/// and identifier a gate of one clause asks for whose identifier holds the key
-/// (`named_key_fits`). An entry with content is the value's to hold, which a
-/// gated chain holds as R6a's chains are held (docs/adr/0065 §6 R6b-1); one that
-/// is always present waits for R6b-2, whose default holds the default entry in
-/// the arm its identifier selects.
+/// The memberships of `model`'s chains a clause of a gate asks for, each chain
+/// and key whose identifier holds the key (`named_key_fits`), with whether the
+/// named entry holds nothing but its identifier ([`named_entry_is_bare`]). Each
+/// is an atom of the groups of its chain ([`membership_groups`], docs/adr/0065
+/// §6 R6a, R6b).
 fn memberships(model: &CodecModel, inputs: &mut dyn InputImports) -> BTreeMap<(String, u64), bool> {
     let mut held = BTreeMap::new();
-    for field in &model.fields {
-        let Some(gate) = &field.present_if else {
-            continue;
-        };
-        let (PresentIfScope::Chain, None, Some(key)) = (gate.scope, &gate.or_with, gate.entry_id)
-        else {
+    let clauses = model.fields.iter().flat_map(|field| {
+        std::iter::successors(field.present_if.as_ref(), |p| p.or_with.as_deref())
+    });
+    for gate in clauses {
+        let (PresentIfScope::Chain, Some(key)) = (gate.scope, gate.entry_id) else {
             continue;
         };
         let Some(chain) = model.fields.iter().find(|c| c.id == gate.field_id) else {
@@ -518,9 +527,7 @@ fn memberships(model: &CodecModel, inputs: &mut dyn InputImports) -> BTreeMap<(S
             continue;
         }
         let bare = named_entry_is_bare(&shape, id, chain_flag, key);
-        if bare || chain.present_if.is_some() {
-            held.insert((chain.id.clone(), key), bare);
-        }
+        held.insert((chain.id.clone(), key), bare);
     }
     held
 }
@@ -683,10 +690,7 @@ impl fmt::Display for Derivation {
                     .collect();
                 write!(f, "input-of({})", each.join(", "))
             }
-            Derivation::ArmOf { gates } => {
-                let each: Vec<String> = gates.iter().map(GateVar::to_string).collect();
-                write!(f, "arm-of({})", each.join(" || "))
-            }
+            Derivation::ArmOf { gates } => write!(f, "arm-of({})", spell_gates(gates)),
         }?;
         if self.sources() > 1 {
             f.write_str(" [the sources agree in size]")?;
@@ -752,10 +756,10 @@ impl CodecRoles {
                 .is_none_or(|input| !self.inputs.contains_key(input))
                 // A field of a disjunction's group is held with the arm that
                 // says its flags (docs/adr/0065 §6 R4c), and one of a chain's
-                // membership with the arm that says the chain (R6a).
+                // memberships with the arm that says the chain (R6a, R6b).
                 && !self
                     .group_of(&check.field)
-                    .is_some_and(|group| group.gates.len() > 1 || group.member().is_some())
+                    .is_some_and(|group| group.gates.len() > 1 || group.chain().is_some())
         })
     }
 
@@ -852,7 +856,6 @@ impl CodecRoles {
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
         }
         for group in &self.groups {
-            let gates: Vec<String> = group.gates.iter().map(GateVar::to_string).collect();
             let value = |values: &[bool]| {
                 values
                     .iter()
@@ -869,7 +872,7 @@ impl CodecRoles {
             }
             out.push_str(&format!(
                 "  group  {}  {}\n",
-                gates.join(" || "),
+                spell_gates(&group.gates),
                 arms.join("  ")
             ));
         }
@@ -885,6 +888,18 @@ impl CodecRoles {
             out.push_str(&format!("  UNRESOLVED  {reference}\n"));
         }
         out
+    }
+}
+
+/// The gates of a group as the table spells them: a disjunction's joined by
+/// `||` (docs/adr/0065 §6 R4c), the atoms of a chain's memberships, decided
+/// together and joined by no operator, listed (R6b).
+fn spell_gates(gates: &[GateVar]) -> String {
+    let each: Vec<String> = gates.iter().map(GateVar::to_string).collect();
+    if gates.iter().any(|g| matches!(g, GateVar::Member { .. })) {
+        each.join(", ")
+    } else {
+        each.join(" || ")
     }
 }
 
@@ -1307,6 +1322,14 @@ fn gate_groups(
     derived_whole: &BTreeSet<String>,
     held: &BTreeMap<(String, u64), bool>,
 ) -> Vec<GateGroup> {
+    // The gates on a chain's entries and what they reach are decided together
+    // (docs/adr/0065 §6 R6), so the gates of one flag and the disjunctions
+    // decide the rest.
+    let members = membership_groups(model, roles, derived_whole, held);
+    let joined: BTreeSet<String> = members
+        .iter()
+        .flat_map(|g| g.fields().into_iter().map(str::to_string))
+        .collect();
     // The fields one flag decides, by its value: present while it holds, and
     // while it does not.
     let mut sides: Vec<(GateVar, Vec<String>, Vec<String>)> = Vec::new();
@@ -1314,10 +1337,12 @@ fn gate_groups(
         let Some(gate) = &field.present_if else {
             continue;
         };
-        if derived_whole.contains(&field.id) {
+        if derived_whole.contains(&field.id) || joined.contains(&field.id) {
             continue;
         }
-        let Some(var) = gate_var(model, gate, held) else {
+        let Some(var) =
+            gate_var(model, gate, held).filter(|var| !matches!(var, GateVar::Member { .. }))
+        else {
             continue;
         };
         let index = match sides.iter().position(|(g, _, _)| *g == var) {
@@ -1373,24 +1398,215 @@ fn gate_groups(
             sides[index].2.push(field);
         }
     }
-    // A chain's membership makes a group whatever it gates, since its arms hold
-    // the chain the gate is a fact of (docs/adr/0065 §6 R6a).
-    let (members, sides): (Vec<_>, Vec<_>) = sides
-        .into_iter()
-        .partition(|(gate, _, _)| matches!(gate, GateVar::Member { .. }));
     let mut groups: Vec<GateGroup> = sides
         .into_iter()
         .filter(|(_, set, clear)| set.len() + clear.len() >= 2)
         .map(|(gate, set, clear)| GateGroup::of_one(gate, set, clear))
         .collect();
-    groups.extend(members.into_iter().map(|(gate, set, clear)| {
-        let GateVar::Member { chain, .. } = &gate else {
-            unreachable!("the members are the chains' memberships");
-        };
-        let chain = chain.clone();
-        GateGroup::of_member(gate, &chain, set, clear)
-    }));
+    groups.extend(members);
     groups.extend(disjunction_groups(model, roles, derived_whole, held));
+    groups
+}
+
+/// The atoms the gate `gate` reads, each with whether its clause is negated, in
+/// the order its clauses name them, and whether every clause reads one
+/// ([`gate_var`]).
+fn gate_atoms(
+    model: &CodecModel,
+    gate: &PresentIfPredicate,
+    held: &BTreeMap<(String, u64), bool>,
+) -> (Vec<(GateVar, bool)>, bool) {
+    let mut atoms = Vec::new();
+    let mut whole = true;
+    for clause in std::iter::successors(Some(gate), |p| p.or_with.as_deref()) {
+        let single = PresentIfPredicate {
+            or_with: None,
+            ..clause.clone()
+        };
+        match gate_var(model, &single, held) {
+            Some(var) => atoms.push((var, clause.negate)),
+            None => whole = false,
+        }
+    }
+    (atoms, whole)
+}
+
+/// Whether the gate made of `clauses` holds under `values`, the value of each
+/// of `gates`.
+fn gate_holds(clauses: &[(GateVar, bool)], gates: &[GateVar], values: &[bool]) -> bool {
+    clauses.iter().any(|(var, negate)| {
+        let at = gates
+            .iter()
+            .position(|g| g == var)
+            .expect("a clause reads a gate of its group");
+        values[at] != *negate
+    })
+}
+
+/// The most atoms a group of a chain's memberships is made of: a value holds one
+/// arm for each assignment of them, 256 at this bound, and the runtime's sets of
+/// kinds (`Kinds`) go up to this many.
+const MOST_GROUP_ATOMS: usize = 8;
+
+/// The groups of the gates on `model`'s chains' entries (docs/adr/0065 §6 R6a,
+/// R6b). The fields a gate on a chain's entries decides are present by the
+/// value of the gates their own gates read: the chain's memberships, and the
+/// one-bit flags of the codec's own carriers a gate joins with one (`a.has(k)
+/// || h.W`). Each such flag reaches the fields of every gate that reads it, and
+/// each membership the chain of every other, so the atoms of one chain are the
+/// least set closed under both, and the fields are those whose gates read one.
+///
+/// They make one group with an arm for each assignment of the atoms, each
+/// holding the chain, refined by the memberships it sets and clears, and the
+/// fields whose gates hold under it, with a stated length where its content is
+/// absent; the flags are derived from the arm (R4c). Every arm holds the chain,
+/// so a value always holds one. The arms are listed by how many atoms they set,
+/// the most first, then in the order the gates name the atoms, so the arm where
+/// one membership holds comes before the one where it does not.
+///
+/// The atoms of one group are of one chain, and at most [`MOST_GROUP_ATOMS`]; a
+/// gate that reads two chains' entries, an input, or a flag something else
+/// derives, or more atoms than that, leaves every field the atoms reach to the
+/// checks.
+fn membership_groups(
+    model: &CodecModel,
+    roles: &CodecRoles,
+    derived_whole: &BTreeSet<String>,
+    held: &BTreeMap<(String, u64), bool>,
+) -> Vec<GateGroup> {
+    // Each presented gated field with the atoms its gate reads, and whether it
+    // reads nothing else.
+    type Atoms = Vec<(GateVar, bool)>;
+    let gated: Vec<(&CodecField, Atoms, bool)> = model
+        .fields
+        .iter()
+        .filter(|f| !derived_whole.contains(&f.id))
+        .filter_map(|f| {
+            let (atoms, whole) = gate_atoms(model, f.present_if.as_ref()?, held);
+            Some((f, atoms, whole))
+        })
+        .collect();
+    let mut groups = Vec::new();
+    for chain in &model.fields {
+        let of_chain =
+            |var: &GateVar| matches!(var, GateVar::Member { chain: c, .. } if *c == chain.id);
+        // The least set of atoms closed under the gates that read one, from
+        // the chain's memberships, in the order the gates first name them.
+        let mut atoms: Vec<GateVar> = Vec::new();
+        for (_, read, _) in &gated {
+            for (var, _) in read {
+                if of_chain(var) && !atoms.contains(var) {
+                    atoms.push(var.clone());
+                }
+            }
+        }
+        if atoms.is_empty() {
+            continue;
+        }
+        loop {
+            let reached: Vec<GateVar> = gated
+                .iter()
+                .filter(|(_, read, _)| read.iter().any(|(v, _)| atoms.contains(v)))
+                .flat_map(|(_, read, _)| read.iter().map(|(v, _)| v.clone()))
+                .filter(|v| !atoms.contains(v))
+                .collect();
+            if reached.is_empty() {
+                break;
+            }
+            for var in reached {
+                if !atoms.contains(&var) {
+                    atoms.push(var);
+                }
+            }
+        }
+        let reached: Vec<&(&CodecField, Atoms, bool)> = gated
+            .iter()
+            .filter(|(_, read, _)| read.iter().any(|(v, _)| atoms.contains(v)))
+            .collect();
+        let decidable = atoms.len() <= MOST_GROUP_ATOMS
+            && reached.iter().all(|(_, _, whole)| *whole)
+            && atoms.iter().all(|var| match var {
+                GateVar::Member { .. } => of_chain(var),
+                GateVar::Flag { carrier, flag } => matches!(
+                    roles.role_of(&ElementId::Flag {
+                        field: carrier.clone(),
+                        flag: flag.clone(),
+                    }),
+                    Some(Role::Presented)
+                ),
+                GateVar::Input(_) => false,
+            });
+        if !decidable {
+            continue;
+        }
+        // The memberships first, then the flags, each in the order the gates
+        // name them.
+        let (mut gates, flags): (Vec<GateVar>, Vec<GateVar>) = atoms
+            .into_iter()
+            .partition(|var| matches!(var, GateVar::Member { .. }));
+        gates.extend(flags);
+        // A stated length is present where all of its content is absent, the
+        // content being under one gate.
+        let stated: Vec<(&str, &Atoms)> = model
+            .fields
+            .iter()
+            .filter(|f| f.present_if.is_none())
+            .filter(|f| crate::forge::codec_totality::stated(model, roles, f))
+            .filter_map(|f| {
+                let measured = crate::forge::codec_totality::measured(
+                    model,
+                    roles,
+                    &ElementId::Field(f.id.clone()),
+                );
+                let gate_of = |id: &str| {
+                    reached
+                        .iter()
+                        .find(|(g, _, _)| g.id == id)
+                        .map(|(_, read, _)| read)
+                };
+                let first = gate_of(&measured.first()?.id)?;
+                measured
+                    .iter()
+                    .all(|m| gate_of(&m.id) == Some(first))
+                    .then_some((f.id.as_str(), first))
+            })
+            .collect();
+        let k = gates.len();
+        let mut assignments: Vec<Vec<bool>> = (0..1usize << k)
+            .map(|mask| (0..k).map(|i| (mask >> (k - 1 - i)) & 1 == 1).collect())
+            .collect();
+        assignments.sort_by_key(|values: &Vec<bool>| {
+            (
+                std::cmp::Reverse(values.iter().filter(|v| **v).count()),
+                values.iter().map(|v| !v).collect::<Vec<bool>>(),
+            )
+        });
+        let arms = assignments
+            .into_iter()
+            .map(|values| {
+                let fields = model
+                    .fields
+                    .iter()
+                    .filter(|f| {
+                        f.id == chain.id
+                            || reached.iter().any(|(g, read, _)| {
+                                g.id == f.id && gate_holds(read, &gates, &values)
+                            })
+                            || stated
+                                .iter()
+                                .any(|(id, read)| *id == f.id && !gate_holds(read, &gates, &values))
+                    })
+                    .map(|f| f.id.clone())
+                    .collect();
+                GroupArm { values, fields }
+            })
+            .collect();
+        groups.push(GateGroup {
+            gates,
+            arms,
+            absent: None,
+        });
+    }
     groups
 }
 

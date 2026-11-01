@@ -274,7 +274,7 @@ pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // most theirs (docs/adr/0077 §3), spelled from the same path.
 pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Bytes, Entries, Text};
 pub use crate::membership::{
-    place_first, place_first_in, Except, Having, Key, OfKind, Placed, SkipAt, Slot, Slots, Without,
+    place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
 };
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {

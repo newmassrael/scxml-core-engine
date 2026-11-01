@@ -4266,9 +4266,14 @@ mod tests {
         CodecChainHasEnvelope, CodecChainHasEnvelopeExtensionsHas0x2 as Has0x2,
         CodecChainHasEnvelopeExtensionsHas0x2Key as KindTwo,
     };
-    use crate::codec_chain_has_tagged::CodecChainHasTagged;
+    use crate::codec_chain_has_tagged::{
+        CodecChainHasTagged, CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide as Tagged,
+        CodecChainHasTaggedEntriesHas0x7Key as KindSeven,
+        CodecChainHasTaggedEntriesHas0x9Key as KindNine,
+    };
+    use crate::codec_chain_has_tagged_entry::CodecChainHasTaggedEntry;
     use crate::codec_zenoh_ext_entry::{CodecZenohExtEntry, CodecZenohExtEntryVariant};
-    use ::sce_forge_runtime::codec::{CodecError, Except, Having, SceCursor};
+    use ::sce_forge_runtime::codec::{Chain, SceCursor};
 
     // header E=1, one entry of kind 2 (last), then the SLICED layout:
     // a count of 1, and one slice (kind 0, len 2, bytes AA BB).
@@ -4338,13 +4343,17 @@ mod tests {
         };
         let kind_two = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[entry(0x02)])
             .expect("one entry");
-        assert!(Except::<_, KindTwo, 4, 1>::new(kind_two.clone()).is_none());
-        assert!(Having::<_, KindTwo, 4>::new(kind_two).is_some());
+        assert!(Chain::<_, (), (KindTwo,), 4, 1>::new(kind_two.clone()).is_none());
+        assert!(Chain::<_, (KindTwo,), (), 4, 1>::new(kind_two).is_some());
         let kind_three = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[entry(0x03)])
             .expect("one entry");
-        assert!(Having::<_, KindTwo, 4>::new(kind_three).is_none());
+        assert!(Chain::<_, (KindTwo,), (), 4, 1>::new(kind_three).is_none());
     }
 
+    // `priority` is present where `entries.has(7) || header.wide`, `checksum`
+    // where `!entries.has(9)`: the three atoms make one group of an arm for
+    // each assignment, each holding the chain, which is always present
+    // (docs/adr/0065 §6 R6b). `wide` is the arm's to say.
     #[test]
     fn a_plain_field_identifier_joined_with_a_flag_clause() {
         // Kind 7 present: `priority` follows. No kind 9: `checksum` follows.
@@ -4356,20 +4365,42 @@ mod tests {
         let neither: [u8; 6] = [0x00, 0x01, 0x00, 0x03, 0xAB, 0xCD];
         for frame in [&kind7[..], &wide9[..], &neither[..]] {
             let v = CodecChainHasTagged::decode(&mut SceCursor::new(frame)).expect("decode");
-            assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+            assert_eq!(v.encode_to_vec(), frame.to_vec());
         }
         let v = CodecChainHasTagged::decode(&mut SceCursor::new(&kind7)).unwrap();
-        assert_eq!((v.priority, v.checksum), (Some(0x55), Some(0x1234)));
+        match v.entries_has_0x7_has_0x9_header_wide {
+            Tagged::Has0x7 { entries, priority, checksum } => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!((priority, checksum), (0x55, 0x1234));
+            }
+            other => panic!("kind 7 and no kind 9, not wide: {other:?}"),
+        }
         let v = CodecChainHasTagged::decode(&mut SceCursor::new(&wide9)).unwrap();
-        assert_eq!((v.priority, v.checksum), (Some(0x66), None));
+        match v.entries_has_0x7_has_0x9_header_wide {
+            Tagged::Has0x9Wide { priority, .. } => assert_eq!(priority, 0x66),
+            other => panic!("kind 9, wide: {other:?}"),
+        }
         let v = CodecChainHasTagged::decode(&mut SceCursor::new(&neither)).unwrap();
-        assert_eq!((v.priority, v.checksum), (None, Some(0xABCD)));
+        match v.entries_has_0x7_has_0x9_header_wide {
+            Tagged::Neither { checksum, .. } => assert_eq!(checksum, 0xABCD),
+            other => panic!("neither kind, not wide: {other:?}"),
+        }
 
-        // The `||` is evaluated by the encoder too: kind 7 absent, `wide`
-        // clear, yet `priority` supplied.
-        let mut v = CodecChainHasTagged::decode(&mut SceCursor::new(&neither)).unwrap();
-        v.priority = Some(1);
-        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
+        // The `||` the encoder once evaluated is the arm's: a chain without
+        // kind 7 is no chain of an arm where it holds, so `priority` cannot be
+        // supplied beside it while `wide` is clear.
+        let entry = |entry_type: u8| CodecChainHasTaggedEntry { entry_type, ..Default::default() };
+        let one = ::sce_forge_runtime::heapless::Vec::<_, 3>::from_slice(&[entry(1)])
+            .expect("one entry");
+        assert!(Chain::<_, (KindSeven,), (KindNine,), 3, 1>::new(one.clone()).is_none());
+        assert!(Chain::<_, (), (KindSeven, KindNine), 3, 1>::new(one).is_some());
+
+        // A value's default is the chain's own, one default entry of kind 0,
+        // in the arm that kind selects with `wide` clear.
+        let v = CodecChainHasTagged::default();
+        assert!(matches!(v.entries_has_0x7_has_0x9_header_wide, Tagged::Neither { .. }));
+        let bytes = v.encode_to_vec();
+        assert_eq!(CodecChainHasTagged::decode(&mut SceCursor::new(&bytes)).unwrap(), v);
     }
 }
 "#;
@@ -4399,7 +4430,7 @@ mod tests {
         CodecChainHasMarkerExtensionsHas0x12Key as MarkerKey,
     };
     use crate::codec_zenoh_ext_entry::{CodecZenohExtEntry, CodecZenohExtEntryVariant};
-    use ::sce_forge_runtime::codec::{Except, Placed, SceCursor};
+    use ::sce_forge_runtime::codec::{Chain, Placed, SceCursor};
 
     // The marker (0x12) is the last entry; the SLICED layout follows: a count
     // of 1 and one slice (kind 0, len 2, bytes AA BB).
@@ -4488,7 +4519,7 @@ mod tests {
         };
         let held = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[marker])
             .expect("one entry");
-        assert!(Except::<_, MarkerKey, 4, 1>::new(held.clone()).is_none());
+        assert!(Chain::<_, (), (MarkerKey,), 4, 1>::new(held.clone()).is_none());
         assert!(Placed::<_, MarkerKey, 4>::new(held, 1).is_none());
     }
 }

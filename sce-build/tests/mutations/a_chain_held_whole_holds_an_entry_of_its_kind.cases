@@ -3,10 +3,11 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_chain_held_whole_holds_an_entry_of_its_kind.cases`.
 #
-# `Having` is the arm of a gate on an entry with content where the gate holds:
-# the chain whole, which holds an entry of the kind (docs/adr/0065 §6 R6b). Its
-# constructor is the one check of that; a constructor that admits a chain with
-# none would let a value say the gate holds over a chain that says it does not.
+# `Chain` is the chain an arm of the gates on its entries holds: the chain
+# whole, with an entry of each kind the arm sets and of none it clears
+# (docs/adr/0065 §6 R6b). Its constructor is the one check of that; a
+# constructor that admits a chain lacking a kind the arm sets, or holding one it
+# clears, would let a value say a gate holds over a chain that says it does not.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -15,8 +16,14 @@ mutation_tests -p sce-forge-runtime --features alloc --lib
 mutation_targets backends/rust/forge-runtime/src/membership.rs
 mutation_oracles backends/rust/forge-runtime/src/membership.rs
 
-mutation_case "a chain with no entry of the kind is held" <<'PY'
+mutation_case "a chain with no entry of a kind it is said to hold is held" <<'PY'
 edit("backends/rust/forge-runtime/src/membership.rs",
-     r'''        if list.entry_count() > MAX || list.first_of_kind().is_none() {''',
-     r'''        if list.entry_count() > MAX {''')
+     r'''        if !(MIN..=MAX).contains(&list.entry_count()) || !H::each_in(&list) || !A::none_in(&list) {''',
+     r'''        if !(MIN..=MAX).contains(&list.entry_count()) || !A::none_in(&list) {''')
+PY
+
+mutation_case "a chain with an entry of a kind it is said to hold none of is held" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''        if !(MIN..=MAX).contains(&list.entry_count()) || !H::each_in(&list) || !A::none_in(&list) {''',
+     r'''        if !(MIN..=MAX).contains(&list.entry_count()) || !H::each_in(&list) {''')
 PY
