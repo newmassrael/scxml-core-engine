@@ -34,6 +34,6 @@ PY
 
 mutation_case "the refusal is compiled in the build with the feature instead" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''obj.insert("rust_cfg_off".into(), rust_feature_cfg_off(feature).into());''',
-     r'''obj.insert("rust_cfg_off".into(), rust_feature_cfg(feature).into());''')
+     r'''    format!("#[cfg(not(feature = \"{feature}\"))]")''',
+     r'''    rust_feature_cfg(feature)''')
 PY

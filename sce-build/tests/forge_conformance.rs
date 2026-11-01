@@ -15685,6 +15685,120 @@ fn a_value_past_its_bound_is_refused_before_its_first_byte_on_every_runnable_bac
     );
 }
 
+// ── A tail past its bound: what the generated decode DOES ──────────────────
+//
+// The bytes that remain are a tail's length, so a tail past its bound is always
+// whole in the frame. In Rust the field's own type refuses it with the same error
+// as the decode's check (docs/adr/0077 §3), so no frame tells the two apart there.
+// Python, Go and C++ hold the bytes in a container any length fits, and the
+// decode's check is all that refuses it (§2), so it is held on them.
+
+const TAIL_SET: &[&str] = &["codec_declared_bounds_gated.scxml"];
+
+fn tail_python_program() -> String {
+    r#"from tail_pkg.codec_declared_bounds_gated import CodecDeclaredBoundsGated
+from sce_forge_runtime.codec import SceCursor
+
+past = CodecDeclaredBoundsGated.decode(SceCursor(bytes([0, 1, 2, 3])))
+assert past is None, past
+at = CodecDeclaredBoundsGated.decode(SceCursor(bytes([0, 1, 2])))
+assert at is not None and bytes(at.rest) == bytes([1, 2]), at
+"#
+    .to_string()
+}
+
+fn tail_go_program() -> String {
+    format!(
+        r#"package tail_exec
+
+import (
+	"bytes"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	gated "{GOLDEN_GO_MODULE_PREFIX}/codec_declared_bounds_gated"
+)
+
+func TestATailPastItsBoundIsRefused(t *testing.T) {{
+	past := codec.NewSceCursor([]byte{{0, 1, 2, 3}})
+	if v, err := gated.DecodeCodecDeclaredBoundsGated(&past); err != codec.ErrLengthOutOfRange {{
+		t.Fatalf("three bytes past a bound of two: error %v value %+v", err, v)
+	}}
+	at := codec.NewSceCursor([]byte{{0, 1, 2}})
+	v, err := gated.DecodeCodecDeclaredBoundsGated(&at)
+	if err != nil || !bytes.Equal(v.Rest, []byte{{1, 2}}) {{
+		t.Fatalf("two bytes at the bound: error %v value %+v", err, v)
+	}}
+}}
+"#
+    )
+}
+
+fn tail_cpp_program() -> String {
+    r#"#include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+#include "codec_declared_bounds_gated.h"
+
+using Gated = ::SCE::Generated::CodecDeclaredBoundsGated::CodecDeclaredBoundsGated;
+using ::SCE::Forge::CodecError;
+
+int main() {
+    const std::vector<std::uint8_t> past{0, 1, 2, 3};
+    ::SCE::Forge::SceCursor past_cursor(past.data(), past.size());
+    if (Gated::decode(past_cursor).has_value()) {
+        std::fprintf(stderr, "three bytes past a bound of two were accepted\n");
+        return 1;
+    }
+    if (past_cursor.last_refusal() != std::optional<CodecError>(CodecError::LengthOutOfRange)) {
+        std::fprintf(stderr, "a tail past its bound is refused as a length out of range\n");
+        return 1;
+    }
+    const std::vector<std::uint8_t> at{0, 1, 2};
+    ::SCE::Forge::SceCursor at_cursor(at.data(), at.size());
+    const auto value = Gated::decode(at_cursor);
+    if (!value.has_value() || value->rest.size() != 2) {
+        std::fprintf(stderr, "two bytes at the bound decode\n");
+        return 1;
+    }
+    return 0;
+}
+"#
+    .to_string()
+}
+
+#[test]
+fn a_tail_past_its_bound_is_refused_on_every_backend_no_type_holds_it_on() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = run_python_program(&dir, TAIL_SET, "tail_pkg", tail_python_program()) {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = run_go_program(&dir, TAIL_SET, "tail_exec", tail_go_program()) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    let cpp = NativeMarkerBackend {
+        tool: "g++",
+        language: sce_build::generator::Language::Cpp,
+        runtime_includes: &["../backends/cpp/forge-runtime/include"],
+        header_extensions: &["h", "hpp"],
+        standard: "c++17",
+        source_name: "tail_exec.cpp",
+        set: TAIL_SET,
+        program: tail_cpp_program,
+    };
+    if let Err(e) = run_marker_native(&dir, &cpp) {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a tail past its bound must be refused where only the decode's check can. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
 // ── Entries that take a flag: what the generated code DOES ─────────────────
 //
 // The frames, shared by every backend's program. The carrier codec reads

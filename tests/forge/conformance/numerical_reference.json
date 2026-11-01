@@ -40052,6 +40052,11 @@
           "error": "length-out-of-range"
         },
         {
+          "why": "the tag length is 5, one past the max-size of 4, and the frame ends after the length: the bound is judged before the slice, so a Rust value's own bound, which judges bytes that were read, cannot stand in for it",
+          "encoded": [0, 6],
+          "error": "length-out-of-range"
+        },
+        {
           "why": "the count is 3, one past the max-count of 2, and the frame holds no entry: the count is judged before the entries are read",
           "encoded": [0, 1, 3],
           "error": "too-many-elements"

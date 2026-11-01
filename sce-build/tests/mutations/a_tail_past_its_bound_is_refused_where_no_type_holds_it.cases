@@ -1,0 +1,26 @@
+# Mutation cases for "a tail past its bound is refused where no type holds it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_tail_past_its_bound_is_refused_where_no_type_holds_it.cases`.
+#
+# The bytes that remain are a tail's length, so a tail past its bound is always
+# whole in the frame. In Rust the field's type refuses it with the error the
+# decode's check gives (docs/adr/0077 §3), so taking the check away changes no
+# Rust answer. Python, Go and C++ hold the bytes in a container any length fits,
+# and the check is all that refuses it (§2), so the test runs each of them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test forge_conformance a_tail_past_its_bound_is_refused_on_every_backend_no_type_holds_it_on
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a tail the streaming decode reads past its bound is accepted" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        .expect("a tail field has a length bound")
+        .stmt(lang, value, length_guard::Held::HostInt, indent)''',
+     r'''        .expect("a tail field has a length bound")
+        .stmt(lang, value, length_guard::Held::HostInt, indent)
+        .replace("if ", "if false && ")''')
+PY

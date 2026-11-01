@@ -12,6 +12,14 @@
 # and the three `codec_declared_bounds*` fixtures (rendered into the Rust
 # numerical conformance harness) refuse each.
 #
+# A Rust value holds its bound in its type (§3), and the decode makes the value
+# through that type after it slices, with the same error. So a frame that holds
+# every byte it claims cannot tell the check from the type: a case here is killed
+# by a frame that ends after its length, which the check refuses for the bound and
+# the slice for its missing bytes. A tail's length is the bytes that remain, so no
+# such frame exists, and its check is held where no type stands behind it
+# (`a_tail_past_its_bound_is_refused_where_no_type_holds_it.cases`).
+#
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
@@ -72,14 +80,5 @@ edit("sce-build/src/forge/generator.rs",
         .full_stmt(lang, len, indent)''',
      r'''        .expect("a repeat has a count bound")
         .full_stmt(lang, len, indent)
-        .replace("if ", "if false && ")''')
-PY
-
-mutation_case "a tail the streaming decode reads past its bound is accepted" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''        .expect("a tail field has a length bound")
-        .stmt(lang, value, length_guard::Held::HostInt, indent)''',
-     r'''        .expect("a tail field has a length bound")
-        .stmt(lang, value, length_guard::Held::HostInt, indent)
         .replace("if ", "if false && ")''')
 PY

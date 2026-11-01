@@ -197,7 +197,7 @@ mutation_case "the C++ narrow row lays its context out for 64-bit words" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''        context => broadcast_log_context_value(&inputs.element, word_bits),
     };''',
-     r'''        context => broadcast_log_context_value(&inputs.element, 64),
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits.max(64)),
     };''')
 PY
 
