@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): one producer, wait-free, a retention of three
+  written as a constant, so the log keeps four slots. The element is the eleven-byte
+  frame of `broadcast_log_swift_frame`, so an entry is one length word and two words
+  of bytes. The Swift package compiles what the generator writes for this log and
+  publishes to it and reads it: the frames in order, a reader the publisher laps, an
+  entry whose stored length is above the bound.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_swift_ring"
+       version="1.0">
+  <sce:element-type>broadcast_log_swift_frame</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>

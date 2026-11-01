@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the element the Swift conformance log stores. A
+  frame of fixed-width integers, the one shape the Swift codec writes, so a log
+  over it is one the Swift backend generates. It is eleven bytes, which is more than
+  one 64-bit word and less than two, so an entry is the length word and two words of
+  bytes and the packing crosses a word boundary inside a field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="broadcast_log_swift_frame">
+  <datamodel>
+    <data id="sequence" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
+    <data id="reading" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>
+    <data id="status" sce:type="uint16" sce:byte="8" sce:bit-size="16"/>
+    <data id="level" sce:type="uint8" sce:byte="10" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

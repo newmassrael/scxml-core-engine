@@ -208,6 +208,22 @@ for source in "${SCHEMA_CANDIDATES[@]}"; do
     esac
 done
 
+# The broadcast logs (ADR 0062) and the elements they store, which the Swift backend writes in part:
+# a log over an element whose codec Swift writes. A log is generated from its document SET and never
+# alone, because its entry is sized from the largest number of bytes the element document's codec
+# encodes to, which only the set compile reads (a single-document `generate` of a log is refused,
+# naming what is missing), so `orchestrate` compiles the documents of the directory together. They
+# are kept in a directory of their own, which the sweeps above do not read: the element is a codec
+# the set generates beside the log, and generated twice it would be two units of one name. A set
+# that is refused is a defect of the documents, not a unit to skip: the fixtures are the ones Swift
+# writes.
+BROADCAST_LOG_DIR="$INPUT_ROOT/broadcast_log"
+mapfile -t BROADCAST_LOG_DOCUMENTS < <(printf '%s\n' "$BROADCAST_LOG_DIR"/*.scxml | LC_ALL=C sort)
+if [ ! -e "${BROADCAST_LOG_DOCUMENTS[0]}" ]; then
+    echo "error: no broadcast log fixture found under $BROADCAST_LOG_DIR" >&2
+    exit 1
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -221,6 +237,11 @@ done
 for i in "${!SCHEMAS[@]}"; do
     "$CODEGEN" generate "${SCHEMAS[$i]}" -l swift -o "$TMP/schema_$i/"
 done
+BROADCAST_LOG_ARGUMENTS=()
+for document in "${BROADCAST_LOG_DOCUMENTS[@]}"; do
+    BROADCAST_LOG_ARGUMENTS+=(--forge "$document")
+done
+"$CODEGEN" orchestrate "${BROADCAST_LOG_ARGUMENTS[@]}" --language swift --output-dir "$TMP/broadcast_log/" > /dev/null
 
 mkdir -p "$GENERATED_DIR"
 # Every file below is generated and the tests beside them are not: clearing by
@@ -265,6 +286,18 @@ for i in "${!SCHEMAS[@]}"; do
         SCHEMA_UNITS+=("$unit")
     done
 done
+# The same defect again for a log or an element of the set: a unit of the name of one above.
+BROADCAST_LOG_UNITS=()
+for generated in "$TMP/broadcast_log"/*.swift; do
+    unit="$(basename "$generated" .swift)"
+    if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+        echo "error: ${UNIT_FROM[$unit]} and the broadcast log fixtures are both written as $unit; one of them needs another name" >&2
+        exit 1
+    fi
+    cp "$generated" "$GENERATED_DIR/"
+    UNIT_FROM[$unit]="$BROADCAST_LOG_DIR"
+    BROADCAST_LOG_UNITS+=("$unit")
+done
 
 # The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
 # units above, held to what each computes. The harness lists the fixtures this backend's
@@ -276,7 +309,7 @@ HARNESS_DIR="backends/swift/tests/Tests/StaticDatamodelTests"
     --manifest "$CORPUS_MANIFEST" \
     --output-dir "$HARNESS_DIR" > /dev/null
 
-echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none} and the event schemas ${SCHEMA_UNITS[*]:-none} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"
