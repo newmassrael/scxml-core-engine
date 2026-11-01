@@ -648,9 +648,10 @@ The two that are not caught are the two the casefile does not claim, and a secon
 for the argument that they are not observable and not a proof of it. What the table does not say: it is one machine, one
 nightly, eight seeds and one run each, and Miri's emulation of weak memory does not produce every outcome the memory model
 allows (it does not reorder a load before an earlier store, for one). A caught mutant shows Miri can see that fault on
-those schedules; an order that were not caught would not be shown safe. The mutation round of CI cannot repeat this
-measurement: the selector hands its arguments to `cargo test`, and Miri is `cargo miri test`. Giving the selector a Miri
-runner would let CI judge it, and is not built.
+those schedules; an order that were not caught would not be shown safe. The mutation round of CI could not repeat this
+measurement when it was made: the selector handed its arguments to `cargo test`, and Miri is `cargo miri test`. The selector
+now has a Miri runner, and the casefile that makes this measurement repeatable exists (see "What the Miri runner of the
+mutation selector landed").
 
 ### What the specialised checker landed (2026-10-29)
 
@@ -1618,6 +1619,36 @@ weakened fence is found by them only on some runs, as for the other languages' s
 loom and GenMC runs of the algorithm they copy. No mutation casefile covers the Swift row: every case would need an oracle command
 that names `swift test`, which the casefile format does not declare.
 
+### What the Miri runner of the mutation selector landed (2026-11-01)
+
+`scripts/mutate` has a declaration, `mutation_under_miri`, that goes with `mutation_tests` in a casefile and changes how the one
+suite is executed: `cargo miri test` with the selector's own arguments, on the nightly the casefile declares with
+`mutation_env RUSTUP_TOOLCHAIN=<nightly>`. It is not a fourth runner, so every decision that reads the runner (the targets, the
+oracles, the reach check, the ledger) is the cargo one, unchanged. What is resolved and hashed is still the selector's normal
+test executables, built on the declared toolchain: they are not what Miri interprets, but the question they answer, whether the
+mutation reached the code the run read, is the same one, because Miri reads the sources they were compiled from, and the
+sources under study set no `cfg(miri)`. The verdict of a run is read by the reader the cargo runner uses for a binary, which
+the change factored out (`mutation_cargo_judge_output`): a test that fails is red; a run that ends with a non-zero status and
+no failed test counted (how Miri reports undefined behaviour or a data race) is red and says how it ended; one that
+something outside ended is no reading either way. The declaration is refused where the casefile is read, in every mode, beside
+another runner or with no nightly declared; a full round checks that the toolchain has the `miri` component; `--declares` prints
+a `miri` key, and the mutation-rounds gate installs the component beside `rust-src` for a casefile that declares it.
+
+The casefile `a_broadcast_log_orders_are_seen_weakened_by_miri.cases` holds the nine weakenings the table above records as
+caught, under the pinned nightly of `scripts/lib/queue_sanitizer.sh` and the gate's eight seeds, with a declared bound of 900
+seconds that `mutation_corpus_fits_its_lane` holds against the lane. Results on build machines: four contract tests of the runner
+pass (`mutation_runner_under_miri`: a probe crate runs under a stand-in `cargo-miri` that records its calls and hands the run to
+`cargo test`, so the runner is measured without a nightly: the baseline and each case go through `cargo miri test` once each
+with the selector's arguments, a mutant that fails a test and one that kills the process are both CAUGHT with the second saying
+how it ended, a baseline that fails is not green, and the two refused declarations and the `miri` key are held); the existing
+test of a binary that dies (3 tests), which holds the judging reader the change moved, passes; the casefile's nine anchors
+apply and its declared bound fits the lane (12 tests). One case was then run by hand under real Miri on the tree as it is: with
+the acquire fence of `read` removed, `readers_see_whole_entries_in_order_while_the_publisher_laps_them` fails at the torn-copy
+assertion and the process exits 101, which the runner reads as CAUGHT. The other eight cases have not been run under Miri
+since the deferred reader landed, so the table above is a measurement of the earlier source for them; a mutation round is the
+first run that will judge them, and a case that SURVIVES there is a finding about Miri's emulation or the source, not a fault of
+the runner.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1656,9 +1687,8 @@ What is left:
   strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; the casefiles written
   on 2026-10-31 for the caller-input context (41 cases) and for the Rust template and renderer (43 cases); the two cases
   that weaken the loads of the deferred reader's bind (the head, and the narrow row's last-slot stamp) to relaxed, whose
-  killers are the deferred loom models and which no run has judged; and the Miri
-  measurement, which CI cannot repeat because the mutation selector passes its arguments to `cargo test` and a Miri runner for
-  `scripts/mutate` is not built.
+  killers are the deferred loom models and which no run has judged; and the nine cases of the Miri casefile, of which one was
+  run by hand under real Miri on the tree as it is (below) and eight not at all.
 
 ## Consequences
 
