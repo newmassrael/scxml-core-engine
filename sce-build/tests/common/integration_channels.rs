@@ -519,7 +519,6 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "invoke_param_seeds_declared_child_data",
     "invoke_precedes_dequeue_midrun",
     "invoke_precedes_external_dequeue",
-    "late_tick_honours_cancel",
     "send_param_payload",
     "typed_reader_names",
 ];
