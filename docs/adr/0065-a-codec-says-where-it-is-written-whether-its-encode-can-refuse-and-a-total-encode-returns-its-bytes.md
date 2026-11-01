@@ -333,6 +333,16 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   - **The chain's own gate.** A chain that is itself gated (`header.E`) is absent exactly when it holds no entry
     (R7), so the arm where the gate holds has its chain present, and the flag is derived from the arm and the
     other entries.
+
+  It lands in three steps, as R4 did: the runtime's types; R6a, a named entry with no content (the consumer's
+  `put` and `chain_has_marker`), where the roles and the generator land together because a group drives the
+  generation and the analysis must say what it generates; and R6b, a named entry with content.
+  *The runtime's types landed 2026-11-01.* `membership` holds `Key<E>` (a kind of entry, generated over every
+  form of the entry), `Except<L, K>` (a list with no entry of the kind, checked by `new`, and an `Entries` like
+  any list, so `Bounded` holds it) and `Placed<L, K, MAX>` (the others, at most `MAX`, and the place, checked by
+  `new` against the bound, the end of the list and the first-occurrence rule). The encode walks a `Placed` as
+  `Slots`, each entry and `Slot::Named` at the place, and a walk whose entries disagree with their count panics
+  as a bounded walk does.
 - **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
   clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
   grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte

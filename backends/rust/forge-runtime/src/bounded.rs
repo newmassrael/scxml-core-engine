@@ -416,7 +416,7 @@ impl<I: Iterator, const MAX: usize, const MIN: usize> ExactSizeIterator
 /// call and not a message of its own.
 #[cold]
 #[inline(never)]
-fn entries_changed() -> ! {
+pub(crate) fn entries_changed() -> ! {
     panic!("a list's entries changed between its count and its walk (docs/adr/0061 §3)")
 }
 
