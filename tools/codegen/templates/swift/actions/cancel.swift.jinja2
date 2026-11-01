@@ -30,4 +30,21 @@
                     _ = engine.cancelEvent(sendID: cancelSendID)
 {% endif %}
                 }
+{% elif ecmascript_datamodel and action.sendidexpr %}
+                // W3C SCXML 6.3 + 5.9: under `datamodel="ecmascript"` the id is the text of a Lua
+                // expression the engine computes (`evaluateText`). One that cannot be evaluated
+                // raises error.execution, and the error ends the block (W3C SCXML 4.9); an id no
+                // send holds cancels nothing.
+                do {
+                    if let cancelSendID = evaluateText("{{ action.sendidexpr | to_lua_expr | escape_swift }}") {
+                        _ = engine.cancelEvent(sendID: cancelSendID)
+                    } else {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+                }
 {% endif %}

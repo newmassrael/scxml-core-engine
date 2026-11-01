@@ -456,10 +456,6 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
         swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
     ),
     (
-        "an_error_ends_the_block_it_was_raised_in",
-        swift_refusal!("a `<cancel>` expression"),
-    ),
-    (
         "an_invoke_left_before_it_starts_raises_nothing",
         swift_refusal!("an `<invoke type>` no host declares"),
     ),

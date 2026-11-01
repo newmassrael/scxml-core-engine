@@ -4690,6 +4690,9 @@ fn swift_ecmascript_cause_unlowered(
         // the engine reads as the state is entered (`evaluateJSON`).
         | Cause::DonedataParam { .. }
         | Cause::DonedataContent { .. }
+        // The id a `<cancel sendidexpr>` names is a value the engine reads as the action runs
+        // (`evaluateText`); one that cannot be read is the action's `error.execution`.
+        | Cause::CancelExpr { .. }
         // What an invocation hands its child, and a child that runs an engine of its own, are
         // decided where the invoke is read (`swift_invoke_unlowered`), which knows the data
         // model of the parent: an `ecmascript` one hands each value to the child as JSON.
@@ -4699,7 +4702,6 @@ fn swift_ecmascript_cause_unlowered(
         Cause::UnresolvedExternalScript => {
             Some("a top-level <script src> it could not read".to_string())
         }
-        Cause::CancelExpr { state_id } => named("a <cancel> expression", state_id),
         Cause::HybridInvoke { invoke_id } => {
             named("an <invoke> resolved by an expression", invoke_id)
         }
