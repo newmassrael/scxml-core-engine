@@ -83,14 +83,20 @@ impl Guard {
     /// outside the accepted range; `None` where no value can be.
     fn condition(&self, lang: Language, value: &str, held: Held) -> Option<String> {
         let literal = |n: u64| -> String {
-            match (lang, held) {
-                (Language::Kotlin, Held::Unsigned(64)) => format!("{n}uL"),
-                (Language::Kotlin, Held::Unsigned(_)) if n > u64::from(u32::MAX) => {
-                    format!("{n}uL")
-                }
-                (Language::Kotlin, Held::Unsigned(_)) => format!("{n}u"),
-                (Language::C11 | Language::Cpp, _) if n > i32::MAX as u64 => format!("{n}ULL"),
-                _ => n.to_string(),
+            match lang {
+                Language::Kotlin => match held {
+                    Held::Unsigned(64) => format!("{n}uL"),
+                    Held::Unsigned(_) if n > u64::from(u32::MAX) => format!("{n}uL"),
+                    Held::Unsigned(_) => format!("{n}u"),
+                    Held::HostInt => n.to_string(),
+                },
+                Language::C11 | Language::Cpp if n > i32::MAX as u64 => format!("{n}ULL"),
+                Language::C11
+                | Language::Cpp
+                | Language::Rust
+                | Language::Go
+                | Language::Python => n.to_string(),
+                Language::Swift => no_swift(),
             }
         };
         // Rust spells a check with both ends as the range it accepts (its
@@ -104,14 +110,23 @@ impl Guard {
         }
         let below = self.lo.map(|lo| format!("{value} < {}", literal(lo)));
         let above = self.hi.map(|hi| format!("{value} > {}", literal(hi)));
-        let or = match lang {
-            Language::Python => " or ",
-            _ => " || ",
-        };
         match (below, above) {
             (None, None) => None,
             (Some(c), None) | (None, Some(c)) => Some(c),
-            (Some(b), Some(a)) => Some(format!("{b}{or}{a}")),
+            (Some(b), Some(a)) => {
+                let or = match lang {
+                    Language::Python => " or ",
+                    Language::Rust
+                    | Language::Cpp
+                    | Language::C11
+                    | Language::Kotlin
+                    | Language::Go => " || ",
+                    Language::Swift => {
+                        crate::forge::codegen_matrix::no_swift_emitter("Guard::condition")
+                    }
+                };
+                Some(format!("{b}{or}{a}"))
+            }
         }
     }
 
@@ -219,7 +234,10 @@ pub(super) fn carried_held(name: &str, fields: &[CodecField], lang: Language) ->
     match name.split_once('.') {
         Some((carrier, _)) => match lang {
             Language::Kotlin | Language::Go => Held::HostInt,
-            _ => sibling(carrier.trim()).map_or(Held::HostInt, |f| held_of(&f.sce_type)),
+            Language::Rust | Language::C11 | Language::Cpp | Language::Python => {
+                sibling(carrier.trim()).map_or(Held::HostInt, |f| held_of(&f.sce_type))
+            }
+            Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("carried_held"),
         },
         None => sibling(name).map_or(Held::HostInt, |f| held_of(&f.sce_type)),
     }

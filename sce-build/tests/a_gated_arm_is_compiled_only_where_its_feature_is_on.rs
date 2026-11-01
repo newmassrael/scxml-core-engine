@@ -738,7 +738,7 @@ fn a_lifetime_only_a_gated_arm_needs_is_refused() {
     let document = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="gated_borrow">
+       sce:kind="codec" sce:default-endian="big" name="gated_borrow">
   <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
   <sce:import src="codec_length_ref.scxml" kind="codec" as="codec_length_ref"/>
   <datamodel>

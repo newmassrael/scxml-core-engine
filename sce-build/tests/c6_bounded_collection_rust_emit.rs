@@ -705,7 +705,7 @@ fn cbor_element_with_a_bounded_string_is_stored_as_the_inline_owned_mirror() {
     let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="cbor" sce:codec-format="2" name="note_entry" version="1.0">
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="note_entry" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <data id="note" sce:type="string" sce:key="1" sce:max-size="32" sce:direction="out"/>

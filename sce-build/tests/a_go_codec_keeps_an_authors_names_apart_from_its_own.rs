@@ -548,7 +548,9 @@ fn runner_source(shape: &Shape, modules: &[(String, String, String, String)]) ->
              \t\tc := codec.NewSceCursor(frame)\n\
              \t\tv, err := m{i}.{decode}(&c)\n\
              \t\tif err != nil {{\n\t\t\treturn nil, nil, err\n\t\t}}\n\
-             \t\treturn v, v.EncodeToBytes(), nil\n\
+             \t\tagain, err := encoded(v.EncodeToBytes())\n\
+             \t\tif err != nil {{\n\t\t\treturn nil, nil, err\n\t\t}}\n\
+             \t\treturn v, again, nil\n\
              \t}}}},\n"
         ));
     }
@@ -574,6 +576,15 @@ import (
 
 var _ = bytes.Equal
 var _ = reflect.Struct
+
+// encoded takes what EncodeToBytes returns: the bytes, and the error of a codec
+// with a field whose bound its encode holds it to.
+func encoded(out ...interface{{}}) ([]byte, error) {{
+	if len(out) == 2 && out[1] != nil {{
+		return nil, out[1].(error)
+	}}
+	return out[0].([]byte), nil
+}}
 
 type decodeCase struct {{
 	name   string

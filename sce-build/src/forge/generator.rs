@@ -9374,8 +9374,10 @@ fn render_codec(
                         let (frame_len, indent) = match lang {
                             Language::Kotlin => ("frameLen", "            "),
                             Language::Go => ("frameLen", "\t"),
-                            Language::C11 => ("_frame_len", "        "),
-                            _ => ("_frame_len", "        "),
+                            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                                ("_frame_len", "        ")
+                            }
+                            Language::Swift => no_swift_emitter("render_codec"),
                         };
                         let guard = if matches!(lang, Language::C11) {
                             c11_positional_bound_guard(f, &m.fields, indent)
@@ -10442,7 +10444,12 @@ fn render_codec(
                 // returns the literal as it is.
                 let tag_literal = match lang {
                     crate::generator::Language::Kotlin => format!("{value_literal}.toUByte()"),
-                    _ => value_literal.clone(),
+                    crate::generator::Language::Rust
+                    | crate::generator::Language::Cpp
+                    | crate::generator::Language::C11
+                    | crate::generator::Language::Go
+                    | crate::generator::Language::Python => value_literal.clone(),
+                    crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                 };
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("tag_literal".into(), tag_literal.into());
@@ -17656,7 +17663,8 @@ fn host_int_room(
         Language::Go => format!(
             "if uint64({value}) > uint64(^uint(0)>>1)-{up} {{\n{indent}\treturn nil, codec.ErrNeedMoreBytes\n{indent}}}\n{indent}"
         ),
-        _ => String::new(),
+        Language::Rust | Language::Cpp | Language::C11 | Language::Python => String::new(),
+        Language::Swift => no_swift_emitter("host_int_room"),
     }
 }
 
@@ -17687,15 +17695,18 @@ fn positional_bound_guard(
                 None => (name, None),
             };
             let local = codec_field_decode_local(sibling, lang);
-            let value = match (lang, bits) {
-                (_, None) => local,
-                (Language::Kotlin, Some((shift, mask))) => {
-                    format!("(({local}.toInt() ushr {shift}) and 0x{mask:X})")
-                }
-                (Language::Go, Some((shift, mask))) => {
-                    format!("int(({local} >> {shift}) & 0x{mask:X})")
-                }
-                (_, Some((shift, mask))) => format!("(({local} >> {shift}) & 0x{mask:X})"),
+            let value = match bits {
+                None => local,
+                Some((shift, mask)) => match lang {
+                    Language::Kotlin => {
+                        format!("(({local}.toInt() ushr {shift}) and 0x{mask:X})")
+                    }
+                    Language::Go => format!("int(({local} >> {shift}) & 0x{mask:X})"),
+                    Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                        format!("(({local} >> {shift}) & 0x{mask:X})")
+                    }
+                    Language::Swift => no_swift_emitter("positional_bound_guard"),
+                },
             };
             (value, carried_held(name, fields, lang))
         }
@@ -19971,7 +19982,8 @@ fn encode_bound_guard_lines(
             Language::Kotlin => format!("{v}.size"),
             Language::Go => format!("len({v})"),
             Language::Python if text => format!("len({v}.encode(\"utf-8\"))"),
-            _ => format!("len({v})"),
+            Language::Python => format!("len({v})"),
+            Language::Rust | Language::C11 | Language::Swift => bound_held_elsewhere(lang),
         };
         // A Kotlin size is an `Int`, which no larger bound can be passed by.
         let checks_most = !(lang == Language::Kotlin && most > i32::MAX as u64);
@@ -20007,7 +20019,7 @@ fn encode_bound_guard_lines(
                     outside(&format!("self.{id}"))
                 )
             }
-            _ => unreachable!("the backends are matched above"),
+            (Language::Rust | Language::C11 | Language::Swift, _) => bound_held_elsewhere(lang),
         };
         if outside("v").is_empty() {
             continue;
@@ -20023,13 +20035,20 @@ fn encode_bound_guard_lines(
                 lines.push(format!("\t{refuse}"));
                 lines.push("}".to_string());
             }
-            _ => {
+            Language::Python => {
                 lines.push(format!("if {condition}:"));
                 lines.push(format!("    {refuse}"));
             }
+            Language::Rust | Language::C11 | Language::Swift => bound_held_elsewhere(lang),
         }
     }
     (lines, failures)
+}
+
+/// A backend [`encode_bound_guard_lines`] returned early for, reaching a site
+/// that decides per backend after that return.
+fn bound_held_elsewhere(lang: crate::generator::Language) -> ! {
+    unreachable!("{lang:?} writes no check of a bound at its encode")
 }
 
 /// Whether `lang`'s encode of a codec with `fields` refuses a value outside a

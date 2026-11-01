@@ -250,36 +250,40 @@ impl CodecFailure {
     /// sentinel for a chain past its depth, so their encode refuses it as the
     /// count past its bound it is ([`Self::over_bound`]).
     pub fn encode_refusal_stmt(self, lang: Language) -> Option<&'static str> {
-        Some(match (lang, self) {
-            (Language::C11, CodecFailure::LengthOutOfRange) => {
-                "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;"
-            }
-            (Language::C11, CodecFailure::TooManyElements) => {
-                "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;"
-            }
-            (Language::C11, CodecFailure::TlvChainOverflow) => {
-                "return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
-            }
-            (Language::Cpp, CodecFailure::LengthOutOfRange) => {
-                "return ::SCE::Forge::CodecError::LengthOutOfRange;"
-            }
-            (Language::Cpp, CodecFailure::TooManyElements) => {
-                "return ::SCE::Forge::CodecError::TooManyElements;"
-            }
-            (Language::Kotlin, CodecFailure::LengthOutOfRange) => {
-                "return CodecError.LengthOutOfRange"
-            }
-            (Language::Kotlin, CodecFailure::TooManyElements) => {
-                "return CodecError.TooManyElements"
-            }
-            (Language::Go, CodecFailure::LengthOutOfRange) => "return codec.ErrLengthOutOfRange",
-            (Language::Go, CodecFailure::TooManyElements) => "return codec.ErrTooManyElements",
-            (Language::Go, CodecFailure::TlvChainOverflow) => "return codec.ErrTlvChainOverflow",
-            (Language::Python, CodecFailure::LengthOutOfRange) => "raise LengthOutOfRange()",
-            (Language::Python, CodecFailure::TooManyElements) => "raise TooManyElements()",
-            (Language::Python, CodecFailure::TlvChainOverflow) => "raise TlvChainOverflow()",
-            _ => return None,
-        })
+        let (length, count, chain) = match lang {
+            Language::C11 => (
+                "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;",
+                "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;",
+                Some("return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"),
+            ),
+            Language::Cpp => (
+                "return ::SCE::Forge::CodecError::LengthOutOfRange;",
+                "return ::SCE::Forge::CodecError::TooManyElements;",
+                None,
+            ),
+            Language::Kotlin => (
+                "return CodecError.LengthOutOfRange",
+                "return CodecError.TooManyElements",
+                None,
+            ),
+            Language::Go => (
+                "return codec.ErrLengthOutOfRange",
+                "return codec.ErrTooManyElements",
+                Some("return codec.ErrTlvChainOverflow"),
+            ),
+            Language::Python => (
+                "raise LengthOutOfRange()",
+                "raise TooManyElements()",
+                Some("raise TlvChainOverflow()"),
+            ),
+            Language::Rust | Language::Swift => return None,
+        };
+        match self {
+            CodecFailure::LengthOutOfRange => Some(length),
+            CodecFailure::TooManyElements => Some(count),
+            CodecFailure::TlvChainOverflow => chain,
+            _ => None,
+        }
     }
 
     /// The failure a value outside a field's bound is refused with on `lang`:
@@ -305,19 +309,22 @@ impl CodecFailure {
     /// recorded there. A frame short of bytes records nothing, and a caller
     /// can check that too ([`Self::records_nothing`]).
     pub fn cursor_record(self, lang: Language) -> Option<&'static str> {
-        match (lang, self) {
-            (Language::Cpp, CodecFailure::LengthOutOfRange) => {
-                Some("::SCE::Forge::CodecError::LengthOutOfRange")
+        let (length, count) = match lang {
+            Language::Cpp => (
+                "::SCE::Forge::CodecError::LengthOutOfRange",
+                "::SCE::Forge::CodecError::TooManyElements",
+            ),
+            Language::Kotlin => (
+                "com.sce.forge.runtime.CodecError.LengthOutOfRange",
+                "com.sce.forge.runtime.CodecError.TooManyElements",
+            ),
+            Language::Rust | Language::C11 | Language::Go | Language::Python | Language::Swift => {
+                return None
             }
-            (Language::Cpp, CodecFailure::TooManyElements) => {
-                Some("::SCE::Forge::CodecError::TooManyElements")
-            }
-            (Language::Kotlin, CodecFailure::LengthOutOfRange) => {
-                Some("com.sce.forge.runtime.CodecError.LengthOutOfRange")
-            }
-            (Language::Kotlin, CodecFailure::TooManyElements) => {
-                Some("com.sce.forge.runtime.CodecError.TooManyElements")
-            }
+        };
+        match self {
+            CodecFailure::LengthOutOfRange => Some(length),
+            CodecFailure::TooManyElements => Some(count),
             _ => None,
         }
     }

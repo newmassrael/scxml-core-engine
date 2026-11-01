@@ -343,7 +343,7 @@ fn a_gated_field_is_the_one_optional_type_in_every_layout() {
 fn a_gated_length_or_count_or_chain_is_read_through_the_optional_type() {
     let source = go_of("codec_init_cookie_body");
     assert!(
-        source.contains("int(CookieSize.Proven())"),
+        source.contains("_len := CookieSize.Proven()"),
         "a gated length-ref's sibling is not read through Proven():\n{source}"
     );
     assert!(
@@ -362,8 +362,8 @@ fn a_gated_length_or_count_or_chain_is_read_through_the_optional_type() {
         "a gated chain is not walked where it is present:\n{source}"
     );
     assert!(
-        source.contains("if !s.PayloadLen.IsPresent() {")
-            && source.contains("} else if s.PayloadLen.IsPresent() {"),
+        source.contains("if !s.Payload.IsPresent() {")
+            && source.contains("} else if s.Payload.IsPresent() {"),
         "the encoder's check of a gated field does not ask the optional type:\n{source}"
     );
 }

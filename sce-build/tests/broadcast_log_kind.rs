@@ -1338,19 +1338,14 @@ fn flag_input_codec() -> String {
         .to_string()
 }
 
-/// A CBOR codec `event_record` whose one entry is `entry`. `encode_may_fail` is what
-/// the root states about its encode: true for an entry the encode can refuse (one
-/// with a `sce:max-size` or a `sce:length`), false for one it cannot.
-fn cbor_codec_with(entry: &str, encode_may_fail: bool) -> String {
-    let declared = if encode_may_fail {
-        r#" sce:encode-may-fail="true""#
-    } else {
-        ""
-    };
+/// A CBOR codec `event_record` whose one entry is `entry`. It states nothing about its
+/// encode: an entry with a `sce:max-size` or a `sce:length` is held within it by its
+/// type (docs/adr/0065 §6 R1), so no such entry is refused.
+fn cbor_codec_with(entry: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec"{declared} sce:encoding="cbor" sce:codec-format="2" name="event_record" version="1.0">
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="event_record" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     {entry}
@@ -1599,23 +1594,23 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
     let cases = [
         (
             r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-            "    pub note: S::Str<16>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Str<16>, 16>,",
         ),
         (
             r#"<data id="note" sce:type="bytes" sce:key="1" sce:max-size="32" sce:direction="out"/>"#,
-            "    pub note: S::Bytes<32>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Bytes<32>, 32>,",
         ),
         (
             r#"<data id="note" sce:type="bytes" sce:key="1" sce:length="8" sce:direction="out"/>"#,
-            "    pub note: S::Bytes<8>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Bytes<8>, 8, 8>,",
         ),
         (
             r#"<data id="note" sce:type="optional&lt;string&gt;" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-            "    pub note: Option<S::Str<16>>,",
+            "    pub note: Option<::sce_forge_runtime::codec::Bounded<S::Str<16>, 16>>,",
         ),
     ];
     for (entry, field) in cases {
-        let codec = cbor_codec_with(entry, true);
+        let codec = cbor_codec_with(entry);
         let code = generated_log(
             compile_documents(
                 Language::Rust,
@@ -1654,10 +1649,8 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
 
     // A map of scalars borrows nothing and is its own owned form: the log names the
     // map itself, and no mirror is generated for it.
-    let scalar = cbor_codec_with(
-        r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#,
-        false,
-    );
+    let scalar =
+        cbor_codec_with(r#"<data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>"#);
     let code = generated_log(
         compile_documents(
             Language::Rust,
@@ -1676,10 +1669,8 @@ fn a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size() {
     // element-type row before the template is read, as a positional codec's payload
     // with no bound is, and in every language.
     let xml = event_ring();
-    let codec = cbor_codec_with(
-        r#"<data id="note" sce:type="string" sce:key="1" sce:direction="out"/>"#,
-        false,
-    );
+    let codec =
+        cbor_codec_with(r#"<data id="note" sce:type="string" sce:key="1" sce:direction="out"/>"#);
     for language in set_languages() {
         let wire = language_wire_name(language);
         let located = compile_documents(
@@ -2474,7 +2465,6 @@ fn a_cbor_element_with_a_string_entry_is_held_by_go_because_its_decode_copies_it
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let code = generated_go_log(
         compile_documents(
@@ -2888,7 +2878,6 @@ fn c11_holds_a_cbor_element_with_text_because_its_struct_owns_the_bytes() {
     let xml = event_ring();
     let borrowing = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let code = generated_c_log(
         compile_documents(
@@ -4283,7 +4272,9 @@ fn cpp_rust_and_c11_choose_one_row_from_one_deploy_and_refuse_it_with_one_error(
             Language::Cpp => compile_single_cpp(&event_ring(), options)
                 .expect("c++ generates")
                 .contains("sce/forge/broadcast_log_narrow.h"),
-            other => panic!("{other:?} has one row"),
+            Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
+                panic!("{language:?} has one row")
+            }
         }
     };
     for (width, target, narrow) in [
@@ -4311,7 +4302,9 @@ fn cpp_rust_and_c11_choose_one_row_from_one_deploy_and_refuse_it_with_one_error(
             Language::Rust => compile_single(&event_ring(), &options),
             Language::C11 => compile_single_c(&event_ring(), &options),
             Language::Cpp => compile_single_cpp(&event_ring(), &options),
-            other => panic!("{other:?} has one row"),
+            Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
+                panic!("{language:?} has one row")
+            }
         }
         .err()
         .unwrap_or_else(|| panic!("{language:?}: the pause is refused"));
@@ -4716,7 +4709,6 @@ fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_t
     // from the codec and the log is generated, as it is for Rust.
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let code = generated_cpp_log(
         compile_documents(
@@ -5009,7 +5001,6 @@ fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes(
     let xml = blocking_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let code = generated_python_log(
         compile_documents(
@@ -5449,7 +5440,6 @@ fn kotlin_holds_the_cbor_element_as_it_decoded_it_where_rust_holds_its_owned_for
     let xml = event_ring();
     let codec = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let code = generated_kotlin_log(
         compile_documents(
@@ -6368,7 +6358,6 @@ fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the
     let payload = codec_with("event_record", "", BOUNDED_FIELDS);
     let cbor = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-        true,
     );
     let cases: [(&str, String, &str); 4] = [
         ("a flag input", flag_input_codec(), "a flag input"),

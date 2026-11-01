@@ -11945,7 +11945,8 @@ fn forge_kotlin_codec_scout_zid_body() {
 /// RFC §synth-5-B gated VLE length-sibling (Go): Init body cookie codec.
 /// `CookieSize optional.Of[uint16]` (the optional type wraps the gated VLE u16);
 /// `Cookie optional.Of[[]byte]`. The helper reads the sibling as
-/// `int(CookieSize.Proven())` inside the gated branch.
+/// `_len := CookieSize.Proven()` inside the gated branch, in its own type, and
+/// compares it with the bound before it narrows it (docs/adr/0077 §2).
 #[test]
 fn forge_go_codec_init_cookie_body() {
     assert_standalone_forge_go("codec_init_cookie_body", "codec_init_cookie_body.go");
