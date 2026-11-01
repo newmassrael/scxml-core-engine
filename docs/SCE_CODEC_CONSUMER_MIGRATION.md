@@ -143,3 +143,12 @@ Landing: `3ee3508e44`, trees `dbd58e4ad8`, `15f1340899`.
   `<sce:repeat>` (`validation/missing-attribute`).
 - No declaration changes. A test that expected an over-bound frame to decode, or to be refused as `NeedMoreBytes`,
   expects the new refusal.
+
+## Lists refined by the kind of entry a chain's gate names (ADR 0065 §6 R6, runtime)
+
+Landing: `c56b2aae14`.
+
+- The runtime adds `Key`, `Except`, `Placed`, `Slot` and `Slots` (module `membership`, re-exported from `codec`).
+  No generated codec uses them yet and nothing a consumer wrote changes. They are the types a codec gated on
+  `chain.has(k)` will hold once R6a lands: the chain without the named entry where the gate does not hold, and the
+  other entries with the named entry's place where it does.
