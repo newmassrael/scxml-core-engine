@@ -32,7 +32,7 @@ use super::codec_zenoh_value_slice::CodecZenohValueSlice;
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohValueZbuf<'a> {
-    pub after_shm: CodecZenohValueZbufAfterShm<HeaplessVec<CodecZenohValueSlice<'a>, 4>, &'a [u8]>,
+    pub after_shm: CodecZenohValueZbufAfterShm<HeaplessVec<CodecZenohValueSlice<'a>, 4>, ::sce_forge_runtime::codec::Bytes<'a, 32>>,
     pub slice_count: Option<u64>,
 }
 
@@ -101,6 +101,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
         } else {
             None
         };
+        let value = value.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         let encoding = if (after_shm & 0x01u8) != 0 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
@@ -201,11 +202,11 @@ impl<Slices: Default, Value: Default> Default for CodecZenohValueZbufAfterShm<Sl
 /// computes those from what is ([`CodecZenohValueZbuf::encode_source`]).
 pub trait CodecZenohValueZbufSource {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]>;
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>>;
 }
 
 impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
         (**self).after_shm()
     }
 }
@@ -217,11 +218,11 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohValueZbufParts<'a> {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
-    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], 4>, &'a [u8]>,
+    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 32>>,
 }
 
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.iter(), value_len: *value_len },
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: *value },
@@ -230,7 +231,7 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
 }
 
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbuf<'a> {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: ::sce_forge_runtime::codec::BoundedIter::from(slices), value_len: *value_len },
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: *value },
@@ -239,10 +240,10 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbuf<'a> {
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufSource for CodecZenohValueZbufOwned<S> {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, &[u8]> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.list_iter(), value_len: *value_len },
-            CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: ::sce_forge_runtime::codec::SceByteBuf::as_slice(value) },
+            CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: value.as_bytes() },
         }
     }
 }
@@ -287,7 +288,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
         let _d_slice_count: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_slice_count.unwrap_or(0));
         w.write_vle_u64(_d_value_len)?;
         if let Some(_v) = _m_value {
-            w.write_bytes(_v)?;
+            w.write_bytes(_v.into_inner())?;
         }
         if let Some(_v) = _m_encoding {
             w.write_vle_u64(_v)?;
@@ -378,7 +379,7 @@ use super::codec_zenoh_value_slice::CodecZenohValueSliceOwned;
 /// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohValueSliceOwned<S>, 4>, 4>, <S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>>;
+pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohValueSliceOwned<S>, 4>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>, 32>>;
 
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
@@ -398,15 +399,15 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohValueZbufOwned<S>, CodecError> {
         Ok(CodecZenohValueZbufOwned {
-            after_shm: match self.after_shm { CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())?, value_len }, CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: <S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(value)? }, },
+            after_shm: match self.after_shm { CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())?, value_len }, CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: ::sce_forge_runtime::codec::Bounded::copied(value)? }, },
             slice_count: self.slice_count,
         })
     }
@@ -457,8 +458,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
                 _out.after_shm = CodecZenohValueZbufAfterShm::AfterShm { encoding: _o_encoding, slices: _o_slices, value_len: _o_value_len };
             }
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => {
-                let mut _o_value: &'o [u8] = Default::default();
-                _o_value = ::sce_forge_runtime::codec::SceByteBuf::as_slice(value);
+                let mut _o_value: ::sce_forge_runtime::codec::Bytes<'o, 32> = Default::default();
+                _o_value = value.as_bytes();
                 _out.after_shm = CodecZenohValueZbufAfterShm::NotAfterShm { value: _o_value };
             }
         }

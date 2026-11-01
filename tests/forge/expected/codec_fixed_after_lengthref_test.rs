@@ -6,11 +6,10 @@ fn test_vector_codec_fixed_after_lengthref_l30() {
     let actual = CodecFixedAfterLengthref {
         header: 0xaau8,
         payload_len: 0x3u16,
-        payload: b"\xde\xad\xbe",
+        payload: (b"\xde\xad\xbe").into(),
         crc32: 0x11223344u32,
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L30: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0xaau8, 0x03u8, 0x00u8, 0xdeu8, 0xadu8, 0xbeu8, 0x44u8, 0x33u8, 0x22u8, 0x11u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -43,9 +42,9 @@ fn test_vector_codec_fixed_after_lengthref_l30() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecFixedAfterLengthref::decode(&mut SceCursor::new(expected))
@@ -61,7 +60,7 @@ fn test_vector_codec_fixed_after_lengthref_l30() {
         "<sce:test-vector> at SCXML L30: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"\xde\xad\xbe",
+        owned.payload.as_bytes(), b"\xde\xad\xbe",
         "<sce:test-vector> at SCXML L30: into_owned field `payload` mismatch"
     );
     assert_eq!(
@@ -75,9 +74,7 @@ fn test_vector_codec_fixed_after_lengthref_l30() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L30: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L30: as_borrowed re-encode mismatch"
     );
 }
@@ -86,11 +83,10 @@ fn test_vector_codec_fixed_after_lengthref_l37() {
     let actual = CodecFixedAfterLengthref {
         header: 0x1u8,
         payload_len: 0x0u16,
-        payload: b"",
+        payload: (b"").into(),
         crc32: 0xcafebabeu32,
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L37: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x01u8, 0x00u8, 0x00u8, 0xbeu8, 0xbau8, 0xfeu8, 0xcau8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -123,9 +119,9 @@ fn test_vector_codec_fixed_after_lengthref_l37() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecFixedAfterLengthref::decode(&mut SceCursor::new(expected))
@@ -141,7 +137,7 @@ fn test_vector_codec_fixed_after_lengthref_l37() {
         "<sce:test-vector> at SCXML L37: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"",
+        owned.payload.as_bytes(), b"",
         "<sce:test-vector> at SCXML L37: into_owned field `payload` mismatch"
     );
     assert_eq!(
@@ -155,9 +151,7 @@ fn test_vector_codec_fixed_after_lengthref_l37() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L37: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L37: as_borrowed re-encode mismatch"
     );
 }
@@ -166,11 +160,10 @@ fn test_vector_codec_fixed_after_lengthref_l44() {
     let actual = CodecFixedAfterLengthref {
         header: 0xffu8,
         payload_len: 0x5u16,
-        payload: b"\x01\x02\x03\x04\x05",
+        payload: (b"\x01\x02\x03\x04\x05").into(),
         crc32: 0x1u32,
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L44: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0xffu8, 0x05u8, 0x00u8, 0x01u8, 0x02u8, 0x03u8, 0x04u8, 0x05u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -203,9 +196,9 @@ fn test_vector_codec_fixed_after_lengthref_l44() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecFixedAfterLengthref::decode(&mut SceCursor::new(expected))
@@ -221,7 +214,7 @@ fn test_vector_codec_fixed_after_lengthref_l44() {
         "<sce:test-vector> at SCXML L44: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"\x01\x02\x03\x04\x05",
+        owned.payload.as_bytes(), b"\x01\x02\x03\x04\x05",
         "<sce:test-vector> at SCXML L44: into_owned field `payload` mismatch"
     );
     assert_eq!(
@@ -235,9 +228,7 @@ fn test_vector_codec_fixed_after_lengthref_l44() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L44: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L44: as_borrowed re-encode mismatch"
     );
 }

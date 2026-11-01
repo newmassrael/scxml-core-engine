@@ -5,10 +5,9 @@
 fn test_vector_codec_length_ref_uint16_le_l25() {
     let actual = CodecLengthRefUint16Le {
         payload_len: 0x0u16,
-        payload: b"",
+        payload: (b"").into(),
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L25: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8, 0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -33,9 +32,9 @@ fn test_vector_codec_length_ref_uint16_le_l25() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint16Le::decode(&mut SceCursor::new(expected))
@@ -47,7 +46,7 @@ fn test_vector_codec_length_ref_uint16_le_l25() {
         "<sce:test-vector> at SCXML L25: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"",
+        owned.payload.as_bytes(), b"",
         "<sce:test-vector> at SCXML L25: into_owned field `payload` mismatch"
     );
     // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
@@ -57,9 +56,7 @@ fn test_vector_codec_length_ref_uint16_le_l25() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L25: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L25: as_borrowed re-encode mismatch"
     );
 }
@@ -67,10 +64,9 @@ fn test_vector_codec_length_ref_uint16_le_l25() {
 fn test_vector_codec_length_ref_uint16_le_l29() {
     let actual = CodecLengthRefUint16Le {
         payload_len: 0x4u16,
-        payload: b"\xaa\xbb\xcc\xdd",
+        payload: (b"\xaa\xbb\xcc\xdd").into(),
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L29: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x04u8, 0x00u8, 0xaau8, 0xbbu8, 0xccu8, 0xddu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -95,9 +91,9 @@ fn test_vector_codec_length_ref_uint16_le_l29() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint16Le::decode(&mut SceCursor::new(expected))
@@ -109,7 +105,7 @@ fn test_vector_codec_length_ref_uint16_le_l29() {
         "<sce:test-vector> at SCXML L29: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"\xaa\xbb\xcc\xdd",
+        owned.payload.as_bytes(), b"\xaa\xbb\xcc\xdd",
         "<sce:test-vector> at SCXML L29: into_owned field `payload` mismatch"
     );
     // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
@@ -119,9 +115,7 @@ fn test_vector_codec_length_ref_uint16_le_l29() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L29: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L29: as_borrowed re-encode mismatch"
     );
 }
@@ -129,10 +123,9 @@ fn test_vector_codec_length_ref_uint16_le_l29() {
 fn test_vector_codec_length_ref_uint16_le_l33() {
     let actual = CodecLengthRefUint16Le {
         payload_len: 0x100u16,
-        payload: b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
+        payload: (b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff").into(),
     };
-    let encoded = actual.encode_to_vec()
-        .expect("<sce:test-vector> at SCXML L33: encode refused the value");
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8, 0x01u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -157,9 +150,9 @@ fn test_vector_codec_length_ref_uint16_le_l33() {
     );
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint16Le::decode(&mut SceCursor::new(expected))
@@ -171,7 +164,7 @@ fn test_vector_codec_length_ref_uint16_le_l33() {
         "<sce:test-vector> at SCXML L33: into_owned field `payload_len` mismatch"
     );
     assert_eq!(
-        owned.payload, b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
+        owned.payload.as_bytes(), b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
         "<sce:test-vector> at SCXML L33: into_owned field `payload` mismatch"
     );
     // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
@@ -181,9 +174,7 @@ fn test_vector_codec_length_ref_uint16_le_l33() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec()
-            .expect("<sce:test-vector> at SCXML L33: as_borrowed encode refused the value")
-            .as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
         "<sce:test-vector> at SCXML L33: as_borrowed re-encode mismatch"
     );
 }

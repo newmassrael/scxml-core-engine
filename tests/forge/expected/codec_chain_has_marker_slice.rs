@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecChainHasMarkerSlice<'a> {
     pub kind: u16,
     pub size: u64,
-    pub data: &'a [u8],
+    pub data: ::sce_forge_runtime::codec::Bytes<'a, 256>,
 }
 
 #[allow(dead_code)]
@@ -88,6 +88,7 @@ impl<'a> CodecChainHasMarkerSlice<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let data = ::sce_forge_runtime::codec::Bounded::new(data).ok_or(CodecError::LengthOutOfRange)?;
         _out.kind = kind;
         _out.size = size;
         _out.data = data;
@@ -137,14 +138,14 @@ pub trait CodecChainHasMarkerSliceSource {
     /// The `kind` field.
     fn kind(&self) -> u16;
     /// The `data` field.
-    fn data(&self) -> &[u8];
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256>;
 }
 
 impl<T: CodecChainHasMarkerSliceSource + ?Sized> CodecChainHasMarkerSliceSource for &T {
     fn kind(&self) -> u16 {
         (**self).kind()
     }
-    fn data(&self) -> &[u8] {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         (**self).data()
     }
 }
@@ -158,14 +159,14 @@ pub struct CodecChainHasMarkerSliceParts<'a> {
     /// The `kind` field.
     pub kind: u16,
     /// The `data` field.
-    pub data: &'a [u8],
+    pub data: ::sce_forge_runtime::codec::Bytes<'a, 256>,
 }
 
 impl<'a> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSliceParts<'a> {
     fn kind(&self) -> u16 {
         self.kind
     }
-    fn data(&self) -> &[u8] {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         self.data
     }
 }
@@ -174,7 +175,7 @@ impl<'a> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSlice<'a> {
     fn kind(&self) -> u16 {
         self.kind
     }
-    fn data(&self) -> &[u8] {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         self.data
     }
 }
@@ -183,8 +184,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSliceSource
     fn kind(&self) -> u16 {
         self.kind
     }
-    fn data(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.data)
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
+        self.data.as_bytes()
     }
 }
 
@@ -206,7 +207,7 @@ impl<'a> CodecChainHasMarkerSlice<'a> {
         let _d_size: u64 = ::sce_forge_runtime::codec::widen_usize(_n_d_size_0);
         w.write_vle_u16(src.kind())?;
         w.write_vle_u64(_d_size)?;
-        w.write_bytes(src.data())?;
+        w.write_bytes(src.data().into_inner())?;
         Ok(())
     }
 
@@ -289,7 +290,7 @@ impl<'a> CodecChainHasMarkerSlice<'a> {
 pub struct CodecChainHasMarkerSliceOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub kind: u16,
     pub size: u64,
-    pub data: S::Bytes<256>,
+    pub data: ::sce_forge_runtime::codec::Bounded<S::Bytes<256>, 256>,
 }
 
 #[allow(dead_code)]
@@ -300,17 +301,17 @@ impl<'a> CodecChainHasMarkerSlice<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasMarkerSliceOwned<S>, CodecError> {
         Ok(CodecChainHasMarkerSliceOwned {
             kind: self.kind,
             size: self.size,
-            data: <S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.data)?,
+            data: ::sce_forge_runtime::codec::Bounded::copied(self.data)?,
         })
     }
 
@@ -347,7 +348,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSliceOwned<
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasMarkerSlice<'o>) {
         _out.kind = self.kind;
         _out.size = self.size;
-        _out.data = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.data);
+        _out.data = self.data.as_bytes();
         
     }
 

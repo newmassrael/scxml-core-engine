@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecTail<'a> {
     pub msg_id: u8,
     pub status: u8,
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 32>,
 }
 
 #[allow(dead_code)]
@@ -68,6 +68,7 @@ impl<'a> CodecTail<'a> {
             return Err(CodecError::LengthOutOfRange);
         }
         let payload = &raw[2..];
+        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
         let value = Self {
             msg_id,
             status,
@@ -131,7 +132,7 @@ pub trait CodecTailSource {
     /// The `status` field.
     fn status(&self) -> u8;
     /// The `payload` field.
-    fn payload(&self) -> &[u8];
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32>;
 }
 
 impl<T: CodecTailSource + ?Sized> CodecTailSource for &T {
@@ -141,7 +142,7 @@ impl<T: CodecTailSource + ?Sized> CodecTailSource for &T {
     fn status(&self) -> u8 {
         (**self).status()
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         (**self).payload()
     }
 }
@@ -157,7 +158,7 @@ pub struct CodecTailParts<'a> {
     /// The `status` field.
     pub status: u8,
     /// The `payload` field.
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 32>,
 }
 
 impl<'a> CodecTailSource for CodecTailParts<'a> {
@@ -167,7 +168,7 @@ impl<'a> CodecTailSource for CodecTailParts<'a> {
     fn status(&self) -> u8 {
         self.status
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         self.payload
     }
 }
@@ -179,7 +180,7 @@ impl<'a> CodecTailSource for CodecTail<'a> {
     fn status(&self) -> u8 {
         self.status
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         self.payload
     }
 }
@@ -191,8 +192,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTailSource for CodecTailO
     fn status(&self) -> u8 {
         self.status
     }
-    fn payload(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
+        self.payload.as_bytes()
     }
 }
 
@@ -212,7 +213,7 @@ impl<'a> CodecTail<'a> {
     pub fn write_source<S: CodecTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         w.write_u8(src.msg_id())?;
         w.write_u8(src.status())?;
-        w.write_bytes(src.payload())?;
+        w.write_bytes(src.payload().into_inner())?;
         Ok(())
     }
 
@@ -295,7 +296,7 @@ impl<'a> CodecTail<'a> {
 pub struct CodecTailOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub msg_id: u8,
     pub status: u8,
-    pub payload: S::Bytes<32>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<32>, 32>,
 }
 
 #[allow(dead_code)]
@@ -306,17 +307,17 @@ impl<'a> CodecTail<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTailOwned<S>, CodecError> {
         Ok(CodecTailOwned {
             msg_id: self.msg_id,
             status: self.status,
-            payload: <S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.payload)?,
+            payload: ::sce_forge_runtime::codec::Bounded::copied(self.payload)?,
         })
     }
 
@@ -353,7 +354,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTailOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTail<'o>) {
         _out.msg_id = self.msg_id;
         _out.status = self.status;
-        _out.payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload);
+        _out.payload = self.payload.as_bytes();
         
     }
 

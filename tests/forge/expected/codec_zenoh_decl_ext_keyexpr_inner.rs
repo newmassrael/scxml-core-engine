@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohDeclExtKeyexprInner<'a> {
     pub inner_header: u8,
     pub id: u64,
-    pub suffix: Option<&'a [u8]>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
 }
 
 #[allow(dead_code)]
@@ -94,6 +94,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
         } else {
             None
         };
+        let suffix = suffix.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         _out.inner_header = inner_header;
         _out.id = id;
         _out.suffix = suffix;
@@ -194,7 +195,7 @@ pub trait CodecZenohDeclExtKeyexprInnerSource {
     /// The `id` field.
     fn id(&self) -> u64;
     /// The `suffix` field.
-    fn suffix(&self) -> Option<&[u8]>;
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>>;
 }
 
 impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprInnerSource for &T {
@@ -204,7 +205,7 @@ impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprIn
     fn id(&self) -> u64 {
         (**self).id()
     }
-    fn suffix(&self) -> Option<&[u8]> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         (**self).suffix()
     }
 }
@@ -220,7 +221,7 @@ pub struct CodecZenohDeclExtKeyexprInnerParts<'a> {
     /// The `id` field.
     pub id: u64,
     /// The `suffix` field.
-    pub suffix: Option<&'a [u8]>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
 }
 
 impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerParts<'a> {
@@ -230,7 +231,7 @@ impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerPa
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&[u8]> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         self.suffix
     }
 }
@@ -242,7 +243,7 @@ impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInner<'
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&[u8]> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         self.suffix
     }
 }
@@ -254,8 +255,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerS
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&[u8]> {
-        self.suffix.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+        self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
 }
 
@@ -288,7 +289,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
         w.write_u8(_c_inner_header)?;
         w.write_vle_u64(src.id())?;
         if let Some(_v) = src.suffix() {
-            w.write_bytes(_v)?;
+            w.write_bytes(_v.into_inner())?;
         }
         Ok(())
     }
@@ -372,7 +373,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
 pub struct CodecZenohDeclExtKeyexprInnerOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub inner_header: u8,
     pub id: u64,
-    pub suffix: Option<S::Bytes<128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<128>, 128>>,
 }
 
 #[allow(dead_code)]
@@ -400,17 +401,17 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohDeclExtKeyexprInnerOwned<S>, CodecError> {
         Ok(CodecZenohDeclExtKeyexprInnerOwned {
             inner_header: self.inner_header,
             id: self.id,
-            suffix: self.suffix.map(<S::Bytes<128> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
+            suffix: self.suffix.map(::sce_forge_runtime::codec::Bounded::copied).transpose()?,
         })
     }
 
@@ -447,7 +448,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerO
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclExtKeyexprInner<'o>) {
         _out.inner_header = self.inner_header;
         _out.id = self.id;
-        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes);
         
     }
 

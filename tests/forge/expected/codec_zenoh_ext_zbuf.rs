@@ -25,7 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohExtZbuf<'a> {
     pub value_len: u64,
-    pub value: &'a [u8],
+    pub value: ::sce_forge_runtime::codec::Bytes<'a, 32>,
 }
 
 #[allow(dead_code)]
@@ -86,6 +86,7 @@ impl<'a> CodecZenohExtZbuf<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let value = ::sce_forge_runtime::codec::Bounded::new(value).ok_or(CodecError::LengthOutOfRange)?;
         _out.value_len = value_len;
         _out.value = value;
         Ok(())
@@ -132,11 +133,11 @@ impl<'a> CodecZenohExtZbuf<'a> {
 /// computes those from what is ([`CodecZenohExtZbuf::encode_source`]).
 pub trait CodecZenohExtZbufSource {
     /// The `value` field.
-    fn value(&self) -> &[u8];
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32>;
 }
 
 impl<T: CodecZenohExtZbufSource + ?Sized> CodecZenohExtZbufSource for &T {
-    fn value(&self) -> &[u8] {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         (**self).value()
     }
 }
@@ -148,24 +149,24 @@ impl<T: CodecZenohExtZbufSource + ?Sized> CodecZenohExtZbufSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohExtZbufParts<'a> {
     /// The `value` field.
-    pub value: &'a [u8],
+    pub value: ::sce_forge_runtime::codec::Bytes<'a, 32>,
 }
 
 impl<'a> CodecZenohExtZbufSource for CodecZenohExtZbufParts<'a> {
-    fn value(&self) -> &[u8] {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         self.value
     }
 }
 
 impl<'a> CodecZenohExtZbufSource for CodecZenohExtZbuf<'a> {
-    fn value(&self) -> &[u8] {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
         self.value
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohExtZbufSource for CodecZenohExtZbufOwned<S> {
-    fn value(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.value)
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
+        self.value.as_bytes()
     }
 }
 
@@ -186,7 +187,7 @@ impl<'a> CodecZenohExtZbuf<'a> {
         let _n_d_value_len_0: usize = src.value().len();
         let _d_value_len: u64 = ::sce_forge_runtime::codec::widen_usize(_n_d_value_len_0);
         w.write_vle_u64(_d_value_len)?;
-        w.write_bytes(src.value())?;
+        w.write_bytes(src.value().into_inner())?;
         Ok(())
     }
 
@@ -268,7 +269,7 @@ impl<'a> CodecZenohExtZbuf<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohExtZbufOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub value_len: u64,
-    pub value: S::Bytes<32>,
+    pub value: ::sce_forge_runtime::codec::Bounded<S::Bytes<32>, 32>,
 }
 
 #[allow(dead_code)]
@@ -279,16 +280,16 @@ impl<'a> CodecZenohExtZbuf<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohExtZbufOwned<S>, CodecError> {
         Ok(CodecZenohExtZbufOwned {
             value_len: self.value_len,
-            value: <S::Bytes<32> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.value)?,
+            value: ::sce_forge_runtime::codec::Bounded::copied(self.value)?,
         })
     }
 
@@ -324,7 +325,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohExtZbufOwned<S> {
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohExtZbuf<'o>) {
         _out.value_len = self.value_len;
-        _out.value = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.value);
+        _out.value = self.value.as_bytes();
         
     }
 

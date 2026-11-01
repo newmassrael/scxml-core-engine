@@ -27,7 +27,7 @@ pub struct CodecZenohOpenBody<'a> {
     pub lease: u64,
     pub initial_sn: u64,
     pub cookie_len: Option<u64>,
-    pub cookie: Option<&'a [u8]>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
 }
 
 #[allow(dead_code)]
@@ -102,6 +102,7 @@ impl<'a> CodecZenohOpenBody<'a> {
         } else {
             None
         };
+        let cookie = cookie.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         _out.lease = lease;
         _out.initial_sn = initial_sn;
         _out.cookie_len = cookie_len;
@@ -154,7 +155,7 @@ pub trait CodecZenohOpenBodySource {
     /// The `initial_sn` field.
     fn initial_sn(&self) -> u64;
     /// The `cookie` field.
-    fn cookie(&self) -> Option<&[u8]>;
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>>;
 }
 
 impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
@@ -164,7 +165,7 @@ impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
     fn initial_sn(&self) -> u64 {
         (**self).initial_sn()
     }
-    fn cookie(&self) -> Option<&[u8]> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         (**self).cookie()
     }
 }
@@ -180,7 +181,7 @@ pub struct CodecZenohOpenBodyParts<'a> {
     /// The `initial_sn` field.
     pub initial_sn: u64,
     /// The `cookie` field.
-    pub cookie: Option<&'a [u8]>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
 }
 
 impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBodyParts<'a> {
@@ -190,7 +191,7 @@ impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBodyParts<'a> {
     fn initial_sn(&self) -> u64 {
         self.initial_sn
     }
-    fn cookie(&self) -> Option<&[u8]> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         self.cookie
     }
 }
@@ -202,7 +203,7 @@ impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBody<'a> {
     fn initial_sn(&self) -> u64 {
         self.initial_sn
     }
-    fn cookie(&self) -> Option<&[u8]> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
         self.cookie
     }
 }
@@ -214,8 +215,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohOpenBodySource for C
     fn initial_sn(&self) -> u64 {
         self.initial_sn
     }
-    fn cookie(&self) -> Option<&[u8]> {
-        self.cookie.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+        self.cookie.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
 }
 
@@ -253,7 +254,7 @@ impl<'a> CodecZenohOpenBody<'a> {
             w.write_vle_u64(_d_cookie_len)?;
         }
         if let Some(_v) = src.cookie() {
-            w.write_bytes(_v)?;
+            w.write_bytes(_v.into_inner())?;
         }
         Ok(())
     }
@@ -338,7 +339,7 @@ pub struct CodecZenohOpenBodyOwned<S: ::sce_forge_runtime::codec::CodecStorage =
     pub lease: u64,
     pub initial_sn: u64,
     pub cookie_len: Option<u64>,
-    pub cookie: Option<S::Bytes<128>>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<128>, 128>>,
 }
 
 #[allow(dead_code)]
@@ -349,18 +350,18 @@ impl<'a> CodecZenohOpenBody<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohOpenBodyOwned<S>, CodecError> {
         Ok(CodecZenohOpenBodyOwned {
             lease: self.lease,
             initial_sn: self.initial_sn,
             cookie_len: self.cookie_len,
-            cookie: self.cookie.map(<S::Bytes<128> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
+            cookie: self.cookie.map(::sce_forge_runtime::codec::Bounded::copied).transpose()?,
         })
     }
 
@@ -398,7 +399,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohOpenBodyOwned<S> {
         _out.lease = self.lease;
         _out.initial_sn = self.initial_sn;
         _out.cookie_len = self.cookie_len;
-        _out.cookie = self.cookie.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        _out.cookie = self.cookie.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes);
         
     }
 

@@ -42,7 +42,7 @@ const _: () = assert!(
 pub struct CodecDmaAlignedBasic<'a> {
     pub msg_id: u8,
     pub reserved: u8,
-    pub aligned_payload: &'a [u8],
+    pub aligned_payload: ::sce_forge_runtime::codec::Bytes<'a, 64>,
 }
 
 #[allow(dead_code)]
@@ -84,6 +84,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
             return Err(CodecError::LengthOutOfRange);
         }
         let aligned_payload = &raw[32..];
+        let aligned_payload = ::sce_forge_runtime::codec::Bounded::new(aligned_payload).ok_or(CodecError::LengthOutOfRange)?;
         let value = Self {
             msg_id,
             reserved,
@@ -147,7 +148,7 @@ pub trait CodecDmaAlignedBasicSource {
     /// The `reserved` field.
     fn reserved(&self) -> u8;
     /// The `aligned_payload` field.
-    fn aligned_payload(&self) -> &[u8];
+    fn aligned_payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64>;
 }
 
 impl<T: CodecDmaAlignedBasicSource + ?Sized> CodecDmaAlignedBasicSource for &T {
@@ -157,7 +158,7 @@ impl<T: CodecDmaAlignedBasicSource + ?Sized> CodecDmaAlignedBasicSource for &T {
     fn reserved(&self) -> u8 {
         (**self).reserved()
     }
-    fn aligned_payload(&self) -> &[u8] {
+    fn aligned_payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64> {
         (**self).aligned_payload()
     }
 }
@@ -173,7 +174,7 @@ pub struct CodecDmaAlignedBasicParts<'a> {
     /// The `reserved` field.
     pub reserved: u8,
     /// The `aligned_payload` field.
-    pub aligned_payload: &'a [u8],
+    pub aligned_payload: ::sce_forge_runtime::codec::Bytes<'a, 64>,
 }
 
 impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicParts<'a> {
@@ -183,7 +184,7 @@ impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicParts<'a> {
     fn reserved(&self) -> u8 {
         self.reserved
     }
-    fn aligned_payload(&self) -> &[u8] {
+    fn aligned_payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64> {
         self.aligned_payload
     }
 }
@@ -195,7 +196,7 @@ impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasic<'a> {
     fn reserved(&self) -> u8 {
         self.reserved
     }
-    fn aligned_payload(&self) -> &[u8] {
+    fn aligned_payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64> {
         self.aligned_payload
     }
 }
@@ -207,8 +208,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicSource for
     fn reserved(&self) -> u8 {
         self.reserved
     }
-    fn aligned_payload(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.aligned_payload)
+    fn aligned_payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64> {
+        self.aligned_payload.as_bytes()
     }
 }
 
@@ -231,7 +232,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
         while w.position() < 32 {
             w.write_u8(0)?;
         }
-        w.write_bytes(src.aligned_payload())?;
+        w.write_bytes(src.aligned_payload().into_inner())?;
         Ok(())
     }
 
@@ -314,7 +315,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
 pub struct CodecDmaAlignedBasicOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub msg_id: u8,
     pub reserved: u8,
-    pub aligned_payload: S::Bytes<64>,
+    pub aligned_payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<64>, 64>,
 }
 
 #[allow(dead_code)]
@@ -325,17 +326,17 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecDmaAlignedBasicOwned<S>, CodecError> {
         Ok(CodecDmaAlignedBasicOwned {
             msg_id: self.msg_id,
             reserved: self.reserved,
-            aligned_payload: <S::Bytes<64> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.aligned_payload)?,
+            aligned_payload: ::sce_forge_runtime::codec::Bounded::copied(self.aligned_payload)?,
         })
     }
 
@@ -372,7 +373,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecDmaAlignedBasic<'o>) {
         _out.msg_id = self.msg_id;
         _out.reserved = self.reserved;
-        _out.aligned_payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.aligned_payload);
+        _out.aligned_payload = self.aligned_payload.as_bytes();
         
     }
 

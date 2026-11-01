@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohWireexpr<'a> {
     pub id: u64,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<&'a str>,
+    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
 }
 
 #[allow(dead_code)]
@@ -101,6 +101,7 @@ impl<'a> CodecZenohWireexpr<'a> {
         } else {
             None
         };
+        let suffix = suffix.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         _out.id = id;
         _out.suffix_len = suffix_len;
         _out.suffix = suffix;
@@ -150,14 +151,14 @@ pub trait CodecZenohWireexprSource {
     /// The `id` field.
     fn id(&self) -> u64;
     /// The `suffix` field.
-    fn suffix(&self) -> Option<&str>;
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>>;
 }
 
 impl<T: CodecZenohWireexprSource + ?Sized> CodecZenohWireexprSource for &T {
     fn id(&self) -> u64 {
         (**self).id()
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         (**self).suffix()
     }
 }
@@ -171,14 +172,14 @@ pub struct CodecZenohWireexprParts<'a> {
     /// The `id` field.
     pub id: u64,
     /// The `suffix` field.
-    pub suffix: Option<&'a str>,
+    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
 }
 
 impl<'a> CodecZenohWireexprSource for CodecZenohWireexprParts<'a> {
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         self.suffix
     }
 }
@@ -187,7 +188,7 @@ impl<'a> CodecZenohWireexprSource for CodecZenohWireexpr<'a> {
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         self.suffix
     }
 }
@@ -196,8 +197,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohWireexprSource for C
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<&str> {
-        self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str)
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+        self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)
     }
 }
 
@@ -234,7 +235,7 @@ impl<'a> CodecZenohWireexpr<'a> {
             w.write_vle_u64(_d_suffix_len)?;
         }
         if let Some(_v) = src.suffix() {
-            w.write_bytes(_v.as_bytes())?;
+            w.write_bytes(_v.into_inner().as_bytes())?;
         }
         Ok(())
     }
@@ -318,7 +319,7 @@ impl<'a> CodecZenohWireexpr<'a> {
 pub struct CodecZenohWireexprOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub id: u64,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<S::Str<128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<S::Str<128>, 128>>,
 }
 
 #[allow(dead_code)]
@@ -329,17 +330,17 @@ impl<'a> CodecZenohWireexpr<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohWireexprOwned<S>, CodecError> {
         Ok(CodecZenohWireexprOwned {
             id: self.id,
             suffix_len: self.suffix_len,
-            suffix: self.suffix.map(<S::Str<128> as ::sce_forge_runtime::codec::SceStr>::from_view).transpose()?,
+            suffix: self.suffix.map(::sce_forge_runtime::codec::Bounded::copied_text).transpose()?,
         })
     }
 
@@ -376,7 +377,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohWireexprOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohWireexpr<'o>) {
         _out.id = self.id;
         _out.suffix_len = self.suffix_len;
-        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str);
+        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text);
         
     }
 

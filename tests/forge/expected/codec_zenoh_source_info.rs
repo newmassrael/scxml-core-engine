@@ -25,7 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohSourceInfo<'a> {
     pub header: u8,
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16, 1>,
     pub eid: u32,
     pub sn: u32,
 }
@@ -90,6 +90,7 @@ impl<'a> CodecZenohSourceInfo<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let zid = ::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange)?;
         let eid = cursor.read_vle_u32()?;
         let sn = cursor.read_vle_u32()?;
         _out.header = header;
@@ -119,35 +120,32 @@ impl<'a> CodecZenohSourceInfo<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 27;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -159,7 +157,7 @@ pub trait CodecZenohSourceInfoSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The `zid` field.
-    fn zid(&self) -> &[u8];
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1>;
     /// The `eid` field.
     fn eid(&self) -> u32;
     /// The `sn` field.
@@ -170,7 +168,7 @@ impl<T: CodecZenohSourceInfoSource + ?Sized> CodecZenohSourceInfoSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         (**self).zid()
     }
     fn eid(&self) -> u32 {
@@ -190,7 +188,7 @@ pub struct CodecZenohSourceInfoParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The `zid` field.
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16, 1>,
     /// The `eid` field.
     pub eid: u32,
     /// The `sn` field.
@@ -201,7 +199,7 @@ impl<'a> CodecZenohSourceInfoSource for CodecZenohSourceInfoParts<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         self.zid
     }
     fn eid(&self) -> u32 {
@@ -216,7 +214,7 @@ impl<'a> CodecZenohSourceInfoSource for CodecZenohSourceInfo<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         self.zid
     }
     fn eid(&self) -> u32 {
@@ -231,8 +229,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohSourceInfoSource for
     fn header(&self) -> u8 {
         self.header
     }
-    fn zid(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid)
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
+        self.zid.as_bytes()
     }
     fn eid(&self) -> u32 {
         self.eid
@@ -247,23 +245,20 @@ impl<'a> CodecZenohSourceInfo<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecZenohSourceInfoSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecZenohSourceInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecZenohSourceInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecZenohSourceInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _n_d_header_zidlen_m1_0: usize = src.zid().len().checked_sub(1).ok_or(CodecError::LengthOutOfRange)?;
-        if _n_d_header_zidlen_m1_0 > 0xF {
-            return Err(CodecError::LengthOutOfRange);
-        }
+    pub fn write_source<S: CodecZenohSourceInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let _n_d_header_zidlen_m1_0: usize = src.zid().len() - 1;
         let _v_header_zidlen_m1: u8 = _n_d_header_zidlen_m1_0 as u8;
         let _c_header: u8 = (src.header() & !0xF0) | (_v_header_zidlen_m1 << 4);
         w.write_u8(_c_header)?;
-        w.write_bytes(src.zid())?;
+        w.write_bytes(src.zid().into_inner())?;
         w.write_vle_u32(src.eid())?;
         w.write_vle_u32(src.sn())?;
         Ok(())
@@ -272,17 +267,17 @@ impl<'a> CodecZenohSourceInfo<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecZenohSourceInfoSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecZenohSourceInfoSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecZenohSourceInfoSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohSourceInfo<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -290,10 +285,12 @@ impl<'a, S: CodecZenohSourceInfoSource + ?Sized> ::sce_forge_runtime::codec::Sou
 #[allow(dead_code)]
 impl<'a> CodecZenohSourceInfo<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecZenohSourceInfoSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecZenohSourceInfoSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -345,7 +342,7 @@ impl<'a> CodecZenohSourceInfo<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohSourceInfoOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
-    pub zid: S::Bytes<16>,
+    pub zid: ::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 1>,
     pub eid: u32,
     pub sn: u32,
 }
@@ -371,16 +368,16 @@ impl<'a> CodecZenohSourceInfo<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohSourceInfoOwned<S>, CodecError> {
         Ok(CodecZenohSourceInfoOwned {
             header: self.header,
-            zid: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.zid)?,
+            zid: ::sce_forge_runtime::codec::Bounded::copied(self.zid)?,
             eid: self.eid,
             sn: self.sn,
         })
@@ -418,7 +415,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohSourceInfoOwned<S> {
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohSourceInfo<'o>) {
         _out.header = self.header;
-        _out.zid = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid);
+        _out.zid = self.zid.as_bytes();
         _out.eid = self.eid;
         _out.sn = self.sn;
         
@@ -446,22 +443,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohSourceInfoOwned<S> {
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecZenohSourceInfo::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohSourceInfo::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }

@@ -103,7 +103,7 @@ pub struct CodecZenohResponse<'a> {
     pub request_id: u64,
     pub key_id: u32,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<&'a str>,
+    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 256>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>>,
     pub body: CodecZenohResponseVariant<'a>,
 }
@@ -198,6 +198,7 @@ impl<'a> CodecZenohResponse<'a> {
         } else {
             None
         };
+        let suffix = suffix.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         if (header & 0x80u8) != 0 {
             _out.extensions.insert(Default::default()).refill(|_vec| {
                 let mut _more = false;
@@ -403,7 +404,7 @@ pub trait CodecZenohResponseSource {
     /// The `key_id` field.
     fn key_id(&self) -> u32;
     /// The `suffix` field.
-    fn suffix(&self) -> Option<&str>;
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 256>>;
     /// The `extensions` field.
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
     /// The arm of the variant this value holds.
@@ -420,7 +421,7 @@ impl<T: CodecZenohResponseSource + ?Sized> CodecZenohResponseSource for &T {
     fn key_id(&self) -> u32 {
         (**self).key_id()
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 256>> {
         (**self).suffix()
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
@@ -454,7 +455,7 @@ pub struct CodecZenohResponseParts<'a> {
     /// The `key_id` field.
     pub key_id: u32,
     /// The `suffix` field.
-    pub suffix: Option<&'a str>,
+    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 256>>,
     /// The `extensions` field.
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
     /// The arm of the variant this value holds.
@@ -471,7 +472,7 @@ impl<'a> CodecZenohResponseSource for CodecZenohResponseParts<'a> {
     fn key_id(&self) -> u32 {
         self.key_id
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 256>> {
         self.suffix
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
@@ -496,7 +497,7 @@ impl<'a> CodecZenohResponseSource for CodecZenohResponse<'a> {
     fn key_id(&self) -> u32 {
         self.key_id
     }
-    fn suffix(&self) -> Option<&str> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 256>> {
         self.suffix
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
@@ -521,8 +522,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseSource for C
     fn key_id(&self) -> u32 {
         self.key_id
     }
-    fn suffix(&self) -> Option<&str> {
-        self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str)
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 256>> {
+        self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
@@ -582,7 +583,7 @@ impl<'a> CodecZenohResponse<'a> {
             w.write_vle_u64(_d_suffix_len)?;
         }
         if let Some(_v) = src.suffix() {
-            w.write_bytes(_v.as_bytes())?;
+            w.write_bytes(_v.into_inner().as_bytes())?;
         }
         if let Some(_v) = src.extensions() {
             for (_i, _e) in _v.enumerate() {
@@ -681,7 +682,7 @@ pub struct CodecZenohResponseOwned<S: ::sce_forge_runtime::codec::CodecStorage =
     pub request_id: u64,
     pub key_id: u32,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<S::Str<256>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<S::Str<256>, 256>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
     pub body: CodecZenohResponseOwnedVariant<S>,
 }
@@ -803,19 +804,19 @@ impl<'a> CodecZenohResponse<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohResponseOwned<S>, CodecError> {
         Ok(CodecZenohResponseOwned {
             header: self.header,
             request_id: self.request_id,
             key_id: self.key_id,
             suffix_len: self.suffix_len,
-            suffix: self.suffix.map(<S::Str<256> as ::sce_forge_runtime::codec::SceStr>::from_view).transpose()?,
+            suffix: self.suffix.map(::sce_forge_runtime::codec::Bounded::copied_text).transpose()?,
             extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
             body: self.body.try_into_owned_in::<S>()?,
         })
@@ -860,7 +861,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseOwned<S> {
         _out.request_id = self.request_id;
         _out.key_id = self.key_id;
         _out.suffix_len = self.suffix_len;
-        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str);
+        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text);
         match &self.extensions {
             Some(_l) => _out.extensions.insert(Default::default()).refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, _l.inner(), |_e| Ok(_e.as_borrowed())))?,
             None => _out.extensions = None,

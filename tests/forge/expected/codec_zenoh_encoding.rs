@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohEncoding<'a> {
     pub packed_id: u32,
     pub schema_len: Option<u64>,
-    pub schema: Option<&'a str>,
+    pub schema: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
 }
 
 #[allow(dead_code)]
@@ -96,6 +96,7 @@ impl<'a> CodecZenohEncoding<'a> {
         } else {
             None
         };
+        let schema = schema.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         _out.packed_id = packed_id;
         _out.schema_len = schema_len;
         _out.schema = schema;
@@ -163,14 +164,14 @@ pub trait CodecZenohEncodingSource {
     /// The `packed_id` field.
     fn packed_id(&self) -> u32;
     /// The `schema` field.
-    fn schema(&self) -> Option<&str>;
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>>;
 }
 
 impl<T: CodecZenohEncodingSource + ?Sized> CodecZenohEncodingSource for &T {
     fn packed_id(&self) -> u32 {
         (**self).packed_id()
     }
-    fn schema(&self) -> Option<&str> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         (**self).schema()
     }
 }
@@ -184,14 +185,14 @@ pub struct CodecZenohEncodingParts<'a> {
     /// The `packed_id` field.
     pub packed_id: u32,
     /// The `schema` field.
-    pub schema: Option<&'a str>,
+    pub schema: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
 }
 
 impl<'a> CodecZenohEncodingSource for CodecZenohEncodingParts<'a> {
     fn packed_id(&self) -> u32 {
         self.packed_id
     }
-    fn schema(&self) -> Option<&str> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         self.schema
     }
 }
@@ -200,7 +201,7 @@ impl<'a> CodecZenohEncodingSource for CodecZenohEncoding<'a> {
     fn packed_id(&self) -> u32 {
         self.packed_id
     }
-    fn schema(&self) -> Option<&str> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
         self.schema
     }
 }
@@ -209,8 +210,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohEncodingSource for C
     fn packed_id(&self) -> u32 {
         self.packed_id
     }
-    fn schema(&self) -> Option<&str> {
-        self.schema.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str)
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+        self.schema.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)
     }
 }
 
@@ -241,7 +242,7 @@ impl<'a> CodecZenohEncoding<'a> {
             w.write_vle_u64(_d_schema_len)?;
         }
         if let Some(_v) = src.schema() {
-            w.write_bytes(_v.as_bytes())?;
+            w.write_bytes(_v.into_inner().as_bytes())?;
         }
         Ok(())
     }
@@ -325,7 +326,7 @@ impl<'a> CodecZenohEncoding<'a> {
 pub struct CodecZenohEncodingOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub packed_id: u32,
     pub schema_len: Option<u64>,
-    pub schema: Option<S::Str<128>>,
+    pub schema: Option<::sce_forge_runtime::codec::Bounded<S::Str<128>, 128>>,
 }
 
 #[allow(dead_code)]
@@ -349,17 +350,17 @@ impl<'a> CodecZenohEncoding<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohEncodingOwned<S>, CodecError> {
         Ok(CodecZenohEncodingOwned {
             packed_id: self.packed_id,
             schema_len: self.schema_len,
-            schema: self.schema.map(<S::Str<128> as ::sce_forge_runtime::codec::SceStr>::from_view).transpose()?,
+            schema: self.schema.map(::sce_forge_runtime::codec::Bounded::copied_text).transpose()?,
         })
     }
 
@@ -396,7 +397,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohEncodingOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohEncoding<'o>) {
         _out.packed_id = self.packed_id;
         _out.schema_len = self.schema_len;
-        _out.schema = self.schema.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str);
+        _out.schema = self.schema.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text);
         
     }
 

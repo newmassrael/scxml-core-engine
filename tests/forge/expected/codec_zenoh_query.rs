@@ -35,7 +35,7 @@ pub struct CodecZenohQuery<'a> {
     pub header: u8,
     pub consolidation: Option<u8>,
     pub parameters_len: Option<u64>,
-    pub parameters: Option<&'a [u8]>,
+    pub parameters: Option<::sce_forge_runtime::codec::Bytes<'a, 256>>,
     pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 8>>,
 }
 
@@ -137,6 +137,7 @@ impl<'a> CodecZenohQuery<'a> {
         } else {
             None
         };
+        let parameters = parameters.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         if (header & 0x80u8) != 0 {
             let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 8>::new());
             for _ in 0..8u32 {
@@ -255,7 +256,7 @@ pub trait CodecZenohQuerySource {
     /// The `consolidation` field.
     fn consolidation(&self) -> Option<u8>;
     /// The `parameters` field.
-    fn parameters(&self) -> Option<&[u8]>;
+    fn parameters(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 256>>;
     /// The `extensions` field.
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>>;
 }
@@ -267,7 +268,7 @@ impl<T: CodecZenohQuerySource + ?Sized> CodecZenohQuerySource for &T {
     fn consolidation(&self) -> Option<u8> {
         (**self).consolidation()
     }
-    fn parameters(&self) -> Option<&[u8]> {
+    fn parameters(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 256>> {
         (**self).parameters()
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
@@ -286,7 +287,7 @@ pub struct CodecZenohQueryParts<'a> {
     /// The `consolidation` field.
     pub consolidation: Option<u8>,
     /// The `parameters` field.
-    pub parameters: Option<&'a [u8]>,
+    pub parameters: Option<::sce_forge_runtime::codec::Bytes<'a, 256>>,
     /// The `extensions` field.
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 8>>,
 }
@@ -298,7 +299,7 @@ impl<'a> CodecZenohQuerySource for CodecZenohQueryParts<'a> {
     fn consolidation(&self) -> Option<u8> {
         self.consolidation
     }
-    fn parameters(&self) -> Option<&[u8]> {
+    fn parameters(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 256>> {
         self.parameters
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
@@ -313,7 +314,7 @@ impl<'a> CodecZenohQuerySource for CodecZenohQuery<'a> {
     fn consolidation(&self) -> Option<u8> {
         self.consolidation
     }
-    fn parameters(&self) -> Option<&[u8]> {
+    fn parameters(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 256>> {
         self.parameters
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
@@ -328,8 +329,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQuerySource for Code
     fn consolidation(&self) -> Option<u8> {
         self.consolidation
     }
-    fn parameters(&self) -> Option<&[u8]> {
-        self.parameters.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    fn parameters(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 256>> {
+        self.parameters.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
@@ -369,7 +370,7 @@ impl<'a> CodecZenohQuery<'a> {
             w.write_vle_u64(_d_parameters_len)?;
         }
         if let Some(_v) = src.parameters() {
-            w.write_bytes(_v)?;
+            w.write_bytes(_v.into_inner())?;
         }
         if let Some(_v) = src.extensions() {
             for _e in _v {
@@ -460,7 +461,7 @@ pub struct CodecZenohQueryOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::
     pub header: u8,
     pub consolidation: Option<u8>,
     pub parameters_len: Option<u64>,
-    pub parameters: Option<S::Bytes<256>>,
+    pub parameters: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<256>, 256>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 8>, 8>>,
 }
 
@@ -497,18 +498,18 @@ impl<'a> CodecZenohQuery<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohQueryOwned<S>, CodecError> {
         Ok(CodecZenohQueryOwned {
             header: self.header,
             consolidation: self.consolidation,
             parameters_len: self.parameters_len,
-            parameters: self.parameters.map(<S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
+            parameters: self.parameters.map(::sce_forge_runtime::codec::Bounded::copied).transpose()?,
             extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
@@ -551,7 +552,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryOwned<S> {
         _out.header = self.header;
         _out.consolidation = self.consolidation;
         _out.parameters_len = self.parameters_len;
-        _out.parameters = self.parameters.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        _out.parameters = self.parameters.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes);
         match &self.extensions {
             Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
             None => _out.extensions = None,

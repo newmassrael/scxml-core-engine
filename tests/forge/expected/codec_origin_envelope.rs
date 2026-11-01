@@ -34,7 +34,7 @@ use super::codec_origin_leaf::CodecOriginLeaf;
 pub struct CodecOriginEnvelope<'a> {
     pub hdr: u8,
     pub note_len: u8,
-    pub note: &'a str,
+    pub note: ::sce_forge_runtime::codec::Text<'a, 16>,
     pub m: u8,
     pub required: CodecOriginLeaf<'a>,
     pub optional: Option<CodecOriginLeaf<'a>>,
@@ -111,6 +111,7 @@ impl<'a> CodecOriginEnvelope<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let note = ::sce_forge_runtime::codec::Bounded::new(note).ok_or(CodecError::LengthOutOfRange)?;
         let m = {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
@@ -165,35 +166,32 @@ impl<'a> CodecOriginEnvelope<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 583;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -205,7 +203,7 @@ pub trait CodecOriginEnvelopeSource {
     /// The `hdr` field.
     fn hdr(&self) -> u8;
     /// The `note` field.
-    fn note(&self) -> &str;
+    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 16>;
     /// The `required` field.
     fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource;
     /// The `optional` field.
@@ -218,7 +216,7 @@ impl<T: CodecOriginEnvelopeSource + ?Sized> CodecOriginEnvelopeSource for &T {
     fn hdr(&self) -> u8 {
         (**self).hdr()
     }
-    fn note(&self) -> &str {
+    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 16> {
         (**self).note()
     }
     fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource {
@@ -241,7 +239,7 @@ pub struct CodecOriginEnvelopeParts<'a> {
     /// The `hdr` field.
     pub hdr: u8,
     /// The `note` field.
-    pub note: &'a str,
+    pub note: ::sce_forge_runtime::codec::Text<'a, 16>,
     /// The `required` field.
     pub required: &'a super::codec_origin_leaf::CodecOriginLeafParts<'a>,
     /// The `optional` field.
@@ -254,7 +252,7 @@ impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelopeParts<'a> {
     fn hdr(&self) -> u8 {
         self.hdr
     }
-    fn note(&self) -> &str {
+    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 16> {
         self.note
     }
     fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource {
@@ -272,7 +270,7 @@ impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelope<'a> {
     fn hdr(&self) -> u8 {
         self.hdr
     }
-    fn note(&self) -> &str {
+    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 16> {
         self.note
     }
     fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource {
@@ -290,8 +288,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeSource for 
     fn hdr(&self) -> u8 {
         self.hdr
     }
-    fn note(&self) -> &str {
-        ::sce_forge_runtime::codec::SceStr::as_str(&self.note)
+    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 16> {
+        self.note.as_text()
     }
     fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource {
         &self.required
@@ -309,25 +307,24 @@ impl<'a> CodecOriginEnvelope<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecOriginEnvelopeSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecOriginEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecOriginEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecOriginEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecOriginEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _k_items: usize = src.items().len();
         let _p_hdr_has_opt_0: bool = src.optional().is_some();
         let _n_d_note_len_0: usize = src.note().len();
-        let _d_note_len: u8 = u8::try_from(_n_d_note_len_0).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _d_note_len: u8 = _n_d_note_len_0 as u8;
         let _d_m: u8 = _k_items as u8;
         let _c_hdr: u8 = (src.hdr() & !0x1) | u8::from(_p_hdr_has_opt_0);
         w.write_u8(_c_hdr)?;
         w.write_u8(_d_note_len)?;
-        w.write_bytes(src.note().as_bytes())?;
+        w.write_bytes(src.note().into_inner().as_bytes())?;
         w.write_u8(_d_m)?;
         CodecOriginLeaf::write_source(src.required(), w)?;
         if let Some(_v) = src.optional() {
@@ -342,17 +339,17 @@ impl<'a> CodecOriginEnvelope<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecOriginEnvelopeSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecOriginEnvelopeSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecOriginEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecOriginEnvelope<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -360,10 +357,12 @@ impl<'a, S: CodecOriginEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::Sour
 #[allow(dead_code)]
 impl<'a> CodecOriginEnvelope<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecOriginEnvelopeSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecOriginEnvelopeSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -417,7 +416,7 @@ use super::codec_origin_leaf::CodecOriginLeafOwned;
 pub struct CodecOriginEnvelopeOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub hdr: u8,
     pub note_len: u8,
-    pub note: S::Str<16>,
+    pub note: ::sce_forge_runtime::codec::Bounded<S::Str<16>, 16>,
     pub m: u8,
     pub required: CodecOriginLeafOwned<S>,
     pub optional: Option<CodecOriginLeafOwned<S>>,
@@ -445,17 +444,17 @@ impl<'a> CodecOriginEnvelope<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecOriginEnvelopeOwned<S>, CodecError> {
         Ok(CodecOriginEnvelopeOwned {
             hdr: self.hdr,
             note_len: self.note_len,
-            note: <S::Str<16> as ::sce_forge_runtime::codec::SceStr>::from_view(self.note)?,
+            note: ::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,
             m: self.m,
             required: self.required.try_into_owned_in::<S>()?,
             optional: self.optional.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
@@ -500,7 +499,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeOwned<S> {
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginEnvelope<'o>) -> Result<(), CodecError> {
         _out.hdr = self.hdr;
         _out.note_len = self.note_len;
-        _out.note = ::sce_forge_runtime::codec::SceStr::as_str(&self.note);
+        _out.note = self.note.as_text();
         _out.m = self.m;
         self.required.as_borrowed_into(&mut _out.required);
         match &self.optional {
@@ -533,23 +532,19 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeOwned<S> {
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecOriginEnvelope::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecOriginEnvelope::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -570,7 +565,7 @@ impl<'a> CodecOriginEnvelope<'a> {
         Ok(CodecOriginEnvelopeOwned {
             hdr: self.hdr,
             note_len: self.note_len,
-            note: <S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<16>(origin, self.note)?,
+            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<16>(origin, self.note.into_inner()))?,
             m: self.m,
             required: self.required.try_into_owned_in_origin::<S>(origin)?,
             optional: self.optional.map(|_v| _v.try_into_owned_in_origin::<S>(origin)).transpose()?,

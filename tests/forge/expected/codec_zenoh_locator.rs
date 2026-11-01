@@ -25,7 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohLocator<'a> {
     pub locator_len: u64,
-    pub locator: &'a str,
+    pub locator: ::sce_forge_runtime::codec::Text<'a, 128>,
 }
 
 #[allow(dead_code)]
@@ -87,6 +87,7 @@ impl<'a> CodecZenohLocator<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let locator = ::sce_forge_runtime::codec::Bounded::new(locator).ok_or(CodecError::LengthOutOfRange)?;
         _out.locator_len = locator_len;
         _out.locator = locator;
         Ok(())
@@ -133,11 +134,11 @@ impl<'a> CodecZenohLocator<'a> {
 /// computes those from what is ([`CodecZenohLocator::encode_source`]).
 pub trait CodecZenohLocatorSource {
     /// The `locator` field.
-    fn locator(&self) -> &str;
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128>;
 }
 
 impl<T: CodecZenohLocatorSource + ?Sized> CodecZenohLocatorSource for &T {
-    fn locator(&self) -> &str {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
         (**self).locator()
     }
 }
@@ -149,24 +150,24 @@ impl<T: CodecZenohLocatorSource + ?Sized> CodecZenohLocatorSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohLocatorParts<'a> {
     /// The `locator` field.
-    pub locator: &'a str,
+    pub locator: ::sce_forge_runtime::codec::Text<'a, 128>,
 }
 
 impl<'a> CodecZenohLocatorSource for CodecZenohLocatorParts<'a> {
-    fn locator(&self) -> &str {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
         self.locator
     }
 }
 
 impl<'a> CodecZenohLocatorSource for CodecZenohLocator<'a> {
-    fn locator(&self) -> &str {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
         self.locator
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohLocatorSource for CodecZenohLocatorOwned<S> {
-    fn locator(&self) -> &str {
-        ::sce_forge_runtime::codec::SceStr::as_str(&self.locator)
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
+        self.locator.as_text()
     }
 }
 
@@ -187,7 +188,7 @@ impl<'a> CodecZenohLocator<'a> {
         let _n_d_locator_len_0: usize = src.locator().len();
         let _d_locator_len: u64 = ::sce_forge_runtime::codec::widen_usize(_n_d_locator_len_0);
         w.write_vle_u64(_d_locator_len)?;
-        w.write_bytes(src.locator().as_bytes())?;
+        w.write_bytes(src.locator().into_inner().as_bytes())?;
         Ok(())
     }
 
@@ -269,7 +270,7 @@ impl<'a> CodecZenohLocator<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohLocatorOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub locator_len: u64,
-    pub locator: S::Str<128>,
+    pub locator: ::sce_forge_runtime::codec::Bounded<S::Str<128>, 128>,
 }
 
 #[allow(dead_code)]
@@ -280,16 +281,16 @@ impl<'a> CodecZenohLocator<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohLocatorOwned<S>, CodecError> {
         Ok(CodecZenohLocatorOwned {
             locator_len: self.locator_len,
-            locator: <S::Str<128> as ::sce_forge_runtime::codec::SceStr>::from_view(self.locator)?,
+            locator: ::sce_forge_runtime::codec::Bounded::copied_text(self.locator)?,
         })
     }
 
@@ -325,7 +326,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohLocatorOwned<S> {
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohLocator<'o>) {
         _out.locator_len = self.locator_len;
-        _out.locator = ::sce_forge_runtime::codec::SceStr::as_str(&self.locator);
+        _out.locator = self.locator.as_text();
         
     }
 

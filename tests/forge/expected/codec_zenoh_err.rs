@@ -37,7 +37,7 @@ pub struct CodecZenohErr<'a> {
     pub encoding: Option<CodecZenohEncoding<'a>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>>,
     pub payload_len: u64,
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 256>,
 }
 
 // RFC variant-default-uniformity: at least one field's
@@ -151,6 +151,7 @@ impl<'a> CodecZenohErr<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
         _out.header = header;
         _out.payload_len = payload_len;
         _out.payload = payload;
@@ -273,7 +274,7 @@ pub trait CodecZenohErrSource {
     /// The `extensions` field.
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
     /// The `payload` field.
-    fn payload(&self) -> &[u8];
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256>;
 }
 
 impl<T: CodecZenohErrSource + ?Sized> CodecZenohErrSource for &T {
@@ -286,7 +287,7 @@ impl<T: CodecZenohErrSource + ?Sized> CodecZenohErrSource for &T {
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         (**self).extensions()
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         (**self).payload()
     }
 }
@@ -304,7 +305,7 @@ pub struct CodecZenohErrParts<'a> {
     /// The `extensions` field.
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
     /// The `payload` field.
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 256>,
 }
 
 impl<'a> CodecZenohErrSource for CodecZenohErrParts<'a> {
@@ -317,7 +318,7 @@ impl<'a> CodecZenohErrSource for CodecZenohErrParts<'a> {
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.iter())
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         self.payload
     }
 }
@@ -332,7 +333,7 @@ impl<'a> CodecZenohErrSource for CodecZenohErr<'a> {
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.iter())
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
         self.payload
     }
 }
@@ -347,8 +348,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohErrSource for CodecZ
     fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
     }
-    fn payload(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
+        self.payload.as_bytes()
     }
 }
 
@@ -392,7 +393,7 @@ impl<'a> CodecZenohErr<'a> {
             }
         }
         w.write_vle_u64(_d_payload_len)?;
-        w.write_bytes(src.payload())?;
+        w.write_bytes(src.payload().into_inner())?;
         Ok(())
     }
 
@@ -479,7 +480,7 @@ pub struct CodecZenohErrOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sc
     pub encoding: Option<CodecZenohEncodingOwned<S>>,
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
     pub payload_len: u64,
-    pub payload: S::Bytes<256>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<256>, 256>,
 }
 
 #[allow(dead_code)]
@@ -515,19 +516,19 @@ impl<'a> CodecZenohErr<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohErrOwned<S>, CodecError> {
         Ok(CodecZenohErrOwned {
             header: self.header,
             encoding: self.encoding.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
             extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
             payload_len: self.payload_len,
-            payload: <S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.payload)?,
+            payload: ::sce_forge_runtime::codec::Bounded::copied(self.payload)?,
         })
     }
 
@@ -576,7 +577,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohErrOwned<S> {
             None => _out.extensions = None,
         }
         _out.payload_len = self.payload_len;
-        _out.payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload);
+        _out.payload = self.payload.as_bytes();
         Ok(())
     }
 

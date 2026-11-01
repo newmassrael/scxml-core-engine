@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecExtTimestamp<'a> {
     pub time: u64,
     pub zid_size: u8,
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16>,
 }
 
 #[allow(dead_code)]
@@ -93,6 +93,7 @@ impl<'a> CodecExtTimestamp<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let zid = ::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange)?;
         _out.time = time;
         _out.zid_size = zid_size;
         _out.zid = zid;
@@ -105,35 +106,32 @@ impl<'a> CodecExtTimestamp<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 27;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
@@ -145,14 +143,14 @@ pub trait CodecExtTimestampSource {
     /// The `time` field.
     fn time(&self) -> u64;
     /// The `zid` field.
-    fn zid(&self) -> &[u8];
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16>;
 }
 
 impl<T: CodecExtTimestampSource + ?Sized> CodecExtTimestampSource for &T {
     fn time(&self) -> u64 {
         (**self).time()
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         (**self).zid()
     }
 }
@@ -166,14 +164,14 @@ pub struct CodecExtTimestampParts<'a> {
     /// The `time` field.
     pub time: u64,
     /// The `zid` field.
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16>,
 }
 
 impl<'a> CodecExtTimestampSource for CodecExtTimestampParts<'a> {
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.zid
     }
 }
@@ -182,7 +180,7 @@ impl<'a> CodecExtTimestampSource for CodecExtTimestamp<'a> {
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.zid
     }
 }
@@ -191,8 +189,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtTimestampSource for Co
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid)
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
+        self.zid.as_bytes()
     }
 }
 
@@ -201,37 +199,37 @@ impl<'a> CodecExtTimestamp<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecExtTimestampSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecExtTimestampSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecExtTimestampSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecExtTimestampSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecExtTimestampSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _n_d_zid_size_0: usize = src.zid().len();
-        let _d_zid_size: u8 = u8::try_from(_n_d_zid_size_0).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _d_zid_size: u8 = _n_d_zid_size_0 as u8;
         w.write_vle_u64(src.time())?;
         w.write_u8(_d_zid_size)?;
-        w.write_bytes(src.zid())?;
+        w.write_bytes(src.zid().into_inner())?;
         Ok(())
     }
 
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecExtTimestampSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecExtTimestampSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecExtTimestampSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecExtTimestamp<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -239,10 +237,12 @@ impl<'a, S: CodecExtTimestampSource + ?Sized> ::sce_forge_runtime::codec::Source
 #[allow(dead_code)]
 impl<'a> CodecExtTimestamp<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecExtTimestampSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecExtTimestampSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -295,7 +295,7 @@ impl<'a> CodecExtTimestamp<'a> {
 pub struct CodecExtTimestampOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub time: u64,
     pub zid_size: u8,
-    pub zid: S::Bytes<16>,
+    pub zid: ::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16>,
 }
 
 #[allow(dead_code)]
@@ -306,17 +306,17 @@ impl<'a> CodecExtTimestamp<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecExtTimestampOwned<S>, CodecError> {
         Ok(CodecExtTimestampOwned {
             time: self.time,
             zid_size: self.zid_size,
-            zid: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.zid)?,
+            zid: ::sce_forge_runtime::codec::Bounded::copied(self.zid)?,
         })
     }
 
@@ -353,7 +353,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtTimestampOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecExtTimestamp<'o>) {
         _out.time = self.time;
         _out.zid_size = self.zid_size;
-        _out.zid = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid);
+        _out.zid = self.zid.as_bytes();
         
     }
 
@@ -379,22 +379,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtTimestampOwned<S> {
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecExtTimestamp::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecExtTimestamp::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }

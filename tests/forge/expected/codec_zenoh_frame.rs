@@ -25,7 +25,7 @@ use sce_forge_runtime::codec::VecSink;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohFrame<'a> {
     pub sn: u64,
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 65536>,
 }
 
 #[allow(dead_code)]
@@ -85,6 +85,7 @@ impl<'a> CodecZenohFrame<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
         _out.sn = sn;
         _out.payload = payload;
         Ok(())
@@ -133,14 +134,14 @@ pub trait CodecZenohFrameSource {
     /// The `sn` field.
     fn sn(&self) -> u64;
     /// The `payload` field.
-    fn payload(&self) -> &[u8];
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 65536>;
 }
 
 impl<T: CodecZenohFrameSource + ?Sized> CodecZenohFrameSource for &T {
     fn sn(&self) -> u64 {
         (**self).sn()
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 65536> {
         (**self).payload()
     }
 }
@@ -154,14 +155,14 @@ pub struct CodecZenohFrameParts<'a> {
     /// The `sn` field.
     pub sn: u64,
     /// The `payload` field.
-    pub payload: &'a [u8],
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 65536>,
 }
 
 impl<'a> CodecZenohFrameSource for CodecZenohFrameParts<'a> {
     fn sn(&self) -> u64 {
         self.sn
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 65536> {
         self.payload
     }
 }
@@ -170,7 +171,7 @@ impl<'a> CodecZenohFrameSource for CodecZenohFrame<'a> {
     fn sn(&self) -> u64 {
         self.sn
     }
-    fn payload(&self) -> &[u8] {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 65536> {
         self.payload
     }
 }
@@ -179,8 +180,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohFrameSource for Code
     fn sn(&self) -> u64 {
         self.sn
     }
-    fn payload(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 65536> {
+        self.payload.as_bytes()
     }
 }
 
@@ -199,7 +200,7 @@ impl<'a> CodecZenohFrame<'a> {
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohFrameSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         w.write_vle_u64(src.sn())?;
-        w.write_bytes(src.payload())?;
+        w.write_bytes(src.payload().into_inner())?;
         Ok(())
     }
 
@@ -281,7 +282,7 @@ impl<'a> CodecZenohFrame<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohFrameOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub sn: u64,
-    pub payload: S::Bytes<65536>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<65536>, 65536>,
 }
 
 #[allow(dead_code)]
@@ -292,16 +293,16 @@ impl<'a> CodecZenohFrame<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohFrameOwned<S>, CodecError> {
         Ok(CodecZenohFrameOwned {
             sn: self.sn,
-            payload: <S::Bytes<65536> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.payload)?,
+            payload: ::sce_forge_runtime::codec::Bounded::copied(self.payload)?,
         })
     }
 
@@ -337,7 +338,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohFrameOwned<S> {
     /// and is not to be read.
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohFrame<'o>) {
         _out.sn = self.sn;
-        _out.payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload);
+        _out.payload = self.payload.as_bytes();
         
     }
 

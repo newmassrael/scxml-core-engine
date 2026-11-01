@@ -26,7 +26,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohTimestamp<'a> {
     pub time: u64,
     pub zid_len: u64,
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16>,
 }
 
 #[allow(dead_code)]
@@ -88,6 +88,7 @@ impl<'a> CodecZenohTimestamp<'a> {
             cursor.advance(_n)?;
             _v
         };
+        let zid = ::sce_forge_runtime::codec::Bounded::new(zid).ok_or(CodecError::LengthOutOfRange)?;
         _out.time = time;
         _out.zid_len = zid_len;
         _out.zid = zid;
@@ -137,14 +138,14 @@ pub trait CodecZenohTimestampSource {
     /// The `time` field.
     fn time(&self) -> u64;
     /// The `zid` field.
-    fn zid(&self) -> &[u8];
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16>;
 }
 
 impl<T: CodecZenohTimestampSource + ?Sized> CodecZenohTimestampSource for &T {
     fn time(&self) -> u64 {
         (**self).time()
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         (**self).zid()
     }
 }
@@ -158,14 +159,14 @@ pub struct CodecZenohTimestampParts<'a> {
     /// The `time` field.
     pub time: u64,
     /// The `zid` field.
-    pub zid: &'a [u8],
+    pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16>,
 }
 
 impl<'a> CodecZenohTimestampSource for CodecZenohTimestampParts<'a> {
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.zid
     }
 }
@@ -174,7 +175,7 @@ impl<'a> CodecZenohTimestampSource for CodecZenohTimestamp<'a> {
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.zid
     }
 }
@@ -183,8 +184,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohTimestampSource for 
     fn time(&self) -> u64 {
         self.time
     }
-    fn zid(&self) -> &[u8] {
-        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid)
+    fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
+        self.zid.as_bytes()
     }
 }
 
@@ -206,7 +207,7 @@ impl<'a> CodecZenohTimestamp<'a> {
         let _d_zid_len: u64 = ::sce_forge_runtime::codec::widen_usize(_n_d_zid_len_0);
         w.write_vle_u64(src.time())?;
         w.write_vle_u64(_d_zid_len)?;
-        w.write_bytes(src.zid())?;
+        w.write_bytes(src.zid().into_inner())?;
         Ok(())
     }
 
@@ -289,7 +290,7 @@ impl<'a> CodecZenohTimestamp<'a> {
 pub struct CodecZenohTimestampOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub time: u64,
     pub zid_len: u64,
-    pub zid: S::Bytes<16>,
+    pub zid: ::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16>,
 }
 
 #[allow(dead_code)]
@@ -300,17 +301,17 @@ impl<'a> CodecZenohTimestamp<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohTimestampOwned<S>, CodecError> {
         Ok(CodecZenohTimestampOwned {
             time: self.time,
             zid_len: self.zid_len,
-            zid: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.zid)?,
+            zid: ::sce_forge_runtime::codec::Bounded::copied(self.zid)?,
         })
     }
 
@@ -347,7 +348,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohTimestampOwned<S> {
     pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohTimestamp<'o>) {
         _out.time = self.time;
         _out.zid_len = self.zid_len;
-        _out.zid = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid);
+        _out.zid = self.zid.as_bytes();
         
     }
 

@@ -34,7 +34,7 @@ use super::codec_chain_has_marker_slice::CodecChainHasMarkerSlice;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasMarker<'a> {
     pub header: u8,
-    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12<HeaplessVec<CodecZenohExtEntry<'a>, 4>, HeaplessVec<CodecChainHasMarkerSlice<'a>, 4>, &'a [u8]>,
+    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12<HeaplessVec<CodecZenohExtEntry<'a>, 4>, HeaplessVec<CodecChainHasMarkerSlice<'a>, 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>,
     pub payload_len: Option<u64>,
     pub slice_count: Option<u32>,
 }
@@ -135,6 +135,7 @@ impl<'a> CodecChainHasMarker<'a> {
         } else {
             None
         };
+        let payload = payload.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
         let slice_count = if _has_extensions_18 {
             let _v = cursor.read_vle_u32()?;
             Some(_v)
@@ -279,14 +280,14 @@ pub trait CodecChainHasMarkerSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The fields `extensions.has(0x12)` decides, held together (docs/adr/0065 §6 R4).
-    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, &[u8]>;
+    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>>;
 }
 
 impl<T: CodecChainHasMarkerSource + ?Sized> CodecChainHasMarkerSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, &[u8]> {
+    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>> {
         (**self).extensions_has_0x12()
     }
 }
@@ -300,11 +301,11 @@ pub struct CodecChainHasMarkerParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The fields `extensions.has(0x12)` decides, held together (docs/adr/0065 §6 R4).
-    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>], 4>, &'a [u8]>,
+    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>,
 }
 
 impl<'a> CodecChainHasMarkerSource for CodecChainHasMarkerParts<'a> {
-    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, &[u8]> {
+    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>> {
         match &self.extensions_has_0x12 {
             CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: extensions.iter(), slices: slices.iter() },
             CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.as_ref().map(|_e| _e.iter()), payload: *payload },
@@ -316,7 +317,7 @@ impl<'a> CodecChainHasMarkerSource for CodecChainHasMarkerParts<'a> {
 }
 
 impl<'a> CodecChainHasMarkerSource for CodecChainHasMarker<'a> {
-    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, &[u8]> {
+    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>> {
         match &self.extensions_has_0x12 {
             CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: extensions.iter(), slices: ::sce_forge_runtime::codec::BoundedIter::from(slices) },
             CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.as_ref().map(|_e| _e.iter()), payload: *payload },
@@ -328,10 +329,10 @@ impl<'a> CodecChainHasMarkerSource for CodecChainHasMarker<'a> {
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSource for CodecChainHasMarkerOwned<S> {
-    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, &[u8]> {
+    fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>> {
         match &self.extensions_has_0x12 {
             CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: extensions.list_iter(), slices: slices.list_iter() },
-            CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.as_ref().map(|_e| _e.list_iter()), payload: ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload) },
+            CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.as_ref().map(|_e| _e.list_iter()), payload: payload.as_bytes() },
         }
     }
     fn header(&self) -> u8 {
@@ -386,7 +387,7 @@ impl<'a> CodecChainHasMarker<'a> {
             w.write_vle_u64(_d_payload_len)?;
         }
         if let Some(_v) = _m_payload {
-            w.write_bytes(_v)?;
+            w.write_bytes(_v.into_inner())?;
         }
         if matches!(src.extensions_has_0x12(), CodecChainHasMarkerExtensionsHas0x12::Has0x12 { .. }) {
             w.write_vle_u32(_d_slice_count)?;
@@ -475,7 +476,7 @@ use super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceOwned;
 /// The group `CodecChainHasMarkerExtensionsHas0x12` as `CodecChainHasMarkerOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecChainHasMarkerExtensionsHas0x12Owned<S> = CodecChainHasMarkerExtensionsHas0x12<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohExtEntryOwned<S>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecChainHasMarkerSliceOwned<S>, 4>, 4>, <S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<256>>;
+pub type CodecChainHasMarkerExtensionsHas0x12Owned<S> = CodecChainHasMarkerExtensionsHas0x12<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohExtEntryOwned<S>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecChainHasMarkerSliceOwned<S>, 4>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<256>, 256>>;
 
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
@@ -514,16 +515,16 @@ impl<'a> CodecChainHasMarker<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity. A value a decode produced is within
-    /// every declared bound already, since the decode refused a longer field
-    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
-    /// does not fail. On the inline profile a value built by hand with a field
-    /// longer than its declared capacity raises `CodecError::TooManyElements`;
-    /// on the growable profile the copy cannot fail.
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements` for a value it cannot hold.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasMarkerOwned<S>, CodecError> {
         Ok(CodecChainHasMarkerOwned {
             header: self.header,
-            extensions_has_0x12: match self.extensions_has_0x12 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: { let (_r, _p) = extensions.into_parts(); ::sce_forge_runtime::codec::Placed::from_list(::sce_forge_runtime::storage::try_collect_list(_r, |_e| _e.try_into_owned_in::<S>())?, _p).expect("the projection keeps each entry's identifier") }, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: <S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(payload)? }, },
+            extensions_has_0x12: match self.extensions_has_0x12 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: { let (_r, _p) = extensions.into_parts(); ::sce_forge_runtime::codec::Placed::from_list(::sce_forge_runtime::storage::try_collect_list(_r, |_e| _e.try_into_owned_in::<S>())?, _p).expect("the projection keeps each entry's identifier") }, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: ::sce_forge_runtime::codec::Bounded::copied(payload)? }, },
             payload_len: self.payload_len,
             slice_count: self.slice_count,
         })
@@ -574,8 +575,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
             }
             CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => {
                 let _o_extensions: Option<::sce_forge_runtime::codec::Except<HeaplessVec<CodecZenohExtEntry<'o>, 4>, CodecChainHasMarkerExtensionsHas0x12Key, 4, 1>> = match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::new({ let mut _v = HeaplessVec::new(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, _l.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier")), None => None };
-                let mut _o_payload: &'o [u8] = Default::default();
-                _o_payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload);
+                let mut _o_payload: ::sce_forge_runtime::codec::Bytes<'o, 256> = Default::default();
+                _o_payload = payload.as_bytes();
                 _out.extensions_has_0x12 = CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: _o_extensions, payload: _o_payload };
             }
         }
