@@ -98,6 +98,26 @@ fn a_guard_and_a_data_initialiser_are_lowered_to_lua_and_run_by_the_engine() {
     );
 }
 
+/// W3C SCXML B.2.8.1: which rung a payload got is known only where `_event` is bound, so the machine
+/// tells the engine there. Without the call `Engine.undecodablePayloads` stays 0 for every
+/// ecmascript machine and a payload a host sent as structure is lost to the document and to the host
+/// alike (measured 2026-11-01 by the integration stem `undecodable_payload_is_reported`).
+#[test]
+fn the_engine_is_told_which_rung_a_payload_got_when_the_event_is_bound() {
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, GUARDED), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("let reading = try ensureLua().bindCurrentEvent("),
+        "the reading the script engine reports is kept: {machine}"
+    );
+    assert!(
+        machine.contains(
+            "engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))"
+        ),
+        "and handed to the engine, which counts the undecodable one: {machine}"
+    );
+}
+
 /// The default data model is `ecmascript`, so a document that omits the attribute is lowered the same.
 #[test]
 fn a_document_that_omits_its_data_model_is_an_ecmascript_one() {

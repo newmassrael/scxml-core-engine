@@ -482,7 +482,7 @@ public final class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy: In
         let metadata = pendingEventMetadata
         let name = metadata.name.isEmpty ? getEventName(event) : metadata.name
         do {
-            try ensureLua().bindCurrentEvent(
+            let reading = try ensureLua().bindCurrentEvent(
                 LuaEvent(
                     name: name,
                     type: metadata.eventType.description,
@@ -495,8 +495,25 @@ public final class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy: In
                     invokeID: metadata.invokeID,
                     data: metadata.data
                 ))
+            // W3C SCXML B.2.8.1: which rung the payload got is known only here, where the ladder was
+            // climbed, so the engine is told now. One a host sent as structure and the datamodel
+            // refused is the reading the engine counts (`Engine.undecodablePayloads`); without
+            // this call the payload is lost to the document and to the host alike.
+            engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
             raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+        }
+    }
+
+    /// The engine's name for a rung the script engine reports: the two modules each declare the
+    /// five readings, since the script engine does not depend on the runtime.
+    private static func payloadReading(of reading: SceLua.PayloadReading) -> SceRuntime.PayloadReading {
+        switch reading {
+        case .absent: return .absent
+        case .dom: return .dom
+        case .structured: return .structured
+        case .text: return .text
+        case .undecodable: return .undecodable
         }
     }
 
