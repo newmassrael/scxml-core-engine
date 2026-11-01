@@ -1435,6 +1435,12 @@ private func recordBytes() -> Machine {
     replay("static_invoke", invoke())
 }
 
+// Leaving the state that holds an `<invoke>` cancels the child, which then ends nothing and counts
+// nothing.
+@Test func leavingTheStateOfAnInvokeCancelsTheChild() {
+    replay("static_invoke_abort", invoke())
+}
+
 @Test func aMachineCallsTheKindsThatAreFunctionsOfTheirInputs() {
     replay("static_forge_calls", forgeCalls())
 }

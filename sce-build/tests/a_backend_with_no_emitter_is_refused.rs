@@ -159,11 +159,15 @@ fn a_statechart_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
         .unwrap_or_else(|e| panic!("{language:?} refused a machine it lowers: {e:?}"));
         assert!(!output.files.is_empty(), "{language:?} wrote nothing");
 
-        // What it does not is refused by the construct, naming the backend.
+        // What it does not is refused by the construct, naming the backend. The construct is one
+        // no lowering will ever write, so the probe does not outlive the backend's growth: a
+        // `<donedata>` of a `null` document needs a script engine to read its value, and a
+        // `null` document has none.
         std::fs::write(
             &path,
-            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a" name="machine">
-  <state id="a"/>
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a" name="machine" datamodel="null">
+  <state id="a"><transition event="go" target="b"/></state>
+  <final id="b"><donedata><content>done</content></donedata></final>
 </scxml>"#,
         )
         .unwrap();
@@ -176,7 +180,7 @@ fn a_statechart_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
         .unwrap_or_else(|| panic!("{language:?} generated a machine it does not lower"));
         let text = format!("{error:?}");
         assert!(
-            text.contains(&format!("{language:?}")) && text.contains("datamodel"),
+            text.contains(&format!("{language:?}")) && text.contains("<donedata>"),
             "{language:?}: the refusal names neither the backend nor the construct: {text}"
         );
     }
@@ -214,18 +218,18 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
             .unwrap_or_else(|e| panic!("{language:?} refused an algorithm it lowers: {e:?}"));
         assert!(!output.files.is_empty(), "{language:?} wrote nothing");
 
-        // A construct it does not lower is refused by the construct, naming the backend.
-        let unlowered = lowered.replace(
-            "<sce:signature>",
-            "<sce:const name=\"LIMIT\" type=\"uint8\" init=\"9\"/>\n  <sce:signature>",
-        );
+        // A construct it does not lower is refused by the construct, naming the backend. A local
+        // named for a word the backend reserves is one no lowering will ever write, so the probe
+        // does not outlive the backend's growth the way a missing construct does.
+        let unlowered = lowered.replace("out", "protocol");
         assert_ne!(unlowered, lowered, "the replacement did not apply");
         let error = compile_forge_from_string(&unlowered, label, language)
             .err()
             .unwrap_or_else(|| panic!("{language:?} generated an algorithm it does not lower"));
         let text = format!("{error:?}");
+        // The validation that refuses a reserved word names the backend by its wire name.
         assert!(
-            text.contains(&format!("{language:?}")) && text.contains("<sce:const"),
+            text.contains(language_wire_name(language)) && text.contains("sce:var"),
             "{language:?}: the refusal names neither the backend nor the construct: {text}"
         );
     }

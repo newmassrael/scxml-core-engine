@@ -105,6 +105,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("read_document", 1),
             ("load", 1),
             ("render_harness", 2),
+            // Asks the generator's own template tree for a backend's conformance fragment.
+            ("has_conformance_fragment", 1),
         ],
     ),
     (
@@ -208,8 +210,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("read_generated", 1),
             ("finish_generated_output", 1),
             ("cmd_orchestrate", 1),
-            ("clean", 8),
-            ("clean_stale", 5),
+            ("clean", 10),
+            ("clean_stale", 9),
             ("cmd_verify", 1),
             ("walk", 2),
         ],
