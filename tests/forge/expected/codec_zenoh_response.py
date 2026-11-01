@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_reply import CodecZenohReply
 from .codec_zenoh_err import CodecZenohErr
@@ -52,7 +52,9 @@ class CodecZenohResponse:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix decode (variable-length fields supported via
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -70,7 +72,10 @@ class CodecZenohResponse:
             else:
                 f_suffix_len = None
             if (f_header & 0x20) != 0:
-                _n = f_suffix_len
+                _len = f_suffix_len
+                if _len > 256:
+                    raise LengthOutOfRange()
+                _n = _len
                 raw = cursor.peek_slice(_n)
                 try:
                     _v = bytes(raw).decode('utf-8')

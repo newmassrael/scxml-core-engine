@@ -110,6 +110,9 @@ data class CodecRepeatPresentIfBasic(
             }
             val elems: MutableList<CodecRepeatElem>? = if ((carrier.toInt() and 0x01) != 0) {
                 val _n = num_elems!!
+                if (_n > 32u) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecRepeatElem>().apply {
                     repeat(_n.toInt()) {
                         add(CodecRepeatElem.decode(cursor) ?: return null)

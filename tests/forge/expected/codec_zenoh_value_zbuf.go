@@ -42,7 +42,11 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	if err != nil { return nil, err }
 	var Value optional.Of[[]byte]
 	if (afterShm & 0x01) == 0 {
-		_n := int(ValueLen)
+		_len := ValueLen
+		if _len > 32 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -67,6 +71,9 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	var Slices optional.Of[[]codec_zenoh_value_slice.CodecZenohValueSlice]
 	if (afterShm & 0x01) != 0 {
 		_n := SliceCount.Proven()
+		if _n > 4 {
+			return nil, codec.ErrTooManyElements
+		}
 		_list := make([]codec_zenoh_value_slice.CodecZenohValueSlice, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_value_slice.DecodeCodecZenohValueSlice(cursor)

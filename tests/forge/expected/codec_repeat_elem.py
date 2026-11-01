@@ -22,12 +22,14 @@ class CodecRepeatElem:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         try:
             raw = cursor.peek_slice(2)
-        except NeedMoreBytes:
+            f_seq = (raw[0] << 8) | raw[1]
+        except CodecError:
             return None
-        f_seq = (raw[0] << 8) | raw[1]
         value = cls(
             seq=f_seq,
         )

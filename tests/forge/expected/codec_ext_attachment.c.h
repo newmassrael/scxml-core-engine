@@ -46,8 +46,11 @@ static inline sce_forge_codec_status_t codec_ext_attachment_decode(sce_forge_cur
     size_t _consumed = CODEC_EXT_ATTACHMENT_MIN_BYTES;
     out->length = raw[0];
     {
+        if (out->length > 64) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->length;
-        if (_n > 64 || 1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->body, raw + 1, _n);
         out->body_len = _n;
         if (1 + _n > _consumed) _consumed = 1 + _n;

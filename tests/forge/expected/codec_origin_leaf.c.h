@@ -46,8 +46,11 @@ static inline sce_forge_codec_status_t codec_origin_leaf_decode(sce_forge_cursor
     size_t _consumed = CODEC_ORIGIN_LEAF_MIN_BYTES;
     out->len = raw[0];
     {
+        if (out->len > 16) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->len;
-        if (_n > 16 || 1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->data, raw + 1, _n);
         out->data_len = _n;
         if (1 + _n > _consumed) _consumed = 1 + _n;

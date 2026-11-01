@@ -53,6 +53,9 @@ data class CodecOriginLeaf(
             if (frameLen < 1) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
             val len = raw[0].toUByte()
+            if (len > 16u) {
+                cursor.refuse(CodecError.LengthOutOfRange); return null
+            }
             if (frameLen < 1 + len.toInt()) return null
             val data = raw.copyOfRange(1, 1 + len.toInt())
             if (!cursor.advance(frameLen)) return null

@@ -97,7 +97,11 @@ data class CodecExtEncodingInfo(
                 _v
             }
             val schema = if ((combined_id.toLong() and 0x00000001L) != 0L) {
-                val _n = schema_size.toInt()
+                val _len = schema_size
+                if (_len > 64u) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

@@ -91,7 +91,11 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 	}
 	var Payload optional.Of[[]byte]
 	if !_has_Extensions_18 {
-		_n := int(PayloadLen.Proven())
+		_len := PayloadLen.Proven()
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -110,6 +114,9 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 	var Slices optional.Of[[]codec_chain_has_marker_slice.CodecChainHasMarkerSlice]
 	if _has_Extensions_18 {
 		_n := SliceCount.Proven()
+		if _n > 4 {
+			return nil, codec.ErrTooManyElements
+		}
 		_list := make([]codec_chain_has_marker_slice.CodecChainHasMarkerSlice, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_has_marker_slice.DecodeCodecChainHasMarkerSlice(cursor)

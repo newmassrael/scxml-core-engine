@@ -97,6 +97,9 @@ impl CodecRepeatUnconditionalCount {
             _v
         };
         {
+            if links_len > 64 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.links;
             _vec.clear();
             for _ in 0..links_len {
@@ -106,6 +109,9 @@ impl CodecRepeatUnconditionalCount {
         }
         if (options & 0x01u8) != 0 {
             let _n = links_len;
+            if _n > 64 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = _out.weights.insert(HeaplessVec::<CodecRepeatElem, 64>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)

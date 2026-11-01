@@ -85,7 +85,11 @@ struct CodecChainHasMarker {
         }
         std::optional<std::vector<uint8_t>> payload;
         if (!_has_extensions_18) {
-            std::size_t _n = static_cast<std::size_t>(payload_len.value());
+            const auto _len = payload_len.value();
+            if (_len > 256) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             payload.emplace(raw, raw + _n);
@@ -101,6 +105,9 @@ struct CodecChainHasMarker {
         std::optional<std::vector<::SCE::Generated::CodecChainHasMarkerSlice::CodecChainHasMarkerSlice>> slices;
         if (_has_extensions_18) {
             auto _n = slice_count.value();
+            if (_n > 4) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             std::vector<::SCE::Generated::CodecChainHasMarkerSlice::CodecChainHasMarkerSlice> _list;
             _list.reserve(_n);
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {

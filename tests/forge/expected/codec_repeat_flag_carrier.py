@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_chain_flag_entry import CodecChainFlagEntry
 
 from dataclasses import dataclass, field
@@ -25,7 +25,9 @@ class CodecRepeatFlagCarrier:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -46,6 +48,8 @@ class CodecRepeatFlagCarrier:
             raw = cursor.peek_slice(1)
             f_count = raw[0]
             cursor.advance(1)
+            if f_count > 4:
+                raise TooManyElements()
             f_entries = []
             for _ in range(f_count):
                 _elem = CodecChainFlagEntry.decode(cursor, ((f_head >> 0) & 0x1))

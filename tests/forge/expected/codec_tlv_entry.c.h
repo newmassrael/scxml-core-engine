@@ -48,8 +48,11 @@ static inline sce_forge_codec_status_t codec_tlv_entry_decode(sce_forge_cursor_t
     out->entry_type = raw[0];
     out->entry_len = raw[1];
     {
+        if (out->entry_len > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->entry_len;
-        if (_n > 32 || 2 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (2 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->entry_body, raw + 2, _n);
         out->entry_body_len = _n;
         if (2 + _n > _consumed) _consumed = 2 + _n;

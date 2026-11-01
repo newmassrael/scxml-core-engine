@@ -62,6 +62,9 @@ func DecodeCodecRepeatPresentIfBasic(cursor *codec.SceCursor) (*CodecRepeatPrese
 	var Elems optional.Of[[]codec_repeat_elem.CodecRepeatElem]
 	if (Carrier & 0x01) != 0 {
 		_n := NumElems.Proven()
+		if _n > 32 {
+			return nil, codec.ErrTooManyElements
+		}
 		_list := make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)

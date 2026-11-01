@@ -79,8 +79,10 @@ static inline sce_forge_codec_status_t codec_ext_encoding_info_decode(sce_forge_
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if ((out->combined_id & 0x00000001) != 0) {
+        if (out->schema_size > 64) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->schema_size;
-        if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->schema = sce_optional_bytes_64_none();

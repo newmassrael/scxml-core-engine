@@ -92,6 +92,9 @@ impl<'a> CodecNestedBody<'a> {
             _v
         };
         {
+            if n > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.locs;
             _vec.clear();
             for _ in 0..n {
@@ -320,13 +323,16 @@ impl<'a> CodecNestedBodyView<'a> {
             _v
         };
         {
+            if n > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0..n {
-                CodecZenohLocatorView::decode(cursor)?;
                 if _count == 4 {
                     return Err(CodecError::TooManyElements);
                 }
+                CodecZenohLocatorView::decode(cursor)?;
                 _count += 1;
             }
             _out.locs = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?;
@@ -431,11 +437,12 @@ impl<'a> CodecNestedBody<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity: on the inline profile a field longer
-    /// than its declared capacity raises `CodecError::TooManyElements` (the
-    /// same bound and error decode enforces), on the growable profile the
-    /// copy cannot fail. The borrowed zero-copy path is unaffected either
-    /// way.
+    /// Fallible for profile uniformity. A value a decode produced is within
+    /// every declared bound already, since the decode refused a longer field
+    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
+    /// does not fail. On the inline profile a value built by hand with a field
+    /// longer than its declared capacity raises `CodecError::TooManyElements`;
+    /// on the growable profile the copy cannot fail.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecNestedBodyOwned<S>, CodecError> {
         Ok(CodecNestedBodyOwned {
             n: self.n,

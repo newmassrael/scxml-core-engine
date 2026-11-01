@@ -56,6 +56,9 @@ data class CodecLengthRef(
             val raw = cursor.peekSlice(frameLen) ?: return null
             val msgId = raw[0].toUByte()
             val len = raw[1].toUByte()
+            if (len > 32u) {
+                cursor.refuse(CodecError.LengthOutOfRange); return null
+            }
             if (frameLen < 2 + len.toInt()) return null
             val payload = raw.copyOfRange(2, 2 + len.toInt())
             if (!cursor.advance(frameLen)) return null

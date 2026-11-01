@@ -71,7 +71,11 @@ data class CodecZenohExtZbuf(
             // `present_if_decode_stmt`.
             val value_len = cursor.readVleU64() ?: return null
             val value = run {
-                val _n = value_len.toInt()
+                val _len = value_len
+                if (_len > 32uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

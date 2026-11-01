@@ -48,7 +48,11 @@ struct CodecChainHasMarkerSlice {
         auto size = static_cast<std::uint64_t>(*size_opt);
         std::vector<uint8_t> data;
         {
-            std::size_t _n = static_cast<std::size_t>(size);
+            const auto _len = size;
+            if (_len > 256) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             data.assign(raw, raw + _n);

@@ -62,6 +62,9 @@ impl<'a> CodecLengthRefUint32Le<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let payload_len = raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24);
+        if payload_len > 1024 {
+            return Err(CodecError::LengthOutOfRange);
+        }
         let payload = raw.get(4..4 + payload_len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             payload_len,
@@ -285,11 +288,12 @@ impl<'a> CodecLengthRefUint32Le<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity: on the inline profile a field longer
-    /// than its declared capacity raises `CodecError::TooManyElements` (the
-    /// same bound and error decode enforces), on the growable profile the
-    /// copy cannot fail. The borrowed zero-copy path is unaffected either
-    /// way.
+    /// Fallible for profile uniformity. A value a decode produced is within
+    /// every declared bound already, since the decode refused a longer field
+    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
+    /// does not fail. On the inline profile a value built by hand with a field
+    /// longer than its declared capacity raises `CodecError::TooManyElements`;
+    /// on the growable profile the copy cannot fail.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecLengthRefUint32LeOwned<S>, CodecError> {
         Ok(CodecLengthRefUint32LeOwned {
             payload_len: self.payload_len,

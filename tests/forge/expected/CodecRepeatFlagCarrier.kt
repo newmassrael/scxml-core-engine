@@ -102,6 +102,9 @@ data class CodecRepeatFlagCarrier(
                 if (!cursor.advance(1)) return null
                 _v
             }
+            if (count > 4u) {
+                cursor.refuse(CodecError.TooManyElements); return null
+            }
             val entries: MutableList<CodecChainFlagEntry> = mutableListOf<CodecChainFlagEntry>().apply {
                 repeat(count.toInt()) {
                     add(CodecChainFlagEntry.decode(cursor, (((head.toInt() shr 0) and 0x1).toUByte())) ?: return null)

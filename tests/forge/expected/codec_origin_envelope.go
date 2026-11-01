@@ -65,7 +65,11 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 	}
 	var Note string
 	{
-		_n := int(NoteLen)
+		_len := NoteLen
+		if _len > 16 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -104,6 +108,9 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 			return nil, err
 		}
 		Optional = optional.Some(*_emb)
+	}
+	if M > 3 {
+		return nil, codec.ErrTooManyElements
 	}
 	Items := make([]codec_origin_leaf.CodecOriginLeaf, 0, M)
 	for _i := 0; _i < int(M); _i++ {

@@ -51,6 +51,9 @@ func DecodeCodecZenohDeclExtKeyexprInner(cursor *codec.SceCursor) (*CodecZenohDe
 	var Suffix optional.Of[[]byte]
 	if (InnerHeader & 0x01) != 0 {
 		_n := cursor.Remaining()
+		if _n > 128 {
+			return nil, codec.ErrLengthOutOfRange
+		}
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

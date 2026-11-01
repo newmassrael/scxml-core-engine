@@ -108,6 +108,9 @@ data class CodecZenohDeclExtKeyexprInner(
             val id = cursor.readVleU64() ?: return null
             val suffix = if ((inner_header.toInt() and 0x01) != 0) {
                 val _n = cursor.remaining()
+                if (_n > 128) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

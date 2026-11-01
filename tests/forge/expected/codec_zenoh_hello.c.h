@@ -66,8 +66,7 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     {
-        size_t _n = (size_t)((int64_t)(size_t)((out->cbyte >> 4) & 0xF) + 1);
-        if (_n > 16) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        size_t _n = (size_t)((out->cbyte >> 4) & 0xF) + 1;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->zid, raw, _n);
@@ -85,8 +84,10 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
         out->num_locators = sce_optional_uint64_none();
     }
     if ((l & 0x01) != 0) {
+        if (out->num_locators.value > 64) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
         size_t _n = (size_t)out->num_locators.value;
-        if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memset(&out->locators, 0, sizeof out->locators);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_zenoh_locator_decode(cursor, &out->locators.value.data[_i]);
@@ -119,7 +120,7 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_encode(const codec_zeno
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->locators.present && !sce_forge_length_within_bound(self->locators.value.len, 64)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

@@ -99,6 +99,9 @@ impl CodecRepeatFlagGated {
         };
         if (head & 0x02u8) != 0 {
             let _n = count.expect("co-gating: count present-if matches repeat");
+            if _n > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = _out.entries.insert(HeaplessVec::<CodecChainFlagEntry, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecChainFlagEntry::decode(cursor, head & 0x1)?)

@@ -40,7 +40,11 @@ func DecodeCodecChainHasSlice(cursor *codec.SceCursor) (*CodecChainHasSlice, err
 	if err != nil { return nil, err }
 	var Bytes []byte
 	{
-		_n := int(Len)
+		_len := Len
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

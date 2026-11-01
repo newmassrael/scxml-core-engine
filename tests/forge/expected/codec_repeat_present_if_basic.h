@@ -58,6 +58,9 @@ struct CodecRepeatPresentIfBasic {
         std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> elems;
         if ((carrier & 0x01) != 0) {
             auto _n = num_elems.value();
+            if (_n > 32) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> _list;
             _list.reserve(_n);
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {

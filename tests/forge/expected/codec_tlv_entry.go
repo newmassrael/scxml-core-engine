@@ -33,6 +33,9 @@ func DecodeCodecTlvEntry(cursor *codec.SceCursor) (*CodecTlvEntry, error) {
 	}
 	EntryType := raw[0]
 	EntryLen := raw[1]
+	if EntryLen > 32 {
+		return nil, codec.ErrLengthOutOfRange
+	}
 	if frameLen < 2+int(EntryLen) {
 		return nil, codec.ErrNeedMoreBytes
 	}

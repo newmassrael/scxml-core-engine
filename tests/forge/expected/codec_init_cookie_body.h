@@ -60,7 +60,11 @@ struct CodecInitCookieBody {
         }
         std::optional<std::vector<uint8_t>> cookie;
         if ((a & 0x01) != 0) {
-            std::size_t _n = static_cast<std::size_t>(cookie_size.value());
+            const auto _len = cookie_size.value();
+            if (_len > 64) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             cookie.emplace(raw, raw + _n);

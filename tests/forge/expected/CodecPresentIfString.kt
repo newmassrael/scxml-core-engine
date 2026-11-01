@@ -106,7 +106,11 @@ data class CodecPresentIfString(
                 null
             }
             val text = if ((carrier.toInt() and 0x01) != 0) {
-                val _n = text_len!!.toInt()
+                val _len = text_len!!
+                if (_len > 32u) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()

@@ -91,7 +91,11 @@ func DecodeCodecChainHasEnvelope(cursor *codec.SceCursor) (*CodecChainHasEnvelop
 	}
 	var Payload optional.Of[[]byte]
 	if !_has_Extensions_2 {
-		_n := int(PayloadLen.Proven())
+		_len := PayloadLen.Proven()
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -110,6 +114,9 @@ func DecodeCodecChainHasEnvelope(cursor *codec.SceCursor) (*CodecChainHasEnvelop
 	var Slices optional.Of[[]codec_chain_has_slice.CodecChainHasSlice]
 	if _has_Extensions_2 {
 		_n := SliceCount.Proven()
+		if _n > 4 {
+			return nil, codec.ErrTooManyElements
+		}
 		_list := make([]codec_chain_has_slice.CodecChainHasSlice, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_has_slice.DecodeCodecChainHasSlice(cursor)

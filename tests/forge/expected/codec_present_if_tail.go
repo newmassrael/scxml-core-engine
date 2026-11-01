@@ -48,6 +48,9 @@ func DecodeCodecPresentIfTail(cursor *codec.SceCursor) (*CodecPresentIfTail, err
 	var Payload optional.Of[[]byte]
 	if (Flags & 0x01) != 0 {
 		_n := cursor.Remaining()
+		if _n > 64 {
+			return nil, codec.ErrLengthOutOfRange
+		}
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

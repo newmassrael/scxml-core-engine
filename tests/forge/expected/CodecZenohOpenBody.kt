@@ -94,7 +94,11 @@ data class CodecZenohOpenBody(
                 null
             }
             val cookie = if ((A.toInt() and 0x01) == 0) {
-                val _n = cookie_len!!.toInt()
+                val _len = cookie_len!!
+                if (_len > 128uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

@@ -63,7 +63,8 @@ struct CodecZenohHello {
         }
         std::vector<uint8_t> zid;
         {
-            std::size_t _n = static_cast<std::size_t>((cbyte >> 4) & 0xF) + 1;
+            const auto _len = ((cbyte >> 4) & 0xF);
+            std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             zid.assign(raw, raw + _n);
@@ -79,6 +80,9 @@ struct CodecZenohHello {
         std::optional<std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator>> locators;
         if ((l & 0x01) != 0) {
             auto _n = num_locators.value();
+            if (_n > 64) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator> _list;
             _list.reserve(_n);
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {

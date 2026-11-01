@@ -48,8 +48,10 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_zbuf_decode(sce_forge_cur
     }
     out->value_len = value_len;
     {
+        if (out->value_len > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->value_len;
-        if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->value, raw, _n);

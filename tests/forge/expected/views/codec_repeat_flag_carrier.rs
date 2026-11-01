@@ -99,6 +99,9 @@ impl CodecRepeatFlagCarrier {
             _v
         };
         {
+            if count > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.entries;
             _vec.clear();
             for _ in 0..count {
@@ -401,13 +404,16 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
             _v
         };
         {
+            if count > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0..count {
-                CodecChainFlagEntryView::decode(cursor, head & 0x1)?;
                 if _count == 4 {
                     return Err(CodecError::TooManyElements);
                 }
+                CodecChainFlagEntryView::decode(cursor, head & 0x1)?;
                 _count += 1;
             }
             _out.entries = Bounded::new(ListView::new(_rest, _count, [head & 0x1])).ok_or(CodecError::TooManyElements)?;

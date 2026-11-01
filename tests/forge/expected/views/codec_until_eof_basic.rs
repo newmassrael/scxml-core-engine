@@ -88,6 +88,9 @@ impl CodecUntilEofBasic {
             let _vec = &mut _out.msgs;
             _vec.clear();
             while cursor.remaining() > 0 {
+                if _vec.len() > 63 {
+                    return Err(CodecError::TooManyElements);
+                }
                 _vec.push(CodecRepeatElem::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
@@ -300,10 +303,10 @@ impl<'a> CodecUntilEofBasicView<'a> {
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             while cursor.remaining() > 0 {
-                CodecRepeatElemView::decode(cursor)?;
                 if _count == 64 {
                     return Err(CodecError::TooManyElements);
                 }
+                CodecRepeatElemView::decode(cursor)?;
                 _count += 1;
             }
             _out.msgs = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?;

@@ -155,7 +155,11 @@ data class CodecZenohQuery(
                 null
             }
             val parameters = if ((header.toInt() and 0x40) != 0) {
-                val _n = parameters_len!!.toInt()
+                val _len = parameters_len!!
+                if (_len > 256uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

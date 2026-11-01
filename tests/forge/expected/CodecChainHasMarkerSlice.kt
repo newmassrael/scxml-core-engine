@@ -74,7 +74,11 @@ data class CodecChainHasMarkerSlice(
             val kind = cursor.readVleU16() ?: return null
             val size = cursor.readVleU64() ?: return null
             val data = run {
-                val _n = size.toInt()
+                val _len = size
+                if (_len > 256uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

@@ -79,7 +79,11 @@ data class CodecExtTimestamp(
                 _v
             }
             val zid = run {
-                val _n = zid_size.toInt()
+                val _len = zid_size
+                if (_len > 16u) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

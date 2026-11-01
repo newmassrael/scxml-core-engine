@@ -64,7 +64,8 @@ func DecodeCodecZenohJoin(cursor *codec.SceCursor, S byte) (*CodecZenohJoin, err
 	}
 	var Zid []byte
 	{
-		_n := (int((Cbyte >> 4) & 0xF) + 1)
+		_len := int((Cbyte >> 4) & 0xF)
+		_n := _len + 1
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

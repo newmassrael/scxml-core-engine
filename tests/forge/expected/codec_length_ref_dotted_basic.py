@@ -23,18 +23,20 @@ class CodecLengthRefDottedBasic:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         try:
             _frame_len = cursor.remaining()
             if _frame_len < 1:
                 return None
             raw = cursor.peek_slice(_frame_len)
-        except NeedMoreBytes:
+            f_carrier = raw[0]
+            if _frame_len < 1 + ((f_carrier >> 4) & 0xF):
+                return None
+            f_payload = raw[1:1 + ((f_carrier >> 4) & 0xF)]
+        except CodecError:
             return None
-        f_carrier = raw[0]
-        if _frame_len < 1 + ((f_carrier >> 4) & 0xF):
-            return None
-        f_payload = raw[1:1 + ((f_carrier >> 4) & 0xF)]
         value = cls(
             carrier=f_carrier,
             payload=f_payload,

@@ -33,6 +33,9 @@ struct CodecScoutZidBody {
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
         uint8_t zid_len_m1 = raw[0];
+        if (zid_len_m1 > 15) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+        }
         if (_frame_len < static_cast<std::size_t>(1 + zid_len_m1 + 1)) return std::nullopt;
         std::vector<uint8_t> zid = std::vector<uint8_t>(raw + 1, raw + 1 + zid_len_m1 + 1);
         CodecScoutZidBody _decoded{

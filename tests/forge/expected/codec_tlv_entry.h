@@ -35,6 +35,9 @@ struct CodecTlvEntry {
         if (raw == nullptr) return std::nullopt;
         uint8_t entry_type = raw[0];
         uint8_t entry_len = raw[1];
+        if (entry_len > 32) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+        }
         if (_frame_len < static_cast<std::size_t>(2 + entry_len)) return std::nullopt;
         std::vector<uint8_t> entry_body = std::vector<uint8_t>(raw + 2, raw + 2 + entry_len);
         CodecTlvEntry _decoded{

@@ -98,7 +98,11 @@ func DecodeCodecZenohErr(cursor *codec.SceCursor) (*CodecZenohErr, error) {
 	if err != nil { return nil, err }
 	var Payload []byte
 	{
-		_n := int(PayloadLen)
+		_len := PayloadLen
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

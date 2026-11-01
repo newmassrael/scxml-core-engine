@@ -73,7 +73,7 @@ static inline sce_forge_codec_status_t codec_tlv_chain_basic_encode(const codec_
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (!sce_forge_length_within_bound(self->extensions_len, 8)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

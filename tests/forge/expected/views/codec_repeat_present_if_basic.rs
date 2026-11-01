@@ -102,6 +102,9 @@ impl CodecRepeatPresentIfBasic {
         };
         if (carrier & 0x01u8) != 0 {
             let _n = num_elems.expect("co-gating: count present-if matches repeat");
+            if _n > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = _out.elems.insert(HeaplessVec::<CodecRepeatElem, 32>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
@@ -378,13 +381,16 @@ impl<'a> CodecRepeatPresentIfBasicView<'a> {
         };
         if (carrier & 0x01u8) != 0 {
             let _n = num_elems.expect("co-gating: count present-if matches repeat");
+            if _n > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0.._n {
-                CodecRepeatElemView::decode(cursor)?;
                 if _count == 32 {
                     return Err(CodecError::TooManyElements);
                 }
+                CodecRepeatElemView::decode(cursor)?;
                 _count += 1;
             }
             _out.elems = Some(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?);

@@ -52,7 +52,11 @@ struct CodecExtTimestamp {
         }
         std::vector<uint8_t> zid;
         {
-            std::size_t _n = static_cast<std::size_t>(zid_size);
+            const auto _len = zid_size;
+            if (_len > 16) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             zid.assign(raw, raw + _n);

@@ -57,7 +57,11 @@ struct CodecFixedAfterLengthref {
         }
         std::vector<uint8_t> payload;
         {
-            std::size_t _n = static_cast<std::size_t>(payload_len);
+            const auto _len = payload_len;
+            if (_len > 1500) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             payload.assign(raw, raw + _n);

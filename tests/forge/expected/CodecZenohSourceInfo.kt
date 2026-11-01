@@ -98,7 +98,8 @@ data class CodecZenohSourceInfo(
                 _v
             }
             val zid = run {
-                val _n = (((header.toInt() shr 4) and 0xF) + 1)
+                val _len = ((header.toInt() shr 4) and 0xF)
+                val _n = _len + 1
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

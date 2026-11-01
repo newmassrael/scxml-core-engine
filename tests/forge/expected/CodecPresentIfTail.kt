@@ -95,6 +95,9 @@ data class CodecPresentIfTail(
             }
             val payload = if ((flags.toInt() and 0x01) != 0) {
                 val _n = cursor.remaining()
+                if (_n > 64) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

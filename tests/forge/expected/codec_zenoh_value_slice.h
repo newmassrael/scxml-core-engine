@@ -52,7 +52,11 @@ struct CodecZenohValueSlice {
         auto len = static_cast<std::uint64_t>(*len_opt);
         std::vector<uint8_t> data;
         {
-            std::size_t _n = static_cast<std::size_t>(len);
+            const auto _len = len;
+            if (_len > 16) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             data.assign(raw, raw + _n);

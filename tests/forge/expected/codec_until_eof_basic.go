@@ -35,6 +35,9 @@ func DecodeCodecUntilEofBasic(cursor *codec.SceCursor) (*CodecUntilEofBasic, err
 	// other field flows through `present_if_decode_stmt`.
 	Msgs := make([]codec_repeat_elem.CodecRepeatElem, 0)
 	for cursor.Remaining() > 0 {
+		if len(Msgs) > 63 {
+			return nil, codec.ErrTooManyElements
+		}
 		_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 		if err != nil {
 			return nil, err

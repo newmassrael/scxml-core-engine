@@ -57,6 +57,9 @@ func DecodeCodecRepeatFlagCarrier(cursor *codec.SceCursor) (*CodecRepeatFlagCarr
 			return nil, err
 		}
 	}
+	if Count > 4 {
+		return nil, codec.ErrTooManyElements
+	}
 	Entries := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, Count)
 	for _i := 0; _i < int(Count); _i++ {
 		_elem, err := codec_chain_flag_entry.DecodeCodecChainFlagEntry(cursor, byte((Head >> 0) & 0x1))

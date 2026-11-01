@@ -99,6 +99,9 @@ impl CodecRepeatPresentIfBasic {
         };
         if (carrier & 0x01u8) != 0 {
             let _n = num_elems.expect("co-gating: count present-if matches repeat");
+            if _n > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = _out.elems.insert(HeaplessVec::<CodecRepeatElem, 32>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)

@@ -133,7 +133,8 @@ data class CodecZenohHello(
                 _v
             }
             val zid = run {
-                val _n = (((cbyte.toInt() shr 4) and 0xF) + 1)
+                val _len = ((cbyte.toInt() shr 4) and 0xF)
+                val _n = _len + 1
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null
@@ -147,6 +148,9 @@ data class CodecZenohHello(
             }
             val locators: MutableList<CodecZenohLocator>? = if ((L.toInt() and 0x01) != 0) {
                 val _n = num_locators!!
+                if (_n > 64uL) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecZenohLocator>().apply {
                     repeat(_n.toInt()) {
                         add(CodecZenohLocator.decode(cursor) ?: return null)

@@ -89,6 +89,9 @@ impl CodecRepeatBasic {
             _v
         };
         {
+            if num_frags > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.frags;
             _vec.clear();
             for _ in 0..num_frags {

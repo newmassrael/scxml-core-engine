@@ -94,7 +94,11 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 	}
 	var Suffix optional.Of[string]
 	if (Header & 0x20) != 0 {
-		_n := int(SuffixLen.Proven())
+		_len := SuffixLen.Proven()
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

@@ -120,6 +120,9 @@ data class CodecRepeatFlagGated(
             }
             val entries: MutableList<CodecChainFlagEntry>? = if ((head.toInt() and 0x02) != 0) {
                 val _n = count!!
+                if (_n > 4u) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecChainFlagEntry>().apply {
                     repeat(_n.toInt()) {
                         add(CodecChainFlagEntry.decode(cursor, (((head.toInt() shr 0) and 0x1).toUByte())) ?: return null)

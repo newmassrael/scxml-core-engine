@@ -48,7 +48,8 @@ func DecodeCodecZenohSourceInfo(cursor *codec.SceCursor) (*CodecZenohSourceInfo,
 	}
 	var Zid []byte
 	{
-		_n := (int((Header >> 4) & 0xF) + 1)
+		_len := int((Header >> 4) & 0xF)
+		_n := _len + 1
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

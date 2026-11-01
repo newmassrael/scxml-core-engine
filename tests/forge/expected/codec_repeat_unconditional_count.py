@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_repeat_elem import CodecRepeatElem
 
 from dataclasses import dataclass, field
@@ -26,7 +26,9 @@ class CodecRepeatUnconditionalCount:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -47,6 +49,8 @@ class CodecRepeatUnconditionalCount:
             raw = cursor.peek_slice(1)
             f_links_len = raw[0]
             cursor.advance(1)
+            if f_links_len > 64:
+                raise TooManyElements()
             f_links = []
             for _ in range(f_links_len):
                 _elem = CodecRepeatElem.decode(cursor)
@@ -54,6 +58,8 @@ class CodecRepeatUnconditionalCount:
                     return None
                 f_links.append(_elem)
             if (f_options & 0x01) != 0:
+                if f_links_len > 64:
+                    raise TooManyElements()
                 f_weights = []
                 for _ in range(f_links_len):
                     _elem = CodecRepeatElem.decode(cursor)

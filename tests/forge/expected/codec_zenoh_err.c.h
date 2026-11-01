@@ -96,8 +96,10 @@ static inline sce_forge_codec_status_t codec_zenoh_err_decode(sce_forge_cursor_t
     }
     out->payload_len = payload_len;
     {
+        if (out->payload_len > 256) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->payload_len;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->payload, raw, _n);
@@ -118,7 +120,7 @@ static inline sce_forge_codec_status_t codec_zenoh_err_encode(const codec_zenoh_
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     if (!sce_forge_length_within_bound(self->payload_len, 256)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;

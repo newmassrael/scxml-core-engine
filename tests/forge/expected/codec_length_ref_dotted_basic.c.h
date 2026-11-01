@@ -47,7 +47,7 @@ static inline sce_forge_codec_status_t codec_length_ref_dotted_basic_decode(sce_
     out->carrier = raw[0];
     {
         size_t _n = (size_t)((out->carrier >> 4) & 0xF);
-        if (_n > 15 || 1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->payload, raw + 1, _n);
         out->payload_len = _n;
         if (1 + _n > _consumed) _consumed = 1 + _n;

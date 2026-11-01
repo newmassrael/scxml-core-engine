@@ -114,6 +114,9 @@ data class CodecNestedParent(
             } else {
                 null
             }
+            if (m > 4u) {
+                cursor.refuse(CodecError.TooManyElements); return null
+            }
             val body_list: MutableList<CodecNestedBody> = mutableListOf<CodecNestedBody>().apply {
                 repeat(m.toInt()) {
                     add(CodecNestedBody.decode(cursor) ?: return null)

@@ -85,6 +85,9 @@ impl CodecUntilEofBasic {
             let _vec = &mut _out.msgs;
             _vec.clear();
             while cursor.remaining() > 0 {
+                if _vec.len() > 63 {
+                    return Err(CodecError::TooManyElements);
+                }
                 _vec.push(CodecRepeatElem::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }

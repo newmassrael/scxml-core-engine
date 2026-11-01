@@ -79,8 +79,10 @@ static inline sce_forge_codec_status_t codec_present_if_length_ref_decode(sce_fo
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if ((out->flags & 0x01) != 0) {
+        if (out->payload_size > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->payload_size;
-        if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->payload = sce_optional_bytes_32_none();

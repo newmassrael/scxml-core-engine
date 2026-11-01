@@ -145,7 +145,8 @@ data class CodecZenohInitBody(
                 _v
             }
             val zid = run {
-                val _n = (((cbyte.toInt() shr 4) and 0xF) + 1)
+                val _len = ((cbyte.toInt() shr 4) and 0xF)
+                val _n = _len + 1
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null
@@ -174,7 +175,11 @@ data class CodecZenohInitBody(
                 null
             }
             val cookie = if ((A.toInt() and 0x01) != 0) {
-                val _n = cookie_len!!.toInt()
+                val _len = cookie_len!!
+                if (_len > 128uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

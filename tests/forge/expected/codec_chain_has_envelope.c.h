@@ -114,8 +114,10 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge
         out->payload_len = sce_optional_uint64_none();
     }
     if (!_has_extensions_2) {
+        if (out->payload_len.value > 256) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->payload_len.value;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->payload = sce_optional_bytes_256_none();
@@ -137,8 +139,10 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge
         out->slice_count = sce_optional_uint32_none();
     }
     if (_has_extensions_2) {
+        if (out->slice_count.value > 4) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
         size_t _n = (size_t)out->slice_count.value;
-        if (_n > 4) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_chain_has_slice_decode(cursor, &out->slices.value.data[_i]);
@@ -176,13 +180,13 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_encode(const cod
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     if (self->payload.present && !sce_forge_length_within_bound(self->payload.value.len, 256)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->slices.present && !sce_forge_length_within_bound(self->slices.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

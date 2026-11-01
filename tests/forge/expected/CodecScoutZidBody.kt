@@ -53,6 +53,9 @@ data class CodecScoutZidBody(
             if (frameLen < 1) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
             val zid_len_m1 = raw[0].toUByte()
+            if (zid_len_m1 > 15u) {
+                cursor.refuse(CodecError.LengthOutOfRange); return null
+            }
             if (frameLen < 1 + zid_len_m1.toInt() + 1) return null
             val zid = raw.copyOfRange(1, 1 + zid_len_m1.toInt() + 1)
             if (!cursor.advance(frameLen)) return null

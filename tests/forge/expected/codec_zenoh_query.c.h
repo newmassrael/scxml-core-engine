@@ -110,8 +110,10 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
         out->parameters_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x40) != 0) {
+        if (out->parameters_len.value > 256) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->parameters_len.value;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->parameters = sce_optional_bytes_256_none();
@@ -150,7 +152,7 @@ static inline sce_forge_codec_status_t codec_zenoh_query_encode(const codec_zeno
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 8)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

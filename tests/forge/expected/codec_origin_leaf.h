@@ -33,6 +33,9 @@ struct CodecOriginLeaf {
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
         uint8_t len = raw[0];
+        if (len > 16) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+        }
         if (_frame_len < static_cast<std::size_t>(1 + len)) return std::nullopt;
         std::vector<uint8_t> data = std::vector<uint8_t>(raw + 1, raw + 1 + len);
         CodecOriginLeaf _decoded{

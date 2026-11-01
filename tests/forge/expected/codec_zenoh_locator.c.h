@@ -52,8 +52,10 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_decode(sce_forge_curs
     }
     out->locator_len = locator_len;
     {
+        if (out->locator_len > 128) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->locator_len;
-        if (_n > 128) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;

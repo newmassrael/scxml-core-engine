@@ -38,7 +38,11 @@ func DecodeCodecZenohLocator(cursor *codec.SceCursor) (*CodecZenohLocator, error
 	if err != nil { return nil, err }
 	var Locator string
 	{
-		_n := int(LocatorLen)
+		_len := LocatorLen
+		if _len > 128 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

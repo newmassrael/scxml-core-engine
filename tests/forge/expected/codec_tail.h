@@ -35,6 +35,9 @@ struct CodecTail {
         if (raw == nullptr) return std::nullopt;
         uint8_t msgId = raw[0];
         uint8_t status = raw[1];
+        if ((_frame_len - 2) > 32) {
+            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+        }
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + _frame_len);
         CodecTail _decoded{
             /*msgId=*/msgId,

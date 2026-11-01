@@ -57,7 +57,11 @@ struct CodecPresentIfString {
         }
         std::optional<std::string> text;
         if ((carrier & 0x01) != 0) {
-            std::size_t _n = static_cast<std::size_t>(text_len.value());
+            const auto _len = text_len.value();
+            if (_len > 32) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;

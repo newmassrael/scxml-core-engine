@@ -46,13 +46,18 @@ class CodecZenohPushBody:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
+        # A field's refusal (a bound, an undeclared enum value) is a
+        # `CodecError`, which `decode` answers with `None` as the streaming
+        # path does.
         try:
             raw = cursor.peek_slice(1)
-        except NeedMoreBytes:
+            f_header = raw[0]
+        except CodecError:
             return None
-        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:

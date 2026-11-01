@@ -93,8 +93,7 @@ static inline sce_forge_codec_status_t codec_zenoh_init_body_decode(sce_forge_cu
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     {
-        size_t _n = (size_t)((int64_t)(size_t)((out->cbyte >> 4) & 0xF) + 1);
-        if (_n > 16) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        size_t _n = (size_t)((out->cbyte >> 4) & 0xF) + 1;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->zid, raw, _n);
@@ -128,8 +127,10 @@ static inline sce_forge_codec_status_t codec_zenoh_init_body_decode(sce_forge_cu
         out->cookie_len = sce_optional_uint64_none();
     }
     if ((a & 0x01) != 0) {
+        if (out->cookie_len.value > 128) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->cookie_len.value;
-        if (_n > 128) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->cookie = sce_optional_bytes_128_none();

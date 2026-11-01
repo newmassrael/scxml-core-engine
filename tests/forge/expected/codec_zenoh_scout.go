@@ -59,7 +59,8 @@ func DecodeCodecZenohScout(cursor *codec.SceCursor) (*CodecZenohScout, error) {
 	}
 	var Zid optional.Of[[]byte]
 	if (Cbyte & 0x08) != 0 {
-		_n := (int((Cbyte >> 4) & 0xF) + 1)
+		_len := int((Cbyte >> 4) & 0xF)
+		_n := _len + 1
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

@@ -91,7 +91,11 @@ data class CodecZenohWireexpr(
                 null
             }
             val suffix = if ((N.toInt() and 0x01) != 0) {
-                val _n = suffix_len!!.toInt()
+                val _len = suffix_len!!
+                if (_len > 128uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()

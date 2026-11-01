@@ -72,6 +72,9 @@ data class CodecUntilEofBasic(
             // `present_if_decode_stmt`.
             val msgs: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().apply {
                 while (cursor.remaining() > 0) {
+                    if (size > 63) {
+                        cursor.refuse(CodecError.TooManyElements); return null
+                    }
                     add(CodecRepeatElem.decode(cursor) ?: return null)
                 }
             }

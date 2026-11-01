@@ -56,8 +56,10 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_slice_decode(sce_f
     }
     out->size = size;
     {
+        if (out->size > 256) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->size;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->data, raw, _n);

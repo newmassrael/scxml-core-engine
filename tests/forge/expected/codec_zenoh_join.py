@@ -29,7 +29,9 @@ class CodecZenohJoin:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -50,7 +52,8 @@ class CodecZenohJoin:
             raw = cursor.peek_slice(1)
             f_cbyte = raw[0]
             cursor.advance(1)
-            _n = (((f_cbyte >> 4) & 0xF) + 1)
+            _len = ((f_cbyte >> 4) & 0xF)
+            _n = _len + 1
             raw = cursor.peek_slice(_n)
             f_zid = bytes(raw)
             cursor.advance(_n)

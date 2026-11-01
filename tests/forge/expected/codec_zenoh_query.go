@@ -82,7 +82,11 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 	}
 	var Parameters optional.Of[[]byte]
 	if (Header & 0x40) != 0 {
-		_n := int(ParametersLen.Proven())
+		_len := ParametersLen.Proven()
+		if _len > 256 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

@@ -52,7 +52,11 @@ struct CodecExtEncodingInfo {
         }
         std::optional<std::vector<uint8_t>> schema;
         if ((combined_id & 0x00000001) != 0) {
-            std::size_t _n = static_cast<std::size_t>(schema_size);
+            const auto _len = schema_size;
+            if (_len > 64) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             schema.emplace(raw, raw + _n);

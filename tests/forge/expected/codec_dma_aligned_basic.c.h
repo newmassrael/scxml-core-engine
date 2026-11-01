@@ -59,7 +59,9 @@ static inline sce_forge_codec_status_t codec_dma_aligned_basic_decode(sce_forge_
     out->reserved = raw[1];
     {
         size_t _n = _frame_len - 32;
-        if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (_n > 64) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         memcpy(out->aligned_payload, raw + 32, _n);
         out->aligned_payload_len = _n;
     }

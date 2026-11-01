@@ -31,6 +31,9 @@ func DecodeCodecExtAttachment(cursor *codec.SceCursor) (*CodecExtAttachment, err
 		return nil, err
 	}
 	Length := raw[0]
+	if Length > 64 {
+		return nil, codec.ErrLengthOutOfRange
+	}
 	if frameLen < 1+int(Length) {
 		return nil, codec.ErrNeedMoreBytes
 	}

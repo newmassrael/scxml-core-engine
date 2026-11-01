@@ -49,7 +49,11 @@ func DecodeCodecExtTimestamp(cursor *codec.SceCursor) (*CodecExtTimestamp, error
 	}
 	var Zid []byte
 	{
-		_n := int(ZidSize)
+		_len := ZidSize
+		if _len > 16 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

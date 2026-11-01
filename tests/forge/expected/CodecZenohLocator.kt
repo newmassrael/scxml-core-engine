@@ -71,7 +71,11 @@ data class CodecZenohLocator(
             // `present_if_decode_stmt`.
             val locator_len = cursor.readVleU64() ?: return null
             val locator = run {
-                val _n = locator_len.toInt()
+                val _len = locator_len
+                if (_len > 128uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()

@@ -24,14 +24,16 @@ class CodecSubbyte:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         try:
             raw = cursor.peek_slice(1)
-        except NeedMoreBytes:
+            f_priority = (raw[0] >> 5) & 0x07
+            f_channel = (raw[0] >> 2) & 0x07
+            f_direction = (raw[0] >> 0) & 0x03
+        except CodecError:
             return None
-        f_priority = (raw[0] >> 5) & 0x07
-        f_channel = (raw[0] >> 2) & 0x07
-        f_direction = (raw[0] >> 0) & 0x03
         value = cls(
             priority=f_priority,
             channel=f_channel,

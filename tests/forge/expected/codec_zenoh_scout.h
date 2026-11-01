@@ -56,7 +56,8 @@ struct CodecZenohScout {
         }
         std::optional<std::vector<uint8_t>> zid;
         if ((cbyte & 0x08) != 0) {
-            std::size_t _n = static_cast<std::size_t>((cbyte >> 4) & 0xF) + 1;
+            const auto _len = ((cbyte >> 4) & 0xF);
+            std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             zid.emplace(raw, raw + _n);

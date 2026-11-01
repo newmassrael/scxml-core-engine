@@ -38,6 +38,9 @@ func DecodeCodecZenohFrame(cursor *codec.SceCursor) (*CodecZenohFrame, error) {
 	var Payload []byte
 	{
 		_n := cursor.Remaining()
+		if _n > 65536 {
+			return nil, codec.ErrLengthOutOfRange
+		}
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

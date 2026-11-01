@@ -41,6 +41,9 @@ struct CodecUntilEofBasic {
         // every other field flows through `present_if_decode_stmt`.
         std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> msgs;
         while (cursor.remaining() > 0) {
+            if (msgs.size() > 63) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;
             msgs.push_back(*_elem);

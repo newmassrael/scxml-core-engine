@@ -61,7 +61,11 @@ func DecodeCodecPresentIfString(cursor *codec.SceCursor) (*CodecPresentIfString,
 	}
 	var Text optional.Of[string]
 	if (Carrier & 0x01) != 0 {
-		_n := int(TextLen.Proven())
+		_len := TextLen.Proven()
+		if _len > 32 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

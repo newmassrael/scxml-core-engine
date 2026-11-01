@@ -74,7 +74,11 @@ data class CodecZenohTimestamp(
             val time = cursor.readVleU64() ?: return null
             val zid_len = cursor.readVleU64() ?: return null
             val zid = run {
-                val _n = zid_len.toInt()
+                val _len = zid_len
+                if (_len > 16uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

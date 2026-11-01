@@ -50,7 +50,9 @@ static inline sce_forge_codec_status_t codec_zenoh_frame_decode(sce_forge_cursor
     out->sn = sn;
     {
         size_t _n = sce_forge_cursor_remaining(cursor);
-        if (_n > 65536) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (_n > 65536) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->payload, raw, _n);

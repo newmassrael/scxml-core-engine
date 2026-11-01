@@ -79,8 +79,7 @@ static inline sce_forge_codec_status_t codec_zenoh_scout_decode(sce_forge_cursor
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if ((out->cbyte & 0x08) != 0) {
-        size_t _n = (size_t)((int64_t)(size_t)((out->cbyte >> 4) & 0xF) + 1);
-        if (_n > 16) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        size_t _n = (size_t)((out->cbyte >> 4) & 0xF) + 1;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->zid = sce_optional_bytes_16_none();

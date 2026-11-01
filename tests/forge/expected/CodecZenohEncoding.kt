@@ -99,7 +99,11 @@ data class CodecZenohEncoding(
                 null
             }
             val schema = if ((packed_id.toLong() and 0x00000001L) != 0L) {
-                val _n = schema_len!!.toInt()
+                val _len = schema_len!!
+                if (_len > 128uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()

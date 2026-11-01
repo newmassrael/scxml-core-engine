@@ -48,7 +48,11 @@ func DecodeCodecZenohOpenBody(cursor *codec.SceCursor, A byte) (*CodecZenohOpenB
 	}
 	var Cookie optional.Of[[]byte]
 	if (A & 0x01) == 0 {
-		_n := int(CookieLen.Proven())
+		_len := CookieLen.Proven()
+		if _len > 128 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

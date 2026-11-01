@@ -56,6 +56,9 @@ data class CodecTail(
             val raw = cursor.peekSlice(frameLen) ?: return null
             val msgId = raw[0].toUByte()
             val status = raw[1].toUByte()
+            if ((frameLen - 2) > 32) {
+                cursor.refuse(CodecError.LengthOutOfRange); return null
+            }
             val payload = raw.copyOfRange(2, raw.size)
             if (!cursor.advance(frameLen)) return null
             // Construct in the `return` (no intermediate local) so a field

@@ -90,7 +90,11 @@ struct CodecZenohResponse {
         }
         std::optional<std::string> suffix;
         if ((header & 0x20) != 0) {
-            std::size_t _n = static_cast<std::size_t>(suffix_len.value());
+            const auto _len = suffix_len.value();
+            if (_len > 256) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;

@@ -45,6 +45,9 @@ struct CodecZenohFrame {
         std::vector<uint8_t> payload;
         {
             std::size_t _n = cursor.remaining();
+            if (_n > 65536) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             payload.assign(raw, raw + _n);

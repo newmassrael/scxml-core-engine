@@ -66,7 +66,11 @@ struct CodecZenohQuery {
         }
         std::optional<std::vector<uint8_t>> parameters;
         if ((header & 0x40) != 0) {
-            std::size_t _n = static_cast<std::size_t>(parameters_len.value());
+            const auto _len = parameters_len.value();
+            if (_len > 256) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             parameters.emplace(raw, raw + _n);

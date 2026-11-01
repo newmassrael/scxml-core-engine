@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TlvChainOverflow, TooManyElements
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_chain_has_slice import CodecChainHasSlice
 
@@ -29,7 +29,9 @@ class CodecChainHasEnvelope:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -71,7 +73,10 @@ class CodecChainHasEnvelope:
             else:
                 f_payload_len = None
             if not _has_extensions_2:
-                _n = f_payload_len
+                _len = f_payload_len
+                if _len > 256:
+                    raise LengthOutOfRange()
+                _n = _len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
@@ -84,6 +89,8 @@ class CodecChainHasEnvelope:
             else:
                 f_slice_count = None
             if _has_extensions_2:
+                if f_slice_count > 4:
+                    raise TooManyElements()
                 f_slices = []
                 for _ in range(f_slice_count):
                     _elem = CodecChainHasSlice.decode(cursor)

@@ -59,7 +59,11 @@ func DecodeCodecPresentIfLengthRef(cursor *codec.SceCursor) (*CodecPresentIfLeng
 	}
 	var Payload optional.Of[[]byte]
 	if (Flags & 0x01) != 0 {
-		_n := int(PayloadSize)
+		_len := PayloadSize
+		if _len > 32 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

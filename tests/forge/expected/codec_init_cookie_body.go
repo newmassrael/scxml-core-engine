@@ -54,7 +54,11 @@ func DecodeCodecInitCookieBody(cursor *codec.SceCursor, A byte) (*CodecInitCooki
 	}
 	var Cookie optional.Of[[]byte]
 	if (A & 0x01) != 0 {
-		_n := int(CookieSize.Proven())
+		_len := CookieSize.Proven()
+		if _len > 64 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

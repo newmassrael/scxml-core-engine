@@ -159,7 +159,11 @@ data class CodecChainHasMarker(
                 null
             }
             val payload = if (!_has_extensions_18) {
-                val _n = payload_len!!.toInt()
+                val _len = payload_len!!
+                if (_len > 256uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null
@@ -175,6 +179,9 @@ data class CodecChainHasMarker(
             }
             val slices: MutableList<CodecChainHasMarkerSlice>? = if (_has_extensions_18) {
                 val _n = slice_count!!
+                if (_n > 4u) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecChainHasMarkerSlice>().apply {
                     repeat(_n.toInt()) {
                         add(CodecChainHasMarkerSlice.decode(cursor) ?: return null)

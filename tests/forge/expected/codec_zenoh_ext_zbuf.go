@@ -37,7 +37,11 @@ func DecodeCodecZenohExtZbuf(cursor *codec.SceCursor) (*CodecZenohExtZbuf, error
 	if err != nil { return nil, err }
 	var Value []byte
 	{
-		_n := int(ValueLen)
+		_len := ValueLen
+		if _len > 32 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

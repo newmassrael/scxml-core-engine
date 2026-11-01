@@ -167,7 +167,11 @@ data class CodecZenohResponse(
                 null
             }
             val suffix = if ((header.toInt() and 0x20) != 0) {
-                val _n = suffix_len!!.toInt()
+                val _len = suffix_len!!
+                if (_len > 256uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()

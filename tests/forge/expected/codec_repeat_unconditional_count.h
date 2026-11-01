@@ -57,6 +57,9 @@ struct CodecRepeatUnconditionalCount {
             if (!cursor.advance(1)) return std::nullopt;
         }
         std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> links;
+        if (links_len > 64) {
+            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+        }
         links.reserve(links_len);
         for (auto _i = decltype(links_len){0}; _i < links_len; ++_i) {
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
@@ -66,6 +69,9 @@ struct CodecRepeatUnconditionalCount {
         std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> weights;
         if ((options & 0x01) != 0) {
             auto _n = links_len;
+            if (_n > 64) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> _list;
             _list.reserve(_n);
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {

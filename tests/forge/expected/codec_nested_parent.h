@@ -67,6 +67,9 @@ struct CodecNestedParent {
             optional_body = std::move(*_emb);
         }
         std::vector<::SCE::Generated::CodecNestedBody::CodecNestedBody> body_list;
+        if (m > 4) {
+            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+        }
         body_list.reserve(m);
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecNestedBody::CodecNestedBody::decode(cursor);

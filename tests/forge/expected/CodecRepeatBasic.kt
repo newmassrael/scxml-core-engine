@@ -78,6 +78,9 @@ data class CodecRepeatBasic(
                 if (!cursor.advance(1)) return null
                 _v
             }
+            if (num_frags > 32u) {
+                cursor.refuse(CodecError.TooManyElements); return null
+            }
             val frags: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().apply {
                 repeat(num_frags.toInt()) {
                     add(CodecRepeatElem.decode(cursor) ?: return null)

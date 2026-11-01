@@ -88,8 +88,10 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_decode(sce_forge_c
         out->cookie_size = sce_optional_uint16_none();
     }
     if ((a & 0x01) != 0) {
+        if (out->cookie_size.value > 64) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->cookie_size.value;
-        if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->cookie = sce_optional_bytes_64_none();

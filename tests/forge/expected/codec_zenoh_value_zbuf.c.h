@@ -83,8 +83,10 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
     }
     out->value_len = value_len;
     if ((after_shm & 0x01) == 0) {
+        if (out->value_len > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->value_len;
-        if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->value = sce_optional_bytes_32_none();
@@ -116,8 +118,10 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
         out->slice_count = sce_optional_uint64_none();
     }
     if ((after_shm & 0x01) != 0) {
+        if (out->slice_count.value > 4) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
         size_t _n = (size_t)out->slice_count.value;
-        if (_n > 4) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_zenoh_value_slice_decode(cursor, &out->slices.value.data[_i]);
@@ -156,7 +160,7 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_encode(const codec
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->slices.present && !sce_forge_length_within_bound(self->slices.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

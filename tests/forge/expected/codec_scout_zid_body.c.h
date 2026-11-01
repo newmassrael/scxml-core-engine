@@ -46,8 +46,11 @@ static inline sce_forge_codec_status_t codec_scout_zid_body_decode(sce_forge_cur
     size_t _consumed = CODEC_SCOUT_ZID_BODY_MIN_BYTES;
     out->zid_len_m1 = raw[0];
     {
+        if (out->zid_len_m1 > 15) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)((int64_t)out->zid_len_m1 + 1);
-        if (_n > 16 || 1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->zid, raw + 1, _n);
         out->zid_len = _n;
         if (1 + _n > _consumed) _consumed = 1 + _n;

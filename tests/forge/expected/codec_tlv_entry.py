@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -24,19 +24,23 @@ class CodecTlvEntry:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         try:
             _frame_len = cursor.remaining()
             if _frame_len < 2:
                 return None
             raw = cursor.peek_slice(_frame_len)
-        except NeedMoreBytes:
+            f_entry_type = raw[0]
+            f_entry_len = raw[1]
+            if f_entry_len > 32:
+                raise LengthOutOfRange()
+            if _frame_len < 2 + f_entry_len:
+                return None
+            f_entry_body = raw[2:2 + f_entry_len]
+        except CodecError:
             return None
-        f_entry_type = raw[0]
-        f_entry_len = raw[1]
-        if _frame_len < 2 + f_entry_len:
-            return None
-        f_entry_body = raw[2:2 + f_entry_len]
         value = cls(
             entry_type=f_entry_type,
             entry_len=f_entry_len,

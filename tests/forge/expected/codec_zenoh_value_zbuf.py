@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_value_slice import CodecZenohValueSlice
 
 from dataclasses import dataclass, field
@@ -27,7 +27,9 @@ class CodecZenohValueZbuf:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -44,7 +46,10 @@ class CodecZenohValueZbuf:
         try:
             f_value_len = cursor.read_vle_u64()
             if (after_shm & 0x01) == 0:
-                _n = f_value_len
+                _len = f_value_len
+                if _len > 32:
+                    raise LengthOutOfRange()
+                _n = _len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
@@ -62,6 +67,8 @@ class CodecZenohValueZbuf:
             else:
                 f_slice_count = None
             if (after_shm & 0x01) != 0:
+                if f_slice_count > 4:
+                    raise TooManyElements()
                 f_slices = []
                 for _ in range(f_slice_count):
                     _elem = CodecZenohValueSlice.decode(cursor)

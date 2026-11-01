@@ -51,7 +51,9 @@ static inline sce_forge_codec_status_t codec_tail_decode(sce_forge_cursor_t *cur
     out->status = raw[1];
     {
         size_t _n = _frame_len - 2;
-        if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (_n > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         memcpy(out->payload, raw + 2, _n);
         out->payload_len = _n;
     }

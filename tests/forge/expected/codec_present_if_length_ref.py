@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -24,7 +24,9 @@ class CodecPresentIfLengthRef:
         the cursor's tail is shorter than the declared minimum frame
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``."""
+        ``VleWidthOverflow``, and every codec on a field's refusal: a length
+        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
+        docs/adr/0077), an undeclared enum value."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -46,7 +48,10 @@ class CodecPresentIfLengthRef:
             f_payload_size = raw[0]
             cursor.advance(1)
             if (f_flags & 0x01) != 0:
-                _n = f_payload_size
+                _len = f_payload_size
+                if _len > 32:
+                    raise LengthOutOfRange()
+                _n = _len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)

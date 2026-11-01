@@ -31,6 +31,9 @@ func DecodeCodecScoutZidBody(cursor *codec.SceCursor) (*CodecScoutZidBody, error
 		return nil, err
 	}
 	ZidLenM1 := raw[0]
+	if ZidLenM1 > 15 {
+		return nil, codec.ErrLengthOutOfRange
+	}
 	if frameLen < 1+int(ZidLenM1) + 1 {
 		return nil, codec.ErrNeedMoreBytes
 	}

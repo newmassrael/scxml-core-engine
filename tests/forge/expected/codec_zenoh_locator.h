@@ -45,7 +45,11 @@ struct CodecZenohLocator {
         auto locator_len = static_cast<std::uint64_t>(*locator_len_opt);
         std::string locator;
         {
-            std::size_t _n = static_cast<std::size_t>(locator_len);
+            const auto _len = locator_len;
+            if (_len > 128) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;

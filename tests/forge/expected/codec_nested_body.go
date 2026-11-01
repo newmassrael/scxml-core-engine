@@ -45,6 +45,9 @@ func DecodeCodecNestedBody(cursor *codec.SceCursor) (*CodecNestedBody, error) {
 			return nil, err
 		}
 	}
+	if N > 4 {
+		return nil, codec.ErrTooManyElements
+	}
 	Locs := make([]codec_zenoh_locator.CodecZenohLocator, 0, N)
 	for _i := 0; _i < int(N); _i++ {
 		_elem, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)

@@ -135,8 +135,10 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         out->suffix_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x20) != 0) {
+        if (out->suffix_len.value > 256) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->suffix_len.value;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
@@ -208,7 +210,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_encode(const codec_z
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode

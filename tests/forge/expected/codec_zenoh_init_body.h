@@ -65,7 +65,8 @@ struct CodecZenohInitBody {
         }
         std::vector<uint8_t> zid;
         {
-            std::size_t _n = static_cast<std::size_t>((cbyte >> 4) & 0xF) + 1;
+            const auto _len = ((cbyte >> 4) & 0xF);
+            std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             zid.assign(raw, raw + _n);
@@ -94,7 +95,11 @@ struct CodecZenohInitBody {
         }
         std::optional<std::vector<uint8_t>> cookie;
         if ((a & 0x01) != 0) {
-            std::size_t _n = static_cast<std::size_t>(cookie_len.value());
+            const auto _len = cookie_len.value();
+            if (_len > 128) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             cookie.emplace(raw, raw + _n);

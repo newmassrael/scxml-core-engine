@@ -53,6 +53,9 @@ struct CodecZenohDeclExtKeyexprInner {
         std::optional<std::vector<uint8_t>> suffix;
         if ((inner_header & 0x01) != 0) {
             std::size_t _n = cursor.remaining();
+            if (_n > 128) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             suffix.emplace(raw, raw + _n);

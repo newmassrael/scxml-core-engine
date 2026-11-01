@@ -60,8 +60,10 @@ static inline sce_forge_codec_status_t codec_repeat_flag_gated_decode(sce_forge_
         out->count = sce_optional_uint8_none();
     }
     if ((out->head & 0x02) != 0) {
+        if (out->count.value > 4) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
         size_t _n = (size_t)out->count.value;
-        if (_n > 4) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memset(&out->entries, 0, sizeof out->entries);
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries.value.data[_i], (uint8_t)((out->head >> 0) & 0x1));
@@ -86,7 +88,7 @@ static inline sce_forge_codec_status_t codec_repeat_flag_gated_encode(const code
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->entries.present && !sce_forge_length_within_bound(self->entries.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

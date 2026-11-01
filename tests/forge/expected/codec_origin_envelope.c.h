@@ -69,8 +69,10 @@ static inline sce_forge_codec_status_t codec_origin_envelope_decode(sce_forge_cu
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     {
+        if (out->note_len > 16) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->note_len;
-        if (_n > 16) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
@@ -95,8 +97,10 @@ static inline sce_forge_codec_status_t codec_origin_envelope_decode(sce_forge_cu
         out->optional.present = true;
     }
     {
+        if (out->m > 3) {
+            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
+        }
         size_t _n = (size_t)out->m;
-        if (_n > 3) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         for (size_t _i = 0; _i < _n; ++_i) {
             sce_forge_codec_status_t _st = codec_origin_leaf_decode(cursor, &out->items[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
@@ -120,7 +124,7 @@ static inline sce_forge_codec_status_t codec_origin_envelope_encode(const codec_
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (!sce_forge_length_within_bound(self->items_len, 3)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

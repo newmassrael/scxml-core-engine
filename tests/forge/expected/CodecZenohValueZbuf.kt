@@ -102,7 +102,11 @@ data class CodecZenohValueZbuf(
             // `present_if_decode_stmt`.
             val value_len = cursor.readVleU64() ?: return null
             val value = if ((afterShm.toInt() and 0x01) == 0) {
-                val _n = value_len.toInt()
+                val _len = value_len
+                if (_len > 32uL) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null
@@ -124,6 +128,9 @@ data class CodecZenohValueZbuf(
             }
             val slices: MutableList<CodecZenohValueSlice>? = if ((afterShm.toInt() and 0x01) != 0) {
                 val _n = slice_count!!
+                if (_n > 4uL) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecZenohValueSlice>().apply {
                     repeat(_n.toInt()) {
                         add(CodecZenohValueSlice.decode(cursor) ?: return null)

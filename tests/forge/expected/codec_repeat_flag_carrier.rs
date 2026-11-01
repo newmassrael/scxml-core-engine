@@ -96,6 +96,9 @@ impl CodecRepeatFlagCarrier {
             _v
         };
         {
+            if count > 4 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.entries;
             _vec.clear();
             for _ in 0..count {

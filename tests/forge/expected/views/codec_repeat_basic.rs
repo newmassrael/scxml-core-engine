@@ -92,6 +92,9 @@ impl CodecRepeatBasic {
             _v
         };
         {
+            if num_frags > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _vec = &mut _out.frags;
             _vec.clear();
             for _ in 0..num_frags {
@@ -314,13 +317,16 @@ impl<'a> CodecRepeatBasicView<'a> {
             _v
         };
         {
+            if num_frags > 32 {
+                return Err(CodecError::TooManyElements);
+            }
             let _rest = cursor.peek_slice(cursor.remaining())?;
             let mut _count: u32 = 0;
             for _ in 0..num_frags {
-                CodecRepeatElemView::decode(cursor)?;
                 if _count == 32 {
                     return Err(CodecError::TooManyElements);
                 }
+                CodecRepeatElemView::decode(cursor)?;
                 _count += 1;
             }
             _out.frags = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?;

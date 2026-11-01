@@ -162,7 +162,7 @@ static inline sce_forge_codec_status_t codec_zenoh_request_encode(const codec_ze
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode

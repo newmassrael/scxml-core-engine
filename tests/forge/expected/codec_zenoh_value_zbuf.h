@@ -52,7 +52,11 @@ struct CodecZenohValueZbuf {
         auto value_len = static_cast<std::uint64_t>(*value_len_opt);
         std::optional<std::vector<uint8_t>> value;
         if ((after_shm & 0x01) == 0) {
-            std::size_t _n = static_cast<std::size_t>(value_len);
+            const auto _len = value_len;
+            if (_len > 32) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             value.emplace(raw, raw + _n);
@@ -75,6 +79,9 @@ struct CodecZenohValueZbuf {
         std::optional<std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice>> slices;
         if ((after_shm & 0x01) != 0) {
             auto _n = slice_count.value();
+            if (_n > 4) {
+                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            }
             std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice> _list;
             _list.reserve(_n);
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {

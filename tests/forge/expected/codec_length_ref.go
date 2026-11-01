@@ -33,6 +33,9 @@ func DecodeCodecLengthRef(cursor *codec.SceCursor) (*CodecLengthRef, error) {
 	}
 	MsgId := raw[0]
 	Len := raw[1]
+	if Len > 32 {
+		return nil, codec.ErrLengthOutOfRange
+	}
 	if frameLen < 2+int(Len) {
 		return nil, codec.ErrNeedMoreBytes
 	}

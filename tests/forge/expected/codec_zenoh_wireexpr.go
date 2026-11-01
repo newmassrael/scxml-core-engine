@@ -46,7 +46,11 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWiree
 	}
 	var Suffix optional.Of[string]
 	if (N & 0x01) != 0 {
-		_n := int(SuffixLen.Proven())
+		_len := SuffixLen.Proven()
+		if _len > 128 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

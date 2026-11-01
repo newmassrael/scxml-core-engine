@@ -113,7 +113,11 @@ data class CodecOriginEnvelope(
                 _v
             }
             val note = run {
-                val _n = note_len.toInt()
+                val _len = note_len
+                if (_len > 16u) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()
@@ -133,6 +137,9 @@ data class CodecOriginEnvelope(
                 CodecOriginLeaf.decode(cursor) ?: return null
             } else {
                 null
+            }
+            if (m > 3u) {
+                cursor.refuse(CodecError.TooManyElements); return null
             }
             val items: MutableList<CodecOriginLeaf> = mutableListOf<CodecOriginLeaf>().apply {
                 repeat(m.toInt()) {

@@ -49,6 +49,9 @@ struct CodecPresentIfTail {
         std::optional<std::vector<uint8_t>> payload;
         if ((flags & 0x01) != 0) {
             std::size_t _n = cursor.remaining();
+            if (_n > 64) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             payload.emplace(raw, raw + _n);

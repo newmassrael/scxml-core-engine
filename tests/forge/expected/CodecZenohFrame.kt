@@ -72,6 +72,9 @@ data class CodecZenohFrame(
             val sn = cursor.readVleU64() ?: return null
             val payload = run {
                 val _n = cursor.remaining()
+                if (_n > 65536) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null

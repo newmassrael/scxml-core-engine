@@ -78,6 +78,9 @@ data class CodecNestedBody(
                 if (!cursor.advance(1)) return null
                 _v
             }
+            if (n > 4u) {
+                cursor.refuse(CodecError.TooManyElements); return null
+            }
             val locs: MutableList<CodecZenohLocator> = mutableListOf<CodecZenohLocator>().apply {
                 repeat(n.toInt()) {
                     add(CodecZenohLocator.decode(cursor) ?: return null)

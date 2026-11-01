@@ -33,6 +33,9 @@ func DecodeCodecTail(cursor *codec.SceCursor) (*CodecTail, error) {
 	}
 	MsgId := raw[0]
 	Status := raw[1]
+	if (frameLen - 2) > 32 {
+		return nil, codec.ErrLengthOutOfRange
+	}
 	Payload := raw[2:]
 	value := &CodecTail{
 		MsgId: MsgId,

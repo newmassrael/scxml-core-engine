@@ -50,7 +50,11 @@ func DecodeCodecExtEncodingInfo(cursor *codec.SceCursor) (*CodecExtEncodingInfo,
 	}
 	var Schema optional.Of[[]byte]
 	if (CombinedId & 0x00000001) != 0 {
-		_n := int(SchemaSize)
+		_len := SchemaSize
+		if _len > 64 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

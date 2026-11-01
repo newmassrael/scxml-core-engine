@@ -62,7 +62,8 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 	}
 	var Zid []byte
 	{
-		_n := (int((Cbyte >> 4) & 0xF) + 1)
+		_len := int((Cbyte >> 4) & 0xF)
+		_n := _len + 1
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -81,6 +82,9 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 	var Locators optional.Of[[]codec_zenoh_locator.CodecZenohLocator]
 	if (L & 0x01) != 0 {
 		_n := NumLocators.Proven()
+		if _n > 64 {
+			return nil, codec.ErrTooManyElements
+		}
 		_list := make([]codec_zenoh_locator.CodecZenohLocator, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)

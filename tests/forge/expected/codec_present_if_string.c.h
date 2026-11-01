@@ -82,8 +82,10 @@ static inline sce_forge_codec_status_t codec_present_if_string_decode(sce_forge_
         out->text_len = sce_optional_uint8_none();
     }
     if ((out->carrier & 0x01) != 0) {
+        if (out->text_len.value > 32) {
+            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        }
         size_t _n = (size_t)out->text_len.value;
-        if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;

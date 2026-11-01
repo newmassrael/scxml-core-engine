@@ -44,7 +44,11 @@ struct CodecZenohExtZbuf {
         auto value_len = static_cast<std::uint64_t>(*value_len_opt);
         std::vector<uint8_t> value;
         {
-            std::size_t _n = static_cast<std::size_t>(value_len);
+            const auto _len = value_len;
+            if (_len > 32) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             value.assign(raw, raw + _n);

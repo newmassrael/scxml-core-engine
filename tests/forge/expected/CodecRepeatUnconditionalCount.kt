@@ -108,6 +108,9 @@ data class CodecRepeatUnconditionalCount(
                 if (!cursor.advance(1)) return null
                 _v
             }
+            if (links_len > 64u) {
+                cursor.refuse(CodecError.TooManyElements); return null
+            }
             val links: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().apply {
                 repeat(links_len.toInt()) {
                     add(CodecRepeatElem.decode(cursor) ?: return null)
@@ -115,6 +118,9 @@ data class CodecRepeatUnconditionalCount(
             }
             val weights: MutableList<CodecRepeatElem>? = if ((options.toInt() and 0x01) != 0) {
                 val _n = links_len
+                if (_n > 64u) {
+                    cursor.refuse(CodecError.TooManyElements); return null
+                }
                 mutableListOf<CodecRepeatElem>().apply {
                     repeat(_n.toInt()) {
                         add(CodecRepeatElem.decode(cursor) ?: return null)

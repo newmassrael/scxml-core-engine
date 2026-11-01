@@ -62,7 +62,11 @@ struct CodecOriginEnvelope {
         }
         std::string note;
         {
-            std::size_t _n = static_cast<std::size_t>(note_len);
+            const auto _len = note_len;
+            if (_len > 16) {
+                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            }
+            std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
             if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;
@@ -86,6 +90,9 @@ struct CodecOriginEnvelope {
             optional = std::move(*_emb);
         }
         std::vector<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> items;
+        if (m > 3) {
+            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+        }
         items.reserve(m);
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);

@@ -46,7 +46,11 @@ func DecodeCodecZenohEncoding(cursor *codec.SceCursor) (*CodecZenohEncoding, err
 	}
 	var Schema optional.Of[string]
 	if (PackedId & 0x00000001) != 0 {
-		_n := int(SchemaLen.Proven())
+		_len := SchemaLen.Proven()
+		if _len > 128 {
+			return nil, codec.ErrLengthOutOfRange
+		}
+		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err

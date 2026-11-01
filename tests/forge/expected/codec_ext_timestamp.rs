@@ -83,7 +83,11 @@ impl<'a> CodecExtTimestamp<'a> {
             _v
         };
         let zid = {
-            let _n = zid_size as usize;
+            let _len = zid_size;
+            if _len > 16 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let _n = _len as usize;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -302,11 +306,12 @@ impl<'a> CodecExtTimestamp<'a> {
     /// buffer — stored in a long-lived enum, moved across an async task, or
     /// inserted by value into a bounded-collection.
     ///
-    /// Fallible for profile uniformity: on the inline profile a field longer
-    /// than its declared capacity raises `CodecError::TooManyElements` (the
-    /// same bound and error decode enforces), on the growable profile the
-    /// copy cannot fail. The borrowed zero-copy path is unaffected either
-    /// way.
+    /// Fallible for profile uniformity. A value a decode produced is within
+    /// every declared bound already, since the decode refused a longer field
+    /// with `CodecError::LengthOutOfRange` (docs/adr/0077), so its projection
+    /// does not fail. On the inline profile a value built by hand with a field
+    /// longer than its declared capacity raises `CodecError::TooManyElements`;
+    /// on the growable profile the copy cannot fail.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecExtTimestampOwned<S>, CodecError> {
         Ok(CodecExtTimestampOwned {
             time: self.time,

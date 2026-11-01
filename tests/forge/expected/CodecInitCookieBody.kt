@@ -96,7 +96,11 @@ data class CodecInitCookieBody(
                 null
             }
             val cookie = if ((A.toInt() and 0x01) != 0) {
-                val _n = cookie_size!!.toInt()
+                val _len = cookie_size!!
+                if (_len > 64u) {
+                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                }
+                val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
                 if (!cursor.advance(_n)) return null
