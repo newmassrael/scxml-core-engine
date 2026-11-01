@@ -34,11 +34,9 @@ use super::codec_chain_has_slice::CodecChainHasSlice;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasEnvelope<'a> {
     pub header: u8,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>>,
+    pub extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2<HeaplessVec<CodecZenohExtEntry<'a>, 4>, HeaplessVec<CodecChainHasSlice<'a>, 4>, &'a [u8]>,
     pub payload_len: Option<u64>,
-    pub payload: Option<&'a [u8]>,
     pub slice_count: Option<u32>,
-    pub slices: Option<HeaplessVec<CodecChainHasSlice<'a>, 4>>,
 }
 
 #[allow(dead_code)]
@@ -93,8 +91,9 @@ impl<'a> CodecChainHasEnvelope<'a> {
             cursor.advance(1)?;
             _v
         };
+        let mut extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>> = None;
         if (header & 0x80u8) != 0 {
-            _out.extensions.insert(Default::default()).refill(|_vec| {
+            extensions.insert(Default::default()).refill(|_vec| {
                 let mut _more = false;
                 for _ in 0..4u32 {
                     let _entry = CodecZenohExtEntry::decode(cursor)?;
@@ -114,9 +113,9 @@ impl<'a> CodecChainHasEnvelope<'a> {
                 Ok(())
             })?;
         } else {
-            _out.extensions = None;
+            extensions = None;
         }
-        let _has_extensions_2 = _out.extensions.as_ref().is_some_and(|_c| _c.iter().any(|_e| u64::from(_e.ext_id()) == 2u64));
+        let _has_extensions_2 = extensions.as_ref().is_some_and(|_c| _c.iter().any(|_e| u64::from(_e.ext_id()) == 2u64));
         let payload_len = if !_has_extensions_2 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
@@ -142,22 +141,23 @@ impl<'a> CodecChainHasEnvelope<'a> {
         } else {
             None
         };
+        let mut slices: Option<HeaplessVec<CodecChainHasSlice<'a>, 4>> = None;
         if _has_extensions_2 {
             let _n = slice_count.expect("co-gating: count present-if matches repeat");
             if _n > 4 {
                 return Err(CodecError::TooManyElements);
             }
-            let _vec = _out.slices.insert(HeaplessVec::<CodecChainHasSlice<'a>, 4>::new());
+            let _vec = slices.insert(HeaplessVec::<CodecChainHasSlice<'a>, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecChainHasSlice::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
         } else {
-            _out.slices = None;
+            slices = None;
         }
         _out.header = header;
+        _out.extensions_has_0x2 = if _has_extensions_2 { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: ::sce_forge_runtime::codec::Having::new(extensions.expect("the gate found the chain").into_inner()).expect("the gate found an entry of the kind"), slices: slices.unwrap_or_default() } } else { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: extensions.map(|_l| ::sce_forge_runtime::codec::Except::new(_l.into_inner()).expect("the gate found no entry of the kind")), payload: payload.unwrap_or_default() } };
         _out.payload_len = payload_len;
-        _out.payload = payload;
         _out.slice_count = slice_count;
         Ok(())
     }
@@ -194,35 +194,72 @@ impl<'a> CodecChainHasEnvelope<'a> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 1511;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+}
+
+/// The fields `extensions.has(0x2)` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecChainHasEnvelope` derives the gates from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecChainHasEnvelopeExtensionsHas0x2<Extensions, Slices, Payload> {
+    /// While `extensions.has(0x2)` holds.
+    Has0x2 {
+        /// The `extensions` field.
+        extensions: ::sce_forge_runtime::codec::Having<Extensions, CodecChainHasEnvelopeExtensionsHas0x2Key, 4>,
+        /// The `slices` field.
+        slices: Slices,
+    },
+    /// While `extensions.has(0x2)` does not hold.
+    NotHas0x2 {
+        /// The `extensions` field.
+        extensions: Option<::sce_forge_runtime::codec::Except<Extensions, CodecChainHasEnvelopeExtensionsHas0x2Key, 4, 1>>,
+        /// The `payload` field.
+        payload: Payload,
+    },
+}
+
+impl<Extensions: Default, Slices: Default, Payload: Default> Default for CodecChainHasEnvelopeExtensionsHas0x2<Extensions, Slices, Payload> {
+    /// The arm held while `extensions.has(0x2)` does not hold, each field at its type's default.
+    fn default() -> Self {
+        Self::NotHas0x2 { extensions: Default::default(), payload: Default::default(), }
+    }
+}
+
+/// The kind of entry `extensions.has(0x2)` names: an entry whose identifier is
+/// 0x2, which a value holds where it stands (docs/adr/0065 §6 R6b).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainHasEnvelopeExtensionsHas0x2Key;
+
+impl<E: super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> ::sce_forge_runtime::codec::Key<E> for CodecChainHasEnvelopeExtensionsHas0x2Key {
+    fn matches(entry: &E) -> bool {
+        (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(entry)) & 0xF) == 2u64
     }
 }
 
@@ -233,26 +270,16 @@ impl<'a> CodecChainHasEnvelope<'a> {
 pub trait CodecChainHasEnvelopeSource {
     /// The `header` field.
     fn header(&self) -> u8;
-    /// The `extensions` field.
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
-    /// The `payload` field.
-    fn payload(&self) -> Option<&[u8]>;
-    /// The `slices` field.
-    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>>;
+    /// The fields `extensions.has(0x2)` decides, held together (docs/adr/0065 §6 R4).
+    fn extensions_has_0x2(&self) -> CodecChainHasEnvelopeExtensionsHas0x2<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>, &[u8]>;
 }
 
 impl<T: CodecChainHasEnvelopeSource + ?Sized> CodecChainHasEnvelopeSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
-        (**self).extensions()
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        (**self).payload()
-    }
-    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>> {
-        (**self).slices()
+    fn extensions_has_0x2(&self) -> CodecChainHasEnvelopeExtensionsHas0x2<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>, &[u8]> {
+        (**self).extensions_has_0x2()
     }
 }
 
@@ -264,56 +291,43 @@ impl<T: CodecChainHasEnvelopeSource + ?Sized> CodecChainHasEnvelopeSource for &T
 pub struct CodecChainHasEnvelopeParts<'a> {
     /// The `header` field.
     pub header: u8,
-    /// The `extensions` field.
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
-    /// The `payload` field.
-    pub payload: Option<&'a [u8]>,
-    /// The `slices` field.
-    pub slices: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_slice::CodecChainHasSliceParts<'a>], 4>>,
+    /// The fields `extensions.has(0x2)` decides, held together (docs/adr/0065 §6 R4).
+    pub extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_slice::CodecChainHasSliceParts<'a>], 4>, &'a [u8]>,
 }
 
 impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelopeParts<'a> {
+    fn extensions_has_0x2(&self) -> CodecChainHasEnvelopeExtensionsHas0x2<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>, &[u8]> {
+        match &self.extensions_has_0x2 {
+            CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: extensions.iter(), slices: slices.iter() },
+            CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: extensions.as_ref().map(|_e| _e.iter()), payload: *payload },
+        }
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
-        self.extensions.as_ref().map(|_l| _l.iter())
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload
-    }
-    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>> {
-        self.slices.as_ref().map(|_l| _l.iter())
     }
 }
 
 impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelope<'a> {
+    fn extensions_has_0x2(&self) -> CodecChainHasEnvelopeExtensionsHas0x2<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>, &[u8]> {
+        match &self.extensions_has_0x2 {
+            CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: extensions.iter(), slices: ::sce_forge_runtime::codec::BoundedIter::from(slices) },
+            CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: extensions.as_ref().map(|_e| _e.iter()), payload: *payload },
+        }
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
-        self.extensions.as_ref().map(|_l| _l.iter())
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload
-    }
-    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>> {
-        self.slices.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasEnvelopeSource for CodecChainHasEnvelopeOwned<S> {
+    fn extensions_has_0x2(&self) -> CodecChainHasEnvelopeExtensionsHas0x2<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>, &[u8]> {
+        match &self.extensions_has_0x2 {
+            CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: extensions.list_iter(), slices: slices.list_iter() },
+            CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: extensions.as_ref().map(|_e| _e.list_iter()), payload: ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload) },
+        }
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
-        self.extensions.as_ref().map(|_l| _l.list_iter())
-    }
-    fn payload(&self) -> Option<&[u8]> {
-        self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
-    }
-    fn slices(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone, 4>> {
-        self.slices.as_ref().map(|_l| _l.list_iter())
     }
 }
 
@@ -322,49 +336,47 @@ impl<'a> CodecChainHasEnvelope<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecChainHasEnvelopeSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecChainHasEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecChainHasEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecChainHasEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
-        let _k_slices: usize = src.slices().map_or(0, |_l| _l.len());
-        let _p_header_e_0: bool = src.extensions().is_some();
-        let _n_d_payload_len_0: usize = match src.payload() {
+    pub fn write_source<S: CodecChainHasEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let (_m_extensions, _m_slices, _m_payload) = match src.extensions_has_0x2() {
+            CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => (Some(extensions.into_inner()), Some(slices), None),
+            CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => (extensions.map(|_e| _e.into_inner()), None, Some(payload)),
+        };
+        let _k_extensions: usize = _m_extensions.clone().map_or(0, |_l| _l.len());
+        let _k_slices: usize = _m_slices.clone().map_or(0, |_l| _l.len());
+        let _p_header_e_0: bool = _m_extensions.clone().is_some();
+        let _n_d_payload_len_0: usize = match _m_payload {
             Some(_v) => _v.len(),
             None => 0,
         };
-        let _f_d_payload_len: Option<usize> = if src.payload().is_some() { Some(_n_d_payload_len_0) } else { None };
+        let _f_d_payload_len: Option<usize> = if _m_payload.is_some() { Some(_n_d_payload_len_0) } else { None };
         let _d_payload_len: u64 = ::sce_forge_runtime::codec::widen_usize(_f_d_payload_len.unwrap_or(0));
-        let _f_d_slice_count: Option<usize> = if src.slices().is_some() { Some(_k_slices) } else { None };
+        let _f_d_slice_count: Option<usize> = if _m_slices.clone().is_some() { Some(_k_slices) } else { None };
         let _d_slice_count: u32 = _f_d_slice_count.unwrap_or(0) as u32;
         let _c_header: u8 = (src.header() & !0x80) | (u8::from(_p_header_e_0) << 7);
-        if (!src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0xF) == 2u64))) != src.payload().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if (src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0xF) == 2u64))) != src.slices().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
         w.write_u8(_c_header)?;
-        if let Some(_v) = src.extensions() {
+        if let Some(_v) = _m_extensions.clone() {
             for (_i, _e) in _v.enumerate() {
                 CodecZenohExtEntry::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
             }
         }
-        if !src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0xF) == 2u64)) {
+        if !matches!(src.extensions_has_0x2(), CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { .. }) {
             w.write_vle_u64(_d_payload_len)?;
         }
-        if let Some(_v) = src.payload() {
+        if let Some(_v) = _m_payload {
             w.write_bytes(_v)?;
         }
-        if src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0xF) == 2u64)) {
+        if matches!(src.extensions_has_0x2(), CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { .. }) {
             w.write_vle_u32(_d_slice_count)?;
         }
-        if let Some(_v) = src.slices() {
+        if let Some(_v) = _m_slices.clone() {
             for _e in _v {
                 CodecChainHasSlice::write_source(&_e, w)?;
             }
@@ -375,17 +387,17 @@ impl<'a> CodecChainHasEnvelope<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecChainHasEnvelopeSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecChainHasEnvelopeSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecChainHasEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasEnvelope<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -393,10 +405,12 @@ impl<'a, S: CodecChainHasEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::So
 #[allow(dead_code)]
 impl<'a> CodecChainHasEnvelope<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecChainHasEnvelopeSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecChainHasEnvelopeSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
@@ -443,6 +457,11 @@ impl<'a> CodecChainHasEnvelope<'a> {
 // so no call site repeats a `sce:max-size` / `sce:max-count` constant.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 use super::codec_chain_has_slice::CodecChainHasSliceOwned;
+/// The group `CodecChainHasEnvelopeExtensionsHas0x2` as `CodecChainHasEnvelopeOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecChainHasEnvelopeExtensionsHas0x2Owned<S> = CodecChainHasEnvelopeExtensionsHas0x2<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohExtEntryOwned<S>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecChainHasSliceOwned<S>, 4>, 4>, <S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<256>>;
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
@@ -450,11 +469,9 @@ use super::codec_chain_has_slice::CodecChainHasSliceOwned;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecChainHasEnvelopeOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
+    pub extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2Owned<S>,
     pub payload_len: Option<u64>,
-    pub payload: Option<S::Bytes<256>>,
     pub slice_count: Option<u32>,
-    pub slices: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecChainHasSliceOwned<S>, 4>, 4>>,
 }
 
 #[allow(dead_code)]
@@ -491,11 +508,9 @@ impl<'a> CodecChainHasEnvelope<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasEnvelopeOwned<S>, CodecError> {
         Ok(CodecChainHasEnvelopeOwned {
             header: self.header,
-            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            extensions_has_0x2: match self.extensions_has_0x2 { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: ::sce_forge_runtime::codec::Having::from_list(::sce_forge_runtime::storage::try_collect_list(extensions.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier"), slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: <S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(payload)? }, },
             payload_len: self.payload_len,
-            payload: self.payload.map(<S::Bytes<256> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,
             slice_count: self.slice_count,
-            slices: self.slices.map(|_v| ::sce_forge_runtime::codec::try_collect_bounded(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
         })
     }
 
@@ -535,17 +550,22 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasEnvelopeOwned<S> 
     /// and is not to be read.
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasEnvelope<'o>) -> Result<(), CodecError> {
         _out.header = self.header;
-        match &self.extensions {
-            Some(_l) => _out.extensions.insert(Default::default()).refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, _l.inner(), |_e| Ok(_e.as_borrowed())))?,
-            None => _out.extensions = None,
+        match &self.extensions_has_0x2 {
+            CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions, slices } => {
+                let _o_extensions: ::sce_forge_runtime::codec::Having<HeaplessVec<CodecZenohExtEntry<'o>, 4>, CodecChainHasEnvelopeExtensionsHas0x2Key, 4> = ::sce_forge_runtime::codec::Having::new({ let mut _v = HeaplessVec::new(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, extensions.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier");
+                let mut _o_slices: HeaplessVec<CodecChainHasSlice<'o>, 4> = Default::default();
+                ::sce_forge_runtime::codec::try_project_bounded_into(&mut _o_slices, slices.inner(), |_e| Ok(_e.as_borrowed()))?;
+                _out.extensions_has_0x2 = CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _o_extensions, slices: _o_slices };
+            }
+            CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions, payload } => {
+                let _o_extensions: Option<::sce_forge_runtime::codec::Except<HeaplessVec<CodecZenohExtEntry<'o>, 4>, CodecChainHasEnvelopeExtensionsHas0x2Key, 4, 1>> = match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::new({ let mut _v = HeaplessVec::new(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, _l.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier")), None => None };
+                let mut _o_payload: &'o [u8] = Default::default();
+                _o_payload = ::sce_forge_runtime::codec::SceByteBuf::as_slice(payload);
+                _out.extensions_has_0x2 = CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: _o_extensions, payload: _o_payload };
+            }
         }
         _out.payload_len = self.payload_len;
-        _out.payload = self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
         _out.slice_count = self.slice_count;
-        match &self.slices {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.slices.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
-            None => _out.slices = None,
-        }
         Ok(())
     }
 
@@ -571,22 +591,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasEnvelopeOwned<S> 
     /// The projection builds the whole borrowed record (every list and
     /// embedded body in it, by value) only for `encode` to read it once. A
     /// sender that holds an owned value encodes it from here.
-    /// The same refusals as the projection's: a list longer than the borrowed
-    /// view declares raises `CodecError::TooManyElements`, so an owned value the
-    /// borrowed form could not carry is an error and never a frame its own
-    /// decoder would reject.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// Every value has a frame (docs/adr/0065), so the only error is the
+    /// sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecChainHasEnvelope::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, as is any value
-    /// the encoding cannot carry.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecChainHasEnvelope::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
