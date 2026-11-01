@@ -2,6 +2,7 @@
 
 - Status: Accepted (2026-11-01). The owner ordered the work started on the recommendation of that day, under the rule
   of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored.
+  Amended by the owner on 2026-11-02 (§7): the wire bound and the storage capacity are two facts.
 - Date: 2026-11-01
 - Amends:
   - ADR 0065 §6 R1: the bound of a bounded byte string or text includes its `sce:max-size`, not only the range of its
@@ -220,6 +221,69 @@ For every codec X with a bounded field f, on every backend:
 matrix holds law 5. A mutation case removes the guard of §2 from each path. One of the tests above must kill each
 mutant: the positional and the streaming decode, gated and not, bytes and text, eager and view, and the repeat by count
 and to the end of the frame.
+
+### 7. Amendment of 2026-11-02: the bound is the protocol's, the capacity is the deployment's
+
+The text above gives `sce:max-size` and `max-count` two jobs: §1 and §2 make them part of the language the decode
+accepts, and §3 and §5 size storage from them ("the inline profile's capacity is that bound"). They are two facts. The
+consumer that reported the defect declared `sce:max-size` as its no-alloc inline capacity, which was the contract at
+its pin, and this ADR turned each into a wire ceiling: its decode refuses every Put over 256 bytes on every profile,
+heap and router included, where the protocol has no such limit. That is a conformance regression this ADR introduced.
+
+A codec is a correspondence between a language and a set of values. The language is the protocol's, and it does not
+depend on the build. What a node can hold is an implementation limit, which the C standard keeps apart from the
+language it limits and HTTP keeps apart from a malformed request (413, not 400). This codebase already has the shape on
+the other side: a total encode has only the sink's error (ADR 0065 §4), and a capacity is that error's dual on the
+decode. So:
+
+- **The bound** is `sce:max-size`, `max-count` and `max-depth`, as §1 reads them: the protocol's, in the document, the
+  same on every profile. It stays what §2 guards, what `Bounded<L, MAX, MIN>` states, and what the encode holds. Past
+  it a frame is malformed (`LengthOutOfRange`, `TooManyElements`).
+- **The capacity** is what a storing form holds: inline owned storage, a list decoded eagerly, a C11 array, a
+  broadcast-log slot. It is the deployment's, so it is not in the codec document. It is read from the deploy input:
+
+  ```yaml
+  codecs:
+    msg_put:
+      capacity:
+        payload: 256
+        slices: 4
+  ```
+
+- **A form that stores nothing needs no capacity.** A borrowed decode and a view hold the receive buffer's bytes, so
+  they accept up to the bound, on an MCU too.
+- **Past its capacity a storing form refuses with its own error,** `CodecError::CapacityExceeded`. The frame is in the
+  language and this node cannot hold it. Today `From<CapacityExceeded>` answers `TooManyElements`, which says the
+  frame is malformed; it stops.
+- **No capacity stated means the bound,** so a document whose bound is the protocol's changes nothing, and a field
+  with neither has no inline storage: its owned form takes growable profiles only, and C11, which has no other, refuses
+  it at generation, naming the field. A capacity above the bound, or naming a field that stores nothing, is refused.
+- **A heap node's policy limit** is a capacity too, and is spelled and refused the same way.
+- **§5's amendment of step 1 is reversed.** A `tail`, `length-ref` or repeat with no `sce:max-size` or `max-count` is
+  legal again, meaning the protocol states none. That amendment refused it because "one document [was] a different set
+  of frames per target". This keeps its point: the language is one set on every target, the verdict of a frame's
+  validity does not vary, and what differs between nodes is which valid frames each can store, reported as that. Which
+  frames a node can process does differ, as it does for any node with finite memory.
+- **Eager lists take the storage profile.** Today an eager list is `heapless::Vec` on every profile, sized by §5. A list
+  decoded eagerly is a storing decision, so it becomes `S::List<T, CAP>`, and a heap profile gets a growable list.
+- The original defect stays fixed: a value past what its storage holds is refused, never truncated or overrun.
+
+§6's laws stand for the bound. A new law joins them: **a frame inside the bound and past a form's capacity is refused
+by that form with `CapacityExceeded`, and accepted by every form that stores nothing, with the same verdict on every
+backend that stores.**
+
+This lands in steps, each its own commit and guide section:
+
+1. The split with no change of behaviour: `CodecField` answers its capacity apart from its bound, every storing reader
+   moves to it, and `CapacityExceeded` joins `CodecError` on each backend.
+2. The deploy input, and the parser admitting a field with no bound.
+3. Eager lists on the storage profile, and owned forms bound to growable profiles where a field has no capacity.
+4. The consumer moves each field by what the protocol says.
+
+*Open, and the owner's:* whether a chain's `max-depth` and a locator's `max-count` are the protocol's or a policy. The
+protocol's chain has no bound, so a depth of 8 reads as a capacity, but refusing a frame past 8 extensions may be what
+a node should do on the wire. This is a judgement about the protocol, and no rule here settles it. Until it is
+decided each stays a bound, as it is today.
 
 ## Alternatives
 
