@@ -86,6 +86,7 @@ and this section is the contract that commit carries.
 | Go | `<package>/<stem>_transition_function.go` | package `<package>` = `<name>_transition_function`, a directory inside the machine's | `type State int` (`State<Id>`), `type Event int` (`Event<Name>`) | `AllStates`, `AllEvents` | `Initial` | `SourceHash` | `func Transition(State, Event) (State, bool)` | `func IsFinal(State) bool` | `func Configuration(State) []string` | `State.String()`, `ParseState(string) (State, bool)`, `Event.String()`, `ParseEvent(string) (Event, bool)` |
 | Kotlin | `<stem>TransitionFunction.kt` | package `<prefix>.<name>_transition_function`, `<prefix>` the machine's (`com.sce.generated` by default) | `enum class State`, `enum class Event` | `ALL_STATES`, `ALL_EVENTS` (`List`) | `INITIAL` | `SOURCE_HASH` (`const val`) | `fun transition(State, Event): State?` | `fun isFinal(State): Boolean` | `fun configuration(State): List<String>` | `State.scxmlName`, `stateFromName(String): State?`, `Event.scxmlName`, `eventFromName(String): Event?` |
 | Python | `<stem>_transition_function.py` | the module `<stem>_transition_function`, beside the machine's | `class State(Enum)`, `class Event(Enum)`, each member's value its id | `ALL_STATES`, `ALL_EVENTS` (tuples) | `INITIAL` | `SOURCE_HASH` | `transition(State, Event) -> Optional[State]` | `is_final(State) -> bool` | `configuration(State) -> Tuple[str, ...]` | `.value` (and `str()`), `State.from_name(str) -> Optional[State]`, the same on `Event` |
+| Swift | `<stem>_transition_function.swift` | the caseless `public enum <Machine>TransitionFunction`, in the machine's module | `enum State`, `enum Event` (nested) | `allStates`, `allEvents` (`[State]`, `[Event]`) | `initial` | `sourceHash` | `static func transition(_:_:) -> State?` | `static func isFinal(_:) -> Bool` | `static func configuration(_:) -> [String]` | `State.scxmlName`, `state(named:) -> State?`, `Event.scxmlName`, `event(named:) -> Event?` |
 
 `<stem>` is the document's file stem and `<name>` the machine's name, which is the same word. A run
 that moves the machine's names moves the function's with them: `--cpp-namespace-prefix p` makes the
@@ -172,6 +173,20 @@ the ids and names as the document writes them, so `State("idle")` reads an id ba
 does (raising where `from_name` answers `None`), and `str(member)` is the id, as it is for the
 machine's own enumerations.
 
+### Swift
+
+A file of the machine's module, which needs nothing beyond the Swift standard library. A module is
+the unit every machine of a target shares, so the names live in a caseless `enum` named
+`<Machine>TransitionFunction`: its `State` and `Event` never meet the machine's `<Machine>State` and
+`<Machine>Event`, nor the function of another machine of the same module. Entries are spelled as the
+machine spells its own (a name Swift reserves is written in backticks). The enumerations declare no
+raw value, so a caller indexes by `allStates` and `allEvents`, which keep the document's order.
+
+The equivalence test below does not read the Swift file back from its source or compile it: that
+test runs no Swift toolchain. What holds the Swift file is the shape a unit test of
+`generator::transition_function_files` pins, and the Swift drivers of the two integration stems,
+which hold the engine to the function pair by pair.
+
 ### Rust
 
 The module uses `core` alone and names no crate: it compiles in a `#![no_std]` crate with no
@@ -253,7 +268,7 @@ It is a target of its own so that it runs on every push: the document that would
 one an author adds under `resources/`, which the suite's own lane does not filter on.
 
 The two documents are integration stems, so every channel holds its engine to its function the same
-way, in its own suite: the Rust, Go, Kotlin, Python and C11 drivers, and the C++ AOT engine and the
+way, in its own suite: the Rust, Go, Kotlin, Python, C11 and Swift drivers, and the C++ AOT engine and the
 Interpreter, which this file cannot build (`docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md`). The
 Interpreter generates nothing, and is held to the function the build computed for the same
 document.

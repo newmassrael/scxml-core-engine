@@ -1,0 +1,179 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The Swift transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   A Swift module is the build unit every machine of a target shares, so the
+   function's names live in a caseless enum of their own (`swift_namespace`,
+   computed by the generator): its `State` and `Event` and the machine's
+   `<Machine>State` and `<Machine>Event` never meet, and neither do the
+   functions of two machines of one module. The file imports nothing, the
+   standard library included. Entries are spelled by the filters the machine
+   uses (`to_state_variant`, `to_event_variant`), so a name Swift reserves is
+   written in backticks as it is there.
+#}
+{% include 'license_header.swift.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+{{ sce_map.source_marker(model.source_location, "swift", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+/// The transition function of `{{ model.name }}`, generated because its document declares
+/// `sce:transition-function="emit"`.
+///
+/// A pure function of (current state, event): `transition(_:_:)` answers where an event takes the
+/// machine from a state, or `nil` when no transition takes the event and the machine discards it.
+/// Every pair was computed when this file was generated, by the selection rule the machine itself
+/// follows, so this file and the machine generated beside it agree on every pair. It needs nothing
+/// beyond the Swift standard library.
+public enum {{ swift_namespace }} {
+    /// A state the machine can be in: an atomic state, or a `<final>` child of `<scxml>`. A
+    /// compound state is never the current state, so it is none of these; `configuration(_:)`
+    /// names the compound states active with each. `scxmlName` is the state's id, as the document
+    /// writes it.
+    public enum State: Hashable, Sendable {
+{% for state in tf.states %}
+        case {{ state.id | to_state_variant }}
+{% endfor %}
+
+        public var scxmlName: String {
+            switch self {
+{% for state in tf.states %}
+            case .{{ state.id | to_state_variant }}: return "{{ state.id | escape_swift }}"
+{% endfor %}
+            }
+        }
+    }
+
+    /// An event the machine names: every literal name its transitions write. A descriptor such as
+    /// `error.*` or `*` names no event of its own. `scxmlName` is the event's name, as the
+    /// document writes it.
+    public enum Event: Hashable, Sendable {
+{% for event in tf.events %}
+        case {{ event | to_event_variant }}
+{% endfor %}
+
+        public var scxmlName: String {
+{% if tf.events %}
+            switch self {
+{% for event in tf.events %}
+            case .{{ event | to_event_variant }}: return "{{ event | escape_swift }}"
+{% endfor %}
+            }
+{% else %}
+            // A machine that names no event has no value of this type to ask.
+            switch self {}
+{% endif %}
+        }
+    }
+
+    /// Every state, in document order.
+    public static let allStates: [State] = [
+{% for state in tf.states %}
+        .{{ state.id | to_state_variant }},
+{% endfor %}
+    ]
+
+    /// Every event, in the order the transitions first name them.
+    public static let allEvents: [Event] = [
+{% for event in tf.events %}
+        .{{ event | to_event_variant }},
+{% endfor %}
+    ]
+
+    /// The state the machine starts in.
+    public static let initial: State = .{{ tf.initial | to_state_variant }}
+
+    /// The digest of the source set this file was generated from: the `source-hash` of its own
+    /// header, as a value.
+    public static let sourceHash = "{{ tf.source_hash | escape_swift }}"
+
+    /// Where `event` takes the machine from `state`: the state it is in afterwards, which is
+    /// `state` itself when the transition taken has no target, or `nil` when no transition takes
+    /// the event and the machine discards it. A final state takes no event.
+    public static func transition(_ state: State, _ event: Event) -> State? {
+        switch state {
+{% for state in tf.states %}
+{% set taken = state.next | selectattr("to") | list %}
+{% if taken %}
+        case .{{ state.id | to_state_variant }}:
+            switch event {
+{% for cell in taken %}
+            case .{{ cell.event | to_event_variant }}: return .{{ cell.to | to_state_variant }}
+{% endfor %}
+{% if (taken | length) < (state.next | length) %}
+            default: return nil
+{% endif %}
+            }
+{% else %}
+        case .{{ state.id | to_state_variant }}: return nil
+{% endif %}
+{% endfor %}
+        }
+    }
+
+    /// Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the machine, and it
+    /// takes no event.
+    public static func isFinal(_ state: State) -> Bool {
+{% if finals %}
+        switch state {
+        case {% for state in finals %}.{{ state.id | to_state_variant }}{{ ", " if not loop.last }}{% endfor %}: return true
+{% if (finals | length) < (tf.states | length) %}
+        default: return false
+{% endif %}
+        }
+{% else %}
+        _ = state
+        return false
+{% endif %}
+    }
+
+    /// The ids of every state active while `state` is the current state, outermost first and
+    /// `state` last.
+    public static func configuration(_ state: State) -> [String] {
+        switch state {
+{% for state in tf.states %}
+        case .{{ state.id | to_state_variant }}: return [{% for id in state.configuration %}{{ ", " if not loop.first }}"{{ id | escape_swift }}"{% endfor %}]
+{% endfor %}
+        }
+    }
+
+    /// The state the id `name` names, or `nil` when it names none of `allStates`.
+    public static func state(named name: String) -> State? {
+        switch name {
+{% for state in tf.states %}
+        case "{{ state.id | escape_swift }}": return .{{ state.id | to_state_variant }}
+{% endfor %}
+        default: return nil
+        }
+    }
+
+    /// The event `name` names, or `nil` when it names none of `allEvents`. A name is matched
+    /// whole: the function's events are the names its document writes, and a longer name a
+    /// descriptor would match is not one of them.
+    public static func event(named name: String) -> Event? {
+{% if tf.events %}
+        switch name {
+{% for event in tf.events %}
+        case "{{ event | escape_swift }}": return .{{ event | to_event_variant }}
+{% endfor %}
+        default: return nil
+        }
+{% else %}
+        _ = name
+        return nil
+{% endif %}
+    }
+}
+{# transition-function:end #}

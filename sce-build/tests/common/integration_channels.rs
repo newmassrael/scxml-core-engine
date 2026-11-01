@@ -438,17 +438,10 @@ macro_rules! swift_refusal {
 /// reason it is exempt, which says what it is refused for. Every entry is a lowering not built yet, never a defect of the engine, and is
 /// deleted when the construct is built: `a_swift_exemption_still_holds` asks the generator, so an
 /// entry for a stem Swift now writes is red.
-pub const SWIFT_REFUSED: &[(&str, &str)] = &[
-    (
-        "a_mesh_request_reaches_the_router",
-        swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
-    ),
-    ("flat_lifecycle", swift_refusal!("the transition function")),
-    (
-        "nested_lifecycle",
-        swift_refusal!("the transition function"),
-    ),
-];
+pub const SWIFT_REFUSED: &[(&str, &str)] = &[(
+    "a_mesh_request_reaches_the_router",
+    swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
+)];
 
 /// The stems the Swift backend writes and whose driver is not written yet, a debt register that
 /// shrinks: each slice that writes a driver deletes its stem here, and

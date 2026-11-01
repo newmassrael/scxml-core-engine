@@ -2770,14 +2770,6 @@ pub fn transition_function_files(
     if !model.transition_function_declared || model.emitted_transition_function.is_none() {
         return Ok(Vec::new());
     }
-    // The function is a file of the machine's own backend, with a template of its
-    // own; Swift has none yet, so a document that declares one is refused by name.
-    if language == Language::Swift {
-        return Err(swift_unsupported(
-            format!("the transition function of '{}'", model.name),
-            model.source_location.clone(),
-        ));
-    }
     let target = TransitionFunctionTarget::of(model, input_stem, language, naming);
     let mut env = new_env();
     templates.load(&mut env, language)?;
@@ -2789,9 +2781,7 @@ pub fn transition_function_files(
         Language::Go => filters::register_go_filters(&mut env, &scope),
         Language::Kotlin => filters::register_kotlin_filters(&mut env, &scope),
         Language::Python => filters::register_python_filters(&mut env, &scope),
-        Language::Swift => {
-            crate::forge::codegen_matrix::no_swift_emitter("transition_function_files")
-        }
+        Language::Swift => filters::register_swift_filters(&mut env, &scope),
     }
     let code = render_transition_function(&mut env, model, &target)?;
     Ok(vec![(target.file, code)])
@@ -2832,10 +2822,6 @@ pub(crate) fn transition_function_template(language: Language) -> &'static str {
         Language::Go => "transition_function.go.jinja2",
         Language::Kotlin => "transition_function.kt.jinja2",
         Language::Python => "transition_function.py.jinja2",
-        // Named by the convention the others follow. No such template exists
-        // yet: [`crate::reader_names`] asks every backend which template is its
-        // transition function's, to leave it out of the machine's members, and
-        // a name no template carries leaves nothing out.
         Language::Swift => "transition_function.swift.jinja2",
     }
 }
@@ -2929,9 +2915,19 @@ impl TransitionFunctionTarget {
                 file: format!("{input_stem}_transition_function.py"),
                 names: minijinja::context! {},
             },
-            Language::Swift => {
-                crate::forge::codegen_matrix::no_swift_emitter("TransitionFunctionTarget::of")
-            }
+            // A Swift module is the build unit every machine of a target shares, so the
+            // function's names live in a caseless enum of their own, named for the machine
+            // as the machine's types are (`<Machine>State`) and ending in the function.
+            Language::Swift => Self {
+                template,
+                file: format!("{input_stem}_transition_function.swift"),
+                names: minijinja::context! {
+                    swift_namespace => format!(
+                        "{}TransitionFunction",
+                        filters::to_pascal_case(model.name.clone())
+                    ),
+                },
+            },
         }
     }
 }
@@ -7915,47 +7911,29 @@ mod tests {
         }
     }
 
-    /// A backend with no machine template refuses a declared function as it
-    /// refuses the machine, by the diagnostic the codegen matrix gives, and
-    /// writes nothing where the run built none.
+    /// Swift, which writes a statechart in part, writes the function whole: a caseless enum
+    /// of its own beside the machine, in a file named for the document, so that two machines
+    /// of one module never meet in a name.
     #[test]
-    fn a_backend_with_no_emitter_refuses_the_function_it_cannot_write() {
-        use crate::forge::codegen_matrix::{emit_missing, emitting, emitting_in_part};
-        use crate::forge::model::ForgeKind;
+    fn swift_writes_the_function_in_a_caseless_enum_of_its_own() {
         let declared = transition_function_model(true, true);
-        let mut refused = 0usize;
-        for &language in Language::ALL {
-            if emitting(ForgeKind::Statechart).any(|emits| emits == language) {
-                continue;
-            }
-            // A backend that writes a statechart in part refuses the function by
-            // the construct, as it does every one it does not lower yet.
-            if emitting_in_part(ForgeKind::Statechart).any(|emits| emits == language) {
-                let error =
-                    named_function_files(&declared, language, TransitionFunctionNaming::default())
-                        .expect_err("a backend that does not write the function wrote one");
-                assert_eq!(
-                    error.to_string(),
-                    format!(
-                        "feature unsupported in this language: the transition function of \
-                         'lamp' has no {language:?} codegen path yet"
-                    ),
-                    "{language:?}"
-                );
-                refused += 1;
-                continue;
-            }
-            let error =
-                named_function_files(&declared, language, TransitionFunctionNaming::default())
-                    .expect_err("a backend with no emitter wrote a function");
-            assert_eq!(
-                error.to_string(),
-                emit_missing(ForgeKind::Statechart, language).to_string(),
-                "{language:?}"
-            );
-            refused += 1;
+        let files = named_function_files(
+            &declared,
+            Language::Swift,
+            TransitionFunctionNaming::default(),
+        )
+        .expect("Swift writes the function");
+        assert_eq!(files.len(), 1, "one file");
+        let (name, code) = &files[0];
+        assert_eq!(name, "lamp_transition_function.swift");
+        for needle in [
+            "public enum LampTransitionFunction {",
+            "public enum State: Hashable, Sendable {",
+            "public enum Event: Hashable, Sendable {",
+            "public static func transition(_ state: State, _ event: Event) -> State? {",
+        ] {
+            assert!(code.contains(needle), "no `{needle}` in:\n{code}");
         }
-        assert!(refused > 0, "every backend emits, so this measures nothing");
     }
 
     /// C++: a header in a namespace nested in the machine's, `constexpr`
