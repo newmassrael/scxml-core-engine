@@ -1877,9 +1877,10 @@ pub fn generate_cpp_with_imports_and_externs(
         // backend, and
         // lowered by the ones whose runtime row and template have landed
         // (`codegen_matrix::BROADCAST_LOG_BACKENDS` lists them, and each has its
-        // own `render_broadcast_log_<language>`); every other dispatch refuses
-        // it by name ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it
-        // through to here, since only the dispatcher has the document. C++'s
+        // own `render_broadcast_log_<language>`); Swift writes it in part
+        // ([`render_broadcast_log_swift`], `codegen_matrix::ships_in_part`).
+        // `codegen_matrix::check` lets it through to here, since only the
+        // dispatcher has the document. C++'s
         // renders over `sce/forge/broadcast_log.h` (or, for a target without 64-bit
         // atomics, `sce/forge/broadcast_log_narrow.h`) and reads the numbers the
         // document-set compile resolved into `options.broadcast_log_resolutions`.
@@ -22290,8 +22291,7 @@ fn queue_progress_word(progress: crate::forge::model::QueueProgress) -> &'static
 /// keep (`broadcast-log/progress-unreachable-on-backend`), or `Ok` when it can
 /// ([`crate::forge::codegen_matrix::broadcast_log_progress_ceiling`], ADR 0062
 /// §4, Per backend). Waiting for a runtime row would not repair it, so it is
-/// judged first, by every dispatcher's arm for the kind: the one that lowers the
-/// log ([`render_broadcast_log_rust`]) as much as the ones that refuse it.
+/// judged first, by every renderer of the kind ([`resolve_broadcast_log_render_inputs`]).
 fn judge_broadcast_log_progress_on_backend(
     m: &crate::forge::model::BroadcastLogModel,
     language: crate::generator::Language,
@@ -22310,33 +22310,6 @@ fn judge_broadcast_log_progress_on_backend(
         );
     }
     Ok(())
-}
-
-/// The refusal a broadcast log is answered with when a language is asked to
-/// lower it and its forge runtime row has not landed there
-/// ([`crate::forge::codegen_matrix::awaits_runtime`]; ADR 0062). The document is
-/// valid, judged on its own and against the language.
-///
-/// The refusal that no runtime to come can repair is the one given: a declared
-/// progress the language cannot keep
-/// (`broadcast-log/progress-unreachable-on-backend`) comes before the one that
-/// says the row is missing (`broadcast-log/runtime-missing`), because waiting for
-/// the row would not repair it. The dispatcher's arm for each language whose row
-/// has not landed returns this, so such a backend refuses by name and never
-/// reaches a template that does not exist; the arm is replaced by the render in
-/// the change that makes [`crate::forge::codegen_matrix::template_ships`] answer
-/// `true` for the pair, as [`render_broadcast_log_rust`] replaced Rust's.
-fn refuse_broadcast_log(
-    m: &crate::forge::model::BroadcastLogModel,
-    language: crate::generator::Language,
-) -> ForgeError {
-    if let Err(refusal) = judge_broadcast_log_progress_on_backend(m, language) {
-        return refusal;
-    }
-    ForgeError::from(GenerateError::BroadcastLogRuntimeMissing {
-        log_name: m.name.clone(),
-        language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
-    })
 }
 
 /// What the render of a broadcast log reads of the build, once every refusal the
@@ -22493,6 +22466,18 @@ fn resolve_broadcast_log_render_inputs(
         .into());
     };
     if let Some(why) = resolution.element.refusal_for(language) {
+        // Swift's reason is the construct its codec emitter does not lower yet, which is no
+        // question of what a decoded form borrows: it is refused as that emitter refuses the
+        // codec itself, as an unsupported feature that names the codec and the construct.
+        if language == crate::generator::Language::Swift {
+            return Err(ForgeError::from(GenerateError::unsupported(format!(
+                "broadcast-log '{name}': the element '{element}' cannot be stored by the Swift \
+                 template: {why}",
+                name = m.name,
+                element = m.element_type,
+            )))
+            .at_line(m.element_type_line));
+        }
         return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
             "broadcast-log '{name}': the element '{element}' cannot be stored by the {template} \
              template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \
@@ -22881,6 +22866,115 @@ fn render_broadcast_log_kotlin(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "broadcast_log.kt.jinja2 (kotlin): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="broadcast-log">` document for the Swift backend (ADR
+/// 0062), in part: the module names the log over `SceForgeRuntime.BroadcastLog`
+/// and gives typed `publish` and `read` over the element's generated struct, from
+/// the numbers the build resolved ([`crate::BroadcastLogResolution`]). What is
+/// refused before the template is read is [`resolve_broadcast_log_render_inputs`]'s,
+/// which every language's renderer asks first, and which refuses an element whose
+/// codec the Swift codec emitter does not lower
+/// ([`crate::BroadcastLogElementFacts::swift_unlowered`], read from
+/// [`swift_codec_unlowered`]) by the construct, as `generate/unsupported-feature`,
+/// before anything is written.
+///
+/// The element is stored as its wire bytes, so what the template needs of the
+/// element's struct is the codec's own `encode(into:)` and `decode(_:)`. A codec
+/// the Swift emitter lowers is a frame of fixed-width integers and asks its caller
+/// for nothing, so the entry is the length word and the bytes and the module has
+/// no context words.
+///
+/// The Swift runtime has one row, the 64-bit one (`Atomic<UInt64>` is the cell of
+/// every stamp, head and word). The row is chosen as the Rust, C11 and C++ renderers
+/// choose theirs ([`rust_broadcast_log_row`], the choice [`judged_broadcast_log_row`]
+/// makes before it judges the stamp), so a deploy states its target's atomics once and
+/// every language reads it alike; a deploy whose target has no 64-bit atomic selects the
+/// narrow row, which Swift does not have, and is refused by name and not promoted: the
+/// module would be generated over atomics the device the deploy describes does not
+/// have. The stamp the narrow row keeps is not judged, since no Swift module keeps it,
+/// so a deploy that has not stated its pause is told what Swift lacks and not what a
+/// row Swift does not write needs.
+///
+/// What is Swift's own is the width of `Int`: the constants are `Int`s that the
+/// module computes (`slots = retention + 1`, `words = 1 + (maxEncodedBytes + 7) / 8`),
+/// and `Int` is 32 bits on a target with 32-bit pointers, so a retention or an
+/// element size that would overflow either sum there is refused by name instead of
+/// being written as a literal the compiler would refuse or a sum that wrapped.
+fn render_broadcast_log_swift(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs =
+        resolve_broadcast_log_render_inputs(m, crate::generator::Language::Swift, options)?;
+    if rust_broadcast_log_row(m, &inputs)? != RustBroadcastLogRow::Wide {
+        let target = inputs
+            .target
+            .as_deref()
+            .map(|triple| format!(" `{triple}`"))
+            .unwrap_or_default();
+        return Err(ForgeError::from(GenerateError::unsupported(format!(
+            "broadcast-log '{name}': the deploy's target{target} has no 64-bit read-modify-write \
+             atomic, which selects the narrow row of the runtime (a 32-bit stamp), and the Swift \
+             forge runtime has the 64-bit row only: every stamp, the head and every word of its \
+             log is an Atomic<UInt64>. Generate the log for a target with 64-bit atomics",
+            name = m.name,
+        )))
+        .at_line(m.retention_line));
+    }
+    // `slots = retention + 1` is an `Int`.
+    if inputs.retention >= i32::MAX as u32 {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the retention {retention} does not leave room for its \
+             retention + 1 slots in a Swift Int, which is 32 bits on a target with 32-bit \
+             pointers (at most {limit} entries). The runtime takes its slot count as an Int.",
+            name = m.name,
+            retention = inputs.retention,
+            limit = i32::MAX - 1,
+        )))
+        .at_line(m.retention_line));
+    }
+    // `words = 1 + (maxEncodedBytes + 7) / 8` is an `Int` computed from a sum that must not
+    // wrap, and the sink an element is encoded into takes its capacity as an `Int`.
+    let largest_encoded = i32::MAX as u64 - 7;
+    if inputs.max_bytes > largest_encoded {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the element '{element}' encodes to as many as {bytes} bytes, \
+             and a Swift log holds at most {limit}: its words are counted in an Int, which is 32 \
+             bits on a target with 32-bit pointers, and an entry is encoded into a sink whose \
+             capacity is an Int.",
+            name = m.name,
+            element = m.element_type,
+            bytes = inputs.max_bytes,
+            limit = largest_encoded,
+        )))
+        .at_line(m.element_type_line));
+    }
+
+    let tmpl = env
+        .get_template("broadcast_log.swift.jinja2")
+        .map_err(|e| {
+            ForgeError::from(GenerateError::TemplateLoad(format!(
+                "broadcast_log.swift.jinja2 (swift): {e}"
+            )))
+        })?;
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_type => &m.element_type,
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "SceForgeRuntime",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.swift.jinja2 (swift): {e}"
         )))
     })
 }
@@ -25697,9 +25791,9 @@ pub fn generate_swift(
 /// ([`swift_event_schema_unlowered`]) and an enum ([`swift_enum_unit_unlowered`]) in part
 /// ([`crate::forge::codegen_matrix::ships_in_part`]), refusing by name what each
 /// holds past what is lowered, and a declaration, which writes no file; every
-/// other kind is `codegen/generic-kind-backend-emit-missing`, except a kind that is
-/// parsed and checked before any runtime has its row, which is refused by its own
-/// code (`refuse_broadcast_log`).
+/// other kind is `codegen/generic-kind-backend-emit-missing`. A broadcast log is
+/// written in part as well ([`render_broadcast_log_swift`]): for the elements
+/// whose codec the Swift codec writes, and refused by the construct for the rest.
 pub fn generate_swift_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
@@ -25707,9 +25801,6 @@ pub fn generate_swift_with_imports(
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     use crate::generator::Language;
-    if let ForgeDocument::BroadcastLog(m) = doc {
-        return Err(refuse_broadcast_log(m, Language::Swift));
-    }
     crate::forge::codegen_matrix::check(doc.kind(), Language::Swift)?;
     let refused = match doc {
         ForgeDocument::Algorithm(m) => {
@@ -25742,6 +25833,10 @@ pub fn generate_swift_with_imports(
         // A timer is a period, a fire event and two optional hooks over the runtime's
         // clock, none of which depends on a type Swift has yet to spell.
         ForgeDocument::Timer(_) => None,
+        // A log is refused for its element's codec, which only the document-set compile has
+        // in hand: the renderer reads that refusal from the resolution it was handed
+        // ([`crate::BroadcastLogElementFacts::swift_unlowered`]) and refuses before it writes.
+        ForgeDocument::BroadcastLog(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -25775,6 +25870,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
         ForgeDocument::Codec(m) => swift_codec::render(&env, m, imports)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -26096,6 +26192,14 @@ pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
 /// codec is refused for it, since the unit its member names is not written.
 pub(crate) fn swift_codec_unlowered(m: &CodecModel) -> Option<String> {
     swift_codec::unlowered(m)
+}
+
+/// The refusal of the codec `m` for the Swift construct `construct` it holds
+/// ([`swift_codec_unlowered`]): the sentence `generate` answers the codec with, which a
+/// broadcast log over it is refused with as well
+/// ([`crate::BroadcastLogElementFacts::swift_unlowered`]).
+pub(crate) fn swift_codec_refusal(m: &CodecModel, construct: &str) -> String {
+    swift_codec::refusal(m, construct)
 }
 
 /// What of a validator the Swift backend does not lower yet, described for a refusal by name

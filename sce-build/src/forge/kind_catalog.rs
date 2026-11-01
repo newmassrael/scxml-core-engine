@@ -621,9 +621,10 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  the log keeps no count of overwrites",
                 "the document names no algorithm and no memory ordering",
                 "a backend generates it from a document set that holds the element's \
-                 document, once that language has its template (the codegen matrix's \
-                 BROADCAST_LOG_BACKENDS lists them): on any other backend a valid document is \
-                 refused by name (broadcast-log/runtime-missing)",
+                 document (the codegen matrix's BROADCAST_LOG_BACKENDS lists the backends that \
+                 hold every element); Swift writes it for the elements its codec lowers, a \
+                 frame of fixed-width integers, and refuses any other element by naming the \
+                 codec and the construct (generate/unsupported-feature)",
             ],
             example: Example::Document(include_str!("../../kind-examples/broadcast-log.scxml")),
         },

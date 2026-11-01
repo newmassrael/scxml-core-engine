@@ -415,7 +415,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (
         Language::Swift,
         "forge kind `broadcast-log`",
-        Why::NotYet("a broadcast log needs the sequence-locked ring and its fences, which Swift's forge runtime does not have yet; it is built after the other kinds"),
+        Why::NotYet("Swift writes the broadcast log in part (`codegen_matrix::ships_in_part`): over the elements its codec lowers, a frame of fixed-width integers, on the 64-bit row; an element of any other codec shape and a target with no 64-bit atomic are refused by name"),
     ),
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),

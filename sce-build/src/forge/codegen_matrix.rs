@@ -396,11 +396,19 @@ const fn lists(list: &[Language], lang: Language) -> bool {
 /// the refusal where the document is in hand.
 ///
 /// The answer is per language because the rows land one language at a time: a
-/// language whose template ships ([`template_ships`]) is out of it, and the
-/// kind stops being answered for at all when the last language has landed.
+/// language whose template ships ([`template_ships`]) or is written in part
+/// ([`ships_in_part`]) is out of it. No language awaits the broadcast log's runtime
+/// today: the answer is what a language added to [`Language::ALL`] gets until its row
+/// lands, and its dispatch arm builds
+/// `GenerateError::BroadcastLogRuntimeMissing` where the document is in hand.
 pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
     match kind {
-        ForgeKind::BroadcastLog => !lists(BROADCAST_LOG_BACKENDS, lang),
+        // A language that writes the log in part ([`ships_in_part`]) has its row: Swift's
+        // runtime is `BroadcastLog.swift`, and what it does not write is the elements its
+        // codec does not lower, which it refuses by the construct and not as a missing row.
+        ForgeKind::BroadcastLog => {
+            !lists(BROADCAST_LOG_BACKENDS, lang) && !ships_in_part(ForgeKind::BroadcastLog, lang)
+        }
         _ => false,
     }
 }
@@ -428,7 +436,10 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// its enum a closed one (`forge::generator::swift_enum_unlowered` names an open enum
 /// and a variant named for a reserved word), and its codec a positional one of
 /// native-width integers at byte offsets (`forge::generator::swift_codec::unlowered` names
-/// each shape past that).
+/// each shape past that), and its broadcast log one over an element whose codec that is
+/// (`BroadcastLogElementFacts::refusal_for` refuses every other element by the codec's own
+/// refusal, and the narrow row of a deploy whose target has no 64-bit atomic is refused by
+/// name).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
     matches!(
         (kind, lang),
@@ -444,6 +455,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Transform, Language::Swift)
             | (ForgeKind::Validator, Language::Swift)
             | (ForgeKind::Timer, Language::Swift)
+            | (ForgeKind::BroadcastLog, Language::Swift)
     )
 }
 
@@ -746,9 +758,10 @@ pub const fn queue_progress_ceiling(
 ///   (a C11 target whose `platform.atomic_rmw_width` is 0 included) gives
 ///   `wait-free`. A deploy's width does not enter, unlike the queue's.
 ///
-/// Swift has no runtime yet (`template_ships`), so its answer is never read; it
-/// stays with the backends that take nothing from the platform until its atomics
-/// decide it.
+/// Swift's row is the 64-bit one (`Atomic<UInt64>` loads and stores with fences, one
+/// exchange to take the publisher), which gives `wait-free` on a target that has 64-bit
+/// atomics; a deploy whose target has none selects the narrow row Swift does not have,
+/// and is refused for that by the renderer, not by this ceiling.
 pub const fn broadcast_log_progress_ceiling(lang: Language) -> (QueueProgress, &'static str) {
     match lang {
         Language::Python => (
@@ -899,10 +912,12 @@ mod tests {
     }
 
     /// ADR 0062: a broadcast log is emitted by the backends of
-    /// [`BROADCAST_LOG_BACKENDS`], whose template has landed, and every other
-    /// language still awaits its runtime. The per-language answer of
-    /// `awaits_runtime` and the matrix's `template_ships` are never both true for
-    /// one pair, and a pair that ships is never the missing-runtime one.
+    /// [`BROADCAST_LOG_BACKENDS`], whose template has landed, and written in part
+    /// by the backends [`ships_in_part`] names (Swift); every other language would
+    /// still await its runtime. The per-language answer of `awaits_runtime` and the
+    /// matrix's `template_ships` are never both true for one pair, a pair that ships
+    /// or ships in part is never the missing-runtime one, and a pair that ships in
+    /// part is not one that ships whole.
     #[test]
     fn a_broadcast_log_is_emitted_by_the_registered_backends_alone() {
         assert!(
@@ -911,10 +926,14 @@ mod tests {
         );
         for &lang in Language::ALL {
             let landed = BROADCAST_LOG_BACKENDS.contains(&lang);
+            let in_part = ships_in_part(ForgeKind::BroadcastLog, lang);
+            assert!(!(landed && in_part), "{lang:?} ships whole and in part");
             assert_eq!(
                 lookup(ForgeKind::BroadcastLog, lang),
                 if landed {
                     EmitOutcome::Emit
+                } else if in_part {
+                    EmitOutcome::TemplateMissing
                 } else {
                     EmitOutcome::RuntimeMissing
                 },
@@ -927,10 +946,20 @@ mod tests {
             );
             assert_eq!(
                 awaits_runtime(ForgeKind::BroadcastLog, lang),
-                !landed,
+                !landed && !in_part,
                 "{lang:?}"
             );
+            assert!(check(ForgeKind::BroadcastLog, lang).is_ok(), "{lang:?}");
         }
+        assert_eq!(
+            Language::ALL
+                .iter()
+                .copied()
+                .filter(|lang| ships_in_part(ForgeKind::BroadcastLog, *lang))
+                .collect::<Vec<_>>(),
+            [Language::Swift],
+            "Swift writes the log in part, for the elements its codec lowers"
+        );
         // `emitting` answers in the order of `Language::ALL`, whatever order the
         // registry is written in.
         assert_eq!(

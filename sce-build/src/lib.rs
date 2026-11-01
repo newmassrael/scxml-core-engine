@@ -3698,6 +3698,13 @@ pub struct BroadcastLogElementFacts {
     /// the fact is what keeps the verdict of a render that is handed its numbers
     /// by hand the same.
     pub cbor_entry_unbounded: bool,
+    /// Why the Swift codec emitter does not write the element's codec, as the sentence
+    /// `generate` refuses that codec with (`codec 'x': a flag input has no Swift lowering
+    /// yet`), or `None` for a codec it writes. Read from
+    /// `forge::generator::swift_codec_unlowered`, the one answer a validator that imports the
+    /// codec reads too, and not decided again here: the Swift log is generated over the unit
+    /// that emitter writes, so an element it does not write is an element the log cannot name.
+    pub swift_unlowered: Option<String>,
 }
 
 impl BroadcastLogElementFacts {
@@ -3728,9 +3735,18 @@ impl BroadcastLogElementFacts {
     /// has). Every arm is written out, so that a language added to
     /// [`generator::Language`] is decided here and does not inherit another's
     /// answer, and the change that gives a language its template states, in its
-    /// arm, which it is and why.
+    /// arm, which it is and why. Swift's is decided by its codec emitter: it refuses
+    /// the element when that emitter does not write the codec ([`Self::swift_unlowered`]).
     pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
         use generator::Language;
+        // The Swift log is written over the unit the Swift codec emitter writes, so a codec
+        // that emitter does not lower is refused first and by its own sentence, which names the
+        // codec and the construct (a flag input, a variant, an encoding, a bit field).
+        if language == Language::Swift {
+            if let Some(why) = &self.swift_unlowered {
+                return Some(why.clone());
+            }
+        }
         // A language whose template has not yet given the slot its context
         // words ([`forge::codegen_matrix::BROADCAST_LOG_CONTEXT_BACKENDS`]) cannot
         // store what the codec asks its caller for, and says so by name.
@@ -3808,7 +3824,12 @@ impl BroadcastLogElementFacts {
             // encodings own theirs as well: a `bytes` field is a
             // `std::vector<uint8_t>` and a string a `std::string`.
             Language::Cpp => false,
-            // No template has landed for this one, so it has not decided yet.
+            // Nothing a codec the Swift emitter lowers decodes to borrows its input: that
+            // emitter writes a frame of fixed-width integers, a struct of values that own
+            // their bytes, and refuses every shape that holds a string, a byte string or a
+            // CBOR entry (`swift_unlowered`, above). For the same reason every element it
+            // lowers asks its caller for nothing (no flag input, no variant tag), so the
+            // context check above has nothing to refuse for it either.
             Language::Swift => false,
         };
         borrows.then(|| {
@@ -7063,6 +7084,8 @@ fn broadcast_log_element_facts(
             }),
         cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
             && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
+        swift_unlowered: forge::generator::swift_codec_unlowered(codec)
+            .map(|construct| forge::generator::swift_codec_refusal(codec, &construct)),
     }
 }
 

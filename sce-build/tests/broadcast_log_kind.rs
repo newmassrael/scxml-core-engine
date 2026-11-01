@@ -1,14 +1,15 @@
 //! Broadcast-log kind: parse, the selection table, the refusals the document
 //! alone decides, the cross-document element type, the stamp obligations of a
-//! narrow target, the catalog entry, and the refusal every language gives while
-//! none has the runtime row.
+//! narrow target, the catalog entry, and what the one backend that writes the
+//! kind in part (Swift) does with it.
 //!
 //! Per RFC §synth-5-S (ADR 0062): a `sce:kind="broadcast-log"` document states a contract
 //! (element type, producer cardinality, the progress it relies on, the
 //! retention) and names no algorithm. The kind is parsed and checked on every
-//! backend before any backend lowers it, so generating a valid document for any
-//! language is refused by name (`broadcast-log/runtime-missing`), and never as
-//! a template the generator forgot (`codegen/generic-kind-backend-emit-missing`).
+//! backend before any backend lowers it. Swift lowers it for the elements its
+//! codec writes and refuses every other element by naming the codec and the
+//! construct (`generate/unsupported-feature`), and never as a template the
+//! generator forgot (`codegen/generic-kind-backend-emit-missing`).
 
 use std::collections::HashMap;
 use std::fs;
@@ -946,8 +947,9 @@ fn has_landed(language: Language) -> bool {
     BROADCAST_LOG_BACKENDS.contains(&language)
 }
 
-/// The languages a document set can be compiled for: every one with an emitter
-/// for a codec, which Swift has not.
+/// The languages a document set can be compiled for with every element the
+/// tests below use: Swift writes a codec in part and the log for the elements
+/// that codec lowers, which its own tests (`swift_*`) hold.
 fn set_languages() -> impl Iterator<Item = Language> {
     Language::ALL
         .iter()
@@ -1070,60 +1072,46 @@ fn options_for(language: Language) -> ForgeCompileOptions {
 }
 
 #[test]
-fn a_valid_document_is_refused_by_name_on_every_language_with_no_template() {
+fn every_language_has_the_log_whole_or_in_part_and_none_awaits_its_runtime() {
+    // A language is either in the registry of the backends that hold every element
+    // or writes the log in part (Swift, for the elements its codec lowers), so none
+    // is refused for a missing row (`broadcast-log/runtime-missing`).
+    for language in Language::ALL.iter().copied() {
+        let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
+        assert!(
+            !awaits_runtime(ForgeKind::BroadcastLog, language),
+            "{wire} awaits a runtime"
+        );
+        assert_eq!(
+            sce_build::forge::codegen_matrix::ships_in_part(ForgeKind::BroadcastLog, language),
+            !has_landed(language),
+            "{wire}: the log is held whole or in part, one of the two"
+        );
+    }
+}
+
+#[test]
+fn a_log_over_a_fixed_width_element_is_generated_for_every_language() {
+    // One `uint32`: every language, Swift included, generates the log, so a document
+    // set over an element the Swift codec lowers is never the missing runtime.
     let xml = simple_doc(
         "event_ring",
         "one",
         "blocking",
         r#"<sce:retention entries="1023"/>"#,
     );
-    for language in Language::ALL
-        .iter()
-        .copied()
-        .filter(|language| !BROADCAST_LOG_BACKENDS.contains(language))
-    {
+    let codec = codec_doc("event_record");
+    for language in Language::ALL.iter().copied() {
         let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
-        let located = if language == Language::Swift {
-            compile_forge_from_string(&xml, label("event_ring"), language)
-                .err()
-                .unwrap_or_else(|| panic!("swift has no runtime, so it refuses the document"))
-        } else {
-            let dir = tempdir().expect("tempdir");
-            let codec_path = dir.path().join("event_record.scxml");
-            fs::write(&codec_path, codec_doc("event_record")).expect("write codec");
-            let log_path = dir.path().join("event_ring.scxml");
-            fs::write(&log_path, &xml).expect("write log");
-            compile_scxml_with_imports(
-                &[],
-                &[codec_path.as_path(), log_path.as_path()],
-                &sce_build::find_template_dir_for(language),
-                language,
-                &options_for(language),
-                None,
-            )
-            .err()
-            .unwrap_or_else(|| panic!("{wire}: this language has no broadcast-log row yet"))
-        };
-        let codes: Vec<DiagnosticCode> = located
-            .error
-            .to_diagnostics()
-            .iter()
-            .map(|d| d.code)
-            .collect();
+        let outputs = compile_documents(
+            language,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .unwrap_or_else(|located| panic!("{wire}: {:?}", located.error));
         assert!(
-            matches!(
-                codes.as_slice(),
-                [DiagnosticCode::BroadcastLogRuntimeMissing]
-            ),
-            "{wire}: {codes:?}"
+            outputs.iter().any(|(_, output)| !output.files.is_empty()),
+            "{wire} wrote nothing"
         );
-        match generate_error(located) {
-            GenerateError::BroadcastLogRuntimeMissing { log_name, language } => {
-                assert_eq!(log_name, "event_ring");
-                assert_eq!(language, wire);
-            }
-            other => panic!("{wire}: expected BroadcastLogRuntimeMissing, got {other:?}"),
-        }
     }
 }
 
@@ -1158,17 +1146,15 @@ fn a_progress_the_python_backend_cannot_give_is_refused_before_the_missing_runti
         other => panic!("expected BroadcastLogProgressUnreachableOnBackend, got {other:?}"),
     }
 
-    // A backend that can give it and has no row (Swift, which has no forge runtime
-    // and is the one language the list of landed templates never holds) reaches the
-    // missing runtime instead.
-    assert!(!has_landed(Language::Swift));
+    // A backend that can give it (Swift, whose row is the 64-bit one) does not refuse
+    // the progress: what it refuses a single document with no resolution for is the
+    // numbers a render cannot guess, as every other backend with a row does.
     let located = compile_forge_from_string(&xml, label("event_ring"), Language::Swift)
         .err()
-        .unwrap_or_else(|| panic!("swift has no row, so it refuses the document"));
-    assert!(matches!(
-        generate_error(located),
-        GenerateError::BroadcastLogRuntimeMissing { .. }
-    ));
+        .unwrap_or_else(|| panic!("a single document has no resolution, so it is refused"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+    assert!(detail.contains("no resolution"), "{detail}");
 }
 
 #[test]
@@ -1545,8 +1531,9 @@ fn rust_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
 fn the_languages_that_store_the_context_are_the_languages_that_have_a_log_template() {
     // The registry test above reads one list on both sides. This one reads two: a language
     // that stores the context has a template to store it in, and a language with a template
-    // stores it, so a language added to the context list without a template (Swift) or a
-    // template shipped without the context storage is seen here and nowhere else.
+    // stores it, so a language added to the context list without a template (a language
+    // that writes the log in part, as Swift does, is in neither list) or a template shipped
+    // without the context storage is seen here and nowhere else.
     for language in BROADCAST_LOG_CONTEXT_BACKENDS {
         assert!(
             BROADCAST_LOG_BACKENDS.contains(language),
@@ -5780,7 +5767,7 @@ fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_kotlin() {
 // --- The matrix: the registered backends emit, the others await their runtime ---
 
 #[test]
-fn the_matrix_emits_for_the_registered_backends_and_says_the_runtime_is_missing_elsewhere() {
+fn the_matrix_emits_for_the_registered_backends_and_writes_the_log_in_part_for_swift() {
     assert!(!awaits_runtime(ForgeKind::Queue, Language::Rust));
     assert!(!awaits_runtime(ForgeKind::Queue, Language::Cpp));
     assert_eq!(
@@ -5789,6 +5776,8 @@ fn the_matrix_emits_for_the_registered_backends_and_says_the_runtime_is_missing_
     );
     for language in Language::ALL.iter().copied() {
         let landed = BROADCAST_LOG_BACKENDS.contains(&language);
+        let in_part =
+            sce_build::forge::codegen_matrix::ships_in_part(ForgeKind::BroadcastLog, language);
         assert_eq!(
             template_ships(ForgeKind::BroadcastLog, language),
             landed,
@@ -5796,13 +5785,15 @@ fn the_matrix_emits_for_the_registered_backends_and_says_the_runtime_is_missing_
         );
         assert_eq!(
             awaits_runtime(ForgeKind::BroadcastLog, language),
-            !landed,
+            !landed && !in_part,
             "{language:?}"
         );
         assert_eq!(
             lookup(ForgeKind::BroadcastLog, language),
             if landed {
                 EmitOutcome::Emit
+            } else if in_part {
+                EmitOutcome::TemplateMissing
             } else {
                 EmitOutcome::RuntimeMissing
             },
@@ -5810,10 +5801,15 @@ fn the_matrix_emits_for_the_registered_backends_and_says_the_runtime_is_missing_
         );
         assert!(
             check(ForgeKind::BroadcastLog, language).is_ok(),
-            "a registered backend emits it and the dispatch of every other refuses it by \
+            "a registered backend emits it, a backend that writes it in part refuses by the \
+             construct inside its renderer, and the dispatch of every other refuses it by \
              name, so the matrix lets it through: {language:?}"
         );
     }
+    assert!(
+        sce_build::forge::codegen_matrix::ships_in_part(ForgeKind::BroadcastLog, Language::Swift),
+        "Swift writes the log for the elements its codec lowers"
+    );
     assert_eq!(
         emitting(ForgeKind::BroadcastLog).collect::<Vec<_>>(),
         Language::ALL
@@ -6250,4 +6246,397 @@ fn only_the_rust_renderer_reads_the_target_go_has_one_row() {
     let b = compile_single_as(Language::Go, "event_ring.go", &event_ring(), &without)
         .expect("go generates the log");
     assert_eq!(a, b, "a target changes nothing for Go");
+}
+
+// --- Swift writes the log in part: the elements its codec lowers ---
+
+/// The refusal text of a document that was refused as an unsupported feature.
+fn unsupported_detail(located: Located<ForgeError>) -> String {
+    match generate_error(located) {
+        GenerateError::UnsupportedFeature { detail, .. } => detail,
+        other => panic!("expected UnsupportedFeature, got {other:?}"),
+    }
+}
+
+#[test]
+fn swift_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; an entry is then
+    // 1 + (4 + 7) / 8 = 1 + 11 / 8 = 1 + 1 = 2 words (integer division), which the
+    // module computes and does not restate. The log names the struct the codec's own
+    // unit declares, which the same set generates.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let outputs = compile_documents(
+        Language::Swift,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .expect("swift generates a log over an element its codec lowers");
+    let element = outputs
+        .iter()
+        .flat_map(|(_, output)| output.files.iter())
+        .find(|(file, _)| file == "EventRecord.swift")
+        .map(|(_, code)| code.clone())
+        .expect("the set generated the element's unit");
+    assert!(
+        element.contains("public struct EventRecord: Equatable, Sendable {"),
+        "the log names the struct the codec's unit declares:\n{element}"
+    );
+    let code = generated_file(outputs, "EventRing.swift");
+    assert_holds(
+        &code,
+        &[
+            r#"// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "// Runtime: SceForgeRuntime",
+            "import SceForgeRuntime",
+            "public enum EventRing {",
+            "public static let retention: Int = 7",
+            "public static let slots: Int = retention + 1",
+            "public static let maxEncodedBytes: Int = 4",
+            "public static let words: Int = 1 + (maxEncodedBytes + 7) / 8",
+            r#"public static let declaredProgress: String = "wait-free""#,
+            "public static func makeLog() -> SceForgeRuntime.BroadcastLog {",
+            "SceForgeRuntime.BroadcastLog(words: words, slots: slots)",
+            "public enum Publish: Equatable, Sendable {",
+            "case published(seq: UInt64)",
+            "case refused(CodecError)",
+            "public enum Read: Equatable, Sendable {",
+            "case item(seq: UInt64, element: EventRecord)",
+            "case empty",
+            "case lagged(skipped: UInt64)",
+            "case unreadable(seq: UInt64, why: String)",
+            "_ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: EventRecord",
+            "var sink = BoundedSink(capacity: maxEncodedBytes)",
+            "do throws(CodecError) {",
+            "try element.encode(into: &sink)",
+            "return .refused(error)",
+            "entry[0] = UInt64(bytes.count)",
+            "entry[1 + index / 8] |= UInt64(byte) << UInt64(8 * (index % 8))",
+            "return .published(seq: publisher.publish(entry))",
+            "_ log: SceForgeRuntime.BroadcastLog, _ reader: inout SceForgeRuntime.BroadcastLogReader",
+            "switch log.read(&reader, into: &entry) {",
+            "if stored > UInt64(maxEncodedBytes) {",
+            "bytes[index] = UInt8(truncatingIfNeeded: entry[1 + index / 8] >> UInt64(8 * (index % 8)))",
+            "var cursor = SceCursor(bytes)",
+            "let element = try EventRecord.decode(&cursor)",
+        ],
+    );
+    // An element that asks its caller for nothing has the entry the other languages give
+    // it: the length word and the bytes, with no context words, no flags and no tag.
+    for absent in ["contextWords", "CONTEXT_WORDS", "Flags", "flagInput"] {
+        assert!(!code.contains(absent), "`{absent}` in:\n{code}");
+    }
+}
+
+#[test]
+fn swift_sizes_an_entry_from_the_largest_encoded_size_of_a_wider_element() {
+    // A `uint16`, a `uint8` and a `uint32` are 2 + 1 + 4 = 7 bytes, so the constant is
+    // 7 and the module computes 1 + (7 + 7) / 8 = 2 words.
+    let xml = event_ring();
+    let codec = codec_with(
+        "event_record",
+        "",
+        r#"<sce:field id="a" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+    <sce:field id="b" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+    <sce:field id="c" sce:type="uint32" sce:byte="3" sce:bit-size="32"/>"#,
+    );
+    let code = generated_file(
+        compile_documents(
+            Language::Swift,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("swift generates a log over a frame of three integers"),
+        "EventRing.swift",
+    );
+    assert_holds(&code, &["public static let maxEncodedBytes: Int = 7"]);
+}
+
+#[test]
+fn swift_takes_the_retention_and_the_size_a_render_is_given() {
+    let code = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &deploy_key_ring(),
+        &resolution_options(Some(15), 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a resolved log generates");
+    assert_holds(
+        &code,
+        &[
+            "public static let retention: Int = 15",
+            "public static let maxEncodedBytes: Int = 9",
+        ],
+    );
+}
+
+#[test]
+fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the_construct() {
+    // The log is the first document of the set, so it is the one refused: its element
+    // is a codec the Swift codec emitter does not write, and a log over it would name a
+    // struct that no unit declares. Each case is a shape the emitter names by itself.
+    let xml = event_ring();
+    let bit_field = codec_with(
+        "event_record",
+        "",
+        r#"<data id="priority" sce:type="uint8" sce:byte="0" sce:bit-offset="5" sce:bit-size="3"/>"#,
+    );
+    let payload = codec_with("event_record", "", BOUNDED_FIELDS);
+    let cbor = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+        true,
+    );
+    let cases: [(&str, String, &str); 4] = [
+        ("a flag input", flag_input_codec(), "a flag input"),
+        ("a bit field", bit_field, "field 'priority'"),
+        ("a variable payload", payload, "field 'payload'"),
+        ("a CBOR map", cbor, "cbor"),
+    ];
+    for (what, codec, construct) in cases {
+        let located = compile_documents(
+            Language::Swift,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{what}: swift has no unit for the element, so it refuses"));
+        let detail = unsupported_detail(located);
+        for needle in [
+            "broadcast-log 'event_ring'",
+            "the element 'event_record' cannot be stored by the Swift template",
+            "codec 'event_record':",
+            construct,
+            "has no Swift lowering yet",
+        ] {
+            assert!(detail.contains(needle), "{what}: `{needle}` in {detail}");
+        }
+    }
+}
+
+/// A document of the shared broadcast-log conformance set whose elements ask their
+/// caller for what the wire form does not carry.
+fn context_document(name: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("tests/forge/conformance/broadcast_log_context")
+        .join(format!("{name}.scxml"));
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+#[test]
+fn swift_refuses_a_variant_element_by_naming_the_variant() {
+    let log = context_document("broadcast_log_conformance_chosen");
+    let choice = context_document("broadcast_log_conformance_choice");
+    let small = context_document("broadcast_log_conformance_choice_small");
+    let large = context_document("broadcast_log_conformance_choice_large");
+    let located = compile_documents(
+        Language::Swift,
+        &[
+            ("broadcast_log_conformance_chosen.scxml", &log),
+            ("broadcast_log_conformance_choice.scxml", &choice),
+            ("broadcast_log_conformance_choice_small.scxml", &small),
+            ("broadcast_log_conformance_choice_large.scxml", &large),
+        ],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("swift writes no variant, so it refuses the log over one"));
+    let detail = unsupported_detail(located);
+    for needle in [
+        "broadcast-log 'broadcast_log_conformance_chosen'",
+        "the element 'broadcast_log_conformance_choice' cannot be stored by the Swift template",
+        "codec 'broadcast_log_conformance_choice': a `<sce:variant>` has no Swift lowering yet",
+    ] {
+        assert!(detail.contains(needle), "`{needle}` in {detail}");
+    }
+}
+
+#[test]
+fn the_swift_refusal_of_a_codec_is_the_one_the_facts_carry_and_no_other_language_reads_it() {
+    let why = "codec 'event_record': a flag input has no Swift lowering yet";
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        swift_unlowered: Some(why.to_string()),
+        ..BroadcastLogElementFacts::default()
+    };
+    // Swift answers with the codec emitter's sentence and not with the one every language
+    // that does not store the context gives, which would name the log template instead.
+    assert_eq!(facts.refusal_for(Language::Swift).as_deref(), Some(why));
+    for language in Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::Swift)
+    {
+        assert_ne!(
+            facts.refusal_for(language).as_deref(),
+            Some(why),
+            "{language:?} reads a Swift fact"
+        );
+    }
+    // A codec the Swift emitter writes carries no refusal, and Swift holds the element.
+    assert_eq!(
+        BroadcastLogElementFacts::default().refusal_for(Language::Swift),
+        None
+    );
+}
+
+#[test]
+fn a_render_given_a_swift_refusal_in_the_facts_refuses_before_it_writes() {
+    let facts = BroadcastLogElementFacts {
+        swift_unlowered: Some(
+            "codec 'event_record': a repeat has no Swift lowering yet".to_string(),
+        ),
+        ..BroadcastLogElementFacts::default()
+    };
+    let xml = event_ring();
+    let located = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &xml,
+        &resolution_options(None, 4, facts),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the facts say the codec has no Swift unit"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = unsupported_detail(located);
+    assert!(
+        detail.contains(
+            "the element 'event_record' cannot be stored by the Swift template: \
+             codec 'event_record': a repeat has no Swift lowering yet"
+        ),
+        "{detail}"
+    );
+    // What a caller must give is refused by name too when the facts say nothing of the
+    // codec: the Swift log template stores no context.
+    let flags = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let located = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &xml,
+        &resolution_options(None, 4, flags),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the Swift log stores no flag input"));
+    let detail = unsupported_detail(located);
+    assert!(detail.contains("the flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn swift_has_the_64_bit_row_only_and_refuses_a_target_that_selects_the_narrow_one() {
+    // A 32-bit target (by its triple, or by the width the deploy states) and a target with
+    // no read-modify-write atomic at all select the narrow row, which the Swift runtime
+    // does not have: refused by name, with no pause stated, since no Swift module keeps a
+    // 32-bit stamp.
+    for options in [
+        target_options(None, None, Some("thumbv7em-none-eabihf"), None),
+        target_options(None, Some(32), None, None),
+        target_options(None, Some(0), None, None),
+    ] {
+        let located =
+            compile_single_as(Language::Swift, "EventRing.swift", &event_ring(), &options)
+                .err()
+                .unwrap_or_else(|| panic!("swift has no narrow row, so it refuses the target"));
+        let detail = unsupported_detail(located);
+        for needle in [
+            "broadcast-log 'event_ring'",
+            "no 64-bit read-modify-write atomic",
+            "the Swift forge runtime has the 64-bit row only",
+            "Atomic<UInt64>",
+        ] {
+            assert!(detail.contains(needle), "`{needle}` in {detail}");
+        }
+    }
+    // The triple is named in the refusal when the deploy gave one.
+    let located = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &event_ring(),
+        &target_options(None, None, Some("thumbv7em-none-eabihf"), None),
+    )
+    .err()
+    .expect("a 32-bit target is refused");
+    assert!(
+        unsupported_detail(located).contains("`thumbv7em-none-eabihf`"),
+        "the target is named"
+    );
+    // A target with 64-bit atomics, and a deploy that says nothing of the target, get the
+    // one row Swift has.
+    for options in [
+        target_options(None, Some(64), None, None),
+        target_options(None, None, Some("aarch64-apple-darwin"), None),
+        target_options(None, None, None, None),
+    ] {
+        let code = compile_single_as(Language::Swift, "EventRing.swift", &event_ring(), &options)
+            .unwrap_or_else(|e| panic!("a 64-bit target gets the row Swift has: {:?}", e.error));
+        assert_holds(
+            &code,
+            &["public static func makeLog() -> SceForgeRuntime.BroadcastLog {"],
+        );
+    }
+}
+
+#[test]
+fn swift_refuses_a_retention_and_a_size_its_int_cannot_count_on_a_32_bit_target() {
+    let located = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &deploy_key_ring(),
+        &resolution_options(
+            Some(i32::MAX as u32),
+            4,
+            BroadcastLogElementFacts::default(),
+        ),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("retention + 1 slots overflow a 32-bit Int"));
+    assert!(
+        row_text(&located, &deploy_key_ring()).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    let detail = invalid_config(located);
+    assert!(detail.contains("does not leave room"), "{detail}");
+    // The largest retention that fits is generated.
+    compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &deploy_key_ring(),
+        &resolution_options(
+            Some(i32::MAX as u32 - 1),
+            4,
+            BroadcastLogElementFacts::default(),
+        ),
+    )
+    .expect("a retention whose slots fit an Int is generated");
+
+    let located = compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &event_ring(),
+        &resolution_options(
+            None,
+            i32::MAX as u64 - 6,
+            BroadcastLogElementFacts::default(),
+        ),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the words of this element overflow a 32-bit Int"));
+    assert!(
+        row_text(&located, &event_ring()).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(detail.contains("encodes to as many as"), "{detail}");
+    compile_single_as(
+        Language::Swift,
+        "EventRing.swift",
+        &event_ring(),
+        &resolution_options(
+            None,
+            i32::MAX as u64 - 7,
+            BroadcastLogElementFacts::default(),
+        ),
+    )
+    .expect("the largest element whose words fit an Int is generated");
 }

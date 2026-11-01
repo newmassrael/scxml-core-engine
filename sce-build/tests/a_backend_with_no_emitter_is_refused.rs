@@ -66,9 +66,10 @@ fn every_kind_is_refused_for_it_by_the_matrix_and_named() {
         // emitter serves it as every other backend does. A kind that awaits
         // its runtime (ADR 0062) passes the matrix too, since the refusal is
         // the dispatch's, which holds the document and names it
-        // (`broadcast-log/runtime-missing`); the test below holds that. A kind
+        // (`broadcast-log/runtime-missing`); no backend awaits one today. A kind
         // the backend writes in part passes as well: its renderer refuses by the
-        // construct, which the tests below hold.
+        // construct, which the tests below hold, and the broadcast log of Swift
+        // by the codec of its element (`broadcast_log_kind`).
         let (declarations, renders): (Vec<ForgeKind>, Vec<ForgeKind>) =
             every_kind().into_iter().partition(|kind| {
                 ships_in_part(*kind, language)
