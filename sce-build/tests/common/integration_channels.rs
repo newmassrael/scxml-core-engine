@@ -523,10 +523,7 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "invoke_precedes_external_dequeue",
     "late_tick_honours_cancel",
     "send_param_payload",
-    "the_run_ends_by_exiting_every_state",
     "typed_reader_names",
-    "undecodable_payload_is_reported",
-    "wildcard_in_document_order",
 ];
 
 /// Whether, and why, the Swift channel cannot host `stem`.
