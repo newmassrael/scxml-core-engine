@@ -491,8 +491,8 @@ appends to and any number of readers read, each by a cursor of its own; a full l
 its oldest entry and tells a reader that was too slow how many it missed. Its
 `<sce:element-type>`, `<sce:producers>`, `<sce:progress>` and `<sce:retention>`
 (`entries="N"`, or `source="deploy" key="…"`) are all required and none has a
-default. The document parses and is checked on every backend. Every backend but Swift
-lowers it, over `sce_forge_runtime::broadcast_log`,
+default. The document parses and is checked on every backend. Every backend lowers it
+(Swift for the elements its codec lowers, below), over `sce_forge_runtime::broadcast_log`,
 `com.sce.forge.runtime.broadcastlog`, `sce_forge_runtime.broadcast_log`,
 `sce-forge-runtime/broadcastlog` and `sce/forge/broadcast_log.h` (the Python row is one ring under one lock and gives
 `blocking`; Kotlin's sizes are `Int`s, so a retention or an element size that would
@@ -516,16 +516,27 @@ same numbers and whose typed `publish` and `read` call the element codec's
 count. The C++ backend lowers it to a header `<name>.h` over `sce/forge/broadcast_log.h`
 (or `sce/forge/broadcast_log_narrow.h` for a narrow target, below) with the same
 constants and typed `publish` and `read` (the answers are a `Published` struct and a
-`std::variant`). Swift has no forge runtime, so generating a log there is
-refused by name (`broadcast-log/runtime-missing`). An element whose codec takes flag
+`std::variant`). The Swift backend holds the kind for the elements its codec lowers,
+a positional frame of fixed-width integers: it writes an enum `<Name>` over
+`SceForgeRuntime.BroadcastLog` (a ring of `Atomic<UInt64>` cells, the 64-bit row only)
+with the same constants and typed `publish` and `read`, whose answers are the enums
+`<Name>.Publish` and `<Name>.Read`. Such an element asks its caller for nothing, so its
+entry is the length word and the bytes, with no flag input, no tag and nothing that
+borrows its buffer. Any other element is refused by name before anything is written, with
+the Swift codec's own refusal for it (`generate/unsupported-feature`: `codec 'x': a flag
+input has no Swift lowering yet`, and likewise a variant, an encoding, a bit field, a
+variable-length field), and a deploy whose target has no 64-bit atomic, which selects the
+narrow row, is refused by name because the Swift runtime has no narrow row. No language
+is refused for a missing runtime row. An element whose codec takes flag
 inputs or a variant's tag from its caller is held on every language that lowers the
-kind: the entry stores them in context words between its length word and its bytes
+kind but Swift: the entry stores them in context words between its length word and its bytes
 (one bit a flag input, 64 to a word or 32 in a narrow row, and one word for the tag), `publish` takes the
 flags and reads the tag off the element, and `read` returns the flags with the item
 (the element reports its own tag), so each reader decodes an entry under what it was
 published under; an element that asks for neither has the entry and the
 signatures it always had. A CBOR map with a string or byte-string entry is held on
-every language that lowers the kind, and no element is refused for its shape. Rust
+every language that lowers the kind whole (Swift refuses a CBOR codec by name, as
+above), and no element is refused for its shape there. Rust
 decodes such an entry to a view of the buffer, so its log stores and returns the
 map's owned mirror, `{Name}Owned<Inline>`, which the codec generates when every
 string and byte string of the map states its bound (`sce:max-size`, or the
