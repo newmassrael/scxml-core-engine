@@ -3742,10 +3742,8 @@ impl BroadcastLogElementFacts {
         // The Swift log is written over the unit the Swift codec emitter writes, so a codec
         // that emitter does not lower is refused first and by its own sentence, which names the
         // codec and the construct (a flag input, a variant, an encoding, a bit field).
-        if language == Language::Swift {
-            if let Some(why) = &self.swift_unlowered {
-                return Some(why.clone());
-            }
+        if let (Language::Swift, Some(why)) = (language, &self.swift_unlowered) {
+            return Some(why.clone());
         }
         // A language whose template has not yet given the slot its context
         // words ([`forge::codegen_matrix::BROADCAST_LOG_CONTEXT_BACKENDS`]) cannot
