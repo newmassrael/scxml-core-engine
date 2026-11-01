@@ -129,6 +129,10 @@ declare -A CASES_OF=()
 # `mutation_env RUSTUP_TOOLCHAIN=<toolchain>` is a toolchain the round needs and
 # the job does not have, and the gate installs it below, before the round.
 declare -A ENV_OF=()
+# A casefile that declares `mutation_under_miri` needs the `miri` component on
+# that toolchain, which a minimal install does not carry: the fifth key this gate
+# acts on, read from the same `--declares` output.
+declare -A MIRI_OF=()
 # The whole corpus is declared by ONE call. It used to be one call per casefile,
 # 169 of them on 2026-10-01 at about half a second each, and this gate runs once
 # per push and several times over inside the test that holds it. `--declares`
@@ -154,6 +158,7 @@ to remove."
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
             needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
             env) ENV_OF["$casefile"]+="$value"$'\n' ;;
+            miri) MIRI_OF["$casefile"]=1 ;;
             cases) CASES_OF["$casefile"]="$value" ;;
         esac
     done <<<"$declared"
@@ -448,8 +453,14 @@ for casefile in "${SELECTED[@]}"; do
     done <<<"${ENV_OF[$casefile]:-}"
     if [[ -n "$toolchain" ]]; then
         sce_gate_step "toolchain: $toolchain (declared by $casefile)"
-        rustup toolchain install "$toolchain" --profile minimal --component rust-src >/dev/null 2>&1 \
-            || sce_gate_fail "install the toolchain $toolchain that $casefile declares, with rust-src"
+        components=(--component rust-src)
+        components_named="rust-src"
+        if [[ -n "${MIRI_OF[$casefile]:-}" ]]; then
+            components+=(--component miri)
+            components_named="rust-src and miri"
+        fi
+        rustup toolchain install "$toolchain" --profile minimal "${components[@]}" >/dev/null 2>&1 \
+            || sce_gate_fail "install the toolchain $toolchain that $casefile declares, with $components_named"
     fi
     if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
         round=(sce_gate_with_http_fixture_server "${round[@]}")
