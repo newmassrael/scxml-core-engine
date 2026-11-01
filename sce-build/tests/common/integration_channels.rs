@@ -512,7 +512,6 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "autoforward_event_fields",
     "autoforward_internal_queue",
     "cancelling_an_invoke_raises_nothing",
-    "discarded_event_is_observable",
     "donedata_late_completion",
     "donedata_local_invoke",
     "empty_finalize_updates_the_location",
@@ -528,8 +527,6 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "the_run_ends_by_exiting_every_state",
     "typed_reader_names",
     "undecodable_payload_is_reported",
-    "unhandled_error_is_observable",
-    "unseen_event_is_reported",
     "wildcard_in_document_order",
     "xml_data_is_a_dom_tree",
 ];
