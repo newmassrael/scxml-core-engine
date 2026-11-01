@@ -288,11 +288,14 @@ fn a_send_to_an_invoked_child_is_routed_and_not_kept_by_the_sender() {
 }
 
 /// What an `<invoke>` hands a child that runs a script engine: each `<param>` and each namelist name
-/// is read by the parent's engine as JSON and given to the child by name, and the child's `<data>` of
-/// that name takes it. The id of the invocation goes to the `idlocation` before the child starts. A
-/// namelist name the document does not declare is an error and is never resolved at build time.
+/// is read once by the parent's engine, as the value itself when it is a scalar and as its JSON
+/// otherwise (JSON writes `Infinity` as `null`, so a value that went by its JSON reached the child as
+/// something else: measured 2026-11-01 by the integration stem `invoke_param_seeds_declared_child_data`),
+/// and given to the child by name, and the child's `<data>` of that name takes it. The id of the
+/// invocation goes to the `idlocation` before the child starts. A namelist name the document does not
+/// declare is an error and is never resolved at build time.
 #[test]
-fn an_invoke_hands_its_child_the_values_it_names_as_json() {
+fn an_invoke_hands_its_child_the_values_it_names_as_values() {
     let body = r##"
   <datamodel><data id="n" expr="1"/><data id="m" expr="2"/><data id="where"/></datamodel>
   <state id="s0">
@@ -317,6 +320,12 @@ fn an_invoke_hands_its_child_the_values_it_names_as_json() {
         "a param and a namelist name are handed by name: {machine}"
     );
     assert!(machine.contains("acceptSeeds(seeds)"), "{machine}");
+    assert!(
+        machine.contains("var seeds: [String: LuaSeed] = [:]")
+            && machine.contains(r#"if let seedValue = evaluateSeed(""#)
+            && !machine.contains("evaluateJSON(\"m"),
+        "a value is read once and kept as a value, not rendered as JSON first: {machine}"
+    );
     assert!(
         machine.contains(r#"assignData("where", ""#),
         "the id of the invocation is written to the idlocation: {machine}"

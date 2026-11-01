@@ -422,12 +422,12 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     private var lua: LuaState?
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this machine's variables
-    /// before it starts, by name, each as JSON text. A `<data>` of one of these names takes the value
-    /// in place of its own; a name this machine declares no variable for is never read.
-    private var invokeSeeds: [String: String] = [:]
+    /// before it starts, by name. A `<data>` of one of these names takes the value in place of its
+    /// own; a name this machine declares no variable for is never read.
+    private var invokeSeeds: [String: LuaSeed] = [:]
 
     /// Hands the machine the values its parent's `<invoke>` names. Called before the machine starts.
-    public func acceptSeeds(_ seeds: [String: String]) {
+    public func acceptSeeds(_ seeds: [String: LuaSeed]) {
         invokeSeeds = seeds
     }
 
@@ -479,8 +479,13 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
             let session = try ensureLua()
             if let seed = invokeSeeds[id] {
                 // W3C SCXML 6.4.1: the value the parent handed this variable replaces its own.
-                try session.setGlobal("_scxml_seed", .string(seed))
-                try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
+                switch seed {
+                case .scalar(let value):
+                    try session.setGlobal(id, value)
+                case .json(let text):
+                    try session.setGlobal("_scxml_seed", .string(text))
+                    try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
+                }
             } else if let expression {
                 do {
                     try session.defineGlobal(id, as: expression, chunkName: "=data")
@@ -573,6 +578,30 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                 return text
             }
             return "null"
+        } catch {
+            return nil
+        }
+    }
+
+    /// W3C SCXML 6.4.1: the value an `<invoke>` hands its child for one of its variables, read once
+    /// from a Lua expression already lowered. A scalar is the value itself and anything else (an
+    /// object, an array, `undefined`) is its JSON, because JSON writes `Infinity` as `null`
+    /// (`LuaSeed`). An expression that cannot be run is nil (the caller's `error.execution`).
+    private func evaluateSeed(_ expression: String) -> LuaSeed? {
+        do {
+            let session = try ensureLua()
+            // One evaluation: an expression with a side effect (`n++`) must run once, so its value
+            // is kept in a global the kind and the value are then read from.
+            try session.defineGlobal("_scxml_seed_value", as: expression, chunkName: "=seed")
+            defer { try? session.setGlobal("_scxml_seed_value", .nilValue) }
+            let kind = try session.evaluate("type(_scxml_seed_value)", name: "=seed")
+            if case .string(let name) = kind, ["boolean", "number", "string"].contains(name) {
+                return .scalar(try session.evaluate("_scxml_seed_value", name: "=seed"))
+            }
+            if case .string(let text) = try session.evaluate("JSON.stringify(_scxml_seed_value)", name: "=seed") {
+                return .json(text)
+            }
+            return .json("null")
         } catch {
             return nil
         }
@@ -733,8 +762,8 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
-        var seeds: [String: String] = [:]
-        if let seedValue = evaluateJSON("guard") {
+        var seeds: [String: LuaSeed] = [:]
+        if let seedValue = evaluateSeed("guard") {
             seeds["guard"] = seedValue
         } else {
             raiseExecutionError("<invoke> namelist entry 'guard' could not be read", engine: engine)
@@ -793,8 +822,8 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
-        var seeds: [String: String] = [:]
-        if let seedValue = evaluateJSON("tally") {
+        var seeds: [String: LuaSeed] = [:]
+        if let seedValue = evaluateSeed("tally") {
             seeds["tally"] = seedValue
         } else {
             raiseExecutionError("<invoke> namelist entry 'tally' could not be read", engine: engine)
@@ -853,8 +882,8 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         let childPolicy = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy()
         // W3C SCXML 6.4.1: the child is handed the values this invoke names before it
         // initializes.
-        var seeds: [String: String] = [:]
-        if let seedValue = evaluateJSON("keeper") {
+        var seeds: [String: LuaSeed] = [:]
+        if let seedValue = evaluateSeed("keeper") {
             seeds["keeper"] = seedValue
         } else {
             raiseExecutionError("<invoke> namelist entry 'keeper' could not be read", engine: engine)
