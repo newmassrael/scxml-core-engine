@@ -34,8 +34,7 @@ use super::codec_repeat_elem::CodecRepeatElem;
 pub struct CodecRepeatUnconditionalCount {
     pub options: u8,
     pub links_len: u8,
-    pub links: HeaplessVec<CodecRepeatElem, 64>,
-    pub weights: Option<HeaplessVec<CodecRepeatElem, 64>>,
+    pub options_h: CodecRepeatUnconditionalCountOptionsH<HeaplessVec<CodecRepeatElem, 64>, HeaplessVec<CodecRepeatElem, 64>>,
 }
 
 #[allow(dead_code)]
@@ -96,32 +95,35 @@ impl CodecRepeatUnconditionalCount {
             cursor.advance(1)?;
             _v
         };
+        let mut links: HeaplessVec<CodecRepeatElem, 64> = Default::default();
         {
             if links_len > 64 {
                 return Err(CodecError::TooManyElements);
             }
-            let _vec = &mut _out.links;
+            let _vec = &mut links;
             _vec.clear();
             for _ in 0..links_len {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
         }
+        let mut weights: Option<HeaplessVec<CodecRepeatElem, 64>> = None;
         if (options & 0x01u8) != 0 {
             let _n = links_len;
             if _n > 64 {
                 return Err(CodecError::TooManyElements);
             }
-            let _vec = _out.weights.insert(HeaplessVec::<CodecRepeatElem, 64>::new());
+            let _vec = weights.insert(HeaplessVec::<CodecRepeatElem, 64>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
         } else {
-            _out.weights = None;
+            weights = None;
         }
         _out.options = options;
         _out.links_len = links_len;
+        _out.options_h = if (options & 0x01u8) != 0 { CodecRepeatUnconditionalCountOptionsH::H { links_weights: ::sce_forge_runtime::codec::Aligned::new(links, weights.expect("the gate read the list")).expect("one count read both lists") } } else { CodecRepeatUnconditionalCountOptionsH::NotH { links } };
         Ok(())
     }
 
@@ -149,35 +151,56 @@ impl CodecRepeatUnconditionalCount {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 258;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+}
+
+/// The fields `options.H` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecRepeatUnconditionalCount` derives the gates from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecRepeatUnconditionalCountOptionsH<Links, Weights> {
+    /// While `options.H` holds.
+    H {
+        /// The `links` and `weights` lists, of one count.
+        links_weights: ::sce_forge_runtime::codec::Aligned<Links, Weights>,
+    },
+    /// While `options.H` does not hold.
+    NotH {
+        /// The `links` field.
+        links: Links,
+    },
+}
+
+impl<Links: Default, Weights: Default> Default for CodecRepeatUnconditionalCountOptionsH<Links, Weights> {
+    /// The arm held while `options.H` does not hold, each field at its type's default.
+    fn default() -> Self {
+        Self::NotH { links: Default::default(), }
     }
 }
 
@@ -188,21 +211,16 @@ impl CodecRepeatUnconditionalCount {
 pub trait CodecRepeatUnconditionalCountSource {
     /// The `options` field.
     fn options(&self) -> u8;
-    /// The `links` field.
-    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>;
-    /// The `weights` field.
-    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>>;
+    /// The fields `options.H` decides, held together (docs/adr/0065 §6 R4).
+    fn options_h(&self) -> CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>>;
 }
 
 impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCountSource for &T {
     fn options(&self) -> u8 {
         (**self).options()
     }
-    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
-        (**self).links()
-    }
-    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
-        (**self).weights()
+    fn options_h(&self) -> CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
+        (**self).options_h()
     }
 }
 
@@ -214,33 +232,31 @@ impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCo
 pub struct CodecRepeatUnconditionalCountParts<'a> {
     /// The `options` field.
     pub options: u8,
-    /// The `links` field.
-    pub links: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>,
-    /// The `weights` field.
-    pub weights: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>>,
+    /// The fields `options.H` decides, held together (docs/adr/0065 §6 R4).
+    pub options_h: CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>, ::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>>,
 }
 
 impl<'a> CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCountParts<'a> {
+    fn options_h(&self) -> CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
+        match &self.options_h {
+            CodecRepeatUnconditionalCountOptionsH::H { links_weights } => CodecRepeatUnconditionalCountOptionsH::H { links_weights: ::sce_forge_runtime::codec::Aligned::new(links_weights.first().iter(), links_weights.second().iter()).expect("a walk keeps its list's count") },
+            CodecRepeatUnconditionalCountOptionsH::NotH { links } => CodecRepeatUnconditionalCountOptionsH::NotH { links: links.iter() },
+        }
+    }
     fn options(&self) -> u8 {
         self.options
-    }
-    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
-        self.links.iter()
-    }
-    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
-        self.weights.as_ref().map(|_l| _l.iter())
     }
 }
 
 impl CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCount {
+    fn options_h(&self) -> CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
+        match &self.options_h {
+            CodecRepeatUnconditionalCountOptionsH::H { links_weights } => CodecRepeatUnconditionalCountOptionsH::H { links_weights: ::sce_forge_runtime::codec::Aligned::new(::sce_forge_runtime::codec::BoundedIter::from(links_weights.first()), ::sce_forge_runtime::codec::BoundedIter::from(links_weights.second())).expect("a walk keeps its list's count") },
+            CodecRepeatUnconditionalCountOptionsH::NotH { links } => CodecRepeatUnconditionalCountOptionsH::NotH { links: ::sce_forge_runtime::codec::BoundedIter::from(links) },
+        }
+    }
     fn options(&self) -> u8 {
         self.options
-    }
-    fn links(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.links)
-    }
-    fn weights(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>> {
-        self.weights.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
     }
 }
 
@@ -249,29 +265,32 @@ impl CodecRepeatUnconditionalCount {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecRepeatUnconditionalCountSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_links: usize = src.links().len();
-        let _k_weights: usize = src.weights().map_or(0, |_l| _l.len());
-        let _p_options_h_0: bool = src.weights().is_some();
-        if src.weights().is_some() && _k_weights != _k_links {
-            return Err(CodecError::InconsistentSource);
-        }
+    pub fn write_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let (_m_links, _m_weights) = match src.options_h() {
+            CodecRepeatUnconditionalCountOptionsH::H { links_weights } => { let (links, weights) = links_weights.into_parts(); (Some(links), Some(weights)) }
+            CodecRepeatUnconditionalCountOptionsH::NotH { links } => (Some(links), None),
+        };
+        let _k_links: usize = _m_links.clone().map_or(0, |_l| _l.len());
+        let _k_weights: usize = _m_weights.clone().map_or(0, |_l| _l.len());
+        let _p_options_h_0: bool = _m_weights.clone().is_some();
         let _d_links_len: u8 = _k_links as u8;
         let _c_options: u8 = (src.options() & !0x1) | u8::from(_p_options_h_0);
         w.write_u8(_c_options)?;
         w.write_u8(_d_links_len)?;
-        for _e in src.links() {
-            CodecRepeatElem::write_source(&_e, w)?;
+        if let Some(_v) = _m_links.clone() {
+            for _e in _v {
+                CodecRepeatElem::write_source(&_e, w)?;
+            }
         }
-        if let Some(_v) = src.weights() {
+        if let Some(_v) = _m_weights.clone() {
             for _e in _v {
                 CodecRepeatElem::write_source(&_e, w)?;
             }
@@ -282,17 +301,17 @@ impl CodecRepeatUnconditionalCount {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecRepeatUnconditionalCountSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecRepeatUnconditionalCountSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<S: CodecRepeatUnconditionalCountSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatUnconditionalCount {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -300,10 +319,12 @@ impl<S: CodecRepeatUnconditionalCountSource + ?Sized> ::sce_forge_runtime::codec
 #[allow(dead_code)]
 impl CodecRepeatUnconditionalCount {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecRepeatUnconditionalCountSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecRepeatUnconditionalCountSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a
