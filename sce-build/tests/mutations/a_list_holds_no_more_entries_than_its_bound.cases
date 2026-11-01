@@ -20,17 +20,17 @@ mutation_oracles backends/rust/forge-runtime/src/bounded.rs
 mutation_case "a list one past its bound is held" <<'PY'
 edit("backends/rust/forge-runtime/src/bounded.rs",
      r'''    pub fn new(list: L) -> Option<Self> {
-        if list.entry_count() <= MAX {''',
+        if (MIN..=MAX).contains(&list.entry_count()) {''',
      r'''    pub fn new(list: L) -> Option<Self> {
-        if list.entry_count() <= MAX + 1 {''')
+        if (MIN..=MAX + 1).contains(&list.entry_count()) {''')
 PY
 
 mutation_case "entries counted from an iterator are not held to the bound" <<'PY'
 edit("backends/rust/forge-runtime/src/bounded.rs",
      r'''        let count = entries.clone().count();
-        if count <= MAX {''',
+        if (MIN..=MAX).contains(&count) {''',
      r'''        let count = entries.clone().count();
-        if count <= usize::MAX {''')
+        if (MIN..=usize::MAX).contains(&count) {''')
 PY
 
 mutation_case "a walk longer than its count is written" <<'PY'
