@@ -33,7 +33,7 @@ use super::codec_chain_flag_entry::CodecChainFlagEntry;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainFlagForward {
     pub head: u8,
-    pub entries: Option<HeaplessVec<CodecChainFlagEntry, 4>>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainFlagEntry, 4>, 4, 1>>,
 }
 
 #[allow(dead_code)]
@@ -94,23 +94,25 @@ impl CodecChainFlagForward {
             _v
         };
         if (head & 0x01u8) != 0 {
-            let _vec = _out.entries.insert(HeaplessVec::<CodecChainFlagEntry, 4>::new());
-            let mut _more = false;
-            for _ in 0..4u32 {
-                let _entry = CodecChainFlagEntry::decode(cursor, wide)?;
-                _more = _entry.z();
-                // Bounded by max-depth on both sides — loop count and `_vec`
+            _out.entries.insert(Default::default()).refill(|_vec| {
+                let mut _more = false;
+                for _ in 0..4u32 {
+                    let _entry = CodecChainFlagEntry::decode(cursor, wide)?;
+                    _more = _entry.z();
+                    // Bounded by max-depth on both sides — loop count and `_vec`
                 // capacity are the same literal — so this push cannot fail. An
                 // over-long chain is refused by the guard after the loop.
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                return Err(CodecError::NeedMoreBytes);
-            }
-            if _more {
-                return Err(CodecError::TlvChainOverflow);
-            }
+                    if !_more { break; }
+                }
+                if _more && cursor.remaining() == 0 {
+                    return Err(CodecError::NeedMoreBytes);
+                }
+                if _more {
+                    return Err(CodecError::TlvChainOverflow);
+                }
+                Ok(())
+            })?;
         } else {
             _out.entries = None;
         }
@@ -182,14 +184,14 @@ pub trait CodecChainFlagForwardSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>>;
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4, 1>>;
 }
 
 impl<T: CodecChainFlagForwardSource + ?Sized> CodecChainFlagForwardSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4, 1>> {
         (**self).entries()
     }
 }
@@ -203,14 +205,14 @@ pub struct CodecChainFlagForwardParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts], 4>>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts], 4, 1>>,
 }
 
 impl<'a> CodecChainFlagForwardSource for CodecChainFlagForwardParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4, 1>> {
         self.entries.as_ref().map(|_l| _l.iter())
     }
 }
@@ -219,8 +221,8 @@ impl CodecChainFlagForwardSource for CodecChainFlagForward {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4>> {
-        self.entries.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4, 1>> {
+        self.entries.as_ref().map(|_l| _l.iter())
     }
 }
 

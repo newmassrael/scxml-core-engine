@@ -36,7 +36,7 @@ use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryView;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasTagged {
     pub header: u8,
-    pub entries: HeaplessVec<CodecChainHasTaggedEntry, 3>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainHasTaggedEntry, 3>, 3, 1>,
     pub priority: Option<u8>,
     pub checksum: Option<u16>,
 }
@@ -93,9 +93,7 @@ impl CodecChainHasTagged {
             cursor.advance(1)?;
             _v
         };
-        {
-            let _vec = &mut _out.entries;
-            _vec.clear();
+        _out.entries.refill(|_vec| {
             let mut _more = false;
             for _ in 0..3u32 {
                 let _entry = CodecChainHasTaggedEntry::decode(cursor)?;
@@ -112,7 +110,8 @@ impl CodecChainHasTagged {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-        }
+            Ok(())
+        })?;
         let _has_entries_7 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
         let _has_entries_9 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
         let priority = if _has_entries_7 || (header & 0x01u8) != 0 {
@@ -220,7 +219,7 @@ pub trait CodecChainHasTaggedSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1>;
     /// The `priority` field.
     fn priority(&self) -> Option<u8>;
     /// The `checksum` field.
@@ -231,7 +230,7 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
         (**self).entries()
     }
     fn priority(&self) -> Option<u8> {
@@ -251,7 +250,7 @@ pub struct CodecChainHasTaggedParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The `entries` field.
-    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts], 3>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts], 3, 1>,
     /// The `priority` field.
     pub priority: Option<u8>,
     /// The `checksum` field.
@@ -262,7 +261,7 @@ impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedParts<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
         self.entries.iter()
     }
     fn priority(&self) -> Option<u8> {
@@ -277,8 +276,8 @@ impl CodecChainHasTaggedSource for CodecChainHasTagged {
     fn header(&self) -> u8 {
         self.header
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
+        self.entries.iter()
     }
     fn priority(&self) -> Option<u8> {
         self.priority
@@ -292,7 +291,7 @@ impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedView<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
         self.entries.iter()
     }
     fn priority(&self) -> Option<u8> {
@@ -414,7 +413,7 @@ impl ListWalk<0> for CodecChainHasTaggedEntriesWalk {
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasTaggedView<'a> {
     pub header: u8,
-    pub entries: Bounded<ListView<'a, CodecChainHasTaggedEntriesWalk, 0>, 3>,
+    pub entries: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecChainHasTaggedEntriesWalk, 0>, 3, 1>,
     pub priority: Option<u8>,
     pub checksum: Option<u16>,
 }
@@ -474,7 +473,7 @@ impl<'a> CodecChainHasTaggedView<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            _out.entries = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TlvChainOverflow)?;
+            _out.entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TlvChainOverflow)?;
         }
         let _has_entries_7 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
         let _has_entries_9 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
@@ -512,13 +511,16 @@ impl<'a> CodecChainHasTaggedView<'a> {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_builder(&self, _out: &mut CodecChainHasTagged) -> Result<(), CodecError> {
         _out.header = self.header;
-        _out.entries.clear();
-        for _e in self.entries.iter() {
-            _out.entries.push(CodecChainHasTaggedEntry::default()).map_err(|_| CodecError::TooManyElements)?;
-            if let Some(_slot) = _out.entries.last_mut() {
-                _e.into_builder(_slot)?;
+        _out.entries.refill(|_vec| {
+            _vec.clear();
+            for _e in self.entries.iter() {
+                _vec.push(CodecChainHasTaggedEntry::default()).map_err(|_| CodecError::TooManyElements)?;
+                if let Some(_slot) = _vec.last_mut() {
+                    _e.into_builder(_slot)?;
+                }
             }
-        }
+            Ok(())
+        })?;
         _out.priority = self.priority;
         _out.checksum = self.checksum;
         Ok(())

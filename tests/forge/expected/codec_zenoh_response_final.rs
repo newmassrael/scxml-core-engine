@@ -34,7 +34,7 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 pub struct CodecZenohResponseFinal<'a> {
     pub header: u8,
     pub request_id: u64,
-    pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>>,
 }
 
 // RFC variant-default-uniformity: at least one field's
@@ -108,23 +108,25 @@ impl<'a> CodecZenohResponseFinal<'a> {
         };
         let request_id = cursor.read_vle_u64()?;
         if (header & 0x80u8) != 0 {
-            let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 4>::new());
-            let mut _more = false;
-            for _ in 0..4u32 {
-                let _entry = CodecZenohExtEntry::decode(cursor)?;
-                _more = _entry.z();
-                // Bounded by max-depth on both sides — loop count and `_vec`
+            _out.extensions.insert(Default::default()).refill(|_vec| {
+                let mut _more = false;
+                for _ in 0..4u32 {
+                    let _entry = CodecZenohExtEntry::decode(cursor)?;
+                    _more = _entry.z();
+                    // Bounded by max-depth on both sides — loop count and `_vec`
                 // capacity are the same literal — so this push cannot fail. An
                 // over-long chain is refused by the guard after the loop.
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                return Err(CodecError::NeedMoreBytes);
-            }
-            if _more {
-                return Err(CodecError::TlvChainOverflow);
-            }
+                    if !_more { break; }
+                }
+                if _more && cursor.remaining() == 0 {
+                    return Err(CodecError::NeedMoreBytes);
+                }
+                if _more {
+                    return Err(CodecError::TlvChainOverflow);
+                }
+                Ok(())
+            })?;
         } else {
             _out.extensions = None;
         }
@@ -204,7 +206,7 @@ pub trait CodecZenohResponseFinalSource {
     /// The `request_id` field.
     fn request_id(&self) -> u64;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
 }
 
 impl<T: CodecZenohResponseFinalSource + ?Sized> CodecZenohResponseFinalSource for &T {
@@ -214,7 +216,7 @@ impl<T: CodecZenohResponseFinalSource + ?Sized> CodecZenohResponseFinalSource fo
     fn request_id(&self) -> u64 {
         (**self).request_id()
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         (**self).extensions()
     }
 }
@@ -230,7 +232,7 @@ pub struct CodecZenohResponseFinalParts<'a> {
     /// The `request_id` field.
     pub request_id: u64,
     /// The `extensions` field.
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
 }
 
 impl<'a> CodecZenohResponseFinalSource for CodecZenohResponseFinalParts<'a> {
@@ -240,7 +242,7 @@ impl<'a> CodecZenohResponseFinalSource for CodecZenohResponseFinalParts<'a> {
     fn request_id(&self) -> u64 {
         self.request_id
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.iter())
     }
 }
@@ -252,8 +254,8 @@ impl<'a> CodecZenohResponseFinalSource for CodecZenohResponseFinal<'a> {
     fn request_id(&self) -> u64 {
         self.request_id
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
-        self.extensions.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
     }
 }
 
@@ -264,7 +266,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseFinalSource 
     fn request_id(&self) -> u64 {
         self.request_id
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
     }
 }
@@ -376,7 +378,7 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 pub struct CodecZenohResponseFinalOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub request_id: u64,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
 }
 
 #[allow(dead_code)]
@@ -456,7 +458,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseFinalOwned<S
         _out.header = self.header;
         _out.request_id = self.request_id;
         match &self.extensions {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => _out.extensions.insert(Default::default()).refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, _l.inner(), |_e| Ok(_e.as_borrowed())))?,
             None => _out.extensions = None,
         }
         Ok(())

@@ -33,7 +33,7 @@ use super::codec_chain_prev_entry::CodecChainPrevEntry;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevGated {
     pub head: u8,
-    pub entries: Option<HeaplessVec<CodecChainPrevEntry, 4>>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainPrevEntry, 4>, 4, 1>>,
 }
 
 #[allow(dead_code)]
@@ -89,25 +89,27 @@ impl CodecChainPrevGated {
             _v
         };
         if (head & 0x02u8) != 0 {
-            let _vec = _out.entries.insert(HeaplessVec::<CodecChainPrevEntry, 4>::new());
-            let mut _prev_entries_after_marker: u8 = 0;
-            let mut _more = false;
-            for _ in 0..4u32 {
-                let _entry = CodecChainPrevEntry::decode(cursor, _prev_entries_after_marker, head & 0x1)?;
-                _more = _entry.z();
-                _prev_entries_after_marker = u8::from((u64::from(_entry.header) & 127u64) == 4u64);
-                // Bounded by max-depth on both sides — loop count and `_vec`
+            _out.entries.insert(Default::default()).refill(|_vec| {
+                let mut _prev_entries_after_marker: u8 = 0;
+                let mut _more = false;
+                for _ in 0..4u32 {
+                    let _entry = CodecChainPrevEntry::decode(cursor, _prev_entries_after_marker, head & 0x1)?;
+                    _more = _entry.z();
+                    _prev_entries_after_marker = u8::from((u64::from(_entry.header) & 127u64) == 4u64);
+                    // Bounded by max-depth on both sides — loop count and `_vec`
                 // capacity are the same literal — so this push cannot fail. An
                 // over-long chain is refused by the guard after the loop.
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                return Err(CodecError::NeedMoreBytes);
-            }
-            if _more {
-                return Err(CodecError::TlvChainOverflow);
-            }
+                    if !_more { break; }
+                }
+                if _more && cursor.remaining() == 0 {
+                    return Err(CodecError::NeedMoreBytes);
+                }
+                if _more {
+                    return Err(CodecError::TlvChainOverflow);
+                }
+                Ok(())
+            })?;
         } else {
             _out.entries = None;
         }
@@ -210,14 +212,14 @@ pub trait CodecChainPrevGatedSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>>;
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>>;
 }
 
 impl<T: CodecChainPrevGatedSource + ?Sized> CodecChainPrevGatedSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>> {
         (**self).entries()
     }
 }
@@ -231,14 +233,14 @@ pub struct CodecChainPrevGatedParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>>,
+    pub entries: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4, 1>>,
 }
 
 impl<'a> CodecChainPrevGatedSource for CodecChainPrevGatedParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>> {
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>> {
         self.entries.as_ref().map(|_l| _l.iter())
     }
 }
@@ -247,8 +249,8 @@ impl CodecChainPrevGatedSource for CodecChainPrevGated {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>> {
-        self.entries.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
+    fn entries(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>> {
+        self.entries.as_ref().map(|_l| _l.iter())
     }
 }
 

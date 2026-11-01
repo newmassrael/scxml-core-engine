@@ -33,7 +33,7 @@ use super::codec_chain_prev_entry::CodecChainPrevEntry;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevCarrier {
     pub head: u8,
-    pub entries: HeaplessVec<CodecChainPrevEntry, 4>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainPrevEntry, 4>, 4, 1>,
 }
 
 #[allow(dead_code)]
@@ -88,9 +88,7 @@ impl CodecChainPrevCarrier {
             cursor.advance(1)?;
             _v
         };
-        {
-            let _vec = &mut _out.entries;
-            _vec.clear();
+        _out.entries.refill(|_vec| {
             let mut _prev_entries_after_marker: u8 = 0;
             let mut _more = false;
             for _ in 0..4u32 {
@@ -109,7 +107,8 @@ impl CodecChainPrevCarrier {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-        }
+            Ok(())
+        })?;
         _out.head = head;
         Ok(())
     }
@@ -197,14 +196,14 @@ pub trait CodecChainPrevCarrierSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>;
 }
 
 impl<T: CodecChainPrevCarrierSource + ?Sized> CodecChainPrevCarrierSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
         (**self).entries()
     }
 }
@@ -218,14 +217,14 @@ pub struct CodecChainPrevCarrierParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4, 1>,
 }
 
 impl<'a> CodecChainPrevCarrierSource for CodecChainPrevCarrierParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
         self.entries.iter()
     }
 }
@@ -234,8 +233,8 @@ impl CodecChainPrevCarrierSource for CodecChainPrevCarrier {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
+        self.entries.iter()
     }
 }
 

@@ -36,7 +36,7 @@ use super::codec_chain_prev_entry::CodecChainPrevEntryView;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevCarrier {
     pub head: u8,
-    pub entries: HeaplessVec<CodecChainPrevEntry, 4>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainPrevEntry, 4>, 4, 1>,
 }
 
 #[allow(dead_code)]
@@ -91,9 +91,7 @@ impl CodecChainPrevCarrier {
             cursor.advance(1)?;
             _v
         };
-        {
-            let _vec = &mut _out.entries;
-            _vec.clear();
+        _out.entries.refill(|_vec| {
             let mut _prev_entries_after_marker: u8 = 0;
             let mut _more = false;
             for _ in 0..4u32 {
@@ -112,7 +110,8 @@ impl CodecChainPrevCarrier {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-        }
+            Ok(())
+        })?;
         _out.head = head;
         Ok(())
     }
@@ -200,14 +199,14 @@ pub trait CodecChainPrevCarrierSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>;
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1>;
 }
 
 impl<T: CodecChainPrevCarrierSource + ?Sized> CodecChainPrevCarrierSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
         (**self).entries()
     }
 }
@@ -221,14 +220,14 @@ pub struct CodecChainPrevCarrierParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4, 1>,
 }
 
 impl<'a> CodecChainPrevCarrierSource for CodecChainPrevCarrierParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
         self.entries.iter()
     }
 }
@@ -237,8 +236,8 @@ impl CodecChainPrevCarrierSource for CodecChainPrevCarrier {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.entries)
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
+        self.entries.iter()
     }
 }
 
@@ -246,7 +245,7 @@ impl<'a> CodecChainPrevCarrierSource for CodecChainPrevCarrierView<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4, 1> {
         self.entries.iter()
     }
 }
@@ -364,7 +363,7 @@ impl ListWalk<2> for CodecChainPrevCarrierEntriesWalk {
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevCarrierView<'a> {
     pub head: u8,
-    pub entries: Bounded<ListView<'a, CodecChainPrevCarrierEntriesWalk, 2>, 4>,
+    pub entries: Bounded<::sce_forge_runtime::codec::NonEmptyListView<'a, CodecChainPrevCarrierEntriesWalk, 2>, 4, 1>,
 }
 
 #[allow(dead_code)]
@@ -424,7 +423,7 @@ impl<'a> CodecChainPrevCarrierView<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            _out.entries = Bounded::new(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::TlvChainOverflow)?;
+            _out.entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TlvChainOverflow)?;
         }
         _out.head = head;
         Ok(())
@@ -442,13 +441,16 @@ impl<'a> CodecChainPrevCarrierView<'a> {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_builder(&self, _out: &mut CodecChainPrevCarrier) -> Result<(), CodecError> {
         _out.head = self.head;
-        _out.entries.clear();
-        for _e in self.entries.iter() {
-            _out.entries.push(CodecChainPrevEntry::default()).map_err(|_| CodecError::TooManyElements)?;
-            if let Some(_slot) = _out.entries.last_mut() {
-                _e.into_builder(_slot)?;
+        _out.entries.refill(|_vec| {
+            _vec.clear();
+            for _e in self.entries.iter() {
+                _vec.push(CodecChainPrevEntry::default()).map_err(|_| CodecError::TooManyElements)?;
+                if let Some(_slot) = _vec.last_mut() {
+                    _e.into_builder(_slot)?;
+                }
             }
-        }
+            Ok(())
+        })?;
         Ok(())
     }
 

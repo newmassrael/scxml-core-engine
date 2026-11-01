@@ -34,7 +34,7 @@ use super::codec_chain_has_slice::CodecChainHasSlice;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasEnvelope<'a> {
     pub header: u8,
-    pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 4>, 4, 1>>,
     pub payload_len: Option<u64>,
     pub payload: Option<&'a [u8]>,
     pub slice_count: Option<u32>,
@@ -94,23 +94,25 @@ impl<'a> CodecChainHasEnvelope<'a> {
             _v
         };
         if (header & 0x80u8) != 0 {
-            let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 4>::new());
-            let mut _more = false;
-            for _ in 0..4u32 {
-                let _entry = CodecZenohExtEntry::decode(cursor)?;
-                _more = _entry.z();
-                // Bounded by max-depth on both sides — loop count and `_vec`
+            _out.extensions.insert(Default::default()).refill(|_vec| {
+                let mut _more = false;
+                for _ in 0..4u32 {
+                    let _entry = CodecZenohExtEntry::decode(cursor)?;
+                    _more = _entry.z();
+                    // Bounded by max-depth on both sides — loop count and `_vec`
                 // capacity are the same literal — so this push cannot fail. An
                 // over-long chain is refused by the guard after the loop.
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                if !_more { break; }
-            }
-            if _more && cursor.remaining() == 0 {
-                return Err(CodecError::NeedMoreBytes);
-            }
-            if _more {
-                return Err(CodecError::TlvChainOverflow);
-            }
+                    if !_more { break; }
+                }
+                if _more && cursor.remaining() == 0 {
+                    return Err(CodecError::NeedMoreBytes);
+                }
+                if _more {
+                    return Err(CodecError::TlvChainOverflow);
+                }
+                Ok(())
+            })?;
         } else {
             _out.extensions = None;
         }
@@ -232,7 +234,7 @@ pub trait CodecChainHasEnvelopeSource {
     /// The `header` field.
     fn header(&self) -> u8;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
     /// The `payload` field.
     fn payload(&self) -> Option<&[u8]>;
     /// The `slices` field.
@@ -243,7 +245,7 @@ impl<T: CodecChainHasEnvelopeSource + ?Sized> CodecChainHasEnvelopeSource for &T
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         (**self).extensions()
     }
     fn payload(&self) -> Option<&[u8]> {
@@ -263,7 +265,7 @@ pub struct CodecChainHasEnvelopeParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The `extensions` field.
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
     /// The `payload` field.
     pub payload: Option<&'a [u8]>,
     /// The `slices` field.
@@ -274,7 +276,7 @@ impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelopeParts<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.iter())
     }
     fn payload(&self) -> Option<&[u8]> {
@@ -289,8 +291,8 @@ impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelope<'a> {
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
-        self.extensions.as_ref().map(::sce_forge_runtime::codec::BoundedIter::from)
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
     }
     fn payload(&self) -> Option<&[u8]> {
         self.payload
@@ -304,7 +306,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasEnvelopeSource fo
     fn header(&self) -> u8 {
         self.header
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
     }
     fn payload(&self) -> Option<&[u8]> {
@@ -448,7 +450,7 @@ use super::codec_chain_has_slice::CodecChainHasSliceOwned;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecChainHasEnvelopeOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
     pub payload_len: Option<u64>,
     pub payload: Option<S::Bytes<256>>,
     pub slice_count: Option<u32>,
@@ -534,7 +536,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasEnvelopeOwned<S> 
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasEnvelope<'o>) -> Result<(), CodecError> {
         _out.header = self.header;
         match &self.extensions {
-            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l.inner(), |_e| Ok(_e.as_borrowed()))?,
+            Some(_l) => _out.extensions.insert(Default::default()).refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, _l.inner(), |_e| Ok(_e.as_borrowed())))?,
             None => _out.extensions = None,
         }
         _out.payload_len = self.payload_len;
