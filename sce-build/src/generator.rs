@@ -4278,12 +4278,12 @@ pub(crate) fn swift_invoke_unlowered(
         return Some("an <invoke> of a Mesh peer".to_string());
     }
     // What the invocation hands the child is a value the static lowering writes
-    // (`Param::native_seed`). An `ecmascript` parent hands a child that runs a script engine
-    // each value as JSON, which the child's `<data>` of that name takes in place of its own;
-    // a child that runs none has no variable to take it.
+    // (`Param::native_seed`). An `ecmascript` parent reads every argument as the invocation
+    // starts, and hands a child that runs a script engine each value as JSON, which the
+    // child's `<data>` of that name takes in place of its own; a child that runs none has no
+    // variable to take it, so its values are read for their errors and not given.
     let hands_values = !info.common.base.params.is_empty() || !info.namelist.is_empty();
-    let child_takes_values = is_ecma && info.common.child_needs_script_engine;
-    if !statically_lowered && hands_values && !child_takes_values {
+    if !statically_lowered && hands_values && !is_ecma {
         return Some("an <invoke> with a <param> or a namelist".to_string());
     }
     // An `ecmascript` parent writes the id of the invocation to the location `idlocation`

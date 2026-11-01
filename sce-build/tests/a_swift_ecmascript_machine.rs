@@ -315,13 +315,13 @@ fn a_send_to_an_invoked_child_is_routed_and_not_kept_by_the_sender() {
 /// something else: measured 2026-11-01 by the integration stem `invoke_param_seeds_declared_child_data`),
 /// and given to the child by name, and the child's `<data>` of that name takes it. The id of the
 /// invocation goes to the `idlocation` before the child starts. A namelist name the document does not
-/// declare is an error and is never resolved at build time.
+/// declare ends the element instead (`a_namelist_naming_an_undeclared_variable_ends_the_invoke_with_one_error`).
 #[test]
 fn an_invoke_hands_its_child_the_values_it_names_as_values() {
     let body = r##"
   <datamodel><data id="n" expr="1"/><data id="m" expr="2"/><data id="where"/></datamodel>
   <state id="s0">
-    <invoke type="scxml" idlocation="where" namelist="n missing">
+    <invoke type="scxml" idlocation="where" namelist="n">
       <param name="p" expr="m + 1"/>
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0" datamodel="ecmascript">
@@ -353,12 +353,8 @@ fn an_invoke_hands_its_child_the_values_it_names_as_values() {
         "the id of the invocation is written to the idlocation: {machine}"
     );
     assert!(
-        machine.contains("<invoke> namelist names 'missing', which is not declared"),
-        "an undeclared name is an error: {machine}"
-    );
-    assert!(
         !machine.contains("is not declared by this document"),
-        "no build-time refusal is embedded for the name: {machine}"
+        "no build-time refusal is embedded for a name: {machine}"
     );
 }
 
@@ -405,9 +401,9 @@ fn a_finalize_runs_in_the_parent_before_it_selects_on_the_childs_event() {
 }
 
 /// A child that runs no script engine has no variable to take a value, so what is handed to it is
-/// refused by name.
+/// read, for the errors an argument can cost, and not given: the child is never offered a seed.
 #[test]
-fn values_handed_to_a_child_without_an_engine_are_refused_by_name() {
+fn values_handed_to_a_child_without_an_engine_are_read_and_not_given() {
     let body = r##"
   <datamodel><data id="n" expr="1"/></datamodel>
   <state id="s0">
@@ -420,11 +416,44 @@ fn values_handed_to_a_child_without_an_engine_are_refused_by_name() {
     </invoke>
   </state>"##;
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
-    assert_eq!(status, Some(7), "{said}");
-    assert!(machine.is_empty(), "no machine is written");
+    assert_eq!(status, Some(0), "{said}");
     assert!(
-        said.contains("an <invoke> with a <param> or a namelist"),
-        "{said}"
+        machine.contains(r#"evaluateSeed("n")"#),
+        "the argument is read: {machine}"
+    );
+    assert!(
+        !machine.contains("childPolicy.acceptSeeds("),
+        "a child with no engine is given nothing: {machine}"
+    );
+}
+
+/// §scxml-6.4: a namelist name that is not a declared variable is not a readable location, which
+/// ends the element: one error.execution however many names are bad, and no session starts.
+#[test]
+fn a_namelist_naming_an_undeclared_variable_ends_the_invoke_with_one_error() {
+    let body = r##"
+  <datamodel><data id="n" expr="1"/></datamodel>
+  <state id="s0">
+    <invoke type="scxml" namelist="missingA missingB">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c0">
+          <state id="c0"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert_eq!(
+        machine
+            .matches("<invoke> namelist names a location that cannot be read")
+            .count(),
+        1,
+        "one error for the element, however many names are bad: {machine}"
+    );
+    assert!(
+        !machine.contains("InvokedSession("),
+        "no session is started for it: {machine}"
     );
 }
 

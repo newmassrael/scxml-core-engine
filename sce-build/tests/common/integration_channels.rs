@@ -440,10 +440,6 @@ macro_rules! swift_refusal {
 /// entry for a stem Swift now writes is red.
 pub const SWIFT_REFUSED: &[(&str, &str)] = &[
     (
-        "a_bad_invoke_argument_is_reported_once",
-        swift_refusal!("an `<invoke>` with a `<param>` or a namelist"),
-    ),
-    (
         "a_delayed_http_send_is_posted_when_due",
         swift_refusal!("a delayed BasicHTTP `<send>`"),
     ),

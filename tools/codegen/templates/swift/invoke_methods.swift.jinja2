@@ -74,35 +74,55 @@
    read once by the engine (`evaluateSeed`: a scalar as the value itself, anything else as its JSON,
    because JSON cannot write every number) and given to the child's `acceptSeeds` by the name of the
    `<param>` or of the namelist entry. The child's `<data>` of that name takes it in place of its
-   own value, and one the child declares no variable for is dropped there. A value that cannot be read
-   is reported and left out (5.7.1), and a namelist name the document does not declare is the same
-   (its name is never resolved at build time, as `<send namelist>`'s is not). #}
+   own value, and one the child declares no variable for is dropped there. A `<param>` that cannot be
+   read is reported and left out (5.7.1); a namelist name the document does not declare is an argument
+   error of the element, which ends it (its name is never resolved at build time, as
+   `<send namelist>`'s is not). #}
+{# W3C SCXML 5.7.1 + 6.4.1: every argument is read when the invocation starts, whether or not the
+   child keeps it. A `<param>` that cannot be read (an expression that fails, or `location=""`
+   naming no location) costs one error.execution and its pair, and the child still starts. A
+   child that runs no script engine has no variable to take a value, so what it is handed is read
+   (for its errors) and not given. A namelist that names something other than a declared
+   variable ends the element before this macro runs (`namelist_bad`, below). #}
 {% macro ecma_seed_child(invoke_info, model, machine_name, indent) %}
+{% set takes = invoke_info.child_needs_script_engine %}
 {% if invoke_info.params or (invoke_info.namelist and invoke_info.namelist | trim) %}
+{% if takes %}
 {{ indent }}var seeds: [String: LuaSeed] = [:]
+{% endif %}
 {% for param in invoke_info.params %}
 {% if param.is_static_literal %}
+{% if takes %}
 {{ indent }}seeds["{{ param.name | escape_swift }}"] = .scalar(.string("{{ param.static_value | escape_swift }}"))
+{% endif %}
 {% elif param.expr or param.location %}
 {{ indent }}if let seedValue = evaluateSeed("{{ (param.expr or param.location) | to_lua_expr | escape_swift }}") {
+{% if takes %}
 {{ indent }}    seeds["{{ param.name | escape_swift }}"] = seedValue
+{% else %}
+{{ indent }}    _ = seedValue
+{% endif %}
 {{ indent }}} else {
 {{ indent }}    raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> could not be read", engine: engine)
 {{ indent }}}
+{% else %}
+{{ indent }}raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
 {% endif %}
 {% endfor %}
 {% for namelist_id in (invoke_info.namelist or '') | split %}
-{% if namelist_id is declared_name %}
 {{ indent }}if let seedValue = evaluateSeed("{{ namelist_id | to_lua_expr | escape_swift }}") {
+{% if takes %}
 {{ indent }}    seeds["{{ namelist_id | escape_swift }}"] = seedValue
+{% else %}
+{{ indent }}    _ = seedValue
+{% endif %}
 {{ indent }}} else {
 {{ indent }}    raiseExecutionError("<invoke> namelist entry '{{ namelist_id | escape_swift }}' could not be read", engine: engine)
 {{ indent }}}
-{% else %}
-{{ indent }}raiseExecutionError("<invoke> namelist names '{{ namelist_id | escape_swift }}', which is not declared", engine: engine)
-{% endif %}
 {% endfor %}
+{% if takes %}
 {{ indent }}childPolicy.acceptSeeds(seeds)
+{% endif %}
 {% endif %}
 {% endmacro %}
 {# The invokes are read off the states, not off `model.invokes`: the static lowering
@@ -196,9 +216,26 @@
     }
 {% for invoke_info in child_invokes %}
 {% if invoke_info.kind != 'Hybrid' %}
+{# W3C SCXML 6.4: an argument that cannot be evaluated ends the processing of the element "without
+   further action". A namelist name that is not a declared variable is not a readable location,
+   which the build decides once: one error.execution however many names are bad, no child, no
+   `idlocation` written, and the `<param>`s are not evaluated. #}
+{% set namelist_bad = namespace(name='') %}
+{% if ecmascript_datamodel %}
+{% for namelist_id in (invoke_info.namelist or '') | split %}
+{% if namelist_id is not declared_name and not namelist_bad.name %}
+{% set namelist_bad.name = namelist_id %}
+{% endif %}
+{% endfor %}
+{% endif %}
 
     /// Starts the session of `<invoke>` `{{ invoke_info.invoke_id }}` (W3C SCXML 6.4).
     private func sceStartInvoke{{ invoke_info.field_suffix | to_pascal_case }}(_ pending: PendingInvoke<{{ machine_name }}State>, engine: Engine<{{ machine_name }}Policy>) {
+{% if namelist_bad.name %}
+        // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
+        // here: one error.execution, and no session starts.
+        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+{% else %}
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
         // keys the invocation on, so the origin of what it sends is the id it
         // publishes in `_ioprocessors`.
@@ -243,6 +280,7 @@
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
         sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+{% endif %}
     }
 {% else %}
 
