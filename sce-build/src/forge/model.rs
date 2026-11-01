@@ -2732,6 +2732,152 @@ impl CodecField {
             _ => None,
         }
     }
+
+    /// The bound the document states for this field's length or count:
+    /// `sce:max-size` on a `tail` or `length-ref` field, `max-count` on a
+    /// `<sce:repeat>`, `max-depth` on a `<sce:tlv-chain>`. `None` where the
+    /// document states none. What storage is sized from (docs/adr/0077 §5).
+    pub fn declared_bound(&self) -> Option<u64> {
+        match &self.bit_size {
+            BitSize::Tail | BitSize::LengthRef => self.max_size.map(u64::from),
+            BitSize::Repeat { .. } => self.max_count.map(u64::from),
+            BitSize::TlvChain { max_depth, .. } => Some(u64::from(*max_depth)),
+            BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => None,
+        }
+    }
+
+    /// The lengths (bytes of a `tail` or `length-ref` field) or counts
+    /// (entries of a `<sce:repeat>` or `<sce:tlv-chain>`) this field's value
+    /// may have: the declared bound intersected with what the field that
+    /// carries the length can say, after its `sce:length-arith`
+    /// (docs/adr/0077 §1). `fields` is the codec's field list, which holds
+    /// the length or count field. `None` for a field whose size is not a
+    /// length (a number, an embedded body).
+    pub fn length_bound(&self, fields: &[CodecField]) -> Option<LengthBound> {
+        let carried = |name: &str| LengthCarrier::resolve(name, fields);
+        match &self.bit_size {
+            BitSize::LengthRef => {
+                let carrier = self.length_field.as_deref().and_then(carried);
+                Some(LengthBound::of(
+                    carrier,
+                    self.length_arith.unwrap_or(0),
+                    self.declared_bound(),
+                ))
+            }
+            BitSize::Repeat {
+                count_ref: CountRef::LengthField(count),
+            } => Some(LengthBound::of(carried(count), 0, self.declared_bound())),
+            BitSize::Tail
+            | BitSize::Repeat {
+                count_ref: CountRef::UntilEof,
+            }
+            | BitSize::TlvChain { .. } => Some(LengthBound::of(None, 0, self.declared_bound())),
+            BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => None,
+        }
+    }
+}
+
+/// The field that carries a length or a count on the wire, as far as its
+/// bound goes: how many bits it has. A sibling integer field has the bits of
+/// its `sce:bit-size` (a VLE the width of its value type), and a dotted
+/// `<carrier>.<flag>` reference the width of the flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LengthCarrier {
+    /// Bits of the unsigned value the carrier holds, 1 to 64.
+    pub bits: u32,
+}
+
+impl LengthCarrier {
+    /// The carrier `name` names among `fields`: a sibling's id, or
+    /// `<carrier>.<flag>`. `None` where it names nothing the parser would have
+    /// admitted, which leaves the bound to the declaration alone.
+    pub fn resolve(name: &str, fields: &[CodecField]) -> Option<Self> {
+        let bits = match name.split_once('.') {
+            Some((carrier, flag)) => {
+                fields
+                    .iter()
+                    .find(|f| f.id == carrier.trim())?
+                    .flags
+                    .iter()
+                    .find(|d| d.name == flag.trim())?
+                    .width
+            }
+            None => match fields.iter().find(|f| f.id == name)?.bit_size {
+                BitSize::Fixed { bits } => bits,
+                BitSize::Vle { width_bits } => width_bits,
+                _ => return None,
+            },
+        };
+        (1..=64).contains(&bits).then_some(Self { bits })
+    }
+
+    /// The largest value the carrier holds.
+    pub fn largest(self) -> u64 {
+        u64::MAX >> (64 - self.bits)
+    }
+}
+
+/// The lengths a field's value may have, `min..=max`, and how the value of
+/// the field that carries it on the wire maps onto them (docs/adr/0077 §1).
+///
+/// A length is the carried value plus `arith` (`sce:length-arith`, `-1`, `0`
+/// or `+1`). `max` is `None` where nothing bounds the length: no declaration,
+/// and a carrier (or a `tail`, which has none) whose largest value plus
+/// `arith` is past `u64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LengthBound {
+    pub min: u64,
+    pub max: Option<u64>,
+    /// `sce:length-arith`: the length is the carried value plus this.
+    pub arith: i32,
+    /// The carrier's largest value, where the length has one.
+    pub carrier_largest: Option<u64>,
+}
+
+impl LengthBound {
+    fn of(carrier: Option<LengthCarrier>, arith: i32, declared: Option<u64>) -> Self {
+        let carrier_largest = carrier.map(LengthCarrier::largest);
+        // What the carrier can say, as a length: its largest value plus the
+        // offset, which is past `u64` only for a 64-bit carrier and `+1`.
+        let carried_max =
+            carrier_largest.and_then(|largest| largest.checked_add_signed(i64::from(arith)));
+        let max = match (carried_max, declared) {
+            (Some(c), Some(d)) => Some(c.min(d)),
+            (Some(c), None) => Some(c),
+            (None, d) => d,
+        };
+        Self {
+            min: u64::try_from(arith.max(0)).unwrap_or(0),
+            max,
+            arith,
+            carrier_largest,
+        }
+    }
+
+    /// The carried values a decode accepts, `lo..=hi`, where a check can
+    /// fail: `lo` is `Some` where a carried value below it has no length (a
+    /// zero under `-1`), and `hi` is `Some` where a value the carrier can say
+    /// is past the bound. A `tail` has no carrier, and its `hi` is the bound
+    /// on the bytes that remain.
+    pub fn carried_range(&self) -> (Option<u64>, Option<u64>) {
+        let lo = (self.arith < 0).then(|| u64::from(self.arith.unsigned_abs()));
+        let hi = self.max.and_then(|max| {
+            // The carried value whose length is `max`.
+            let hi = max.checked_add_signed(-i64::from(self.arith))?;
+            match self.carrier_largest {
+                Some(largest) if hi >= largest => None,
+                _ => Some(hi),
+            }
+        });
+        (lo, hi)
+    }
+
+    /// Whether every accepted length is at most `i32::MAX`, so a host's
+    /// narrowest length type (a 32-bit `usize`, a Kotlin `Int`) holds it
+    /// without a check of its own.
+    pub fn fits_i32(&self) -> bool {
+        self.max.is_some_and(|max| max <= i32::MAX as u64)
+    }
 }
 
 /// One arm of a discriminated-union variant suffix on a codec.

@@ -5275,7 +5275,7 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_string_tail_reject">
   <datamodel>
-    <sce:field id="payload" sce:type="string" sce:byte="0" sce:bit-size="tail"/>
+    <sce:field id="payload" sce:type="string" sce:byte="0" sce:bit-size="tail" sce:max-size="16"/>
   </datamodel>
 </scxml>"#;
     let result = sce_build::compile_forge_with_imports(
@@ -12482,7 +12482,7 @@ mod tests {
        sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="kind" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="64"/>
   </datamodel>
 </scxml>"#,
     )
@@ -12522,7 +12522,7 @@ fn forge_a_codec_of_one_tail_field_has_no_vacuous_length_guard() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big">
   <datamodel>
-    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="tail"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="64"/>
   </datamodel>
 </scxml>"#;
     std::fs::write(dir.join("codec_tail_only.scxml"), source).expect("write fixture");
@@ -19812,14 +19812,16 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
     .expect("multi-byte length-ref fixtures must round-trip via cargo test");
 }
 
-/// `sce:max-size` is the no-alloc inline capacity, NOT a wire ceiling:
-/// under `alloc` a codec's `{Codec}Owned` form must hold a payload that
-/// exceeds the declared cap. Two end-to-end guards against `codec_tail`
-/// (`sce:max-size="32"`), compiled in the `default = ["alloc"]` temp crate
-/// (the AP profile downstream consumers ship):
-///   1. decode path — decode a 100 B tail frame, `try_into_owned`, assert
-///      the owned `payload` carries all 100 bytes (pre-portable this raised
-///      `TooManyElements` from `heapless::Vec<u8, 32>`).
+/// `sce:max-size` is part of the field's value type, a bound on the wire
+/// (docs/adr/0077 §1); the storage profile sizes its storage from it. Two
+/// end-to-end guards against `codec_tail` (`sce:max-size="32"`), compiled in
+/// the `default = ["alloc"]` temp crate (the AP profile downstream consumers
+/// ship):
+///   1. decode path — a tail of 32 bytes decodes and its owned form carries
+///      all 32; a tail of 33 is refused with `LengthOutOfRange`, the error a
+///      byte length outside its bound is refused with on every backend
+///      (docs/adr/0077 §4), and not with `NeedMoreBytes`, which would tell a
+///      streaming caller to wait for bytes that cannot help.
 ///   2. hand-assemble path — build `CodecTailOwned` by hand (the encode-side
 ///      builder pattern), constructing the `payload` field via the SSOT
 ///      `SceBytes::from_slice`. `N` is inferred from the field's
@@ -19828,26 +19830,37 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
 ///      erased `N` to `Vec<u8>`, forcing downstream builders to duplicate
 ///      the SCXML `sce:max-size` SSOT).
 #[test]
-fn forge_codec_owned_bytes_unbounded_under_alloc() {
-    const HARNESS: &str = r#"// Injected by forge_codec_owned_bytes_unbounded_under_alloc.
+fn forge_codec_tail_is_held_to_its_bound_and_its_owned_cap_infers() {
+    const HARNESS: &str = r#"// Injected by forge_codec_tail_is_held_to_its_bound_and_its_owned_cap_infers.
 #[cfg(test)]
 mod tests {
     use crate::codec_tail::{CodecTail, CodecTailOwned};
-    use ::sce_forge_runtime::codec::{SceBytes, SceCursor};
+    use ::sce_forge_runtime::codec::{CodecError, SceBytes, SceCursor};
+
+    fn frame(payload: usize) -> Vec<u8> {
+        // msg_id, status, then the payload.
+        let mut frame = vec![0x01u8, 0x02];
+        frame.extend(std::iter::repeat(0xABu8).take(payload));
+        frame
+    }
 
     #[test]
-    fn tail_owned_holds_payload_over_max_size() {
-        // msg_id, status, then 100 payload bytes (> sce:max-size 32).
-        let mut frame = vec![0x01u8, 0x02];
-        frame.extend(std::iter::repeat(0xABu8).take(100));
-        let mut cursor = SceCursor::new(&frame);
-        let view = CodecTail::decode(&mut cursor).expect("decode tail frame");
-        assert_eq!(view.payload.len(), 100);
-        let owned = view
-            .try_into_owned()
-            .expect("alloc owned form is unbounded (N advisory)");
-        assert_eq!(owned.payload.len(), 100);
+    fn a_tail_at_its_bound_decodes_and_one_past_it_is_refused() {
+        let at = frame(32);
+        let mut cursor = SceCursor::new(&at);
+        let view = CodecTail::decode(&mut cursor).expect("a tail of max-size bytes decodes");
+        assert_eq!(view.payload.len(), 32);
+        let owned = view.try_into_owned().expect("a value within its bound projects");
+        assert_eq!(owned.payload.len(), 32);
         assert!(owned.payload.iter().all(|&b| b == 0xAB));
+
+        let past = frame(33);
+        let mut cursor = SceCursor::new(&past);
+        assert_eq!(
+            CodecTail::decode(&mut cursor).err(),
+            Some(CodecError::LengthOutOfRange),
+            "a tail one byte past max-size is not a frame of the document"
+        );
     }
 
     #[test]
@@ -19861,28 +19874,31 @@ mod tests {
         // profile only through `S::Bytes<N>`, and an associated type cannot be
         // run backwards to recover `S` from a value. Saying it once on the
         // binding is what then lets `N` infer with no turbofish.
-        let data = [0xCDu8; 50];
+        let data = [0xCDu8; 30];
         let owned: CodecTailOwned = CodecTailOwned {
             msg_id: 7,
             status: 9,
-            payload: SceBytes::from_slice(&data).expect("alloc copy is unbounded"),
+            payload: SceBytes::from_slice(&data).expect("within the bound"),
         };
-        assert_eq!(owned.payload.len(), 50);
-        assert_eq!(owned.payload, b"\xcd".repeat(50).as_slice());
+        assert_eq!(owned.payload.len(), 30);
+        assert_eq!(owned.payload, b"\xcd".repeat(30).as_slice());
         // Re-borrow + encode round-trips through the borrowed view.
         let borrowed = owned.as_borrowed();
-        assert_eq!(borrowed.payload.len(), 50);
-        assert_eq!(borrowed.encode_to_vec().len(), 52);
+        assert_eq!(borrowed.payload.len(), 30);
+        let bytes = borrowed.encode_to_vec();
+        assert_eq!(bytes.len(), 32);
+        let mut cursor = SceCursor::new(&bytes);
+        assert_eq!(CodecTail::decode(&mut cursor).expect("re-decodes").payload.len(), 30);
     }
 }
 "#;
     rustc_test_codec_set_with_extra(
         &resource_dir(),
         &["codec_tail.scxml"],
-        &[("owned_unbounded.rs", HARNESS)],
-        "codec_owned_unbounded_alloc",
+        &[("owned_bounded.rs", HARNESS)],
+        "codec_owned_bounded_alloc",
     )
-    .expect("> max-size tail payload must decode/build + round-trip under alloc");
+    .expect("a tail must be held to its bound, and its owned cap must infer");
 }
 
 /// SCE Forge — the storage profile must be pinned for `N` to infer.

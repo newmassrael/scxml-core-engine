@@ -366,7 +366,12 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% if field.bit_size_kind == "tail" %}
     {
         size_t _n = _frame_len - {{ field.byte_off }};
-        if (_n > {{ field.max_size }}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% if field.bound_guard is defined %}
+        {{ field.bound_guard }}
+{% endif %}
+{% if field.c_storage_check is defined %}
+        {{ field.c_storage_check }}
+{% endif %}
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
     }
@@ -374,8 +379,14 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
             in `sce:length-arith` (defaults to bare `(size_t)out->...`
             when arith=0 to keep historical goldens byte-stable). #}
     {
+{% if field.bound_guard is defined %}
+        {{ field.bound_guard }}
+{% endif %}
         size_t _n = {{ field.length_n_expr }};
-        if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% if field.c_storage_check is defined %}
+        {{ field.c_storage_check }}
+{% endif %}
+        if ({{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
 {% if not has_tail_fields %}
@@ -430,7 +441,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% for field in fields %}
 {% if field.c_over_bound_cond %}
     if ({{ field.c_over_bound_cond }}) {
-        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+        return {{ field.c_over_bound_status }};
     }
 {% endif %}
 {% endfor %}

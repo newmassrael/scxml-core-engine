@@ -119,11 +119,14 @@ typedef enum {
      * typed `CodecError::PresentIfMismatch` of Rust and `codec.ErrPresentIfMismatch`
      * of Go. */
     SCE_FORGE_CODEC_PRESENT_IF_MISMATCH = 18,
-    /* On encode, a byte string, a text, a list or a TLV chain holds more than its
-     * declared bound (`sce:max-size`, `sce:max-count`, `max-depth`): the member's
-     * array cannot hold that many, and a frame of fewer would not be the value
-     * given. Nothing is written. Mirrors the typed `CodecError::LengthOutOfRange`
-     * of Rust, `codec.ErrLengthOutOfRange` of Go and `LengthOutOfRange` of Python. */
+    /* A byte string's or a text's length outside its bound: the declared
+     * `sce:max-size` intersected with what its length field can say after its
+     * `sce:length-arith` (docs/adr/0077 §1). On decode, the length the frame
+     * says is outside it, judged before the frame's own length, so such a frame
+     * is refused and never waited on; on encode, the member holds more than its
+     * array, and nothing is written. Mirrors the typed
+     * `CodecError::LengthOutOfRange` of Rust, `codec.ErrLengthOutOfRange` of Go
+     * and `LengthOutOfRange` of Python. */
     SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19,
     /* On decode, the frame's variant tag names an arm the document declares
      * under a build feature this build leaves out (`<sce:arm feature=...>`,
@@ -131,6 +134,13 @@ typedef enum {
      * frame is refused rather than read as another arm's body (docs/adr/0072).
      * Mirrors the typed `CodecError::VariantArmNotBuilt` of Rust. */
     SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20,
+    /* A list's count past its bound, its declared `max-count` (docs/adr/0077 §1).
+     * On decode, a count the frame says past it, or an entry past it in a list
+     * read to the end of the frame, refused before that entry is read; on encode,
+     * the member holds more entries than its array, and nothing is written.
+     * Mirrors the typed `CodecError::TooManyElements` of Rust,
+     * `codec.ErrTooManyElements` of Go and `TooManyElements` of Python. */
+    SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

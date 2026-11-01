@@ -70,13 +70,24 @@ class BufferOverflow(CodecError):
 
 
 class LengthOutOfRange(CodecError):
-    """Raised when a length that was stored, and not computed from a value,
-    is above the bound it must respect. The typed ``read`` of a generated
-    ``sce:kind="broadcast-log"`` module (ADR 0062) raises it for an entry whose
-    length word is above the largest encoded size of the log's element: the
-    module wrote no such length, so the entry is not one it published, and the
-    bytes the length would cut are never taken. Mirrors the Rust runtime's
-    ``CodecError::LengthOutOfRange``."""
+    """Raised when a length that was read, and not computed from a value, is
+    outside the bound it must respect. A decode raises it for a byte string's
+    or a text's length outside its field's bound, the declared
+    ``sce:max-size`` intersected with what its length field can say after its
+    ``sce:length-arith`` (docs/adr/0077 §1), judged before the frame's own
+    length, so such a frame is refused and never waited on. The typed ``read`` of a generated ``sce:kind="broadcast-log"``
+    module (ADR 0062) raises it for an entry whose length word is above the
+    largest encoded size of the log's element: the module wrote no such length.
+    Either way the bytes the length would cut are never taken. Mirrors the Rust
+    runtime's ``CodecError::LengthOutOfRange``."""
+
+
+class TooManyElements(CodecError):
+    """Raised by a decode for a list whose count is past its declared
+    ``max-count``, or whose entries, read to the end of the frame, pass it;
+    the entry past the bound is refused before it is read
+    (docs/adr/0077 §2). Mirrors the Rust runtime's
+    ``CodecError::TooManyElements``."""
 
 
 class PresentIfMismatch(CodecError):

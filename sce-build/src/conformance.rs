@@ -3032,6 +3032,19 @@ fn fold_reject_vectors(
         if let Some(symbol) = failure.observable_symbol(language) {
             out.insert("symbol".into(), serde_json::Value::from(symbol));
         }
+        // Where the decode answers one sentinel and keeps the reason on the
+        // cursor (C++, Kotlin), the vector also asserts the record: the
+        // reason for a bound's refusal (docs/adr/0077 §4), and none for a
+        // frame short of bytes, so the two are never mistaken for each other.
+        if let Some(record) = failure.cursor_record(language) {
+            out.insert("cursor_record".into(), serde_json::Value::from(record));
+        }
+        if failure.records_nothing(language) {
+            out.insert(
+                "cursor_records_nothing".into(),
+                serde_json::Value::Bool(true),
+            );
+        }
         folded.push(serde_json::Value::Object(out));
     }
 

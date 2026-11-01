@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: each kind of declared bound a decode holds a frame
+     to (docs/adr/0077). The decode refuses a length or a count outside its
+     bound before it slices or allocates, in the type the frame said it in,
+     with LengthOutOfRange for a byte length and TooManyElements for a count:
+
+       key   a length carried by a 64-bit VLE, bounded by sce:max-size. A length
+             of 2^32 + 4 is refused; a decode that narrowed it to 32 bits
+             first would read 4 and accept the frame.
+       tag   a length carried as itself plus one (sce:length-arith="-1"), so a
+             carried 0 says a length of -1 and is refused, not wrapped.
+       items a list whose count is past its max-count, refused before the
+             first entry is read, so a frame that also ends early is refused
+             for its count and not for its missing bytes.
+
+     Wire shape (codec_repeat_elem = uint16 BE seq):
+       key_len   VLE u64
+       key       key_len bytes, at most 8
+       tag_len   uint8
+       tag       tag_len - 1 bytes, at most 4
+       count     uint8
+       items     count entries, at most 2
+
+     The encode can refuse a tag whose length plus one is past 255, which the
+     tag's uint8 length cannot carry; the declared max-size of 4 does not yet
+     reach the encode's analysis (docs/adr/0077 §3, step 2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_declared_bounds">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:field id="key_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="key" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="key_len" sce:max-size="8"/>
+    <sce:field id="tag_len" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+    <sce:field id="tag" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="tag_len" sce:length-arith="-1" sce:max-size="4"/>
+    <sce:field id="count" sce:type="uint8" sce:byte="4" sce:bit-size="8"/>
+    <sce:repeat id="items" type="codec_repeat_elem" sce:byte="5"
+                count="count" max-count="2"/>
+  </datamodel>
+</scxml>

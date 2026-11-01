@@ -11,9 +11,10 @@
 //     same failure from outside.
 //
 // Raising a failure and observing one are not the same question, so the
-// table answers both. Cpp and Kotlin construct no typed runtime error at all
-// (the "MCU-only codec sub-features" convention — they collapse onto their
-// truncation sentinel), and Python's generated `decode` funnels every
+// table answers both. Cpp and Kotlin return one sentinel for every failure
+// (the "MCU-only codec sub-features" convention); a refusal that is not a
+// frame short of bytes is recorded on the cursor beside it (a bound's,
+// docs/adr/0077 §4), and Python's generated `decode` funnels every
 // `CodecError` through one `except` into `None`. For all three the failure
 // is raised by name inside the decode but is *not* observable by name
 // outside it, so `observable_symbol` reports `None` and a caller can only
@@ -31,6 +32,14 @@ pub enum CodecFailure {
     /// A `<sce:tlv-chain>` carried more entries than `max-depth` admits,
     /// under `on-overflow="reject"`.
     TlvChainOverflow,
+    /// A byte string's or a text's length outside its bound, the declared
+    /// `sce:max-size` intersected with what its length field can say after
+    /// its `sce:length-arith` (docs/adr/0077 §1), judged before the frame's
+    /// own length.
+    LengthOutOfRange,
+    /// A list's count past its declared `max-count`, or an entry past it in a
+    /// list read to the end of the frame (docs/adr/0077 §2).
+    TooManyElements,
     /// An `sce:encoding="cbor"` map is not one the codec reads
     /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
     /// or an entry of the wrong major type.
@@ -65,9 +74,11 @@ pub enum CodecFailure {
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 12] = [
+    pub const ALL: [CodecFailure; 14] = [
         CodecFailure::NeedMoreBytes,
         CodecFailure::TlvChainOverflow,
+        CodecFailure::LengthOutOfRange,
+        CodecFailure::TooManyElements,
         CodecFailure::CborMalformed,
         CodecFailure::CborRequiredKeyMissing,
         CodecFailure::CborWrongLength,
@@ -86,6 +97,8 @@ impl CodecFailure {
         match self {
             CodecFailure::NeedMoreBytes => "need-more-bytes",
             CodecFailure::TlvChainOverflow => "tlv-chain-overflow",
+            CodecFailure::LengthOutOfRange => "length-out-of-range",
+            CodecFailure::TooManyElements => "too-many-elements",
             CodecFailure::CborMalformed => "cbor-malformed",
             CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
             CodecFailure::CborWrongLength => "cbor-wrong-length",
@@ -161,6 +174,32 @@ impl CodecFailure {
                 Language::Python => "raise TlvChainOverflow()",
                 Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
             }),
+            // A bound's refusal is not a frame short of bytes, so C++ and
+            // Kotlin record it on the cursor before they return their one
+            // sentinel (docs/adr/0077 §4; `SceCursor::refuse`, as ADR 0072
+            // records a left-out arm's).
+            CodecFailure::LengthOutOfRange => Some(match lang {
+                Language::Rust => "return Err(CodecError::LengthOutOfRange);",
+                Language::C11 => "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;",
+                Language::Cpp => {
+                    "cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;"
+                }
+                Language::Kotlin => "cursor.refuse(CodecError.LengthOutOfRange); return null",
+                Language::Go => "return nil, codec.ErrLengthOutOfRange",
+                Language::Python => "raise LengthOutOfRange()",
+                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
+            }),
+            CodecFailure::TooManyElements => Some(match lang {
+                Language::Rust => "return Err(CodecError::TooManyElements);",
+                Language::C11 => "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;",
+                Language::Cpp => {
+                    "cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;"
+                }
+                Language::Kotlin => "cursor.refuse(CodecError.TooManyElements); return null",
+                Language::Go => "return nil, codec.ErrTooManyElements",
+                Language::Python => "raise TooManyElements()",
+                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
+            }),
             CodecFailure::CborMalformed
             | CodecFailure::CborRequiredKeyMissing
             | CodecFailure::CborWrongLength
@@ -172,6 +211,38 @@ impl CodecFailure {
             | CodecFailure::LineBadEscape
             | CodecFailure::LineBadValue => None,
         }
+    }
+
+    /// The symbol a caller compares the cursor's record of a refusal against
+    /// on the backends whose decode returns one sentinel for every failure
+    /// and records the reason beside it (C++ `SceCursor::last_refusal`,
+    /// Kotlin `SceCursor.lastRefusal`), or `None` where the failure is not
+    /// recorded there. A frame short of bytes records nothing, and a caller
+    /// can check that too ([`Self::records_nothing`]).
+    pub fn cursor_record(self, lang: Language) -> Option<&'static str> {
+        match (lang, self) {
+            (Language::Cpp, CodecFailure::LengthOutOfRange) => {
+                Some("::SCE::Forge::CodecError::LengthOutOfRange")
+            }
+            (Language::Cpp, CodecFailure::TooManyElements) => {
+                Some("::SCE::Forge::CodecError::TooManyElements")
+            }
+            (Language::Kotlin, CodecFailure::LengthOutOfRange) => {
+                Some("com.sce.forge.runtime.CodecError.LengthOutOfRange")
+            }
+            (Language::Kotlin, CodecFailure::TooManyElements) => {
+                Some("com.sce.forge.runtime.CodecError.TooManyElements")
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether a refusal of this kind leaves the cursor's record empty on the
+    /// backends that keep one: a frame short of bytes is the one a caller may
+    /// resume by appending, so it must not read as a refusal for a reason.
+    pub fn records_nothing(self, lang: Language) -> bool {
+        matches!(lang, Language::Cpp | Language::Kotlin)
+            && matches!(self, CodecFailure::NeedMoreBytes)
     }
 
     /// The symbol a *caller* can compare a refused decode against, or `None`
@@ -188,6 +259,19 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
             (Language::Go, CodecFailure::TlvChainOverflow) => Some("codec.ErrTlvChainOverflow"),
+            // A bound's refusal (docs/adr/0077 §4) is named on the same three.
+            (Language::Rust, CodecFailure::LengthOutOfRange) => {
+                Some("CodecError::LengthOutOfRange")
+            }
+            (Language::Rust, CodecFailure::TooManyElements) => Some("CodecError::TooManyElements"),
+            (Language::C11, CodecFailure::LengthOutOfRange) => {
+                Some("SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE")
+            }
+            (Language::C11, CodecFailure::TooManyElements) => {
+                Some("SCE_FORGE_CODEC_TOO_MANY_ELEMENTS")
+            }
+            (Language::Go, CodecFailure::LengthOutOfRange) => Some("codec.ErrLengthOutOfRange"),
+            (Language::Go, CodecFailure::TooManyElements) => Some("codec.ErrTooManyElements"),
             // The CBOR reader's refusals are named on Rust, Go and C11, whose
             // decodes return the runtime's typed error or status.
             (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),

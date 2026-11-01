@@ -1,0 +1,85 @@
+# Mutation cases for "a decode refuses a length past its declared bound".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_decode_refuses_a_length_past_its_declared_bound.cases`.
+#
+# Every decode of a `tail` or `length-ref` field and of a `<sce:repeat>`
+# compares the length or count the frame says with the field's bound, in the
+# type it was read in, before it slices or allocates (docs/adr/0077 §2). The
+# bound is one function of the model (`LengthBound`), the check one renderer
+# (`length_guard::Guard`), and each path calls it. Each case below takes one
+# piece away; the oracle's reject vectors for `codec_length_ref`, `codec_tail`
+# and the three `codec_declared_bounds*` fixtures (rendered into the Rust
+# numerical conformance harness) refuse each.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test numerical_conformance
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/generator/length_guard.rs sce-build/src/forge/model.rs
+mutation_oracles tests/forge/conformance/numerical_reference.json
+
+mutation_case "a length past its bound is accepted" <<'PY'
+edit("sce-build/src/forge/generator/length_guard.rs",
+     r'''        let above = self.hi.map(|hi| format!("{value} > {}", literal(hi)));''',
+     r'''        let above: Option<String> = None;''')
+PY
+
+mutation_case "a length one past its bound is accepted" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''            let hi = max.checked_add_signed(-i64::from(self.arith))?;''',
+     r'''            let hi = max.checked_add_signed(1 - i64::from(self.arith))?;''')
+PY
+
+mutation_case "a carried zero under length-arith -1 is not refused" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''        let lo = (self.arith < 0).then(|| u64::from(self.arith.unsigned_abs()));''',
+     r'''        let lo: Option<u64> = None;''')
+PY
+
+mutation_case "a two-sided check admits one past its top" <<'PY'
+edit("sce-build/src/forge/generator/length_guard.rs",
+     r'''                "!({}..={}).contains(&{value})",
+                literal(lo),
+                literal(hi)
+            ));''',
+     r'''                "!({}..={}).contains(&{value})",
+                literal(lo),
+                literal(hi + 1)
+            ));''')
+PY
+
+mutation_case "a 64-bit length is narrowed to 32 bits before it is compared" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                "let _len = {carried};\n{indent}{}let _n = {narrow};",''',
+     r'''                "let _len = ({carried}) as u32;\n{indent}{}let _n = {narrow};",''')
+PY
+
+mutation_case "a list's count past its bound is not judged before its entries" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            length_guard::carried_held(name, fields, lang),
+            indent,
+        )''',
+     r'''            length_guard::carried_held(name, fields, lang),
+            indent,
+        )
+        .replace("if ", "if false && ")''')
+PY
+
+mutation_case "a list read to the end reads the entry past its bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        .expect("a repeat has a count bound")
+        .full_stmt(lang, len, indent)''',
+     r'''        .expect("a repeat has a count bound")
+        .full_stmt(lang, len, indent)
+        .replace("if ", "if false && ")''')
+PY
+
+mutation_case "a tail the streaming decode reads past its bound is accepted" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        .expect("a tail field has a length bound")
+        .stmt(lang, value, length_guard::Held::HostInt, indent)''',
+     r'''        .expect("a tail field has a length bound")
+        .stmt(lang, value, length_guard::Held::HostInt, indent)
+        .replace("if ", "if false && ")''')
+PY

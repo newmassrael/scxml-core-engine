@@ -12,6 +12,9 @@
     The statement carries its own indentation because the three call
     sites below share it. #}
 {% macro decode_field(field) %}
+{% if field.bound_guard is defined %}
+        {{ field.bound_guard }}
+{% endif %}
 {% if field.length_ref_end is defined %}
         if (_frame_len < static_cast<std::size_t>({{ field.length_ref_end }})) return std::nullopt;
 {% endif %}

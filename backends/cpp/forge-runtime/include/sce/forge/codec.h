@@ -104,6 +104,21 @@ enum class CodecError : std::uint8_t {
     /// Mirrors `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20` of C and the typed
     /// `CodecError::VariantArmNotBuilt` of Rust.
     VariantArmNotBuilt = 13,
+    /// On decode, a byte string's or a text's length outside its bound: the
+    /// declared `sce:max-size` intersected with what its length field can say
+    /// after its `sce:length-arith` (docs/adr/0077 §1). Judged before the
+    /// frame's own length, so such a frame is refused and never waited on.
+    /// Decode returns `std::nullopt` and records this on the cursor
+    /// (`SceCursor::last_refusal`). Mirrors
+    /// `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19` of C and the typed
+    /// `CodecError::LengthOutOfRange` of Rust.
+    LengthOutOfRange = 14,
+    /// On decode, a list's count past its declared `max-count`, or an entry
+    /// past it in a list read to the end of the frame, refused before that
+    /// entry is read (docs/adr/0077 §2). Recorded on the cursor as
+    /// `LengthOutOfRange` is. Mirrors `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21`
+    /// of C and the typed `CodecError::TooManyElements` of Rust.
+    TooManyElements = 15,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -164,7 +179,8 @@ public:
     }
 
     /// Record that a decode refused its frame for a reason other than
-    /// running out of bytes (`CodecError::VariantArmNotBuilt`). The decode
+    /// running out of bytes (`CodecError::VariantArmNotBuilt`,
+    /// `LengthOutOfRange`, `TooManyElements`). The decode
     /// then returns `std::nullopt`; the cursor stands where the refusal was
     /// found, inside the frame, so the frame is not resumed by appending
     /// bytes. The record stays until the next refusal replaces it.

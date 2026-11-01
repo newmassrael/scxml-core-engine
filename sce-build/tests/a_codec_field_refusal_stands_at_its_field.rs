@@ -144,13 +144,53 @@ fn a_repeat_counting_a_non_integer_stands_at_its_count() {
     );
 }
 
+/// A variable-length field or a list that states no bound is refused at the
+/// element that declares it, naming the attribute that bounds it: the bound
+/// is part of the field's type, every backend's decode refuses past it, and
+/// no backend supplies one of its own (docs/adr/0077 §5).
+#[test]
+fn a_variable_field_without_its_bound_stands_at_its_element() {
+    for (datamodel, element, attr) in [
+        (
+            r#"    <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="len"/>"#,
+            "<sce:field id=\"body\"",
+            "sce:max-size",
+        ),
+        (
+            r#"    <sce:field id="rest" sce:type="bytes" sce:byte="0" sce:bit-size="tail"/>"#,
+            "<sce:field id=\"rest\"",
+            "sce:max-size",
+        ),
+        (
+            r#"    <sce:repeat id="msgs" type="codec_repeat_elem" sce:byte="0" until-eof="true"/>"#,
+            "<sce:repeat id=\"msgs\"",
+            "max-count",
+        ),
+    ] {
+        let document = codec(datamodel);
+        let record = refusal(&document, "validation/missing-attribute");
+        let (row, _) = written_at(&document, element);
+        assert_eq!(
+            record["location"]["line"].as_u64(),
+            Some(row),
+            "the record stands at the element that leaves its bound out: {record}"
+        );
+        assert!(
+            record["message"].as_str().is_some_and(|m| m.contains(attr)),
+            "the record names {attr}: {record}"
+        );
+    }
+}
+
 /// A tail field followed by another stands at its own `sce:bit-size`.
 #[test]
 fn a_tail_that_is_not_last_stands_at_its_bit_size() {
     let document = codec(
         r#"    <sce:field id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="rest" sce:type="bytes" sce:byte="1"
-               sce:bit-size="tail"/>
+               sce:bit-size="tail" sce:max-size="8"/>
     <sce:field id="after" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>"#,
     );
     let record = refusal(&document, "validation/attribute-rule-violated");

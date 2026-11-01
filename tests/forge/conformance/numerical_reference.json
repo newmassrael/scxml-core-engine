@@ -39898,6 +39898,22 @@
             4
           ],
           "note": "5-byte payload"
+        },
+        {
+          "decoded": {
+            "msgId": 3,
+            "status": 4,
+            "payload": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+          },
+          "encoded": [3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+          "note": "32-byte payload, the max-size: a tail at its bound decodes"
+        }
+      ],
+      "rejects": [
+        {
+          "why": "the tail holds 33 bytes, one past the max-size of 32: the frame is refused, not truncated",
+          "encoded": [3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+          "error": "length-out-of-range"
         }
       ]
     },
@@ -39976,18 +39992,128 @@
             5
           ],
           "note": "len=5"
+        },
+        {
+          "decoded": {
+            "msgId": 4,
+            "len": 32,
+            "payload": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+          },
+          "encoded": [4, 32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+          "note": "len=32, the max-size: a payload at its bound decodes"
         }
       ],
       "rejects": [
         {
-          "why": "the length byte says 200 and the frame holds two payload bytes",
+          "why": "the length byte says 200, past the max-size of 32, and the frame holds two payload bytes: the bound is judged before the frame length",
           "encoded": [1, 200, 9, 9],
-          "error": "need-more-bytes"
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the length byte says 33, one past the max-size of 32, and the frame holds all 33 payload bytes",
+          "encoded": [1, 33, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the length byte says 33, one past the max-size of 32, and the frame ends after its first payload byte",
+          "encoded": [1, 33, 0],
+          "error": "length-out-of-range"
         },
         {
           "why": "the frame is one byte short of the payload its length byte declares",
           "encoded": [1, 3, 10, 20],
           "error": "need-more-bytes"
+        }
+      ]
+    },
+    "codec_declared_bounds": {
+      "fixture": "CodecDeclaredBounds",
+      "signature": "(raw: &[u8]) -> {key_len: vle u64, key: bytes length-ref:key_len (max 8), tag_len: u8, tag: bytes length-ref:tag_len - 1 (max 4), count: u8, items: repeat<codec_repeat_elem> count (max 2)}",
+      "description": "Decode-rejection vectors only: what a decode refuses for each kind of declared bound (docs/adr/0077). The list's entries are a typed sub-codec, so the field shape is not expressible as StructField and the fixture is oracle_eligible=false for round-trip cases. Each vector is a frame that would decode if its bound were not judged, or judged after the frame's own length, so a backend that skips the check or orders it after the slice fails the vector. A codec_repeat_elem entry is two bytes.",
+      "rejects": [
+        {
+          "why": "the key length is 2^32 + 4, past the max-size of 8; a decode that narrowed it to 32 bits first would read 4 and accept the frame",
+          "encoded": [132, 128, 128, 128, 16, 1, 2, 3, 4, 1, 0],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the key length is 9, one past the max-size of 8, and the frame holds all 9 key bytes",
+          "encoded": [9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 0],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the tag length is carried as itself plus one and the carried value is 0, a length of -1",
+          "encoded": [0, 0, 0],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the tag length is 5, one past the max-size of 4, and the frame holds all 5 tag bytes",
+          "encoded": [0, 6, 1, 2, 3, 4, 5, 0],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "the count is 3, one past the max-count of 2, and the frame holds no entry: the count is judged before the entries are read",
+          "encoded": [0, 1, 3],
+          "error": "too-many-elements"
+        },
+        {
+          "why": "the count is 3, one past the max-count of 2, and the frame holds all 3 entries",
+          "encoded": [0, 1, 3, 0, 1, 0, 2, 0, 3],
+          "error": "too-many-elements"
+        },
+        {
+          "why": "the count is 2, the max-count, and the frame ends after the first entry",
+          "encoded": [0, 1, 2, 0, 1],
+          "error": "need-more-bytes"
+        }
+      ]
+    },
+    "codec_declared_bounds_gated": {
+      "fixture": "CodecDeclaredBoundsGated",
+      "signature": "(raw: &[u8]) -> {flags: u8 (G bit 0), name_len: u8 if G, name: text length-ref:name_len (max 3) if G, rest: bytes tail (max 2)}",
+      "description": "Decode-rejection vectors only, for the streaming decode's gated text and its tail (docs/adr/0077). Each frame would decode if its bound were not judged, or judged after the frame's own length.",
+      "rejects": [
+        {
+          "why": "G is set and the name length is 4, one past the max-size of 3, with all 4 name bytes present",
+          "encoded": [1, 4, 97, 98, 99, 100],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "G is set and the name length is 4, one past the max-size of 3, and the frame ends after the length",
+          "encoded": [1, 4],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "G is set, the name is 3 bytes, and the tail holds 3 bytes, one past its max-size of 2",
+          "encoded": [1, 3, 97, 98, 99, 1, 2, 3],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "G is clear and the tail holds 3 bytes, one past its max-size of 2",
+          "encoded": [0, 1, 2, 3],
+          "error": "length-out-of-range"
+        },
+        {
+          "why": "G is set and the name length is 3, the max-size, and the frame holds two name bytes",
+          "encoded": [1, 3, 97, 98],
+          "error": "need-more-bytes"
+        }
+      ]
+    },
+    "codec_declared_bounds_to_end": {
+      "fixture": "CodecDeclaredBoundsToEnd",
+      "signature": "(raw: &[u8]) -> {items: repeat<codec_repeat_elem> to the end of the frame (max 2)}",
+      "description": "Decode-rejection vectors only, for a list read to the end of the frame (docs/adr/0077 §2). A codec_repeat_elem entry is two bytes.",
+      "rejects": [
+        {
+          "why": "the frame holds 3 entries, one past the max-count of 2",
+          "encoded": [0, 1, 0, 2, 0, 3],
+          "error": "too-many-elements"
+        },
+        {
+          "why": "the frame holds 2 entries and the first byte of a third: the entry past the max-count is refused before it is read",
+          "encoded": [0, 1, 0, 2, 0],
+          "error": "too-many-elements"
         }
       ]
     },

@@ -74,13 +74,23 @@ var ErrPresentIfMismatch = errors.New("sce/codec: present-if mismatch")
 // the ErrInvalidUTF8 convention).
 var ErrUndeclaredEnumValue = errors.New("sce/codec: undeclared enum value")
 
-// ErrLengthOutOfRange is returned when a length read from storage is above
-// the bound the reader was written for. The typed read of a generated
-// broadcast log returns it for an entry whose stored length exceeds the
-// element's largest encoded size: such a length is not one the log wrote, and
-// it is refused before any slice is cut by it. Mirrors the Rust runtime's
-// `CodecError::LengthOutOfRange`.
+// ErrLengthOutOfRange is returned when a length is outside the bound it must
+// respect. Decode returns it for a byte string's or a text's length outside
+// its field's bound, the declared sce:max-size intersected with what its
+// length field can say after its sce:length-arith (docs/adr/0077 §1), judged
+// before the frame's own length so such a frame is refused and never waited
+// on. The typed read of a generated broadcast log returns it for an entry
+// whose stored length exceeds the element's largest encoded size: such a
+// length is not one the log wrote. Either way it is refused before any slice
+// is cut by it. Mirrors the Rust runtime's `CodecError::LengthOutOfRange`.
 var ErrLengthOutOfRange = errors.New("sce/codec: length out of range")
+
+// ErrTooManyElements is returned by Decode for a list whose count is past its
+// declared max-count, or whose entries, read to the end of the frame, pass
+// it; the entry past the bound is refused before it is read
+// (docs/adr/0077 §2). Mirrors the Rust runtime's
+// `CodecError::TooManyElements`.
+var ErrTooManyElements = errors.New("sce/codec: too many elements")
 
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes

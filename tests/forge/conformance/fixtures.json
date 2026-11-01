@@ -2678,6 +2678,27 @@
       }
     },
     {
+      "name": "codec_declared_bounds",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_declared_bounds_gated",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_declared_bounds_to_end",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
       "name": "codec_origin_leaf",
       "kind": "codec",
       "ref_section": "codecs",

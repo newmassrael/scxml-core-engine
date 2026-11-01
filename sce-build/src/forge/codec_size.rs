@@ -384,6 +384,23 @@ mod tests {
         largest_encoded_bytes(&sized(xml, Vec::new())).expect_err("the codec has no bound")
     }
 
+    /// The codec of `xml` with the bound of its field `id` taken away. A
+    /// document cannot leave it out, since the parser requires it
+    /// (docs/adr/0077 §5), and the size of a model that has none is still
+    /// refused by name.
+    fn without_bound(xml: &str, id: &str, imports: Vec<(&str, SizedImport)>) -> SizedCodec {
+        let mut codec = sized(xml, imports);
+        let field = codec
+            .model
+            .fields
+            .iter_mut()
+            .find(|f| f.id == id)
+            .expect("the field is declared");
+        field.max_size = None;
+        field.max_count = None;
+        codec
+    }
+
     /// A body whose bound is the bytes of one `uint16` / one `uint32`.
     fn uint16_body() -> SizedImport {
         body(&positional_xml(
@@ -712,9 +729,11 @@ mod tests {
         let xml = positional_xml(
             "",
             r#"<data id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"/>"#,
+    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="8"/>"#,
         );
-        match refusal(&xml) {
+        match largest_encoded_bytes(&without_bound(&xml, "payload", Vec::new()))
+            .expect_err("the payload has no bound")
+        {
             Unbounded::Missing {
                 subject,
                 declaration,
@@ -733,9 +752,11 @@ mod tests {
             "",
             r#"<data id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <data id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-          sce:length-field="len"/>"#,
+          sce:length-field="len" sce:max-size="8"/>"#,
         );
-        match refusal(&xml) {
+        match largest_encoded_bytes(&without_bound(&xml, "body", Vec::new()))
+            .expect_err("the body has no bound")
+        {
             Unbounded::Missing {
                 subject,
                 declaration,
@@ -750,7 +771,8 @@ mod tests {
 
     #[test]
     fn a_string_without_a_max_size_is_refused_on_the_streaming_path_too() {
-        match refusal(&locator_xml("")) {
+        let codec = without_bound(&locator_xml(r#"sce:max-size="128""#), "locator", Vec::new());
+        match largest_encoded_bytes(&codec).expect_err("the locator has no bound") {
             Unbounded::Missing {
                 subject,
                 declaration,
@@ -766,9 +788,9 @@ mod tests {
     fn a_repeat_with_no_count_bound_is_refused_by_name() {
         let xml = positional_xml(
             r#"<sce:import src="elem.scxml" kind="codec" as="elem"/>"#,
-            r#"<sce:repeat id="msgs" type="elem" sce:byte="0" until-eof="true"/>"#,
+            r#"<sce:repeat id="msgs" type="elem" sce:byte="0" until-eof="true" max-count="4"/>"#,
         );
-        let codec = sized(&xml, vec![("elem", uint16_body())]);
+        let codec = without_bound(&xml, "msgs", vec![("elem", uint16_body())]);
         match largest_encoded_bytes(&codec) {
             Err(Unbounded::Missing {
                 subject,
@@ -825,7 +847,11 @@ mod tests {
             r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:embed id="locator" type="locator_codec" sce:byte="1"/>"#,
         );
-        let locator = body(&locator_xml(""));
+        let locator = SizedImport::Codec(Box::new(without_bound(
+            &locator_xml(r#"sce:max-size="128""#),
+            "locator",
+            Vec::new(),
+        )));
         let codec = sized(&xml, vec![("locator_codec", locator)]);
         let refused = largest_encoded_bytes(&codec).expect_err("the body has no bound");
         match &refused {

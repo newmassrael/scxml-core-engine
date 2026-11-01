@@ -4209,6 +4209,20 @@ pub fn parse_codec_field_from_node(
 
     let endian = sce_attr(node, "endian").and_then(|s| Endian::from_attr(&s));
     let max_size = sce_attr(node, "max-size").and_then(|s| parse_int(&s));
+    // A variable-length field holds as many bytes as its sender wrote, so the
+    // bound is the codec's to state: it is part of the field's type, every
+    // backend's decode refuses a length past it, and storage is sized from it
+    // (docs/adr/0077 §1, §5). A content-line string is held to the same rule.
+    if matches!(bit_size, BitSize::Tail | BitSize::LengthRef) && max_size.is_none() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("Codec field '{id}'"),
+                attr: "sce:max-size".into(),
+            },
+        ));
+    }
     let length_field = sce_attr(node, "length-field");
 
     // RFC §synth-5-B — `sce:length-arith="+1"|"-1"` arithmetic
@@ -4983,6 +4997,18 @@ fn parse_codec_repeat_from_node(
         ("max-count", false),
         UnsignedInt::NonNegative,
     )?;
+    // A list holds as many entries as its sender wrote, so its bound is the
+    // codec's to state, as a variable-length field's is (docs/adr/0077 §5).
+    if max_count.is_none() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:repeat id='{id}'>"),
+                attr: "max-count".into(),
+            },
+        ));
+    }
 
     // RFC §synth-5-B — present-if on `<sce:repeat>`.
     // Parses the optional `sce:present-if` attribute identically

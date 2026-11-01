@@ -78,6 +78,18 @@ sealed class CodecError {
     /// UTF-8, an integer or `bool` out of its type, a parameter of more values
     /// than one, a `"` in a parameter value.
     object LineBadValue : CodecError()
+    /// On decode, a byte string's or a text's length outside its bound: the
+    /// declared `sce:max-size` intersected with what its length field can say
+    /// after its `sce:length-arith` (docs/adr/0077 §1). Judged before the
+    /// frame's own length, so such a frame is refused and never waited on.
+    /// `decode()` returns `null` and records this on the cursor
+    /// ([SceCursor.lastRefusal]).
+    object LengthOutOfRange : CodecError()
+    /// On decode, a list's count past its declared `max-count`, or an entry
+    /// past it in a list read to the end of the frame, refused before that
+    /// entry is read (docs/adr/0077 §2). Recorded on the cursor as
+    /// [LengthOutOfRange] is.
+    object TooManyElements : CodecError()
 }
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -164,6 +176,22 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
         lastVleOverflow = true
         return null
     }
+
+    /// Record that a decode refused its frame for a reason other than running
+    /// out of bytes ([CodecError.LengthOutOfRange], [CodecError.TooManyElements]).
+    /// The decode then returns `null`; the cursor stands where the refusal was
+    /// found, inside the frame, so the frame is not resumed by appending bytes.
+    /// The record stays until the next refusal replaces it. Mirrors
+    /// `SceCursor::refuse` of the C++ runtime.
+    fun refuse(error: CodecError) {
+        lastRefusal = error
+    }
+
+    /// The reason the last refused decode over this cursor gave, or `null` when
+    /// no decode over it refused a frame. A decode that returned `null` while
+    /// this is `null` ran out of bytes (or overflowed a VLE, [lastVleOverflow]).
+    var lastRefusal: CodecError? = null
+        private set
 }
 
 // ── Write-side sink ──────────────────────────────────────────────

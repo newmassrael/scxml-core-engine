@@ -102,9 +102,10 @@
 {% endif %}
 
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
-   shape. C++ constructs no typed runtime codec error (the truncation-
-   sentinel convention), so `r.symbol` is absent here and the assertion is
-   that the decode refused; which failure it was is not observable. #}
+   shape. C++ returns one sentinel for every failure, so `r.symbol` is absent
+   here and the first assertion is that the decode refused. A refusal for a
+   reason the cursor records (a bound's, docs/adr/0077 §4) is checked there as
+   `r.cursor_record`, and a frame short of bytes is checked to record none. #}
 {% for r in f.rejects %}
     {
         const std::vector<std::uint8_t> reject_bytes = { {{ r.encoded | join(", ") }} };
@@ -112,5 +113,12 @@
         auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(reject_cursor);
         CHECK(!refused.has_value(),
               "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}");
+{% if r.cursor_record %}
+        CHECK(reject_cursor.last_refusal() == std::optional<::SCE::Forge::CodecError>({{ r.cursor_record }}),
+              "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}");
+{% elif r.cursor_records_nothing %}
+        CHECK(!reject_cursor.last_refusal().has_value(),
+              "{{ f.name }} reject {{ loop.index0 }} is a frame short of bytes, not a refusal for a reason: {{ r.why }}");
+{% endif %}
     }
 {% endfor %}

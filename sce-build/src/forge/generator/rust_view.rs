@@ -163,9 +163,12 @@ const SCAN_OPEN: &str = "let _rest = cursor.peek_slice(cursor.remaining())?;\n  
 /// A `<sce:repeat>` field of a view: decode `count` or until-EOF entries, each
 /// once and for the checks alone, and keep the span.
 ///
-/// An entry past `max_count` is refused after it decoded, as the eager decode
-/// refuses it when the push that follows its decode finds the list full.
+/// A count past the list's bound is refused before the first entry is read
+/// (docs/adr/0077 §2), and a list read to the end of the frame refuses the
+/// entry past `max_count` before it reads it, as the eager decode does: a frame
+/// cut short there is refused for its count, not for its missing bytes.
 pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
+    use crate::generator::Language;
     let field = list.field;
     let id = list.id();
     let entry = list.entry;
@@ -177,10 +180,10 @@ pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
     let scan = |indent: &str, head: &str| {
         format!(
             "{head} {{\n{indent}    \
-                 {entry}::decode(cursor{decode_arg})?;\n{indent}    \
                  if _count == {max_count} {{\n{indent}        \
                      return Err(CodecError::TooManyElements);\n{indent}    \
                  }}\n{indent}    \
+                 {entry}::decode(cursor{decode_arg})?;\n{indent}    \
                  _count += 1;\n{indent}\
              }}"
         )
@@ -188,16 +191,26 @@ pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
     let value = list.value();
     match &field.present_if {
         None => {
-            let head = match count_ref {
+            let (guard, head) = match count_ref {
                 CountRef::LengthField(len_field) => {
-                    format!("for _ in 0..{}", filters::to_snake_case(len_field.clone()))
+                    let count = filters::to_snake_case(len_field.clone());
+                    (
+                        super::repeat_count_guard(
+                            field,
+                            list.fields,
+                            &count,
+                            Language::Rust,
+                            "            ",
+                        ),
+                        format!("for _ in 0..{count}"),
+                    )
                 }
-                CountRef::UntilEof => "while cursor.remaining() > 0".to_string(),
+                CountRef::UntilEof => (String::new(), "while cursor.remaining() > 0".to_string()),
             };
             let scan = scan("            ", &head);
             format!(
                 "{{\n            \
-                     {SCAN_OPEN}\n            \
+                     {guard}{SCAN_OPEN}\n            \
                      {scan}\n            \
                      _out.{id} = {value};\n        \
                  }}"
@@ -210,8 +223,15 @@ pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
                     let gated = sibling_field_gated(list.fields, len_field.as_str());
                     (
                         format!(
-                            "let _n = {};\n            ",
-                            rust_repeat_count_read(gated, len_field)
+                            "let _n = {};\n            {}",
+                            rust_repeat_count_read(gated, len_field),
+                            super::repeat_count_guard(
+                                field,
+                                list.fields,
+                                "_n",
+                                Language::Rust,
+                                "            ",
+                            )
                         ),
                         "for _ in 0.._n".to_string(),
                     )

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: the declared bounds of a codec the streaming decode
+     reads (docs/adr/0077), for the shapes codec_declared_bounds does not
+     have: a text gated by sce:present-if whose length sibling is gated by the
+     same flag, and a tail read to the end of the frame by the streaming decode
+     rather than the positional one.
+
+     Wire shape:
+       flags     uint8, G at bit 0
+       name_len  uint8, present when G
+       name      UTF-8 text of name_len bytes, at most 3, present when G
+       rest      the bytes to the end of the frame, at most 2 -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_declared_bounds_gated">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="G" bit="0"/>
+    </sce:flags>
+    <sce:field id="name_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="flags.G"/>
+    <sce:field id="name" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="name_len" sce:max-size="3" sce:present-if="flags.G"/>
+    <sce:field id="rest" sce:type="bytes" sce:byte="3" sce:bit-size="tail" sce:max-size="2"/>
+  </datamodel>
+</scxml>

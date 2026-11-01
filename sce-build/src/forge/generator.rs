@@ -21,6 +21,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod length_guard;
 mod rust_source;
 mod rust_view;
 mod swift_codec;
@@ -7157,9 +7158,10 @@ fn rust_owned_field_keys(
     } else {
         // Portable owned scalar storage: a `Bytes` / `String` field's owned
         // mirror is the runtime newtype `SceBytes<N>` / `SceString<N>` (N =
-        // `resolve_bytes_max`), which wraps an unbounded `Vec<u8>` / `String`
-        // under `alloc` (N advisory — the wire protocol places no payload
-        // ceiling, so the AP profile must not either) and the heap-free
+        // `resolve_bytes_max`), which wraps a growable `Vec<u8>` / `String`
+        // under `alloc` (the container does not enforce N; the bound is the
+        // wire's, and every decode refuses a length past it before a value
+        // is made, docs/adr/0077 §2) and the heap-free
         // `heapless::Vec<u8, N>` / `heapless::String<N>` (the C11 `char[N]`
         // analog) without `alloc`. Construction goes through the newtype's
         // uniform-fallible `from_slice` / `from_view`, so `try_into_owned`
@@ -8226,6 +8228,16 @@ fn render_codec(
             if matches!(lang, crate::generator::Language::C11) {
                 if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f) {
                     obj.insert("c_over_bound_cond".into(), cond.into());
+                    // The error a decode of that frame gives (docs/adr/0058
+                    // law 3, docs/adr/0077 §4): a list's count past its bound
+                    // is TOO_MANY_ELEMENTS, a chain's TLV_CHAIN_OVERFLOW, a
+                    // byte or text length LENGTH_OUT_OF_RANGE.
+                    let status = match f.bit_size {
+                        BitSize::Repeat { .. } => "SCE_FORGE_CODEC_TOO_MANY_ELEMENTS",
+                        BitSize::TlvChain { .. } => "SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW",
+                        _ => "SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE",
+                    };
+                    obj.insert("c_over_bound_status".into(), status.into());
                 }
             }
             if f.is_variable_length() {
@@ -8863,6 +8875,34 @@ fn render_codec(
                             unreachable!("variable + non-vle + non-repeat + non-tlv-chain + non-embed path covers Tail/LengthRef only"),
                     };
                     obj.insert("bit_size_kind".into(), kind.into());
+                    // The positional decode's check of the field's length
+                    // against its bound, before the slice is cut
+                    // (docs/adr/0077 §2), at the indentation of the
+                    // template's `decode_field`. C11 reads the length off the
+                    // struct it decodes into, in its own block.
+                    {
+                        use crate::generator::Language;
+                        let (frame_len, indent) = match lang {
+                            Language::Kotlin => ("frameLen", "            "),
+                            Language::Go => ("frameLen", "\t"),
+                            Language::C11 => ("_frame_len", "        "),
+                            _ => ("_frame_len", "        "),
+                        };
+                        let guard = if matches!(lang, Language::C11) {
+                            c11_positional_bound_guard(f, &m.fields, indent)
+                        } else {
+                            positional_bound_guard(f, &m.fields, lang, frame_len, indent)
+                        };
+                        if !guard.is_empty() {
+                            obj.insert("bound_guard".into(), guard.into());
+                        }
+                        if matches!(lang, Language::C11) {
+                            let room = c11_storage_check(f, &m.fields, indent);
+                            if let Some(room) = room.strip_suffix(&format!("\n{indent}")) {
+                                obj.insert("c_storage_check".into(), room.into());
+                            }
+                        }
+                    }
                     if matches!(f.bit_size, BitSize::LengthRef) {
                         // Where the field ends in the frame: the positional
                         // decode checks the frame is that long before it
@@ -9520,6 +9560,12 @@ fn render_codec(
     );
     ctx.insert("has_embed_fields".into(), m.has_embed_fields().into());
     ctx.insert("has_string_fields".into(), m.has_string_fields().into());
+    // A decode that refuses a length or a count past its bound names the error
+    // it refuses with (docs/adr/0077 §4); Python imports each error class it
+    // raises by name, so it asks which a codec's decode can raise.
+    let refusals = length_guard::decode_refusals(&m.fields);
+    ctx.insert("decode_refuses_length".into(), refusals.length.into());
+    ctx.insert("decode_refuses_count".into(), refusals.count.into());
     // A closed enum's carrier-to-value conversion can fail, so a codec
     // holding such a field decodes through a failure path and names the
     // error the failure raises. Python is the backend that has to know
@@ -12584,11 +12630,12 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             // prior decode_stmt, so the loop bound must read the
             // snake-cased name. Idempotent for already-snake ids.
             let len_field_snake = filters::to_snake_case(len_field.clone());
+            let guard = repeat_count_guard(field, fields, &len_field_snake, lang, "            ");
             // Built in the destination field, not moved into it afterwards;
             // see `RUST_DECODE_OUT`.
             format!(
                 "{{\n            \
-                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                     {guard}let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
                      _vec.clear();\n            \
                      for _ in 0..{len_field_snake} {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
@@ -12597,37 +12644,47 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                  }}"
             )
         }
-        (Language::Rust, CountRef::UntilEof) => format!(
-            "{{\n            \
-                 let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
-                 _vec.clear();\n            \
-                 while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::TooManyElements)?;\n            \
-                 }}\n        \
-             }}"
-        ),
+        (Language::Rust, CountRef::UntilEof) => {
+            let room = repeat_room_guard(field, fields, "_vec.len()", lang, "                ");
+            format!(
+                "{{\n            \
+                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                     _vec.clear();\n            \
+                     while cursor.remaining() > 0 {{\n                \
+                         {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
+                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                     }}\n        \
+                 }}"
+            )
+        }
         // Cpp: each `body_type::decode(cursor)` returns
         // `std::optional<body_type>`. Mirror the variant arm pattern:
         // unwrap with `.has_value()` check, return std::nullopt on
         // truncation so the parent decode unwinds the partial frame.
-        (Language::Cpp, CountRef::LengthField(len_field)) => format!(
-            "std::vector<{body_type}> {id};\n        \
-             {id}.reserve({len_field});\n        \
-             for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
-                 auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                 if (!_elem.has_value()) return std::nullopt;\n            \
-                 {id}.push_back(*_elem);\n        \
-             }}"
-        ),
-        (Language::Cpp, CountRef::UntilEof) => format!(
-            "std::vector<{body_type}> {id};\n        \
-             while (cursor.remaining() > 0) {{\n            \
-                 auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                 if (!_elem.has_value()) return std::nullopt;\n            \
-                 {id}.push_back(*_elem);\n        \
-             }}"
-        ),
+        (Language::Cpp, CountRef::LengthField(len_field)) => {
+            let guard = repeat_count_guard(field, fields, len_field, lang, "        ");
+            format!(
+                "std::vector<{body_type}> {id};\n        \
+                 {guard}{id}.reserve({len_field});\n        \
+                 for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
+                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     {id}.push_back(*_elem);\n        \
+                 }}"
+            )
+        }
+        (Language::Cpp, CountRef::UntilEof) => {
+            let room =
+                repeat_room_guard(field, fields, &format!("{id}.size()"), lang, "            ");
+            format!(
+                "std::vector<{body_type}> {id};\n        \
+                 while (cursor.remaining() > 0) {{\n            \
+                     {room}auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
+                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     {id}.push_back(*_elem);\n        \
+                 }}"
+            )
+        }
         // Kotlin: `mutableListOf<T>().also { ... }` chains the build
         // step inline so the result `val` carries the typed list.
         // `{body_type}.decode(cursor)` returns `T?`; `?: return null`
@@ -12640,20 +12697,26 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         // to satisfy the `Int`-typed loop bound. `apply` uses the
         // outer list as `this`, so the inner `repeat` lambda's `it: Int`
         // can't shadow the receiver — `add(...)` binds to MutableList.
-        (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
-            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
-                 repeat({len_field}.toInt()) {{\n                    \
-                     add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
-                 }}\n            \
-             }}"
-        ),
-        (Language::Kotlin, CountRef::UntilEof) => format!(
-            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
-                 while (cursor.remaining() > 0) {{\n                    \
-                     add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
-                 }}\n            \
-             }}"
-        ),
+        (Language::Kotlin, CountRef::LengthField(len_field)) => {
+            let guard = repeat_count_guard(field, fields, len_field, lang, "            ");
+            format!(
+                "{guard}val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
+                     repeat({len_field}.toInt()) {{\n                    \
+                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
+                     }}\n            \
+                 }}"
+            )
+        }
+        (Language::Kotlin, CountRef::UntilEof) => {
+            let room = repeat_room_guard(field, fields, "size", lang, "                    ");
+            format!(
+                "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
+                     while (cursor.remaining() > 0) {{\n                    \
+                         {room}add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
+                     }}\n            \
+                 }}"
+            )
+        }
         // Go: PascalCase field id; imported codec exposes a free
         // function `<snake>.Decode<Pascal>(cursor)` returning
         // `(*<Pascal>, error)`. The slice is `[]T` (value type, not
@@ -12665,8 +12728,9 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         (Language::Go, CountRef::LengthField(len_field)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let go_len = filters::to_pascal_case(len_field.clone());
+            let guard = repeat_count_guard(field, fields, &go_len, lang, "\t");
             format!(
-                "{go_id} := make([]{body_type}, 0, {go_len})\n\t\
+                "{guard}{go_id} := make([]{body_type}, 0, {go_len})\n\t\
                  for _i := 0; _i < int({go_len}); _i++ {{\n\t\t\
                      _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
@@ -12678,10 +12742,11 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         }
         (Language::Go, CountRef::UntilEof) => {
             let go_id = filters::to_pascal_case(id.to_string());
+            let room = repeat_room_guard(field, fields, &format!("len({go_id})"), lang, "\t\t");
             format!(
                 "{go_id} := make([]{body_type}, 0)\n\t\
                  for cursor.Remaining() > 0 {{\n\t\t\
-                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
+                     {room}_elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -12695,18 +12760,24 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         // the loop completes. Each repeat field is wrapped in its own
         // `{ ... }` sub-block so per-field locals (`_n`, `_i`, `_st`)
         // don't shadow across siblings (mirrors the present-if pattern
-        // for C11). MAX_COUNT overflow surfaces as NEED_MORE_BYTES so
-        // the consumer treats it like cursor exhaustion (rather than
-        // adding a separate buffer-overflow status code in the v1
-        // shape — buffer-overflow lands as a typed signal in B7).
+        // for C11). A count past the bound is TOO_MANY_ELEMENTS
+        // (docs/adr/0077 §4), checked in the count's own type before the
+        // first entry is read.
         (Language::C11, CountRef::LengthField(len_field)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let len_snake = filters::to_snake_case(len_field.clone());
+            let guard = repeat_count_guard(
+                field,
+                fields,
+                &format!("out->{len_snake}"),
+                lang,
+                "        ",
+            );
+            let room = c11_list_storage_check(field, "_n", "        ");
             format!(
                 "{{\n        \
-                     size_t _n = (size_t)out->{len_snake};\n        \
-                     if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     for (size_t _i = 0; _i < _n; ++_i) {{\n            \
+                     {guard}size_t _n = (size_t)out->{len_snake};\n        \
+                     {room}for (size_t _i = 0; _i < _n; ++_i) {{\n            \
                          sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
                      }}\n        \
@@ -12716,12 +12787,17 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         }
         (Language::C11, CountRef::UntilEof) => {
             let id_snake = filters::to_snake_case(id.to_string());
+            let room = c11_list_room(
+                field,
+                fields,
+                &format!("out->{id_snake}_len"),
+                "            ",
+            );
             format!(
                 "{{\n        \
                      out->{id_snake}_len = 0;\n        \
                      while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
-                         if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
+                         {room}sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                          out->{id_snake}_len++;\n        \
                      }}\n    \
@@ -12740,8 +12816,9 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             // `id` is already the decode local; the count is a sibling's.
             let py_id = id;
             let py_len = python_field_local(len_field);
+            let guard = repeat_count_guard(field, fields, &py_len, lang, "            ");
             format!(
-                "{py_id} = []\n            \
+                "{guard}{py_id} = []\n            \
                  for _ in range({py_len}):\n                \
                      _elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
@@ -12751,10 +12828,17 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         }
         (Language::Python, CountRef::UntilEof) => {
             let py_id = id;
+            let room = repeat_room_guard(
+                field,
+                fields,
+                &format!("len({py_id})"),
+                lang,
+                "                ",
+            );
             format!(
                 "{py_id} = []\n            \
                  while cursor.remaining() > 0:\n                \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
+                     {room}_elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
                          return None\n                \
                      {py_id}.append(_elem)"
@@ -13954,10 +14038,11 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         // { None }`.
         (Language::Rust, CountRef::LengthField(len_field)) => {
             let count_read = rust_repeat_count_read(count_is_gated, len_field);
+            let guard = repeat_count_guard(field, fields, "_n", lang, "            ");
             format!(
                 "if {test} {{\n            \
                      let _n = {count_read};\n            \
-                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
+                     {guard}let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
                      for _ in 0.._n {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                          .map_err(|_| CodecError::TooManyElements)?;\n            \
@@ -13967,17 +14052,20 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  }}"
             )
         }
-        (Language::Rust, CountRef::UntilEof) => format!(
-            "if {test} {{\n            \
-                 let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
-                 while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::TooManyElements)?;\n            \
-                 }}\n        \
-             }} else {{\n            \
-                 {RUST_DECODE_OUT}.{id} = None;\n        \
-             }}"
-        ),
+        (Language::Rust, CountRef::UntilEof) => {
+            let room = repeat_room_guard(field, fields, "_vec.len()", lang, "                ");
+            format!(
+                "if {test} {{\n            \
+                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
+                     while cursor.remaining() > 0 {{\n                \
+                         {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
+                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                     }}\n        \
+                 }} else {{\n            \
+                     {RUST_DECODE_OUT}.{id} = None;\n        \
+                 }}"
+            )
+        }
         // Cpp: pre-declare std::optional<vector>, populate inside the
         // True arm. Co-gated count unwraps via `.value()` (sound by
         // validator); unconditional count is read directly.
@@ -13989,11 +14077,12 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             } else {
                 len_field.clone()
             };
+            let guard = repeat_count_guard(field, fields, "_n", lang, "            ");
             format!(
-            "std::optional<std::vector<{body_type}>> {id};\n        \
+                "std::optional<std::vector<{body_type}>> {id};\n        \
              if ({test}) {{\n            \
                  auto _n = {count_read};\n            \
-                 std::vector<{body_type}> _list;\n            \
+                 {guard}std::vector<{body_type}> _list;\n            \
                  _list.reserve(_n);\n            \
                  for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
@@ -14004,18 +14093,21 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              }}"
             )
         }
-        (Language::Cpp, CountRef::UntilEof) => format!(
-            "std::optional<std::vector<{body_type}>> {id};\n        \
-             if ({test}) {{\n            \
-                 std::vector<{body_type}> _list;\n            \
-                 while (cursor.remaining() > 0) {{\n                \
-                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
-                     if (!_elem.has_value()) return std::nullopt;\n                \
-                     _list.push_back(*_elem);\n            \
-                 }}\n            \
-                 {id} = std::move(_list);\n        \
-             }}"
-        ),
+        (Language::Cpp, CountRef::UntilEof) => {
+            let room = repeat_room_guard(field, fields, "_list.size()", lang, "                ");
+            format!(
+                "std::optional<std::vector<{body_type}>> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::vector<{body_type}> _list;\n            \
+                     while (cursor.remaining() > 0) {{\n                \
+                         {room}auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
+                         if (!_elem.has_value()) return std::nullopt;\n                \
+                         _list.push_back(*_elem);\n            \
+                     }}\n            \
+                     {id} = std::move(_list);\n        \
+                 }}"
+            )
+        }
         // Kotlin: nullable `MutableList<T>?` — `if test { build } else null`
         // mirrors the non-gated build shape inside the True arm. A co-gated
         // count field is `T?` (`!!` is sound by validator); an unconditional
@@ -14032,10 +14124,11 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             } else {
                 len_field.clone()
             };
+            let guard = repeat_count_guard(field, fields, "_n", lang, "                ");
             format!(
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
                  val _n = {count_read}\n                \
-                 mutableListOf<{body_type}>().apply {{\n                    \
+                 {guard}mutableListOf<{body_type}>().apply {{\n                    \
                      repeat(_n.toInt()) {{\n                        \
                          add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
                      }}\n                \
@@ -14043,15 +14136,18 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              }} else null"
             )
         }
-        (Language::Kotlin, CountRef::UntilEof) => format!(
-            "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
-                 mutableListOf<{body_type}>().apply {{\n                    \
-                     while (cursor.remaining() > 0) {{\n                        \
-                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
-                     }}\n                \
-                 }}\n            \
-             }} else null"
-        ),
+        (Language::Kotlin, CountRef::UntilEof) => {
+            let room = repeat_room_guard(field, fields, "size", lang, "                        ");
+            format!(
+                "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
+                     mutableListOf<{body_type}>().apply {{\n                    \
+                         while (cursor.remaining() > 0) {{\n                        \
+                             {room}add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
+                         }}\n                \
+                     }}\n            \
+                 }} else null"
+            )
+        }
         // Go: the one optional type over the slice — pre-declare
         // `var Id optional.Of[[]T]`, build the list inside the True arm and
         // hand it over whole, so an empty list that was on the wire and a
@@ -14067,11 +14163,12 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 go_len.clone()
             };
             let held = go_optional(&format!("[]{body_type}"));
+            let guard = repeat_count_guard(field, fields, "_n", lang, "\t\t");
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := {count_read}\n\t\t\
-                     _list := make([]{body_type}, 0, _n)\n\t\t\
+                     {guard}_list := make([]{body_type}, 0, _n)\n\t\t\
                      for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
                          _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
@@ -14086,12 +14183,13 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::Go, CountRef::UntilEof) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let held = go_optional(&format!("[]{body_type}"));
+            let room = repeat_room_guard(field, fields, "len(_list)", lang, "\t\t\t");
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _list := make([]{body_type}, 0)\n\t\t\
                      for cursor.Remaining() > 0 {{\n\t\t\t\
-                         _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
+                         {room}_elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
                              return nil, err\n\t\t\t\
                          }}\n\t\t\t\
@@ -14109,11 +14207,13 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::C11, CountRef::LengthField(len_field)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let count = c11_length_sibling_member(len_field, fields);
+            let guard =
+                repeat_count_guard(field, fields, &format!("out->{count}"), lang, "        ");
+            let room = c11_list_storage_check(field, "_n", "        ");
             format!(
                 "if ({test}) {{\n        \
-                     size_t _n = (size_t)out->{count};\n        \
-                     if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
+                     {guard}size_t _n = (size_t)out->{count};\n        \
+                     {room}memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                      for (size_t _i = 0; _i < _n; ++_i) {{\n            \
                          sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[_i]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
@@ -14127,13 +14227,18 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::C11, CountRef::UntilEof) => {
             let id_snake = filters::to_snake_case(id.to_string());
+            let room = c11_list_room(
+                field,
+                fields,
+                &format!("out->{id_snake}.value.len"),
+                "            ",
+            );
             format!(
                 "if ({test}) {{\n        \
                      memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                      out->{id_snake}.present = true;\n        \
                      while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
-                         if (out->{id_snake}.value.len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[out->{id_snake}.value.len]{decode_arg});\n            \
+                         {room}sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[out->{id_snake}.value.len]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                          out->{id_snake}.value.len++;\n        \
                      }}\n    \
@@ -14149,9 +14254,10 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::Python, CountRef::LengthField(len_field)) => {
             let py_id = id;
             let py_len = python_field_local(len_field);
+            let guard = repeat_count_guard(field, fields, &py_len, lang, "                ");
             format!(
                 "if {test}:\n                \
-                     {py_id} = []\n                \
+                     {guard}{py_id} = []\n                \
                      for _ in range({py_len}):\n                    \
                          _elem = {body_type}.decode(cursor{decode_arg})\n                    \
                          if _elem is None:\n                        \
@@ -14163,11 +14269,18 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::Python, CountRef::UntilEof) => {
             let py_id = id;
+            let room = repeat_room_guard(
+                field,
+                fields,
+                &format!("len({py_id})"),
+                lang,
+                "                    ",
+            );
             format!(
                 "if {test}:\n                \
                      {py_id} = []\n                \
                      while cursor.remaining() > 0:\n                    \
-                         _elem = {body_type}.decode(cursor{decode_arg})\n                    \
+                         {room}_elem = {body_type}.decode(cursor{decode_arg})\n                    \
                          if _elem is None:\n                        \
                              return None\n                    \
                          {py_id}.append(_elem)\n            \
@@ -16038,11 +16151,15 @@ fn present_if_decode_tail(
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
+    // The bytes that remain are the tail's length: more than its bound is not
+    // a frame of the document (docs/adr/0077 §2).
+    let indent = length_block_indent(lang, field.present_if.is_some());
+    let guard = tail_bound_stmt(field, fields, "_n", lang, indent);
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_tail"),
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
-                 let _n = cursor.remaining();\n            \
+                 let _n = cursor.remaining();\n            {guard}\
                  let raw = cursor.peek_slice(_n)?;\n            \
                  let _v = raw;\n            \
                  cursor.advance(_n)?;\n            \
@@ -16053,7 +16170,7 @@ fn present_if_decode_tail(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let _n = cursor.remaining();\n            \
+                     let _n = cursor.remaining();\n            {guard}\
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = raw;\n            \
                      cursor.advance(_n)?;\n            \
@@ -16066,7 +16183,7 @@ fn present_if_decode_tail(
         (Language::Cpp, None) => format!(
             "std::vector<uint8_t> {id};\n        \
              {{\n            \
-                 std::size_t _n = cursor.remaining();\n            \
+                 std::size_t _n = cursor.remaining();\n            {guard}\
                  const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                  if (raw == nullptr) return std::nullopt;\n            \
                  {id}.assign(raw, raw + _n);\n            \
@@ -16078,7 +16195,7 @@ fn present_if_decode_tail(
             format!(
                 "std::optional<std::vector<uint8_t>> {id};\n        \
                  if ({test}) {{\n            \
-                     std::size_t _n = cursor.remaining();\n            \
+                     std::size_t _n = cursor.remaining();\n            {guard}\
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
                      {id}.emplace(raw, raw + _n);\n            \
@@ -16092,7 +16209,7 @@ fn present_if_decode_tail(
         // caller's input bytes).
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
-                 val _n = cursor.remaining()\n                \
+                 val _n = cursor.remaining()\n                {guard}\
                  val raw = cursor.peekSlice(_n) ?: return null\n                \
                  val _v = raw.copyOf()\n                \
                  if (!cursor.advance(_n)) return null\n                \
@@ -16103,7 +16220,7 @@ fn present_if_decode_tail(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
-                     val _n = cursor.remaining()\n                \
+                     val _n = cursor.remaining()\n                {guard}\
                      val raw = cursor.peekSlice(_n) ?: return null\n                \
                      val _v = raw.copyOf()\n                \
                      if (!cursor.advance(_n)) return null\n                \
@@ -16122,7 +16239,7 @@ fn present_if_decode_tail(
             format!(
                 "var {go_id} []byte\n\t\
                  {{\n\t\t\
-                     _n := cursor.Remaining()\n\t\t\
+                     _n := cursor.Remaining()\n\t\t{guard}\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16141,7 +16258,7 @@ fn present_if_decode_tail(
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     _n := cursor.Remaining()\n\t\t\
+                     _n := cursor.Remaining()\n\t\t{guard}\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16155,17 +16272,16 @@ fn present_if_decode_tail(
         }
         // C11: `out-><id>[max]` + `out-><id>_len` is the existing tail
         // shape from the non-streaming `has_variable_fields` branch,
-        // reused here. MAX overflow surfaces as NEED_MORE_BYTES (typed
-        // buffer-overflow lands in B7). Each field wraps in its own
-        // `{ ... }` so per-field locals don't shadow.
+        // reused here. A tail past its bound is refused as
+        // LENGTH_OUT_OF_RANGE (docs/adr/0077 §4). Each field wraps in its
+        // own `{ ... }` so per-field locals don't shadow.
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let room = c11_storage_check(field, fields, "        ");
             format!(
                 "{{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {guard}{room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      memcpy(out->{id_snake}, raw, _n);\n        \
                      out->{id_snake}_len = _n;\n        \
@@ -16178,14 +16294,13 @@ fn present_if_decode_tail(
         // zero) otherwise.
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let room = c11_storage_check(field, fields, "        ");
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {guard}{room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      out->{id_snake} = {none};\n        \
                      memcpy(out->{id_snake}.value.data, raw, _n);\n        \
@@ -16203,7 +16318,7 @@ fn present_if_decode_tail(
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "_n = cursor.remaining()\n            \
+                "_n = cursor.remaining()\n            {guard}\
                  raw = cursor.peek_slice(_n)\n            \
                  {py_id} = bytes(raw)\n            \
                  cursor.advance(_n)"
@@ -16214,7 +16329,7 @@ fn present_if_decode_tail(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
-                     _n = cursor.remaining()\n                \
+                     _n = cursor.remaining()\n                {guard}\
                      raw = cursor.peek_slice(_n)\n                \
                      _v = bytes(raw)\n                \
                      cursor.advance(_n)\n                \
@@ -16286,28 +16401,36 @@ fn present_if_decode_length_ref(
     // — it's the author trust contract; gated sibling + non-gated
     // payload would emit code that reads the optional as if it were
     // unwrapped).
-    let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
-    let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
-    let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
-    let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
-    let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
-    let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
+    let _ = arith;
+    // The length, checked against the field's bound and narrowed
+    // (docs/adr/0077 §2), at the indentation of the block it opens.
+    let count = length_count_stmts(
+        field,
+        fields,
+        len_field,
+        sibling_gated,
+        lang,
+        length_block_indent(lang, field.present_if.is_some()),
+    );
+    let c11_room = c11_storage_check(field, fields, "        ");
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_length_ref"),
-        (Language::Rust, None) => format!(
-            "let {id} = {{\n            \
-                 let _n = {n_rust};\n            \
-                 let raw = cursor.peek_slice(_n)?;\n            \
-                 let _v = raw;\n            \
-                 cursor.advance(_n)?;\n            \
-                 _v\n        \
-             }};"
-        ),
+        (Language::Rust, None) => {
+            format!(
+                "let {id} = {{\n            \
+                     {count}\n            \
+                     let raw = cursor.peek_slice(_n)?;\n            \
+                     let _v = raw;\n            \
+                     cursor.advance(_n)?;\n            \
+                     _v\n        \
+                 }};"
+            )
+        }
         (Language::Rust, Some(p)) => {
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let _n = {n_rust};\n            \
+                     {count}\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = raw;\n            \
                      cursor.advance(_n)?;\n            \
@@ -16320,7 +16443,7 @@ fn present_if_decode_length_ref(
         (Language::Cpp, None) => format!(
             "std::vector<uint8_t> {id};\n        \
              {{\n            \
-                 std::size_t _n = {n_cpp};\n            \
+                 {count}\n            \
                  const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                  if (raw == nullptr) return std::nullopt;\n            \
                  {id}.assign(raw, raw + _n);\n            \
@@ -16332,7 +16455,7 @@ fn present_if_decode_length_ref(
             format!(
                 "std::optional<std::vector<uint8_t>> {id};\n        \
                  if ({test}) {{\n            \
-                     std::size_t _n = {n_cpp};\n            \
+                     {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
                      {id}.emplace(raw, raw + _n);\n            \
@@ -16342,7 +16465,7 @@ fn present_if_decode_length_ref(
         }
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
-                 val _n = {n_kotlin}\n                \
+                 {count}\n                \
                  val raw = cursor.peekSlice(_n) ?: return null\n                \
                  val _v = raw.copyOf()\n                \
                  if (!cursor.advance(_n)) return null\n                \
@@ -16353,7 +16476,7 @@ fn present_if_decode_length_ref(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
-                     val _n = {n_kotlin}\n                \
+                     {count}\n                \
                      val raw = cursor.peekSlice(_n) ?: return null\n                \
                      val _v = raw.copyOf()\n                \
                      if (!cursor.advance(_n)) return null\n                \
@@ -16368,7 +16491,7 @@ fn present_if_decode_length_ref(
             format!(
                 "var {go_id} []byte\n\t\
                  {{\n\t\t\
-                     _n := {n_go}\n\t\t\
+                     {count}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16387,7 +16510,7 @@ fn present_if_decode_length_ref(
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     _n := {n_go}\n\t\t\
+                     {count}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16401,12 +16524,10 @@ fn present_if_decode_length_ref(
         }
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             format!(
                 "{{\n        \
-                     size_t _n = {n_c11};\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {count}\n        \
+                     {c11_room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      memcpy(out->{id_snake}, raw, _n);\n        \
                      out->{id_snake}_len = _n;\n        \
@@ -16419,14 +16540,12 @@ fn present_if_decode_length_ref(
         // member of its own, read where the bytes are.
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
-                     size_t _n = {n_c11};\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {count}\n        \
+                     {c11_room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      out->{id_snake} = {none};\n        \
                      memcpy(out->{id_snake}.value.data, raw, _n);\n        \
@@ -16441,7 +16560,7 @@ fn present_if_decode_length_ref(
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "_n = {n_python}\n            \
+                "{count}\n            \
                  raw = cursor.peek_slice(_n)\n            \
                  {py_id} = bytes(raw)\n            \
                  cursor.advance(_n)"
@@ -16452,7 +16571,7 @@ fn present_if_decode_length_ref(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
-                     _n = {n_python}\n                \
+                     {count}\n                \
                      raw = cursor.peek_slice(_n)\n                \
                      _v = bytes(raw)\n                \
                      cursor.advance(_n)\n                \
@@ -16493,13 +16612,23 @@ fn present_if_decode_string_length_ref(
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
+    let _ = arith;
+    // The length, checked against the field's bound and narrowed
+    // (docs/adr/0077 §2), as the bytes form reads it.
+    let count = length_count_stmts(
+        field,
+        fields,
+        len_field,
+        sibling_gated,
+        lang,
+        length_block_indent(lang, field.present_if.is_some()),
+    );
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_string_length_ref"),
         (Language::Rust, None) => {
-            let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
             format!(
                 "let {id} = {{\n            \
-                     let _n = {n_rust};\n            \
+                     {count}\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = core::str::from_utf8(raw)\n                \
                          .map_err(|_| CodecError::InvalidUtf8)?;\n            \
@@ -16509,11 +16638,10 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Rust, Some(p)) => {
-            let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let _n = {n_rust};\n            \
+                     {count}\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = core::str::from_utf8(raw)\n                \
                          .map_err(|_| CodecError::InvalidUtf8)?;\n            \
@@ -16525,11 +16653,10 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Cpp, None) => {
-            let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
             format!(
                 "std::string {id};\n        \
                  {{\n            \
-                     std::size_t _n = {n_cpp};\n            \
+                     {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
                      if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
@@ -16539,12 +16666,11 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Cpp, Some(p)) => {
-            let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "std::optional<std::string> {id};\n        \
                  if ({test}) {{\n            \
-                     std::size_t _n = {n_cpp};\n            \
+                     {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
                      if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
@@ -16554,7 +16680,6 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Kotlin, None) => {
-            let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
             // Java's CharsetDecoder defaults to REPORT on malformed
             // input — `Charsets.UTF_8.newDecoder().decode(...)` throws
             // CharacterCodingException on invalid UTF-8 (lossy
@@ -16563,7 +16688,7 @@ fn present_if_decode_string_length_ref(
             // touching the codec template's import block.
             format!(
                 "val {id} = run {{\n                \
-                     val _n = {n_kotlin}\n                \
+                     {count}\n                \
                      val raw = cursor.peekSlice(_n) ?: return null\n                \
                      val _v = try {{\n                    \
                          java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
@@ -16575,11 +16700,10 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Kotlin, Some(p)) => {
-            let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
-                     val _n = {n_kotlin}\n                \
+                     {count}\n                \
                      val raw = cursor.peekSlice(_n) ?: return null\n                \
                      val _v = try {{\n                    \
                          java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
@@ -16594,11 +16718,10 @@ fn present_if_decode_string_length_ref(
         }
         (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
             format!(
                 "var {go_id} string\n\t\
                  {{\n\t\t\
-                     _n := {n_go}\n\t\t\
+                     {count}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16615,12 +16738,11 @@ fn present_if_decode_string_length_ref(
         }
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     _n := {n_go}\n\t\t\
+                     {count}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -16638,9 +16760,8 @@ fn present_if_decode_string_length_ref(
         }
         (Language::Python, None) => {
             let py_id = id;
-            let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             format!(
-                "_n = {n_python}\n            \
+                "{count}\n            \
                  raw = cursor.peek_slice(_n)\n            \
                  try:\n                \
                      {py_id} = bytes(raw).decode('utf-8')\n            \
@@ -16651,11 +16772,10 @@ fn present_if_decode_string_length_ref(
         }
         (Language::Python, Some(p)) => {
             let py_id = id;
-            let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
-                     _n = {n_python}\n                \
+                     {count}\n                \
                      raw = cursor.peek_slice(_n)\n                \
                      try:\n                    \
                          _v = bytes(raw).decode('utf-8')\n                \
@@ -16681,13 +16801,11 @@ fn present_if_decode_string_length_ref(
             // signatures cannot grow a variant without a per-codec
             // sweep).
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
-            let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
+            let room = c11_storage_check(field, fields, "        ");
             format!(
                 "{{\n        \
-                     size_t _n = {n_c11};\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {count}\n        \
+                     {room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
                      memcpy(out->{id_snake}, raw, _n);\n        \
@@ -16701,15 +16819,13 @@ fn present_if_decode_string_length_ref(
             // `present_if_decode_length_ref`: the member is the optional value
             // of the UTF-8 bytes, validated before they are copied.
             let id_snake = filters::to_snake_case(id.to_string());
-            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
-            let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
+            let room = c11_storage_check(field, fields, "        ");
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
-                     size_t _n = {n_c11};\n        \
-                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {count}\n        \
+                     {room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
                      out->{id_snake} = {none};\n        \
@@ -16725,29 +16841,11 @@ fn present_if_decode_string_length_ref(
     }
 }
 
-/// RFC §synth-5-B length-ref helpers: per-language `_n` (byte count)
-/// computation for a `length-ref` field. Combines:
-/// - sibling-gated unwrap
-/// - arithmetic offset (`sce:length-arith`)
-/// - dotted-path subfield extract (`sce:length-field`) — when `len_field`
-///   is `<carrier>.<flag>`, the source is the carrier's multi-bit
-///   flag value (shifted + masked from the carrier byte), not a sibling
-///   integer field. Author writes `sce:length-field="cbyte.zid_len_m1"`
-///   to express zenoh-style packed length; codegen emits
-///   `(carrier >> bit) & ((1<<width)-1)` per language.
-///
-/// Each language emits the smallest expression that compiles cleanly
-/// without auxiliary locals (so existing single-statement goldens stay
-/// byte-stable when all three extensions are absent).
-///
-/// Parser (`validate_codec_length_field_refs`) guarantees the dotted
-/// form's carrier exists, is flags-bearing, and the named flag has
-/// width > 1 — so callers `.expect` the lookups.
 /// SSOT for "is the named sibling length/count field gated?" — i.e. does
 /// it carry an `sce:present-if`, so codegen emitted it as an
 /// Option/nullable/pointer that a reader must unwrap, rather than an
 /// unconditional plain field read directly. Shared by the length-ref
-/// payload decode (`compute_n_*` → `peek_slice` size) and the repeat
+/// payload decode (`length_count_stmts` → `peek_slice` size) and the repeat
 /// decode (`repeat_streaming_decode_stmt_gated` → loop bound) so both
 /// derive "unwrap vs plain" from the same predicate. Returns false for an
 /// unknown id; the count / length-ref validators reject a missing sibling
@@ -16757,142 +16855,6 @@ fn sibling_field_gated(fields: &[CodecField], id: &str) -> bool {
         .iter()
         .find(|f| f.id.as_str() == id)
         .is_some_and(|f| f.present_if.is_some())
-}
-
-fn compute_n_rust(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
-    let base = if let Some((c, f)) = dotted_length_field(len_field) {
-        let (shift, mask) = dotted_length_resolve(c, f, fields);
-        format!("(({c} >> {shift}) & 0x{mask:X}) as usize")
-    } else if sibling_gated {
-        // Sibling Option<T> — unwrap inside the gated branch (trust
-        // contract: payload's predicate matches sibling's predicate).
-        format!("{len_field}.unwrap() as usize")
-    } else {
-        format!("{len_field} as usize")
-    };
-    apply_arith_signed_rust(&base, arith)
-}
-
-fn apply_arith_signed_rust(base: &str, arith: i32) -> String {
-    match arith {
-        0 => base.to_string(),
-        // Use checked signed math to handle u8::MIN - 1 underflow
-        // gracefully — out-of-range values fall through to peek_slice
-        // returning NeedMoreBytes.
-        n if n > 0 => format!("({base}).wrapping_add({n})"),
-        n => format!("({base}).wrapping_sub({})", -n),
-    }
-}
-
-fn compute_n_cpp(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
-    let base = if let Some((c, f)) = dotted_length_field(len_field) {
-        let (shift, mask) = dotted_length_resolve(c, f, fields);
-        format!("static_cast<std::size_t>(({c} >> {shift}) & 0x{mask:X})")
-    } else if sibling_gated {
-        // std::optional<T>::value() throws on empty — trust contract
-        // says it's set inside the gated branch.
-        format!("static_cast<std::size_t>({len_field}.value())")
-    } else {
-        format!("static_cast<std::size_t>({len_field})")
-    };
-    apply_arith_cpp(&base, arith)
-}
-
-fn apply_arith_cpp(base: &str, arith: i32) -> String {
-    match arith {
-        0 => base.to_string(),
-        n if n > 0 => format!("{base} + {n}"),
-        n => format!("{base} - {}", -n),
-    }
-}
-
-fn compute_n_kotlin(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
-    let base = if let Some((c, f)) = dotted_length_field(len_field) {
-        let (shift, mask) = dotted_length_resolve(c, f, fields);
-        // Kotlin UByte/UShort: bitwise ops require Int width — `.toInt()`
-        // first, then `shr`/`and` produce Int. Mask literal stays in hex.
-        format!("(({c}.toInt() shr {shift}) and 0x{mask:X})")
-    } else if sibling_gated {
-        // Kotlin force-unwrap: !! throws NPE on null — trust contract
-        // says the gated branch only runs when predicate holds and
-        // sibling shares that predicate.
-        format!("{len_field}!!.toInt()")
-    } else {
-        format!("{len_field}.toInt()")
-    };
-    apply_arith_signed(&base, arith)
-}
-
-fn apply_arith_signed(base: &str, arith: i32) -> String {
-    match arith {
-        0 => base.to_string(),
-        n if n > 0 => format!("({base} + {n})"),
-        n => format!("({base} - {})", -n),
-    }
-}
-
-fn compute_n_go(len_field: &str, fields: &[CodecField], sibling_gated: bool, arith: i32) -> String {
-    let base = if let Some((c, f)) = dotted_length_field(len_field) {
-        let (shift, mask) = dotted_length_resolve(c, f, fields);
-        let go_c = filters::to_pascal_case(c.to_string());
-        format!("int(({go_c} >> {shift}) & 0x{mask:X})")
-    } else {
-        let go_len = filters::to_pascal_case(len_field.to_string());
-        if sibling_gated {
-            // A gated sibling is an `optional.Of[T]`, read where the same
-            // predicate proves it present — trust contract.
-            format!("int({go_len}.Proven())")
-        } else {
-            format!("int({go_len})")
-        }
-    };
-    apply_arith_signed(&base, arith)
-}
-
-fn compute_n_python(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
-    let _ = sibling_gated;
-    // Every caller is a decode: the length is read from the local the sibling
-    // was bound to, not from an attribute.
-    let base = if let Some((c, f)) = dotted_length_field(len_field) {
-        let (shift, mask) = dotted_length_resolve(c, f, fields);
-        let py_c = python_field_local(c);
-        format!("(({py_c} >> {shift}) & 0x{mask:X})")
-    } else {
-        // Python: gated sibling is Optional[int]; inside the if-branch
-        // the local is guaranteed non-None by the same predicate. No
-        // unwrap syntax needed (int operations work transparently).
-        python_field_local(len_field)
-    };
-    apply_arith_signed(&base, arith)
-}
-
-fn compute_n_c11(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
-    compute_n_c11_with_prefix(len_field, fields, sibling_gated, arith, "out")
 }
 
 /// Encode-side variant — same shape but reads through `self->...`
@@ -16957,6 +16919,398 @@ fn apply_arith_c11(base: &str, arith: i32) -> String {
         n if n > 0 => format!("(size_t)((int64_t){base} + {n})"),
         n => format!("(size_t)((int64_t){base} - {})", -n),
     }
+}
+
+/// The value a length field (a sibling, or a dotted `<carrier>.<flag>`) carries,
+/// as the decode of `lang` reads it, in the type it was read in: no narrowing to
+/// a host length and no `sce:length-arith`, which [`length_count_stmts`] applies
+/// once the value is known to lie within the field's bound. `sibling_gated`
+/// reads a gated sibling through the value it holds where it is present, which
+/// the payload's own gate proves.
+fn carried_length(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        return match lang {
+            // Rust binds it to `_len` before anything compares it, and its
+            // `unused_parens` lint refuses an outer pair on that binding.
+            Language::Rust => format!("({c} >> {shift}) & 0x{mask:X}"),
+            Language::Cpp => format!("(({c} >> {shift}) & 0x{mask:X})"),
+            Language::Kotlin => format!("(({c}.toInt() shr {shift}) and 0x{mask:X})"),
+            Language::Go => {
+                let go_c = filters::to_pascal_case(c.to_string());
+                format!("int(({go_c} >> {shift}) & 0x{mask:X})")
+            }
+            Language::Python => {
+                format!("(({} >> {shift}) & 0x{mask:X})", python_field_local(c))
+            }
+            Language::C11 => {
+                let c_id = filters::to_snake_case(c.to_string());
+                format!("((out->{c_id} >> {shift}) & 0x{mask:X})")
+            }
+            Language::Swift => no_swift_emitter("carried_length"),
+        };
+    }
+    match lang {
+        Language::Rust if sibling_gated => format!("{len_field}.unwrap()"),
+        Language::Rust => len_field.to_string(),
+        Language::Cpp if sibling_gated => format!("{len_field}.value()"),
+        Language::Cpp => len_field.to_string(),
+        Language::Kotlin if sibling_gated => format!("{len_field}!!"),
+        Language::Kotlin => len_field.to_string(),
+        Language::Go => {
+            let go_len = filters::to_pascal_case(len_field.to_string());
+            if sibling_gated {
+                format!("{go_len}.Proven()")
+            } else {
+                go_len
+            }
+        }
+        Language::Python => python_field_local(len_field),
+        Language::C11 => format!("out->{}", c11_length_sibling_member(len_field, fields)),
+        Language::Swift => no_swift_emitter("carried_length"),
+    }
+}
+
+/// The statements that bind `_n`, the length in bytes of the `length-ref` field
+/// `field`, as the decode of `lang` at the indentation `indent` reads it
+/// (docs/adr/0077 §2). The carried value is bound to `_len` in the type it was
+/// read in, checked against the field's bound there ([`length_guard::Guard`]),
+/// and only then offset by `sce:length-arith` and narrowed to the host's length
+/// type. The check makes the offset exact: a value below what `-1` needs is
+/// refused, not wrapped. Where the bound proves the length fits the narrowest
+/// host length (`i32`), the narrowing is a plain conversion; where it does not
+/// (a 32- or 64-bit length with no bound that small), a length past what the
+/// host can address is a frame longer than any buffer, refused as the decode
+/// refuses a frame it has too few bytes for. The last line binds `_n` and has no
+/// trailing newline, so it stands where a plain `_n` binding stood.
+fn length_count_stmts(
+    field: &CodecField,
+    fields: &[CodecField],
+    len_field: &str,
+    sibling_gated: bool,
+    lang: crate::generator::Language,
+    indent: &str,
+) -> String {
+    use crate::generator::Language;
+    use length_guard::{carried_held, Guard, Held};
+    let guard = Guard::of(field, fields).expect("a length-ref field has a length bound");
+    let carried = carried_length(len_field, fields, sibling_gated, lang);
+    let held = carried_held(len_field, fields, lang);
+    let a = guard.arith();
+    let fits = guard.fits_host();
+    let check = |value: &str| guard.stmt(lang, value, held, indent);
+    // The offset, applied after the check: `+ 1` or `- 1`, or nothing.
+    let offset = match a {
+        0 => String::new(),
+        n if n > 0 => format!(" + {n}"),
+        n => format!(" - {}", -n),
+    };
+    let up = u64::try_from(a.max(0)).unwrap_or(0);
+    match lang {
+        Language::Rust => {
+            let narrow = if fits && a == 0 {
+                "_len as usize".to_string()
+            } else if fits {
+                format!("(_len as usize){offset}")
+            } else if a > 0 {
+                format!(
+                    "usize::try_from(_len).ok().and_then(|v| v.checked_add({a})).ok_or(CodecError::NeedMoreBytes)?"
+                )
+            } else {
+                format!("usize::try_from(_len{offset}).map_err(|_| CodecError::NeedMoreBytes)?")
+            };
+            format!(
+                "let _len = {carried};\n{indent}{}let _n = {narrow};",
+                check("_len")
+            )
+        }
+        Language::Cpp => {
+            let room = if fits {
+                String::new()
+            } else {
+                format!(
+                    "if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - {up}u) return std::nullopt;\n{indent}"
+                )
+            };
+            format!(
+                "const auto _len = {carried};\n{indent}{}{room}std::size_t _n = static_cast<std::size_t>(_len){offset};",
+                check("_len")
+            )
+        }
+        Language::Kotlin => {
+            let as_int = match held {
+                Held::HostInt => "_len".to_string(),
+                Held::Unsigned(_) => "_len.toInt()".to_string(),
+            };
+            let room = host_int_room(lang, "_len", held, fits, up, indent);
+            format!(
+                "val _len = {carried}\n{indent}{}{room}val _n = {as_int}{offset}",
+                check("_len")
+            )
+        }
+        Language::Go => {
+            let as_int = match held {
+                Held::HostInt => "_len".to_string(),
+                Held::Unsigned(_) => "int(_len)".to_string(),
+            };
+            let room = host_int_room(lang, "_len", held, fits, up, indent);
+            format!(
+                "_len := {carried}\n{indent}{}{room}_n := {as_int}{offset}",
+                check("_len")
+            )
+        }
+        Language::Python => format!(
+            "_len = {carried}\n{indent}{}_n = _len{offset}",
+            check("_len")
+        ),
+        Language::C11 => {
+            let room = if fits {
+                String::new()
+            } else {
+                format!(
+                    "if ((uint64_t){carried} > (uint64_t)SIZE_MAX - {up}u) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n{indent}"
+                )
+            };
+            format!(
+                "{}{room}size_t _n = (size_t){carried}{offset};",
+                check(&carried)
+            )
+        }
+        Language::Swift => no_swift_emitter("length_count_stmts"),
+    }
+}
+
+/// Kotlin's and Go's check that an unsigned length `value` (held as `held`),
+/// plus `up` (a `+1` offset), fits the host's signed `int` it is converted
+/// to, where the field's bound does not already prove it (`fits`): a 32- or
+/// 64-bit length past it is a frame longer than any buffer, refused as a frame
+/// with too few bytes is. Followed by a newline and `indent`, or empty. The
+/// other languages narrow to an unsigned length and check their own way
+/// ([`length_count_stmts`]).
+fn host_int_room(
+    lang: crate::generator::Language,
+    value: &str,
+    held: length_guard::Held,
+    fits: bool,
+    up: u64,
+    indent: &str,
+) -> String {
+    use crate::generator::Language;
+    use length_guard::Held;
+    let Held::Unsigned(bits) = held else {
+        return String::new();
+    };
+    if fits || bits < 32 {
+        return String::new();
+    }
+    match lang {
+        Language::Kotlin => {
+            let wide = if bits == 64 { "toULong" } else { "toUInt" };
+            format!("if ({value} > (Int.MAX_VALUE - {up}).{wide}()) return null\n{indent}")
+        }
+        Language::Go => format!(
+            "if uint64({value}) > uint64(^uint(0)>>1)-{up} {{\n{indent}\treturn nil, codec.ErrNeedMoreBytes\n{indent}}}\n{indent}"
+        ),
+        _ => String::new(),
+    }
+}
+
+/// The check a positional decode (every field at an offset fixed when the
+/// codec is generated) makes of a `tail` or `length-ref` field before it slices
+/// (docs/adr/0077 §2), as `lang`'s template writes it at the indentation
+/// `indent`: the bound, and for Kotlin and Go the room in the host `int`. A
+/// `length-ref` field's length is the sibling local the positional prefix
+/// already bound; a `tail`'s is the frame's bytes past its offset, the frame's
+/// length being bound as `frame_len`. No trailing newline; empty where nothing
+/// can be refused.
+fn positional_bound_guard(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+    frame_len: &str,
+    indent: &str,
+) -> String {
+    use crate::generator::Language;
+    use length_guard::{carried_held, Guard, Held};
+    let Some(guard) = Guard::of(field, fields) else {
+        return String::new();
+    };
+    let (value, held) = match (&field.bit_size, field.length_field.as_deref()) {
+        (BitSize::LengthRef, Some(name)) => {
+            let (sibling, bits) = match dotted_length_field(name) {
+                Some((c, f)) => (c, Some(dotted_length_resolve(c, f, fields))),
+                None => (name, None),
+            };
+            let local = codec_field_decode_local(sibling, lang);
+            let value = match (lang, bits) {
+                (_, None) => local,
+                (Language::Kotlin, Some((shift, mask))) => {
+                    format!("(({local}.toInt() ushr {shift}) and 0x{mask:X})")
+                }
+                (Language::Go, Some((shift, mask))) => {
+                    format!("int(({local} >> {shift}) & 0x{mask:X})")
+                }
+                (_, Some((shift, mask))) => format!("(({local} >> {shift}) & 0x{mask:X})"),
+            };
+            (value, carried_held(name, fields, lang))
+        }
+        _ => (
+            format!("({frame_len} - {})", field.byte_offset),
+            Held::HostInt,
+        ),
+    };
+    let up = u64::try_from(guard.arith().max(0)).unwrap_or(0);
+    let stmt = format!(
+        "{}{}",
+        guard.stmt(lang, &value, held, indent),
+        host_int_room(lang, &value, held, guard.fits_host(), up, indent)
+    );
+    stmt.strip_suffix(&format!("\n{indent}"))
+        .unwrap_or(&stmt)
+        .to_string()
+}
+
+/// The check that a `<sce:repeat count=>`'s count, the value of `count` (the
+/// local or member that holds it, in its own type), is within the list's bound,
+/// made before any entry is decoded or any room reserved for one
+/// (docs/adr/0077 §2): a count from the wire past the bound is refused with
+/// `TooManyElements`, and is never the size of an allocation. Followed by a
+/// newline and `indent`; empty where the count field cannot say more than the
+/// bound.
+fn repeat_count_guard(
+    field: &CodecField,
+    fields: &[CodecField],
+    count: &str,
+    lang: crate::generator::Language,
+    indent: &str,
+) -> String {
+    let Some(name) = length_guard::repeat_count_field(field) else {
+        return String::new();
+    };
+    length_guard::Guard::of(field, fields)
+        .expect("a repeat has a count bound")
+        .stmt(
+            lang,
+            count,
+            length_guard::carried_held(name, fields, lang),
+            indent,
+        )
+}
+
+/// The check, inside an until-the-end repeat's loop, that the entry about to
+/// be read is within the list's bound, `len` being the entries read so far
+/// ([`length_guard::Guard::full_stmt`]). Followed by a newline and `indent`.
+fn repeat_room_guard(
+    field: &CodecField,
+    fields: &[CodecField],
+    len: &str,
+    lang: crate::generator::Language,
+    indent: &str,
+) -> String {
+    length_guard::Guard::of(field, fields)
+        .expect("a repeat has a count bound")
+        .full_stmt(lang, len, indent)
+}
+
+/// C11's check that a list's count `n` fits the array that holds it, where
+/// the list's declared bound does not already prove it: the array holds
+/// exactly the declared `max-count`, which [`repeat_count_guard`] has checked.
+/// Followed by a newline and `indent`, or empty.
+fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
+    if field.declared_bound().is_some() {
+        return String::new();
+    }
+    let capacity = crate::forge::limits::resolve_max_count(field.max_count);
+    format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
+}
+
+/// [`repeat_room_guard`] for C11, which also needs room in the list's array:
+/// the declared bound is the array's, and an undeclared list's array is checked
+/// as it fills.
+fn c11_list_room(field: &CodecField, fields: &[CodecField], len: &str, indent: &str) -> String {
+    if field.declared_bound().is_some() {
+        return repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent);
+    }
+    let capacity = crate::forge::limits::resolve_max_count(field.max_count);
+    format!("if ({len} >= {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
+}
+
+/// [`positional_bound_guard`] for C11, whose positional decode reads a
+/// `length-ref` field's length off the member of the struct it decodes into,
+/// in the member's own type, and a `tail`'s as `_n`, the bytes past its offset.
+fn c11_positional_bound_guard(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
+    use crate::generator::Language;
+    use length_guard::{carried_held, Guard, Held};
+    let Some(guard) = Guard::of(field, fields) else {
+        return String::new();
+    };
+    let (value, held) = match (&field.bit_size, field.length_field.as_deref()) {
+        (BitSize::LengthRef, Some(name)) => (
+            carried_length(name, fields, false, Language::C11),
+            carried_held(name, fields, Language::C11),
+        ),
+        _ => ("_n".to_string(), Held::HostInt),
+    };
+    let stmt = guard.stmt(Language::C11, &value, held, indent);
+    stmt.strip_suffix(&format!("\n{indent}"))
+        .unwrap_or(&stmt)
+        .to_string()
+}
+
+/// The indentation of the statements inside the block a streaming decode of
+/// a `tail` or `length-ref` field opens, in `lang`, gated by `sce:present-if`
+/// or not: where [`length_count_stmts`] continues its lines.
+fn length_block_indent(lang: crate::generator::Language, gated: bool) -> &'static str {
+    use crate::generator::Language;
+    match (lang, gated) {
+        (Language::Rust | Language::Cpp, _) => "            ",
+        (Language::Kotlin, _) => "                ",
+        (Language::Go, _) => "\t\t",
+        (Language::Python, false) => "            ",
+        (Language::Python, true) => "                ",
+        (Language::C11, _) => "        ",
+        (Language::Swift, _) => "",
+    }
+}
+
+/// C11's check that a byte string's length fits the array that holds it, where
+/// the bound check of [`length_count_stmts`] does not already prove it: a field
+/// whose declared bound is its array's needs none. Followed by a newline and
+/// `indent`, or empty.
+fn c11_storage_check(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
+    let capacity = u64::from(crate::forge::limits::resolve_bytes_max(field.max_size));
+    let proven = field
+        .length_bound(fields)
+        .and_then(|b| b.max)
+        .is_some_and(|max| max <= capacity);
+    if proven {
+        String::new()
+    } else {
+        format!("if (_n > {capacity}) return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n{indent}")
+    }
+}
+
+/// The check of a `tail` field's length, the bytes that remain in the frame,
+/// bound to `value` in the host's length type, against the field's
+/// `sce:max-size` (docs/adr/0077 §2): a frame with more is not a frame of the
+/// document, and is refused rather than truncated. Followed by a newline and
+/// `indent`; empty where the field declares no bound.
+fn tail_bound_stmt(
+    field: &CodecField,
+    fields: &[CodecField],
+    value: &str,
+    lang: crate::generator::Language,
+    indent: &str,
+) -> String {
+    length_guard::Guard::of(field, fields)
+        .expect("a tail field has a length bound")
+        .stmt(lang, value, length_guard::Held::HostInt, indent)
 }
 
 /// RFC §synth-5-B dotted-path `sce:length-field` — split a length-field reference into
