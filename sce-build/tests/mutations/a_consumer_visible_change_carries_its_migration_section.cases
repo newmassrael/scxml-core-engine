@@ -4,8 +4,8 @@
 # `scripts/mutate sce-build/tests/mutations/a_consumer_visible_change_carries_its_migration_section.cases`.
 #
 # `pre-push` refuses a push whose commits remove or rewrite a public declaration
-# of an existing golden or a codec runtime, or change the expected error of an
-# oracle reject, unless the push also changes the migration guide or carries a
+# of an existing golden, a codec runtime or a mesh library, or change the
+# expected error of an oracle reject, unless the push also changes the migration guide or carries a
 # written waiver (docs/adr/0078 §2). Each case takes one piece of that away; the
 # sandbox suite refuses each.
 #
@@ -44,4 +44,10 @@ mutation_case "a removed oracle error is not counted" <<'PY'
 edit("tools/git-hooks/consumer_visible_change.py",
      r'''            hit = any('"error"' in l for l in removed)''',
      r'''            hit = False''')
+PY
+
+mutation_case "a mesh library item is not counted" <<'PY'
+edit("tools/git-hooks/consumer_visible_change.py",
+     r'''    if re.match(r"backends/[^/]+/(forge-runtime|mesh)/", path):''',
+     r'''    if re.match(r"backends/[^/]+/forge-runtime/", path):''')
 PY

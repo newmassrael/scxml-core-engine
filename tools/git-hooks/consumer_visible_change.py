@@ -16,6 +16,8 @@ public item) in
   status M): the code a consumer's regeneration produces;
 - a codec runtime's own source (`backends/*/forge-runtime/**`, its tests left
   out): the library the generated code links against;
+- a mesh library's own source (`backends/*/mesh/**`, its tests left out): the
+  client trait and conformance kit a consumer implements and runs;
 - the codec oracle's reject vectors (`tests/forge/conformance/numerical_reference.json`),
   where a removed `"error"` line is a frame that is now refused differently.
 
@@ -80,7 +82,7 @@ def declares_public(path: str, line: str) -> bool:
 def in_scope(path: str, status: str) -> bool:
     if path.startswith("tests/forge/expected/"):
         return status == "M"
-    if re.match(r"backends/[^/]+/forge-runtime/", path):
+    if re.match(r"backends/[^/]+/(forge-runtime|mesh)/", path):
         return not re.search(r"/(tests?|jvmTest|commonTest|Tests)/|_test\.go$|/test_", path)
     return path == ORACLE
 

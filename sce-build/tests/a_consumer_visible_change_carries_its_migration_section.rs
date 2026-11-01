@@ -6,8 +6,9 @@
 //!
 //! `tools/git-hooks/consumer-guide-gate.sh` is sourced by `pre-push` and judges
 //! the range a push publishes. A range that removes or rewrites a public
-//! declaration of an existing generated golden or of a codec runtime's source,
-//! or the expected error of an oracle reject, must also change
+//! declaration of an existing generated golden, of a codec runtime's source or
+//! of a mesh library's source, or the expected error of an oracle reject, must
+//! also change
 //! `docs/SCE_CODEC_CONSUMER_MIGRATION.md`, or carry a bullet
 //! `- No consumer-visible change: <why>` in one of its messages.
 //!
@@ -163,6 +164,30 @@ fn a_runtime_item_removed_without_its_section_is_refused() {
         stderr(&out)
     );
     assert!(stderr(&out).contains(RUNTIME), "{}", stderr(&out));
+}
+
+/// A consumer implements the mesh client trait and runs the mesh conformance kit,
+/// so a public item of the mesh library is as much its API as the codec runtime.
+#[test]
+fn a_mesh_library_item_removed_without_its_section_is_refused() {
+    let (sb, _) = base("mesh-removed");
+    let mesh = "backends/rust/mesh/src/inbox.rs";
+    sb.commit(
+        &[(mesh, "pub trait ZenohClient {\n    fn publish(&self);\n}\n")],
+        "feat: Add a client trait",
+    );
+    let before = sb.git(&["rev-parse", "HEAD"]);
+    let head = sb.commit(
+        &[(mesh, "pub trait MeshClient {\n    fn publish(&self);\n}\n")],
+        "feat: Rename the client trait",
+    );
+    let out = sb.gate(&before, &head);
+    assert!(
+        !out.status.success(),
+        "the rename must be refused:\n{}",
+        stderr(&out)
+    );
+    assert!(stderr(&out).contains(mesh), "{}", stderr(&out));
 }
 
 #[test]

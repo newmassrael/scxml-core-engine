@@ -73,7 +73,7 @@ section is written in the same commit as the change. The consumer is named by it
 A commit that changes:
 
 - a public item of a generated codec golden (`tests/forge/expected/**`);
-- a public item of a codec runtime (`backends/*/forge-runtime`);
+- a public item of a codec runtime (`backends/*/forge-runtime`) or of a mesh library (`backends/*/mesh`);
 - or a reject vector of the codec oracle;
 
 must also change the migration guide. Otherwise it is refused, with the paths that made it consumer-visible. A
@@ -87,7 +87,8 @@ already has. What counts as consumer-visible (`tools/git-hooks/consumer_visible_
 
 - a public declaration REMOVED or rewritten, since an addition breaks no consumer;
 - in a golden that already existed, since a golden added or removed whole is a fixture of SCE's own tests;
-- in a runtime's source outside its tests;
+- in a codec runtime's or a mesh library's source outside its tests, the mesh library being the client trait and
+  conformance kit a consumer implements and runs;
 - or a removed `"error"` line of an oracle reject.
 
 The predicates read one line at a time and are a tripwire, not a parser; the waiver bullet covers what they
