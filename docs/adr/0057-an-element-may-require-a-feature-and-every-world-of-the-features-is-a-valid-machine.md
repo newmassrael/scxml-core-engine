@@ -1,7 +1,7 @@
 # ADR 0057 — An element may require a feature, and every world of the features is a valid machine
 
 - Status: Accepted (2026-10-26, by the owner: "approved, proceed"); being implemented in the order below. Requested
-  by watching-zenoh on the owner's instruction that features be switched on and off freely through Kconfig and SCE
+  by a downstream consumer on the owner's instruction that features be switched on and off freely through Kconfig and SCE
   code generation, and designed under the owner's rule of the same day: the most long-term correct structure,
   textbook in its foundations, cost ignored. The surface the consumer confirmed on 2026-10-26 (§3) is unchanged by
   that rule; the foundations under it are what the rule set
@@ -15,7 +15,7 @@
   `--features` input of `sce-codegen generate`; a conformance law tested in each lane
 - Related: ADR 0053 (features only add), ADR 0056 (the microstep's buffers are the document's size), ADR 0039 (the
   scope of an import is an input to the check), ADR 0044/0045 (saved state), `docs/SCE_TRANSITION_TABLE.md`,
-  `docs/SCE_CODEGEN_DETERMINISM.md`, watching-zenoh `docs/feature_inventory.md` §8 and `docs/upstream-parity.md` D7
+  `docs/SCE_CODEGEN_DETERMINISM.md`, and the consumer's feature inventory and upstream-parity notes
 
 ## Context
 
@@ -107,7 +107,7 @@ not authored.
 The product line's features are declared once, by the product, and every statechart of it reads the same model; a
 declaration inside each statechart would be one copy per document. A statechart imports at most one feature model.
 A consumer that keeps its own declaration generates this document from it, so the product has one source and SCE
-reads its own format. watching-zenoh keeps one model per crate that compiles generated machines, generated from that
+reads its own format. The consumer keeps one model per crate that compiles generated machines, generated from that
 crate's `Cargo.toml` `[features]`: a Rust `cfg` reads the features of the crate that compiles the module, so that
 crate's features are the product line's.
 

@@ -7,7 +7,7 @@
 //! what a choice has to pass: functions that run machines through [`open_with`] on whatever
 //! client a [`Harness`] connects, against a router the harness points it at, and assert what the
 //! machines see. A client in this repository (upstream's `zenoh` crate, see the test target
-//! `zenoh_through_a_wz_router`) and a client in another repository run the same functions, so
+//! `zenoh_through_a_router`) and a client in another repository run the same functions, so
 //! "does the same four operations" is a test and not a claim.
 //!
 //! A client's own test target calls them from `#[test]` functions:

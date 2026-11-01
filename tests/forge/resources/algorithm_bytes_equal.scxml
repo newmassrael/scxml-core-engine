@@ -5,7 +5,7 @@
   Minimal byte-compare over two borrowed `bytes` views. It is the seed
   shape of the runtime keyexpr matcher: it exercises exactly the two
   SCE-side expressibility additions the matcher needs, and nothing of
-  the wildcard `*`/`**`/`$*` semantics (those are wz-authored in the
+  the wildcard `*`/`**`/`$*` semantics (those are a downstream consumer's, in the
   W-matcher-fixture step, per locked decision):
 
     - `len(a)` / `len(b)` — the length builtin (locked decision), lowering to each

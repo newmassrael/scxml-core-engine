@@ -3212,10 +3212,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
-          "kind": "verifies"
-        },
-        {
           "file": "backends/rust/mesh/Cargo.toml",
           "kind": "references"
         },
@@ -3242,6 +3238,10 @@
         {
           "file": "backends/rust/mesh/src/inbox.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -3252,12 +3252,12 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
-          "kind": "verifies"
-        },
-        {
           "file": "backends/rust/mesh/src/inbox.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -3272,12 +3272,12 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
-          "kind": "verifies"
-        },
-        {
           "file": "backends/rust/mesh/src/inbox.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -3288,12 +3288,12 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
-          "kind": "verifies"
-        },
-        {
           "file": "backends/rust/mesh/src/inbox.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -3308,8 +3308,12 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "file": "backends/rust/mesh/tests/zenoh_through_a_router.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/Cargo.toml",
+          "kind": "references"
         }
       ]
     },
@@ -5063,6 +5067,36 @@
       "target_kind": "section",
       "target_id": "mesh-21.2",
       "reason": "The section is the list of faults the deploy build refuses, each with a code of its own; the refusal is the property."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20",
+      "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.1",
+      "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.2",
+      "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.3",
+      "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.4",
+      "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
     }
   ],
   "frames": {},

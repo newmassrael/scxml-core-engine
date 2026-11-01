@@ -5,13 +5,13 @@
   requires.
 - Amends: ADR 0064 (decisions 2 and 6).
 - Evidence:
-  - the watching-zenoh T2G measurement of 6f72d5975e;
+  - the consumer's T2G measurement of 6f72d5975e;
   - `backends/rust/probes/nostd-footprint`, built at `opt-level = "s"`.
 
 ## Context
 
 ADR 0064 compiles Appendix D once per program, over a document's tables. Its acceptance is the
-consumer's image, and that image did not get smaller. On the watching-zenoh kit (two machines,
+consumer's image, and that image did not get smaller. On the consumer's kit (two machines,
 `opt-level = "s"`, only the SCE pin changed), `.text` grew by 2,444 bytes:
 
 | | before (49e40c9a72) | after (6f72d5975e) |

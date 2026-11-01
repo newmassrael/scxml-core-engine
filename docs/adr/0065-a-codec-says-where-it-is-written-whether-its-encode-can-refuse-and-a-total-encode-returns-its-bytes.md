@@ -419,9 +419,9 @@ The mutation round for step 1 kills five mutants:
   knows it is not a formality.
 - Adding a refusal to a total codec is refused where it is written, with the reason. A consumer's types change only
   when an author declares the change.
-- `SceSink` implementors outside the tree add `type Error = CodecError;`. In watching-zenoh that is one impl
+- `SceSink` implementors outside the tree add `type Error = CodecError;`. In the consumer that is one impl
   (`TxSink`).
-- The codecs of watching-zenoh change in step 1 by their own totality. A total codec drops one `?` at each call site,
+- The consumer's codecs change in step 1 by their own totality. A total codec drops one `?` at each call site,
   and a `may-fail` codec is unchanged. Each step of §6 then removes `?` from the codecs it makes total.
 - The `may-fail` codecs of step 1 are the list of what §6 has left to do, read off the documents.
 

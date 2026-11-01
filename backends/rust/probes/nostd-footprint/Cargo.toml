@@ -72,7 +72,7 @@ plain-documents = ["dep:sce-nostd-plain-machine"]
 
 # Release, because a debug build measures the inliner's day off. The consumer
 # reports on `--release`, and a footprint compared across two profiles is two
-# different questions — so the profile is the consumer's: watching-zenoh builds
+# different questions — so the profile is the consumer's: the consumer builds
 # its Zephyr images at `opt-level = "s"`. Measured 2026-10-30, the probe at "z"
 # reported the runtime's shared core at about half the size the consumer's image
 # carries (`walk_entry` 768 bytes against 1456), and called a two-machine image

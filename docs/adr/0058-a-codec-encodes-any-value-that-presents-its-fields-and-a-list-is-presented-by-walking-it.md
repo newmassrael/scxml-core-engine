@@ -2,7 +2,7 @@
 
 - Status: Accepted (2026-10-27), on the owner's instruction of that day to decide it under the rule of 2026-10-26
   and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Requested by
-  watching-zenoh, which measured the cost below. Decided with three amendments to the proposal, each marked
+  a downstream consumer, which measured the cost below. Decided with three amendments to the proposal, each marked
   "Amended" below: what a source presents is only what the value says and not what the encoding determines (§1),
   one measuring fold checks the source and computes the lengths before anything is written (§3), and the laws are
   stated for every admissible source (§5)
@@ -21,7 +21,7 @@
 
 A Rust codec is written through its builder `X<'a>`, whose lists are inline `heapless::Vec<Entry<'a>, N>` with `N`
 the declared `sce:max-count`. A value to be sent is built into that struct and then encoded. Measured by
-watching-zenoh on a `thumbv7em-none-eabihf` client (`-Zprint-type-sizes`, LLVM IR allocas): answering a query puts a
+the consumer on a `thumbv7em-none-eabihf` client (`-Zprint-type-sizes`, LLVM IR allocas): answering a query puts a
 2,096-byte frame on the stack, 1,104 bytes of it one `Response<'_>` builder, of which the body alone is 776 bytes
 because each extension chain is 272 bytes of inline capacity, nested inside the body. That frame is on the path of the
 measured stack peak, 6,480 bytes, against zenoh-pico's 5,984 for its main and task together. The consumer already
@@ -282,7 +282,7 @@ their bytes equal.
    every document-given seed. **Landed 2026-10-27** on the Rust backend (`rust_source.rs`, the generated goldens
    under `tests/forge/expected/` regenerated once, `backends/rust/mesh/src/generated/` regenerated and unchanged on a
    second pass). The measure fold of the proposal became the counting run of §3.
-3. `XParts`, and the consumer's first use of it (watching-zenoh's send stack), measured against the 6,480-byte peak.
+3. `XParts`, and the consumer's first use of it (its send stack), measured against the 6,480-byte peak.
    `XParts` **landed 2026-10-27**; the consumer's use and its measurement are open.
 4. The interface on the other five backends, in their idioms, held to byte parity (law 4).
 

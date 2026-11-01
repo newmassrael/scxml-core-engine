@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The Zenoh binding across a real watching-zenoh router, with upstream's `zenoh` crate as the
-//! client of both machines.
+//! The Zenoh binding across a real Zenoh router, with upstream's `zenoh` crate as the client of
+//! both machines.
 //!
-//! Opt-in: it needs a built `wz-ap-demo` with `router-hat-router` and `routing-token-tables` (the
-//! liveliness plane the binding's readiness rides on), named by `WZ_ROUTER_BIN`:
+//! The binding depends on the protocol, not on a router: any router of the protocol version the
+//! implementation pins (§mesh-20.4) carries it. The harness therefore speaks the command line of
+//! the reference router, upstream's `zenohd` (`--listen`, `--connect`, `--no-multicast-scouting`),
+//! picks each router's port itself and takes a router as ready once it accepts a connection there.
+//! `ZENOH_ROUTER_BIN` names the router to run, `zenohd` on the `PATH` when unset; a router that
+//! takes `zenohd`'s three options can be named instead. The router needs the liveliness plane the
+//! binding's readiness rides on (§mesh-20.3), which `zenohd` has.
+//!
+//! Opt-in, since it needs a router binary:
 //!
 //! ```text
-//! WZ_ROUTER_BIN=/path/to/wz-ap-demo cargo test -p sce-rust-mesh --features zenoh,conformance \
-//!     --test zenoh_through_a_wz_router -- --ignored --nocapture
+//! ZENOH_ROUTER_BIN=/path/to/zenohd cargo test -p sce-rust-mesh --features zenoh,conformance \
+//!     --test zenoh_through_a_router -- --ignored --nocapture
 //! ```
 //!
 //! What it holds: two machines that only know each other's names learn each is up through the
 //! router (§mesh-20.3), an envelope one sends reaches the other's engine under the sender's name
 //! (§mesh-20.1, §mesh-20.2), and a machine that goes away is told to the other as a lost link
-//! (§mesh-20.3), all through a real watching-zenoh router with upstream's client (§mesh-20.4). A
-//! machine that loses its session when the router is killed and started again on the same port
-//! comes back knowing only who is still there.
+//! (§mesh-20.3), all through a real router with upstream's client (§mesh-20.4). A machine that
+//! loses its session when the router is killed and started again on the same port comes back
+//! knowing only who is still there.
 //! Nothing here is a timing claim; every wait has a generous bound and the assertions are on what
 //! arrived.
 //!
@@ -28,10 +35,10 @@
 
 #![cfg(all(feature = "zenoh", feature = "conformance"))]
 
-use std::io::{BufRead, BufReader};
+use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use sce_rust_mesh::conformance::{self, Disruptable, Harness};
 use sce_rust_mesh::inbox::ClientError;
@@ -50,56 +57,71 @@ impl Drop for RouterProcess {
     }
 }
 
+/// The router to run: `ZENOH_ROUTER_BIN`, or upstream's `zenohd` on the `PATH`.
+fn router_binary() -> String {
+    std::env::var("ZENOH_ROUTER_BIN").unwrap_or_else(|_| "zenohd".to_string())
+}
+
+/// A port nothing listens on at this moment, which the router is then told to listen on.
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .map(|addr| addr.port())
+        .expect("the system hands out a free port")
+}
+
 /// Start a router, federated with the router listening on `connect_to` when one is named.
 fn start_router(connect_to: Option<u16>) -> RouterProcess {
     start_router_on(connect_to, None)
 }
 
-/// [`start_router`], listening on `listen` when a port is named and on one the system picks when
-/// not.
+/// [`start_router`], listening on `listen` when a port is named and on a free one when not.
 fn start_router_on(connect_to: Option<u16>, listen: Option<u16>) -> RouterProcess {
-    try_start_router(connect_to, listen).expect("the router starts and says which port it is on")
+    try_start_router(connect_to, listen).expect("the router starts and accepts on its port")
 }
 
-/// Start a router and wait until it says which port it listens on. Fails when the process ends
+/// Start a router and wait until it accepts a connection on its port. Fails when the process ends
 /// first, which is what a port that is still held gives.
 fn try_start_router(connect_to: Option<u16>, listen: Option<u16>) -> Result<RouterProcess, String> {
-    let binary = std::env::var("WZ_ROUTER_BIN").expect(
-        "WZ_ROUTER_BIN names a wz-ap-demo built with `router-hat-router,routing-token-tables`",
-    );
+    let port = listen.unwrap_or_else(free_port);
     let mut args = vec![
-        "--router-hat".to_string(),
-        format!("127.0.0.1:{}", listen.unwrap_or(0)),
+        "--no-multicast-scouting".to_string(),
+        "--listen".to_string(),
+        format!("tcp/127.0.0.1:{port}"),
     ];
-    if let Some(port) = connect_to {
+    if let Some(peer) = connect_to {
         args.push("--connect".to_string());
-        args.push(format!("127.0.0.1:{port}"));
+        args.push(format!("tcp/127.0.0.1:{peer}"));
     }
-    let mut child = Command::new(binary)
+    let child = Command::new(router_binary())
         .args(&args)
-        .env("RUST_LOG", "info")
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("the router did not start: {e}"))?;
-    let stderr = child.stderr.take().expect("stderr is piped");
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            if let Some(rest) = line.split("listening on 127.0.0.1:").nth(1) {
-                let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-                if let Ok(port) = digits.parse::<u16>() {
-                    let _ = tx.send(port);
-                }
-            }
-        }
-    });
     // The process is owned from here, so a failure below kills it and waits for it.
-    let mut process = RouterProcess { child, port: 0 };
-    process.port = rx
-        .recv_timeout(Duration::from_secs(30))
-        .map_err(|e| format!("the router did not say which port it listens on: {e}"))?;
-    Ok(process)
+    let mut process = RouterProcess { child, port };
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Some(status) = process
+            .child
+            .try_wait()
+            .map_err(|e| format!("the router's state cannot be read: {e}"))?
+        {
+            return Err(format!(
+                "the router ended before it accepted on port {port}: {status}"
+            ));
+        }
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return Ok(process);
+        }
+        if Instant::now() > deadline {
+            return Err(format!(
+                "the router did not accept on port {port} within 30 s"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// The address a client dials to reach the router on `port`.
@@ -186,8 +208,8 @@ impl Disruptable for RestartingHarness {
 }
 
 #[test]
-#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
-fn two_machines_meet_through_a_wz_router_and_one_reaches_the_others_engine() {
+#[ignore = "needs a Zenoh router: upstream's zenohd on the PATH, or one named by ZENOH_ROUTER_BIN"]
+fn two_machines_meet_through_a_router_and_one_reaches_the_others_engine() {
     // A router for each function: both name their machines "server" and "phone", and a name that
     // a closed session has only just left must not be seen by the next one that takes it.
     let router = start_router(None);
@@ -201,8 +223,8 @@ fn two_machines_meet_through_a_wz_router_and_one_reaches_the_others_engine() {
 /// go. A device connects to whichever router it is assigned and the server to its own; nothing in
 /// the binding says which.
 #[test]
-#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
-fn two_machines_on_two_federated_wz_routers_meet_as_if_on_one() {
+#[ignore = "needs a Zenoh router: upstream's zenohd on the PATH, or one named by ZENOH_ROUTER_BIN"]
+fn two_machines_on_two_federated_routers_meet_as_if_on_one() {
     let first = start_router(None);
     let second = start_router(Some(first.port));
     let server_side = UpstreamHarness { port: first.port };
@@ -221,7 +243,7 @@ fn two_machines_on_two_federated_wz_routers_meet_as_if_on_one() {
 /// user presses sync. The router holds nothing for an absent machine; what the latecomer is given
 /// is the hub's state.
 #[test]
-#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
+#[ignore = "needs a Zenoh router: upstream's zenohd on the PATH, or one named by ZENOH_ROUTER_BIN"]
 fn a_device_that_was_away_catches_up_from_a_hub_that_stayed_up() {
     let router = start_router(None);
     conformance::a_device_that_was_away_catches_up_from_a_hub_that_stayed_up(&UpstreamHarness {
@@ -235,8 +257,8 @@ fn a_device_that_was_away_catches_up_from_a_hub_that_stayed_up() {
 /// binding its session ended by watching the node ids the session is connected to and closes the
 /// session itself, so the machine that does not reconnect does not return on its own.
 #[test]
-#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
-fn a_machine_that_loses_its_session_comes_back_and_resyncs_through_a_wz_router() {
+#[ignore = "needs a Zenoh router: upstream's zenohd on the PATH, or one named by ZENOH_ROUTER_BIN"]
+fn a_machine_that_loses_its_session_comes_back_and_resyncs_through_a_router() {
     let harness = RestartingHarness::start();
     conformance::a_machine_that_loses_its_session_comes_back_and_resyncs(&harness);
 }

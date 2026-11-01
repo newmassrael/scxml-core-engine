@@ -1,10 +1,10 @@
 # ADR 0073 — A session id proven while the program is compiled
 
 - Status: Accepted (2026-10-30), on the owner's instruction to optimise the footprint structurally
-  until no optimisation point is left, and a consumer's request (watching-zenoh).
+  until no optimisation point is left, and a downstream consumer's request.
 - Amends: ADR 0045 ("Questions the owner answered" 2: the host gives a root's session id, and it is
   held to the Nmtoken rule where the machine is built).
-- Evidence: watching-zenoh's fixed client image (thumbv7em, `opt-level = "s"`), where the run-time
+- Evidence: the consumer's fixed client image (thumbv7em, `opt-level = "s"`), where the run-time
   check is `helpers::session_id::checked` 254 bytes and `character_at` 122 bytes; and
   `backends/rust/probes/nostd-footprint`.
 
@@ -14,7 +14,7 @@ ADR 0045 makes a root's `_sessionid` an XML Nmtoken that the host gives, and the
 `new_with_session_id` refuses an id that is not one, with the reason. On a target without an
 allocator the id is a `&'static str` and the check runs where the machine is built.
 
-A firmware states its ids as literals: watching-zenoh builds its unicast session and each peer
+A firmware states its ids as literals: the consumer builds its unicast session and each peer
 connection under a constant, and wraps the `Result` in a helper that says the refusal can never be
 met. The check still runs, and its 376 bytes are in every image, for a judgement the compiler could
 have made. `checked` is a constant function already (ADR 0056's `new_const` uses it), but

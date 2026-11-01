@@ -3,7 +3,7 @@
 - Status: Accepted (2026-10-30), on the owner's instruction to optimise the footprint structurally
   until no optimisation point is left.
 - Amends: ADR 0064 (decision 3, the compact tables).
-- Evidence: the watching-zenoh documents measured after ADR 0066 (below), and
+- Evidence: the consumer's documents measured after ADR 0066 (below), and
   `backends/rust/probes/nostd-footprint`.
 
 ## Context

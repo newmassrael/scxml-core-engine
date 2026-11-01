@@ -1,10 +1,10 @@
 # ADR 0076 — An internal queue is sized by what its document can raise
 
 - Status: Accepted (2026-10-31), on the owner's instruction to optimise the footprint structurally
-  until no optimisation point is left, and a consumer's request (watching-zenoh).
+  until no optimisation point is left, and a downstream consumer's request.
 - Amends: the per-document event-queue capacity (`<scxml sce:capacity>`, SCE Protocol-Synthesis
   RFC §synth-5-L item C3), ADR 0068 (the queues hold event numbers).
-- Evidence: watching-zenoh's T2G client image, where each queue of a document that declares no
+- Evidence: the consumer's T2G client image, where each queue of a document that declares no
   capacity is 272 bytes (64 slots of 4 bytes, the runtime default `MAX_EVENT_QUEUE_DEPTH`, and
   16 bytes of head, length and payload manager).
 
@@ -98,7 +98,7 @@ drop code.
 
 - Of the 486 committed Rust machines, 111 have a proven internal depth (74 of them `0`); the rest
   are not proven, 242 of them because they run a script engine.
-- watching-zenoh's `session_fsm_unicast.scxml` and `peer_connection.scxml` are both proven `0`
+- The consumer's unicast session and peer connection documents are both proven `0`
   (nothing raises): each engine's internal queue loses its 64 or 2 slots. The external queue keeps
   the host's capacity.
 - The footprint probe's machines raise events and are not proven; its six images are byte for

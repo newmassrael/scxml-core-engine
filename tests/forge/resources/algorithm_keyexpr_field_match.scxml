@@ -9,7 +9,7 @@
 
   This exercises exactly the one SCE-side expressibility addition
   W-project introduces, and nothing of the wildcard `*`/`**`/`$*`
-  semantics (those are wz-authored in the W-matcher-fixture step, per
+  semantics (those are a downstream consumer's, in the W-matcher-fixture step, per
   locked decision):
 
     - `bytes_eq(entry.pattern, target)` — the bounded-string element-field

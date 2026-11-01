@@ -51,8 +51,8 @@ alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
 wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 # The Zenoh binding (SCE_MESH.md §mesh-20): a client session on a Zenoh network, moving bytes and
 # readiness between it and the core. Off by default for the reason `wss` is. The session is
-# upstream's `zenoh` crate, so this binding talks to any router of that protocol: the
-# watching-zenoh router the owner chose as the Mesh backend on 2026-10-18, or zenohd.
+# upstream's `zenoh` crate, so this binding talks to any router of that protocol version
+# (§mesh-20.4): upstream's zenohd, or another router a deployment chooses.
 zenoh = ["dep:zenoh"]
 # The behaviour tests every client of the Zenoh binding is held to (SCE_MESH.md section 20.4): the
 # binding takes its client through the `ZenohClient` trait, and `conformance` is the kit a client
@@ -76,9 +76,8 @@ sce-rust-runtime = { path = "../runtime", default-features = false, features = [
 tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
-# The `zenoh` feature's session. Pinned to the version watching-zenoh implements
-# (`UPSTREAM_VERSION` there), so a client of this binding and a wz router speak one protocol
-# version. TCP only: the binding's links are a client's dial to a router, and QUIC, TLS and
+# The `zenoh` feature's session. Pinned to the protocol version the binding names (§mesh-20.4), so
+# a client of this binding and a router of that version speak one protocol. TCP only: the binding's links are a client's dial to a router, and QUIC, TLS and
 # compression are a deployment's choice to add.
 zenoh = { version = "=1.10.1", optional = true, default-features = false, features = ["transport_tcp"] }
 

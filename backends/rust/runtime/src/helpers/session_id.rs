@@ -182,8 +182,8 @@ impl SessionId {
 ///
 /// ```
 /// const UNICAST: sce_rust_runtime::helpers::session_id::SessionId =
-///     sce_rust_runtime::session_id!("wz-session-unicast");
-/// assert_eq!(UNICAST.as_str(), "wz-session-unicast");
+///     sce_rust_runtime::session_id!("session-unicast");
+/// assert_eq!(UNICAST.as_str(), "session-unicast");
 /// ```
 ///
 /// ```compile_fail

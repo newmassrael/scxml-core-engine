@@ -10,7 +10,7 @@
   change only by the added impl. Rust only: the other five backends take it in their idiom later, as ADR 0058 §6.
 - Related: ADR 0058 (the source interface and the one encode; this ADR is the measurement its §3 waits for), ADR 0049
   (a list is walked, §3), ADR 0010 decision 2 (every backend writes the same bytes)
-- Requested by: watching-zenoh, which writes the plain query reply by hand into its transmit slot because the
+- Requested by: a downstream consumer, which writes the plain query reply by hand into its transmit slot because the
   generated encode cannot be handed a window of known size, and which folds a list's extension entries by hand.
 
 ## Context

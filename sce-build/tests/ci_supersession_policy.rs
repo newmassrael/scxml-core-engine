@@ -1230,7 +1230,7 @@ fn every_long_lane_states_its_measured_numbers_in_its_own_workflow() {
 // - Nothing capped it, so it took every runner that came free for about eight
 //   hours. A `cpp-suite.yml` job was created at 18:44Z and started at 00:53Z,
 //   6h09m in the queue for 47 minutes of work, and a run of another repository
-//   (`watching-zenoh`, 21 jobs) waited one to two hours for its own first job.
+//   (21 jobs) waited one to two hours for its own first job.
 //   Nothing was wrong with either of them.
 // - One of the round jobs then hung until its ceiling. It held the lane's
 //   concurrency group, which `cancel-in-progress: false` makes a hold on EVERY

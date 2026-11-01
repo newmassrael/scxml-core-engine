@@ -1,9 +1,9 @@
 # ADR 0072 — A variant arm may name a build feature
 
 - Status: Accepted (2026-10-30), on the owner's instruction to optimise the footprint structurally
-  until no optimisation point is left, and a consumer's request (watching-zenoh).
+  until no optimisation point is left, and a downstream consumer's request.
 - Amends: ADR 0057 (feature worlds), the codec variant surface (SCE Protocol-Synthesis RFC §5.B).
-- Evidence: watching-zenoh's `request.scxml`. Zenoh 1.10.1 accepts only Query as a request body,
+- Evidence: the consumer's request codec. Zenoh 1.10.1 accepts only Query as a request body,
   while zenoh-pico accepts Put, Del and Query. In the zenoh-preset images the Put and Del decoders
   are reached only through the Request decode: about 1.1 KB.
 
@@ -67,7 +67,7 @@ total, so a gated arm needs no catch-all.
 
 ## Consequences
 
-- watching-zenoh declares `request-put-del` in its codecs crate, default on, and turns it off in
+- The consumer declares `request-put-del` in its codecs crate, default on, and turns it off in
   the zenoh-preset images. A parent that embeds Request through `<sce:variant-dispatch>` is gated
   the same way.
 - In a build that leaves out every other arm, a variant enum has one variant. The Rust template

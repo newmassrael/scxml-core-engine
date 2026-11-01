@@ -1,9 +1,9 @@
 # ADR 0074 — The engine's per-turn state belongs to its shared core
 
 - Status: Accepted (2026-10-30), on the owner's instruction to optimise the footprint structurally
-  until no optimisation point is left, and a consumer's request (watching-zenoh).
+  until no optimisation point is left, and a downstream consumer's request.
 - Amends: ADR 0068 (the main loop's state as numbers in a non-generic `EngineCore`).
-- Evidence: watching-zenoh's fixed client image, where each of its two machines carries its own
+- Evidence: the consumer's fixed client image, where each of its two machines carries its own
   `Engine<P>::new_in_place`, `step`, `process_event` and `initialize`, 144 to 160 bytes each; and
   `backends/rust/probes/nostd-footprint`.
 

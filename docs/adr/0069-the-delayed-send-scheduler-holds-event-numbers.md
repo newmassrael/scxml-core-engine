@@ -61,7 +61,7 @@ The scheduler's scans are one copy of 326 bytes, counted in the core. One machin
 bytes larger, for the conversions at the scheduler's edge.
 
 The configuration with features does not share: its machines keep `SendIdString<9>` and
-`ElidedSendId`. The watching-zenoh documents use no `<send delay>` (their hosts own the
+`ElidedSendId`. The consumer's documents use no `<send delay>` (their hosts own the
 timeouts), so their images do not change.
 
 ## Consequences

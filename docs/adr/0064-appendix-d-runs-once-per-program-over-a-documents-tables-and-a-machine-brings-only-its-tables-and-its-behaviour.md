@@ -12,13 +12,13 @@
 - Related: ADR 0003 (one portable document, compiled per target), ADR 0050 (a build's bounds are read from the
   document), ADR 0053 (the Rust runtime's features only add, and a bare-metal crate asks for none), ADR 0056 (the
   microstep's buffers are the document's size), `backends/rust/probes/nostd-footprint/footprint.budget`
-- Requested by: the watching-zenoh parity session (Zenoh/pico preset benchmark), 2026-10-29
+- Requested by: a downstream consumer's parity session (Zenoh/pico preset benchmark), 2026-10-29
 
 ## Context
 
 ### What was measured
 
-The watching-zenoh session measured a Zephyr image on the T2G kit (ARM thumb, `opt-level = "s"`) that holds two
+The consumer's session measured a Zephyr image on the T2G kit (ARM thumb, `opt-level = "s"`) that holds two
 SCE machines, a session machine and a connect machine. The runtime's structural procedures are linked once for
 each machine. The linked symbol sizes it reported, generic arguments removed, both copies together:
 
@@ -330,7 +330,7 @@ new modules (`tables`, `state_set`, `run_store`) carry none.
 ## Consequences
 
 - **What a machine costs an image** is its tables, its generated behaviour and its typed layer. The algorithm is
-  paid once per program. The watching-zenoh measurement suggests the second copy of the algorithm (about 3.5 KB)
+  paid once per program. The consumer's measurement suggests the second copy of the algorithm (about 3.5 KB)
   goes, less the tables and typed layer the second machine adds. That is an expectation. The figures of decision 7
   and the T2G measurement decide it.
 - **Speed** is the risk. The hooks become indirect calls, and the generated code can no longer be inlined into
@@ -365,5 +365,5 @@ Each step leaves the tree building and the corpus passing:
    The trees are regenerated, and `Engine<P>` is moved onto the core.
 4. The present generic procedures and the structural methods of `StatePolicy` are removed.
 5. The gate of decision 7: the two-machine probe, the three figures, and the stack walk with indirect calls.
-6. The commit is sent to watching-zenoh, which bumps its pin and measures `.text` and the turnaround on the T2G kit.
+6. The commit is sent to the consumer, which bumps its pin and measures `.text` and the turnaround on the T2G kit.
    Its measurement is the acceptance of this ADR.

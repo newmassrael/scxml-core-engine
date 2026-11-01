@@ -1,10 +1,10 @@
 # ADR 0075 — An engine keeps a delayed-send queue and a donedata slot only for a document that fills them
 
 - Status: Accepted (2026-10-31), on the owner's instruction to optimise the footprint structurally
-  until no optimisation point is left, and a consumer's request (watching-zenoh).
+  until no optimisation point is left, and a downstream consumer's request.
 - Amends: ADR 0069 (the delayed-send queue holds event numbers), ADR 0070 (an engine's empty state
   is a constant).
-- Evidence: watching-zenoh's T2G client image (thumbv7em, `opt-level = "s"`, `-Zprint-type-sizes`):
+- Evidence: the consumer's T2G client image (thumbv7em, `opt-level = "s"`, `-Zprint-type-sizes`):
   `Engine<SessionFsmUnicastPolicy>` 1,472 bytes and `Engine<PeerConnectionPolicy>` 968, of which the
   delayed-send queue is 528 and the donedata slot 260 in each; neither document has a delayed send,
   a `<cancel>` or a `<donedata>`. And `backends/rust/probes/nostd-footprint`.
