@@ -2342,6 +2342,51 @@ pub fn load_forge_source(
     })
 }
 
+/// The verdict [`compile_forge_file`] reaches for one document, as
+/// [`check_forge_files`] answers it: the path, and the diagnostic records of its
+/// refusal, empty when the document generates.
+#[derive(Debug, Clone)]
+pub struct ForgeFileCheck {
+    pub path: PathBuf,
+    pub diagnostics: Vec<forge::diagnostic::Diagnostic>,
+}
+
+impl ForgeFileCheck {
+    /// Whether the document generates for the language it was checked for.
+    pub fn passed(&self) -> bool {
+        self.diagnostics.is_empty()
+    }
+}
+
+/// Check every forge document of `paths` for `language` and answer each one's
+/// verdict, in the order given, writing nothing (docs/adr/0078 §3).
+///
+/// A consumer that regenerates a set of codecs at a new SCE pin calls this
+/// first, and writes its generated tree only when every verdict passed: a
+/// generation that writes each document as it goes leaves a tree that is half
+/// one pin and half the other when a later document is refused. One call names
+/// every refused document, where generating them stops at the first. Within one
+/// document the verdict is the first refusal `generate` would give, with every
+/// record that refusal expands to.
+pub fn check_forge_files(
+    paths: &[PathBuf],
+    language: generator::Language,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Vec<ForgeFileCheck> {
+    use forge::diagnostic::ToDiagnostics;
+    paths
+        .iter()
+        .map(|path| ForgeFileCheck {
+            path: path.clone(),
+            diagnostics: match compile_forge_file(path, language, include_dirs, options) {
+                Ok(_) => Vec::new(),
+                Err(refused) => refused.to_diagnostics(),
+            },
+        })
+        .collect()
+}
+
 /// Compile a forge document straight from a path.
 ///
 /// The file-facing counterpart to [`compile_scxml`], which the forge

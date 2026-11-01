@@ -14,10 +14,11 @@ across several landings moves its pin one section at a time, regenerating and bu
 then come from one change and point at one replacement, where a single move across all of them mixes every change
 into one set of errors.
 
-Before regenerating at a new pin, check every codec document the consumer owns with
-`sce-codegen --error-format=json check <document> -l <language>`, which reaches the verdict `generate` would and writes
-nothing. Write the generated tree only once every document passes, so that a refused generation never leaves a tree
-that is half one pin and half the other.
+Before regenerating at a new pin, check every codec document the consumer owns, and write the generated tree only
+once every document passes, so that a refused generation never leaves a tree that is half one pin and half the
+other. From Rust, `sce_build::check_forge_files(&paths, language, &include_dirs, &options)` answers every document's
+verdict in one call, in order, writing nothing (ADR 0078 §3). From a shell,
+`sce-codegen --error-format=json check <document> -l <language>` answers one document the same way.
 
 ## A codec states whether its encode can refuse: `sce:encode-may-fail` (ADR 0065 step 1)
 
