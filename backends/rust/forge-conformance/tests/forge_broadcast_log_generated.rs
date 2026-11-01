@@ -299,25 +299,20 @@ fn two_readers_keep_separate_cursors() {
 // ─── What the element's bound does ───
 
 #[test]
-fn an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() {
+fn an_element_larger_than_its_bound_is_refused_where_it_is_made_and_not_truncated() {
     let log = deployed::BroadcastLogConformanceDeployed::new();
     let mut publisher: deployed::BroadcastLogConformanceDeployedPublisher<'_> =
         log.publisher().expect("the first publisher");
 
-    // 1 + 20 = 21 bytes into a log whose entries hold at most 9.
+    // 1 + 20 = 21 bytes for a log whose entries hold at most 9. The payload's
+    // type holds at most its bound of 8 (docs/adr/0077 §3), so no record of
+    // these bytes can be made, and none reaches the log to be cut short.
     let too_long = [0xAAu8; 20];
-    let refused = deployed::publish(
-        &mut publisher,
-        &BroadcastLogConformanceRecord {
-            tag: 1,
-            payload: &too_long,
-        },
-    );
     assert!(
-        refused.is_err(),
-        "a payload past its declared bound is refused: {refused:?}"
+        sce_forge_runtime::codec::Bytes::<'_, 8>::new(&too_long).is_none(),
+        "a payload past its declared bound is refused where the record is made"
     );
-    assert_eq!(log.head(), 0, "a refused element publishes nothing");
+    assert_eq!(log.head(), 0, "nothing was published");
 
     // Exactly the bound, and under it: the length word keeps what was written.
     let full = [1u8, 2, 3, 4, 5, 6, 7, 8];
@@ -327,7 +322,7 @@ fn an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() 
             &mut publisher,
             &BroadcastLogConformanceRecord {
                 tag: 0x5A,
-                payload: &full
+                payload: (&full).into()
             }
         ),
         Ok(0)
@@ -337,7 +332,7 @@ fn an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() 
             &mut publisher,
             &BroadcastLogConformanceRecord {
                 tag: 0x5B,
-                payload: &short
+                payload: (&short).into()
             }
         ),
         Ok(1)

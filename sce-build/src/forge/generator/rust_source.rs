@@ -1765,9 +1765,44 @@ impl<'a> Plan<'a> {
             };
         }
         match (form, &field.sce_type) {
-            (Some(Form::Owned), SceType::Bytes) => format!("{storage}::SceByteBuf::as_slice({r})"),
-            (Some(Form::Owned), SceType::String) => format!("{storage}::SceStr::as_str({r})"),
+            (Some(Form::Owned), SceType::Bytes | SceType::String) => {
+                self.owned_text_read(field, r, true)
+            }
             _ => format!("*{r}"),
+        }
+    }
+
+    /// How the owned form reads its `bytes` or `string` field `field` held at
+    /// `place`, a reference to the container where `is_ref` and the container
+    /// itself otherwise: through the `Bounded` around it, which lends the bytes
+    /// with their bounds and checks nothing (docs/adr/0077 §3), or as a bare
+    /// slice where the field has no bound.
+    fn owned_text_read(&self, field: &CodecField, place: &str, is_ref: bool) -> String {
+        let storage = RUNTIME_CODEC;
+        let bounded = codec_totality::byte_bound(field, &self.m().fields).is_some();
+        let by_ref = if is_ref {
+            place.to_string()
+        } else {
+            format!("&{place}")
+        };
+        match (bounded, &field.sce_type) {
+            (true, SceType::String) => format!("{place}.as_text()"),
+            (true, _) => format!("{place}.as_bytes()"),
+            (false, SceType::String) => format!("{storage}::SceStr::as_str({by_ref})"),
+            (false, _) => format!("{storage}::SceByteBuf::as_slice({by_ref})"),
+        }
+    }
+
+    /// [`Self::owned_text_read`] as the path of a function of a reference to
+    /// the container, for an `Option` the owned form holds a gated field in.
+    fn owned_text_read_fn(&self, field: &CodecField) -> String {
+        let storage = RUNTIME_CODEC;
+        let bounded = codec_totality::byte_bound(field, &self.m().fields).is_some();
+        match (bounded, &field.sce_type) {
+            (true, SceType::String) => format!("{storage}::Bounded::as_text"),
+            (true, _) => format!("{storage}::Bounded::as_bytes"),
+            (false, SceType::String) => format!("{storage}::SceStr::as_str"),
+            (false, _) => format!("{storage}::SceByteBuf::as_slice"),
         }
     }
 
@@ -2048,8 +2083,10 @@ impl<'a> Plan<'a> {
             };
         }
         match &field.sce_type {
-            SceType::Bytes => "&[u8]".to_string(),
-            SceType::String => "&str".to_string(),
+            // Within the field's bound (docs/adr/0077 §3).
+            SceType::Bytes | SceType::String => {
+                super::rust_borrowed_text_type(field, &self.m().fields, "'_")
+            }
             other => self.l().type_name(other).to_string(),
         }
     }
@@ -2332,8 +2369,12 @@ impl<'a> Plan<'a> {
             };
         }
         match &field.sce_type {
-            SceType::Bytes => "&'a [u8]".to_string(),
-            SceType::String => "&'a str".to_string(),
+            // Within the field's bound: `new` checks a slice once, and an
+            // array whose length lies in it converts without a check
+            // (docs/adr/0077 §3).
+            SceType::Bytes | SceType::String => {
+                super::rust_borrowed_text_type(field, &self.m().fields, "'a")
+            }
             other => self.l().type_name(other).to_string(),
         }
     }
@@ -2644,17 +2685,16 @@ impl<'a> Plan<'a> {
                     (_, true) => format!("self.{accessor}.as_ref().map(|_l| _l.iter())"),
                     (_, false) => format!("self.{accessor}.iter()"),
                 }
-            } else if form == Form::Owned && matches!(field.sce_type, SceType::Bytes) {
+            } else if form == Form::Owned
+                && matches!(field.sce_type, SceType::Bytes | SceType::String)
+            {
                 if gated {
-                    format!("self.{accessor}.as_ref().map({storage}::SceByteBuf::as_slice)")
+                    format!(
+                        "self.{accessor}.as_ref().map({})",
+                        self.owned_text_read_fn(field)
+                    )
                 } else {
-                    format!("{storage}::SceByteBuf::as_slice(&self.{accessor})")
-                }
-            } else if form == Form::Owned && matches!(field.sce_type, SceType::String) {
-                if gated {
-                    format!("self.{accessor}.as_ref().map({storage}::SceStr::as_str)")
-                } else {
-                    format!("{storage}::SceStr::as_str(&self.{accessor})")
+                    self.owned_text_read(field, &format!("self.{accessor}"), false)
                 }
             } else {
                 format!("self.{accessor}")
@@ -3061,11 +3101,14 @@ impl<'a> Plan<'a> {
                 continue;
             };
             let number = format!("_n{local}_{index}");
-            // The wire holds `count - arith`: a number that cannot be negative.
-            // A length plus a constant cannot pass `usize`, since a slice is
-            // at most `isize::MAX` bytes.
+            // The wire holds `count - arith`: a number that cannot be negative,
+            // and is not where the content's type holds at least `arith` bytes
+            // (docs/adr/0077 §3). A length plus a constant cannot pass `usize`,
+            // since a slice is at most `isize::MAX` bytes.
+            let held = codec_totality::held_to_offset(field, &self.m().fields, content.arith);
             let measure = |count: &str| match content.arith {
                 0 => count.to_string(),
+                arith if held => format!("{count} - {arith}"),
                 arith if arith > 0 => format!(
                     "{count}.checked_sub({arith}).ok_or({})?",
                     self.refuse(RefusalKind::LengthOutOfRange, &content.field)
@@ -3826,12 +3869,19 @@ impl<'a> Plan<'a> {
         self.read(field, derived)
     }
 
-    /// The `&[u8]` a bytes or text value is written as.
+    /// The `&[u8]` a bytes or text value is written as: the slice or `str` a
+    /// bounded field's `Bytes` or `Text` holds (docs/adr/0077 §3), its bounds
+    /// having been the source's to keep.
     fn bytes_of(&self, field: &CodecField, value: &str) -> String {
+        let value = if codec_totality::byte_bound(field, &self.m().fields).is_some() {
+            format!("{value}.into_inner()")
+        } else {
+            value.to_string()
+        };
         if field.is_string() {
             format!("{value}.as_bytes()")
         } else {
-            value.to_string()
+            value
         }
     }
 }

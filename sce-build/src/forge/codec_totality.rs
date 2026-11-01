@@ -21,7 +21,10 @@
 //! bits it is written into: an arm's is declared there, and a default arm holds
 //! an [`UnknownTag`] (docs/adr/0065 §6 R3). A list is no refusal either: its
 //! source presents it as a `BoundedIter`, which holds no more entries than the
-//! list's bound ([`list_bound`], docs/adr/0065 §6 R2).
+//! list's bound ([`list_bound`], docs/adr/0065 §6 R2). Nor is a bounded `bytes`
+//! or `string` field: its source presents a `Bytes` or `Text` within the field's
+//! bound, so a length derived from it fits what that bound fits
+//! ([`byte_bound`], docs/adr/0077 §3).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -32,7 +35,7 @@ use crate::forge::error::{ForgeError, ValidationError};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
     BitSize, CborEntry, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel,
-    FlagBind, SceType,
+    FlagBind, LengthBound, SceType,
 };
 
 /// What an encode refuses a value with: the `CodecError` it returns, or a codec
@@ -297,8 +300,63 @@ fn number_bound(m: &CodecModel, by: &Derivation) -> Option<u64> {
             .max(),
         // An input is one bit (docs/adr/0065 §6 R4a).
         Derivation::BoundInput { .. } => Some(1),
+        // A length is the content's, which its type holds within its bound
+        // (docs/adr/0077 §3), less the offset the wire subtracts. A content
+        // without such a bound leaves the number unbounded.
+        Derivation::LengthOf { contents } => contents
+            .iter()
+            .map(|c| {
+                m.fields
+                    .iter()
+                    .find(|f| f.id == c.field)
+                    .and_then(|f| byte_bound(f, &m.fields))
+                    .and_then(|b| b.max?.checked_add_signed(-i64::from(c.arith)))
+            })
+            .collect::<Option<Vec<u64>>>()
+            .and_then(|carried| carried.into_iter().max()),
         _ => None,
     }
+}
+
+/// The bounds a `bytes` or `string` field's value is held to by its type: the
+/// `length-ref` or `tail` field's [`LengthBound`] (docs/adr/0077 §1), where it
+/// has a largest length a `usize` holds on every target. The Rust source, parts,
+/// borrowed and owned forms then hold the field as a `Bytes` or `Text` of these
+/// bounds (§3), so a value outside them is not one the source can present.
+///
+/// The one statement of which fields carry their bound in their type: the
+/// analysis reads it to drop the refusals the type makes impossible, and the
+/// Rust emitter reads it to name the type.
+pub fn byte_bound(field: &CodecField, fields: &[CodecField]) -> Option<LengthBound> {
+    if !matches!(field.sce_type, SceType::Bytes | SceType::String)
+        || !matches!(field.bit_size, BitSize::Tail | BitSize::LengthRef)
+    {
+        return None;
+    }
+    field
+        .length_bound(fields)
+        .filter(|b| b.max.is_some_and(|max| max <= u64::from(u32::MAX)))
+}
+
+/// Whether the wire's `length - arith` of the content `field` is never negative
+/// because its type holds at least `arith` bytes, for a positive `arith` (an
+/// `sce:length-arith` of `+1`, docs/adr/0077 §3). The analysis reads it to drop
+/// the refusal and the Rust emitter to subtract without a check.
+pub fn held_to_offset(field: &CodecField, fields: &[CodecField], arith: i32) -> bool {
+    arith > 0 && byte_bound(field, fields).is_some_and(|b| b.min >= u64::from(arith.unsigned_abs()))
+}
+
+/// The bounds of the `bytes` or `string` field `field` as the const arguments
+/// of `Bytes` or `Text` after the lifetime: the most bytes, and the fewest where
+/// that is not none, which the types default to. `None` where the field's type
+/// holds no bound ([`byte_bound`]).
+pub fn byte_bound_args(field: &CodecField, fields: &[CodecField]) -> Option<String> {
+    let bound = byte_bound(field, fields)?;
+    let max = bound.max?;
+    Some(match bound.min {
+        0 => max.to_string(),
+        least => format!("{max}, {least}"),
+    })
 }
 
 /// The number of entries the list `field` is held to.
@@ -650,7 +708,12 @@ fn derived(
     let gated = |name: &str| field_of(name).is_some_and(|f| f.present_if.is_some());
     let sources: Vec<(String, bool)> = match by {
         Derivation::LengthOf { contents } => {
-            for content in contents.iter().filter(|c| c.arith > 0) {
+            // A content whose type holds at least the offset is never shorter
+            // than it (docs/adr/0077 §3).
+            for content in contents.iter().filter(|c| {
+                c.arith > 0
+                    && !field_of(&c.field).is_some_and(|f| held_to_offset(f, &m.fields, c.arith))
+            }) {
                 push(
                     out,
                     RefusalKind::LengthOutOfRange,
@@ -969,19 +1032,26 @@ mod tests {
     }
 
     #[test]
-    fn a_length_narrower_than_its_content_refuses_and_a_64_bit_one_does_not() {
-        let narrow = model(
-            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-                       sce:kind="codec" name="t"><datamodel>
-                 <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-                 <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-                            sce:length-field="len" sce:max-size="255"/>
-               </datamodel></scxml>"#,
-        );
-        assert_eq!(
-            kinds(&narrow),
-            vec![(RefusalKind::LengthOutOfRange, "len".to_string())]
-        );
+    fn a_length_its_content_is_held_within_does_not_refuse_however_narrow() {
+        // The content's type holds it within its bound, the declared one cut to
+        // what the length carries (docs/adr/0077 §3), so every length it can
+        // present fits the length field. That holds where the declaration is
+        // past the carrier, and under an offset the type's least length covers.
+        for (max, arith) in [("255", ""), ("300", ""), ("16", r#"sce:length-arith="+1""#)] {
+            let narrow = model(&format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                           sce:kind="codec" name="t"><datamodel>
+                     <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+                     <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+                                sce:length-field="len" sce:max-size="{max}" {arith}/>
+                   </datamodel></scxml>"#
+            ));
+            assert!(
+                analyse(&narrow, &mut NoImports).is_total(),
+                "max-size {max} {arith}: {:?}",
+                kinds(&narrow)
+            );
+        }
         let wide = model(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                        sce:kind="codec" name="t"><datamodel>
@@ -1141,13 +1211,17 @@ mod tests {
     }
 
     /// A one-byte length over bytes: an encode that refuses, stated as `root`.
+    /// One length two contents share: they may disagree in size, which no type
+    /// of either rules out, so the encode refuses at the length.
     fn length_codec(root: &str) -> CodecModel {
         model(&format!(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                        sce:kind="codec" {root} name="t"><datamodel>
                  <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-                 <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-                            sce:length-field="len" sce:max-size="255"/>
+                 <sce:field id="a" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+                            sce:length-field="len" sce:max-size="8"/>
+                 <sce:field id="b" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+                            sce:length-field="len" sce:max-size="8"/>
                </datamodel></scxml>"#
         ))
     }
@@ -1176,7 +1250,7 @@ mod tests {
             ValidationError::CodecUndeclaredEncodeRefusal { element, kind, .. } => {
                 assert_eq!(
                     (element.as_str(), kind.as_str()),
-                    ("len", "LengthOutOfRange")
+                    ("len", "InconsistentSource")
                 );
             }
             other => panic!("another refusal: {other:?}"),

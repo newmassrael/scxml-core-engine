@@ -7009,18 +7009,73 @@ fn rust_codec_body_lifetime(
     }
 }
 
+/// The Rust type of a `bytes` or `string` field borrowed for `lifetime`: a
+/// `Bytes` or `Text` of the field's bounds where its type holds them
+/// (docs/adr/0077 §3, [`crate::forge::codec_totality::byte_bound`]), and a bare
+/// slice or `str` where it holds none. The one spelling every Rust form of a
+/// codec (the decoded value, the source, the parts, the view) names the field
+/// by, so the forms cannot disagree about a bound.
+pub(crate) fn rust_borrowed_text_type(
+    f: &CodecField,
+    fields: &[CodecField],
+    lifetime: &str,
+) -> String {
+    let text = matches!(f.sce_type, SceType::String);
+    match crate::forge::codec_totality::byte_bound_args(f, fields) {
+        Some(bounds) => format!(
+            "{RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
+            if text { "Text" } else { "Bytes" }
+        ),
+        None => {
+            let lifetime = if lifetime == "'_" {
+                String::new()
+            } else {
+                format!("{lifetime} ")
+            };
+            format!("&{lifetime}{}", if text { "str" } else { "[u8]" })
+        }
+    }
+}
+
+/// The statement that makes the decoded local of `f` a `Bytes` or `Text` of its
+/// bounds, through `Bounded::new` (docs/adr/0077 §3), for a Rust field whose
+/// type holds them; `None` for any other field or backend. A gated field's
+/// local is an `Option`, rebound inside it.
+///
+/// The decode's guard (§2) refused a length outside the bounds before it took
+/// the slice, in the length's own type, so `new` finds the slice inside them;
+/// it is still the type's only door, and its refusal is that guard's error.
+fn rust_bounded_rebind(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> Option<String> {
+    if !matches!(l.lang, crate::generator::Language::Rust) {
+        return None;
+    }
+    crate::forge::codec_totality::byte_bound(f, fields)?;
+    let refusal = crate::forge::codec_failure::CodecFailure::LengthOutOfRange
+        .observable_symbol(l.lang)
+        .expect("Rust names a length out of range");
+    let id = l.codec_field_id(&f.id);
+    let new = format!("{RUNTIME_CODEC}::Bounded::new");
+    Some(if f.present_if.is_some() {
+        format!("let {id} = {id}.map(|_v| {new}(_v).ok_or({refusal})).transpose()?;")
+    } else {
+        format!("let {id} = {new}({id}).ok_or({refusal})?;")
+    })
+}
+
 /// Codec scalar field type. For Rust, a `Bytes` / `String` field decodes
 /// as a borrowed zero-copy view (`&'a [u8]` / `&'a str`) per the
-/// `SceCursor::peek_slice -> &'a [u8]` borrow contract; every other
+/// `SceCursor::peek_slice -> &'a [u8]` borrow contract, held within its bound
+/// where it has one ([`rust_borrowed_text_type`]); every other
 /// `SceType`, and every non-Rust backend, keeps the owned `type_name`
 /// spelling. SSOT for the scalar borrowed mapping — used both at the
 /// bare field-type site and inside the present-if `Option<…>` wrap so
 /// the two never diverge.
-fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
-    match (l.lang, ty) {
+fn codec_scalar_type(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> String {
+    match (l.lang, &f.sce_type) {
         (crate::generator::Language::Swift, _) => no_swift_emitter("codec_scalar_type"),
-        (crate::generator::Language::Rust, SceType::Bytes) => "&'a [u8]".to_string(),
-        (crate::generator::Language::Rust, SceType::String) => "&'a str".to_string(),
+        (crate::generator::Language::Rust, SceType::Bytes | SceType::String) => {
+            rust_borrowed_text_type(f, fields, "'a")
+        }
         (
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
@@ -7029,7 +7084,7 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
             | crate::generator::Language::Python
             | crate::generator::Language::C11,
             _,
-        ) => l.type_name(ty).to_string(),
+        ) => l.type_name(&f.sce_type).to_string(),
     }
 }
 
@@ -7132,7 +7187,9 @@ fn rust_owned_list(f: &CodecField, entry: &str) -> String {
 
 fn rust_owned_field_keys(
     f: &CodecField,
-    codec_name: &str,
+    // The codec that holds `f`: its name resolves a body's type, and its fields
+    // hold the field that carries `f`'s length, which bounds it.
+    m: &CodecModel,
     imports: &[ImportContext],
     l: &LangCtx,
     origin: bool,
@@ -7159,7 +7216,15 @@ fn rust_owned_field_keys(
     // inference: the profile is what the field's declared `sce:max-size` /
     // `sce:max-count` selects, so naming it keeps the generated call honest
     // about which container is being built.
-    let mut call_path: Option<String> = None;
+    //
+    // `call` spells the constructor's fallible call on a value expression, and
+    // `point_free` the path an `Option` maps through where the call is that
+    // path applied to the value alone (`clippy::redundant_closure`).
+    struct Ctor {
+        call: Box<dyn Fn(&str) -> String>,
+        point_free: Option<String>,
+    }
+    let mut call_path: Option<Ctor> = None;
 
     let (inner_ty, conv): (String, Conv) = if f.is_repeat() || f.is_tlv_chain() {
         // The list's bound, which the profile's container holds as its declared
@@ -7167,7 +7232,7 @@ fn rust_owned_field_keys(
         // R2): a growable profile's container is not bounded by its capacity.
         // A chain closed by an entry flag is one entry or more (R7).
         let bounds = crate::forge::codec_totality::list_bound_args(f);
-        let (entry, elem) = rust_owned_list_entry(f, codec_name, imports, l, origin)?;
+        let (entry, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
         (
             format!(
                 "{RUNTIME_CODEC}::Bounded<{}, {bounds}>",
@@ -7180,7 +7245,7 @@ fn rust_owned_field_keys(
             .embed_body_alias
             .as_deref()
             .expect("parser sets the embed body alias for every embed field");
-        let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
+        let body_type = resolve_repeat_body_type(&m.name, alias, imports, l.lang)?;
         if import_codec_borrowed(imports, alias) {
             (
                 format!("{body_type}Owned<{STORAGE_PARAM}>"),
@@ -7205,34 +7270,87 @@ fn rust_owned_field_keys(
         // `{Codec}Owned` builder never hardcodes the cap. The inverse
         // `as_borrowed` re-projects either form via `.as_slice()` /
         // `.as_str()`, so it needs no per-profile branch.
+        //
+        // A field whose type holds its bound (docs/adr/0077 §3) is held as a
+        // `Bounded` around the container, as a list is since R2, so the owned
+        // form's source read lends it with its bounds and checks nothing. A
+        // decoded value is inside them, and `Bounded::copied` carries them
+        // over; an origin profile builds its container its own way, and
+        // `Bounded::from_built` checks the length it built once.
         match f.sce_type {
-            SceType::Bytes => {
+            SceType::Bytes | SceType::String => {
+                let text = matches!(f.sce_type, SceType::String);
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
-                let ty = format!("{STORAGE_PARAM}::Bytes<{max}>");
+                let container = format!(
+                    "{STORAGE_PARAM}::{}<{max}>",
+                    if text { "Str" } else { "Bytes" }
+                );
                 // The origin form names the profile's `OriginStorage` and
                 // spells the capacity as a turbofish: the constructor is
                 // generic over it, and nothing at the call site would
                 // otherwise infer it (the field type is `S::Bytes<N>`, an
                 // associated type that cannot be run backwards).
-                call_path = Some(if origin {
-                    format!(
-                        "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::bytes_from::<{max}>"
-                    )
-                } else {
-                    format!("<{ty} as {RUNTIME_CODEC}::SceByteBuf>::from_slice")
-                });
-                (ty, Conv::Qualified)
-            }
-            SceType::String => {
-                let max = crate::forge::limits::resolve_bytes_max(f.max_size);
-                let ty = format!("{STORAGE_PARAM}::Str<{max}>");
-                call_path = Some(if origin {
-                    format!(
-                        "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::str_from::<{max}>"
-                    )
-                } else {
-                    format!("<{ty} as {RUNTIME_CODEC}::SceStr>::from_view")
-                });
+                let origin_path = format!(
+                    "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{max}>",
+                    if text { "str_from" } else { "bytes_from" }
+                );
+                let ctor = match crate::forge::codec_totality::byte_bound_args(f, &m.fields) {
+                    Some(bounds) => {
+                        let ty = format!("{RUNTIME_CODEC}::Bounded<{container}, {bounds}>");
+                        let (copied, built) = if text {
+                            ("copied_text", "from_built_text")
+                        } else {
+                            ("copied", "from_built")
+                        };
+                        let ctor = if origin {
+                            let built = format!("{RUNTIME_CODEC}::Bounded::{built}");
+                            Ctor {
+                                call: Box::new(move |v| {
+                                    format!(
+                                        "{built}({origin_path}({ORIGIN_PARAM}, {v}.into_inner()))"
+                                    )
+                                }),
+                                point_free: None,
+                            }
+                        } else {
+                            let path = format!("{RUNTIME_CODEC}::Bounded::{copied}");
+                            Ctor {
+                                call: Box::new({
+                                    let path = path.clone();
+                                    move |v| format!("{path}({v})")
+                                }),
+                                point_free: Some(path),
+                            }
+                        };
+                        (ty, ctor)
+                    }
+                    None => {
+                        let ctor = if origin {
+                            Ctor {
+                                call: Box::new(move |v| {
+                                    format!("{origin_path}({ORIGIN_PARAM}, {v})")
+                                }),
+                                point_free: None,
+                            }
+                        } else {
+                            let path = format!(
+                                "<{container} as {RUNTIME_CODEC}::{}>::{}",
+                                if text { "SceStr" } else { "SceByteBuf" },
+                                if text { "from_view" } else { "from_slice" }
+                            );
+                            Ctor {
+                                call: Box::new({
+                                    let path = path.clone();
+                                    move |v| format!("{path}({v})")
+                                }),
+                                point_free: Some(path),
+                            }
+                        };
+                        (container, ctor)
+                    }
+                };
+                let (ty, ctor) = ctor;
+                call_path = Some(ctor);
                 (ty, Conv::Qualified)
             }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
@@ -7271,22 +7389,13 @@ fn rust_owned_field_keys(
     };
 
     let self_ref = place.map_or_else(|| format!("self.{id}"), str::to_string);
-    // A constructor call on `arg`: the origin form takes the origin first.
-    let call = |path: &str, arg: &str| {
-        if origin {
-            format!("{path}({ORIGIN_PARAM}, {arg})")
-        } else {
-            format!("{path}({arg})")
-        }
-    };
     if opt {
-        let expr = if let Some(path) = &call_path {
-            if origin {
-                // A closure, not the bare path: the constructor takes two
-                // arguments and `map` supplies one.
-                format!("{self_ref}.map(|_v| {}).transpose()?", call(path, "_v"))
-            } else {
-                format!("{self_ref}.map({path}).transpose()?")
+        let expr = if let Some(ctor) = &call_path {
+            match &ctor.point_free {
+                Some(path) => format!("{self_ref}.map({path}).transpose()?"),
+                // A closure, not a bare path: the call takes more than the
+                // value `map` supplies (the origin, a conversion of the value).
+                None => format!("{self_ref}.map(|_v| {}).transpose()?", (ctor.call)("_v")),
             }
         } else {
             match &conv {
@@ -7303,8 +7412,8 @@ fn rust_owned_field_keys(
             }
         };
         Ok((format!("Option<{inner_ty}>"), expr))
-    } else if let Some(path) = &call_path {
-        Ok((inner_ty, format!("{}?", call(path, &self_ref))))
+    } else if let Some(ctor) = &call_path {
+        Ok((inner_ty, format!("{}?", (ctor.call)(&self_ref))))
     } else {
         let (val_expr, fallible) = apply(&self_ref);
         let expr = if fallible {
@@ -7686,7 +7795,7 @@ fn rust_group_storage(
                     let mut value = (*f).clone();
                     value.present_if = None;
                     let (_, expr) =
-                        rust_owned_field_keys(&value, &m.name, imports, l, origin, Some(&acc(f)))?;
+                        rust_owned_field_keys(&value, m, imports, l, origin, Some(&acc(f)))?;
                     fallible |= expr.contains('?');
                     convs.push(shorthand(&acc(f), &expr));
                 }
@@ -7734,7 +7843,7 @@ fn rust_group_storage(
                     }
                     let mut value = (*f).clone();
                     value.present_if = None;
-                    rust_owned_field_keys(&value, &m.name, imports, l, false, None).map(|(t, _)| t)
+                    rust_owned_field_keys(&value, m, imports, l, false, None).map(|(t, _)| t)
                 })
                 .collect::<Result<_, _>>()?;
             // A group whose elements take the storage profile's containers is
@@ -7851,7 +7960,7 @@ fn rust_group_storage(
             &|f, src, dest| {
                 let mut value = f.clone();
                 value.present_if = None;
-                rust_as_borrowed_field_into_stmt(&value, imports, l, Some((src, dest)))
+                rust_as_borrowed_field_into_stmt(&value, &m.fields, imports, l, Some((src, dest)))
             },
             // An owned chain's entries re-borrowed into the builder's list.
             &|f, list| {
@@ -8004,6 +8113,8 @@ fn rust_as_borrowed_list_entry(imports: &[ImportContext], alias: &str) -> &'stat
 
 fn rust_as_borrowed_field_into_stmt(
     f: &CodecField,
+    // The codec's fields, which hold the field that carries `f`'s length.
+    fields: &[CodecField],
     imports: &[ImportContext],
     l: &LangCtx,
     // The value read and the place written, when they are not `self.<id>` and
@@ -8116,7 +8227,19 @@ fn rust_as_borrowed_field_into_stmt(
             format!("{path}(&{self_ref})")
         }
     };
+    // A field held within its bound lends it through the `Bounded` around its
+    // container, with the bounds and no check (docs/adr/0077 §3).
+    let bounded = crate::forge::codec_totality::byte_bound(f, fields).is_some();
+    let lend = |method: &str| {
+        if opt {
+            format!("{self_ref}.as_ref().map({RUNTIME_CODEC}::Bounded::{method})")
+        } else {
+            format!("{self_ref}.{method}()")
+        }
+    };
     let expr = match f.sce_type {
+        SceType::Bytes if bounded => lend("as_bytes"),
+        SceType::String if bounded => lend("as_text"),
         SceType::Bytes => read("SceByteBuf", "as_slice"),
         SceType::String => read("SceStr", "as_str"),
         _ if by_ref => format!("*{self_ref}"),
@@ -8441,7 +8564,10 @@ fn render_codec(
             // the shared `type_name`. Repeat / tlv / embed override this
             // slot below with their list / body shapes; present-if wraps
             // it in `Option<…>` (both routes share `codec_scalar_type`).
-            obj.insert(type_key.into(), codec_scalar_type(&l, &f.sce_type).into());
+            obj.insert(type_key.into(), codec_scalar_type(&l, f, &m.fields).into());
+            if let Some(rebind) = rust_bounded_rebind(&l, f, &m.fields) {
+                obj.insert("bounded_rebind".into(), rebind.into());
+            }
             obj.insert(
                 "decode_expr".into(),
                 generate_decode_expr(f, m.default_endian, lang, &m.fields).into(),
@@ -9550,7 +9676,7 @@ fn render_codec(
                     // Borrowed zero-copy: a gated `Bytes` / `String`
                     // field's inner type is the `&'a` view (Rust), so the
                     // wrap becomes `Option<&'a [u8]>` / `Option<&'a str>`.
-                    let inner = codec_scalar_type(&l, &f.sce_type);
+                    let inner = codec_scalar_type(&l, f, &m.fields);
                     let wrapped = match lang {
                         crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                         // The one spelling of the backend's optional type
@@ -9622,14 +9748,14 @@ fn render_codec(
             // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
             if matches!(lang, crate::generator::Language::Rust) {
                 let (rs_owned_type, rs_into_owned_expr) =
-                    rust_owned_field_keys(f, &m.name, imports, &l, false, None)?;
+                    rust_owned_field_keys(f, m, imports, &l, false, None)?;
                 obj.insert("rs_owned_type".into(), rs_owned_type.into());
                 obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
                 // The same field's projection through the profile's
                 // `OriginStorage`, rendered only into the opt-in
                 // `try_into_owned_in_origin` block (`owned_origin`).
                 let (_, rs_into_owned_origin_expr) =
-                    rust_owned_field_keys(f, &m.name, imports, &l, true, None)?;
+                    rust_owned_field_keys(f, m, imports, &l, true, None)?;
                 obj.insert(
                     "rs_into_owned_origin_expr".into(),
                     rs_into_owned_origin_expr.into(),
@@ -9639,7 +9765,7 @@ fn render_codec(
                 // borrowed view. Consumed by the same owned-projection
                 // template block.
                 let rs_as_borrowed_into_stmt =
-                    rust_as_borrowed_field_into_stmt(f, imports, &l, None)?;
+                    rust_as_borrowed_field_into_stmt(f, &m.fields, imports, &l, None)?;
                 obj.insert(
                     "rs_as_borrowed_into_stmt".into(),
                     rs_as_borrowed_into_stmt.into(),
@@ -39089,9 +39215,35 @@ fn render_codec_test_vector_sidecar(
             let (rust_lit, c_lit) =
                 lower_decoded_field_value(&df.value, &codec_field.sce_type, &m.name)?;
 
+            // A field whose type holds its bound (docs/adr/0077 §3) is built
+            // through its doors: an array of bytes converts with its length
+            // checked by the build, a text through `new`. Its owned form lends
+            // the value with its bounds to compare against the literal.
+            let bounded =
+                crate::forge::codec_totality::byte_bound(codec_field, &m.fields).is_some();
+            let text = matches!(codec_field.sce_type, SceType::String);
+            let snake_field = filters::to_snake_case(df.name.clone());
+            let (value_build_rust, owned_read_rust) = match (bounded, text) {
+                (true, false) => (
+                    format!("({rust_lit}).into()"),
+                    format!("owned.{snake_field}.as_bytes()"),
+                ),
+                (true, true) => (
+                    format!(
+                        "{RUNTIME_CODEC}::Bounded::new({rust_lit}).expect(\"<sce:test-vector> \
+                         at SCXML L{}: `{snake_field}` within its bound\")",
+                        tv.source_line
+                    ),
+                    format!("owned.{snake_field}.as_text()"),
+                ),
+                (false, _) => (rust_lit.clone(), format!("owned.{snake_field}")),
+            };
+
             field_rows.push(serde_json::json!({
-                "name_snake": filters::to_snake_case(df.name.clone()),
+                "name_snake": snake_field,
                 "value_literal_rust": rust_lit,
+                "value_build_rust": value_build_rust,
+                "owned_read_rust": owned_read_rust,
                 "value_literal_c": c_lit,
                 "is_bytes": matches!(codec_field.sce_type, SceType::Bytes),
                 "is_string": matches!(codec_field.sce_type, SceType::String),

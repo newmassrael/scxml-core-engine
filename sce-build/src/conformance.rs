@@ -315,6 +315,12 @@ pub struct StructField {
     /// `has_test_vectors`; fixtures.json never states it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
+    /// The field is a `bytes` or `string` whose type holds its bound — a
+    /// `length-ref` or `tail` field of a binary codec, which the Rust codec
+    /// holds as a `Bytes` or `Text` (docs/adr/0077 §3), so a fragment builds
+    /// it through the type's door. Derived from the document, like `optional`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bounded: bool,
     /// The field is a list — a property of an `sce:encoding="content-line"`
     /// codec that declares `sce:max-count` (a list of lines) or
     /// `sce:separator` (a list of the values of one line), which each language
@@ -2486,6 +2492,17 @@ fn derive_codec_shape(
             field.optional = !entry.is_required();
         }
     }
+    if !*cbor && !*content_line {
+        for field in fields.iter_mut() {
+            field.bounded = model
+                .fields
+                .iter()
+                .find(|f| f.id == field.name)
+                .is_some_and(|f| {
+                    crate::forge::codec_totality::byte_bound(f, &model.fields).is_some()
+                });
+        }
+    }
     if let Some(lines) = model.content_line.as_ref().filter(|_| *content_line) {
         let entries = &lines.entries;
         // A parameter of a repeated property that reads its lines as records is a
@@ -2567,6 +2584,7 @@ fn derive_codec_shape(
                             ty: entry_type(p)?,
                             compare: CompareMode::Equality,
                             optional: !p.is_required(),
+                            bounded: false,
                             list: false,
                             enum_document: entry_document(p)?,
                             enum_open: entry_open(p)?,
@@ -2580,6 +2598,7 @@ fn derive_codec_shape(
                     ty: entry_type(entry)?,
                     compare: CompareMode::Equality,
                     optional: false,
+                    bounded: false,
                     list: has_list,
                     enum_document: entry_document(entry)?,
                     enum_open: entry_open(entry)?,
@@ -3773,6 +3792,7 @@ mod tests {
             ty: CanonicalType::String,
             compare: CompareMode::Equality,
             optional: false,
+            bounded: false,
             list: false,
             enum_document: None,
             enum_open: false,

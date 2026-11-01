@@ -6,7 +6,9 @@
   1 + 8 = 9 bytes. The payload is a view of the buffer the record was decoded
   from, so the log stores the bytes and hands the record back as its owned
   mirror. The Rust conformance crate compiles what the generator emits for the
-  log over it, and offers it a payload longer than the bound.
+  log over it; a payload longer than the bound is not one its record's type
+  holds, so the crate checks that no record of it can be made
+  (docs/adr/0077 §3).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -16,7 +16,13 @@
     turns it into a value of the type; a closed set's conversion is
     partial, and a carrier value it does not declare is not a value of
     that type, so the frame does not decode. The statement carries its
-    own indentation because the three call sites below share it. #}
+    own indentation because the three call sites below share it.
+
+    A `bytes` or `string` field whose type holds its bound is then made
+    through the type's one door (`bounded_rebind`, docs/adr/0077 §3). The
+    guard above refused a length past the bound before the slice was taken,
+    so the door refuses with the same error. The streaming reads below
+    rebind it the same way. #}
 {% macro decode_field(field) %}
 {% if field.bound_guard is defined %}
         {{ field.bound_guard }}
@@ -28,6 +34,10 @@
             .ok_or(CodecError::UndeclaredEnumValue)?;
 {%- else %}
         let {{ field.id }} = {{ field.decode_expr }};
+{%- endif %}
+{%- if field.bounded_rebind is defined %}
+
+        {{ field.bounded_rebind }}
 {%- endif %}
 {% endmacro %}
 {% set decode_variant_enum = struct_name ~ ('ViewVariant' if view_decode else 'Variant') %}
@@ -79,6 +89,9 @@
         {{ field.view_embed_decode_stmt if view_decode else field.embed_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
+{% if field.bounded_rebind is defined %}
+        {{ field.bounded_rebind }}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% if variant.has_peek_byte %}
@@ -186,6 +199,9 @@
         {{ field.view_embed_decode_stmt if view_decode else field.embed_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
+{% if field.bounded_rebind is defined %}
+        {{ field.bounded_rebind }}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for field in fields %}

@@ -135,6 +135,19 @@ decoding it.
   §4 is the decode's error, by construction and not by a second check. An unbounded field keeps `&[u8]` and `&str`.
   The refusals this removes leave `codec_totality`, and every `sce:encode-may-fail` that becomes untrue is removed in
   the same commit (ADR 0065 §3).
+
+  *Amended at step 2.* `Bytes` and `Text` are names for R2's `Bounded`, not types beside it:
+  `Bytes<'a, MAX, MIN = 0>` is `Bounded<&'a [u8], MAX, MIN>` and `Text<'a, MAX, MIN = 0>` is
+  `Bounded<&'a str, MAX, MIN>`, a text's length counted in the UTF-8 bytes the wire carries. A bound is one fact
+  whether it counts entries or bytes, so it has one type, one constructor and one compile-time check of an array's
+  length. The order of the bounds is `Bounded`'s, `MIN` last and none by default. `MIN` is 1 only under
+  `sce:length-arith="+1"`, so a bounded field's default is empty, or one zero byte where `MIN` is 1.
+  - The owned form holds `Bounded<S::Bytes<N>, MAX, MIN>` (and the text counterpart), as it holds a list since R2,
+    so its projection to the source is total.
+  - The decode keeps the guard of §2, which refuses before it slices and in the length's own type; the value is then
+    made through `new`, the type's only door, and its `None` is the same `LengthOutOfRange`.
+  - This step reaches the binary fields §1 bounds, `length-ref` and `tail`. The exact lengths and maximum sizes of the
+    CBOR and content-line codecs, the rest of ADR 0065 R1, take the same types in a landing of their own.
 - **The other five backends** do not have the source interface yet (ADR 0058 §6). Until they do, their encode
   refuses an over-bound field before the first byte, with the error of §4, as C11 already does. When a backend takes
   the source interface, the refusal moves into its bounded type, as in Rust.

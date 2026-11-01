@@ -21,12 +21,12 @@
        count     uint8
        items     count entries, at most 2
 
-     The encode can refuse a tag whose length plus one is past 255, which the
-     tag's uint8 length cannot carry; the declared max-size of 4 does not yet
-     reach the encode's analysis (docs/adr/0077 §3, step 2). -->
+     The encode refuses nothing: each field's type holds it within its bound
+     (docs/adr/0077 §3), so the key's and the tag's lengths fit the fields
+     that carry them, and the list's count fits its uint8. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_declared_bounds">
+       sce:kind="codec" sce:default-endian="big" name="codec_declared_bounds">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:field id="key_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>

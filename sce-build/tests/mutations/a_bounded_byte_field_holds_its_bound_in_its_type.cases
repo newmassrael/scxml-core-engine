@@ -1,0 +1,40 @@
+# Mutation cases for "a bounded byte field holds its bound in its type".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_bounded_byte_field_holds_its_bound_in_its_type.cases`.
+#
+# A `bytes` or `string` field whose length is bounded is held, in every Rust form
+# of its codec, as a `Bytes` or `Text` of its bounds (docs/adr/0077 §3), so the
+# encode cannot be handed a length its length field cannot carry, nor one
+# shorter than the offset the wire subtracts. The totality analysis reads the
+# one statement of which fields carry their bound (`byte_bound`) and drops the
+# refusals the type rules out. Each case takes one piece of that away; the
+# analysis's own tests refuse each, since the codec they read becomes one that
+# refuses at its length.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::codec_totality
+mutation_targets sce-build/src/forge/codec_totality.rs
+mutation_oracles sce-build/src/forge/codec_totality.rs
+
+mutation_case "no field holds its bound in its type" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        .filter(|b| b.max.is_some_and(|max| max <= u64::from(u32::MAX)))''',
+     r'''        .filter(|_| false)''')
+PY
+
+mutation_case "a length derived from bounded content is unbounded" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''            .collect::<Option<Vec<u64>>>()
+            .and_then(|carried| carried.into_iter().max()),''',
+     r'''            .collect::<Option<Vec<u64>>>()
+            .and(None),''')
+PY
+
+mutation_case "a content held to its offset still refuses the offset" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''    arith > 0 && byte_bound(field, fields).is_some_and(|b| b.min >= u64::from(arith.unsigned_abs()))''',
+     r'''    false''')
+PY

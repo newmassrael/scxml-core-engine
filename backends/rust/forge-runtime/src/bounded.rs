@@ -20,6 +20,11 @@
 //! is a type of its own and the storage profiles stay what they are: a heap
 //! profile's list grows past its declared capacity, and the bound that keeps it
 //! encodable is this type around it.
+//!
+//! A codec's `bytes` and `string` fields are bounded the same way, counted in
+//! bytes (docs/adr/0077 §3): [`Bytes`] and [`Text`] are names for a [`Bounded`]
+//! slice or `str`, and an owned buffer is held through [`Bounded::from_buf`] or
+//! [`Bounded::from_str_buf`].
 
 use core::ops::Deref;
 
@@ -299,6 +304,188 @@ impl<T, const N: usize, const MAX: usize> From<heapless::Vec<T, N>>
     }
 }
 
+impl<'a> Entries for &'a str {
+    /// A text counts the UTF-8 bytes the wire carries, not its characters.
+    type Iter<'s>
+        = core::str::Bytes<'a>
+    where
+        Self: 's;
+
+    fn entry_count(&self) -> usize {
+        self.len()
+    }
+
+    fn entries(&self) -> Self::Iter<'_> {
+        self.bytes()
+    }
+}
+
+/// A byte string of at least `MIN` bytes and at most `MAX` (docs/adr/0077 §3):
+/// a codec's `bytes` field, borrowed. The bound is the one a list has, counted
+/// in bytes, so it is the same type: [`Bounded::new`] checks a slice once, and
+/// an array whose length lies in the bounds converts without a check.
+pub type Bytes<'a, const MAX: usize, const MIN: usize = 0> = Bounded<&'a [u8], MAX, MIN>;
+
+/// A text of at least `MIN` and at most `MAX` UTF-8 bytes (docs/adr/0077 §3): a
+/// codec's `string` field, borrowed, bounded as [`Bytes`] is.
+pub type Text<'a, const MAX: usize, const MIN: usize = 0> = Bounded<&'a str, MAX, MIN>;
+
+// Bytes and text compare with what they hold, as a `Vec` compares with a slice
+// and a `String` with a `str`: the bounds are a fact about the value, not more
+// of it, so `decoded.payload == b"abc"` reads as it did on a bare slice.
+impl<T: PartialEq<U>, U, const MAX: usize, const MIN: usize> PartialEq<[U]>
+    for Bounded<&[T], MAX, MIN>
+{
+    fn eq(&self, other: &[U]) -> bool {
+        self.0 == other
+    }
+}
+
+impl<T: PartialEq<U>, U, const MAX: usize, const MIN: usize> PartialEq<&[U]>
+    for Bounded<&[T], MAX, MIN>
+{
+    fn eq(&self, other: &&[U]) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<T: PartialEq<U>, U, const N: usize, const MAX: usize, const MIN: usize> PartialEq<[U; N]>
+    for Bounded<&[T], MAX, MIN>
+{
+    fn eq(&self, other: &[U; N]) -> bool {
+        self.0 == other
+    }
+}
+
+impl<T: PartialEq<U>, U, const N: usize, const MAX: usize, const MIN: usize> PartialEq<&[U; N]>
+    for Bounded<&[T], MAX, MIN>
+{
+    fn eq(&self, other: &&[U; N]) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<const MAX: usize, const MIN: usize> PartialEq<str> for Bounded<&str, MAX, MIN> {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl<const MAX: usize, const MIN: usize> PartialEq<&str> for Bounded<&str, MAX, MIN> {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<const MAX: usize> Default for Bounded<&[u8], MAX, 1> {
+    /// One zero byte: the fewest a byte string of one byte or more holds, so the
+    /// default value of a codec that holds it is a frame its decode reads back.
+    fn default() -> Self {
+        const {
+            assert!(
+                MAX >= 1,
+                "the bytes cannot hold one byte inside their bound"
+            )
+        };
+        Self(&[0])
+    }
+}
+
+impl<const MAX: usize> Default for Bounded<&str, MAX, 1> {
+    /// One NUL, the one-byte text, for the reason [`Bytes`]' default is one byte.
+    fn default() -> Self {
+        const { assert!(MAX >= 1, "the text cannot hold one byte inside its bound") };
+        Self("\0")
+    }
+}
+
+impl<B: crate::storage::SceByteBuf, const MAX: usize, const MIN: usize> Bounded<B, MAX, MIN> {
+    /// An owned byte buffer as bytes of at least `MIN` and at most `MAX`, or
+    /// `None` when it holds fewer or more. A storage profile's buffer may grow
+    /// past its declared capacity, so its length is checked here, once.
+    pub fn from_buf(buf: B) -> Option<Self> {
+        if (MIN..=MAX).contains(&buf.as_slice().len()) {
+            Some(Self(buf))
+        } else {
+            None
+        }
+    }
+
+    /// The bytes, borrowed with their bounds: the owned form's source read,
+    /// which needs no check since the buffer cannot change once it is held.
+    pub fn as_bytes(&self) -> Bytes<'_, MAX, MIN> {
+        Bounded(self.0.as_slice())
+    }
+
+    /// `bytes` copied into the profile's buffer, for an owned value built by
+    /// hand: `LengthOutOfRange` where they lie outside the bounds, which is the
+    /// error a decode of them gives, and the buffer's own capacity error on a
+    /// profile whose capacity is below them. The buffer is the field's, so
+    /// `payload: Bounded::from_slice(data)?` names no profile.
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, crate::codec::CodecError> {
+        let bytes =
+            Bytes::<'_, MAX, MIN>::new(bytes).ok_or(crate::codec::CodecError::LengthOutOfRange)?;
+        Self::copied(bytes)
+    }
+
+    /// Bytes already inside the bounds, copied into the profile's buffer: the
+    /// owned projection of a decoded value. The bounds carry over without a
+    /// check; the one error is the buffer's own capacity, on a profile whose
+    /// capacity is below `MAX` ([`crate::storage::SceByteBuf::from_slice`]).
+    pub fn copied(bytes: Bytes<'_, MAX, MIN>) -> Result<Self, crate::codec::CodecError> {
+        B::from_slice(bytes.0).map(Self)
+    }
+
+    /// The buffer a profile built for bytes inside the bounds, held once its
+    /// length is checked: an [`crate::storage::OriginStorage`] profile builds it
+    /// however it chooses, so its length is the profile's word, not the
+    /// type's. A buffer of another length is refused as a length out of range.
+    pub fn from_built(
+        buf: Result<B, crate::codec::CodecError>,
+    ) -> Result<Self, crate::codec::CodecError> {
+        Self::from_buf(buf?).ok_or(crate::codec::CodecError::LengthOutOfRange)
+    }
+}
+
+impl<T: crate::storage::SceStr, const MAX: usize, const MIN: usize> Bounded<T, MAX, MIN> {
+    /// An owned text buffer as text of at least `MIN` and at most `MAX` UTF-8
+    /// bytes, or `None` when it holds fewer or more.
+    pub fn from_str_buf(text: T) -> Option<Self> {
+        if (MIN..=MAX).contains(&text.as_str().len()) {
+            Some(Self(text))
+        } else {
+            None
+        }
+    }
+
+    /// The text, borrowed with its bounds.
+    pub fn as_text(&self) -> Text<'_, MAX, MIN> {
+        Bounded(self.0.as_str())
+    }
+
+    /// `text` copied into the profile's buffer, for an owned value built by
+    /// hand, refused as [`Bounded::from_slice`] refuses bytes.
+    pub fn from_text(text: &str) -> Result<Self, crate::codec::CodecError> {
+        let text =
+            Text::<'_, MAX, MIN>::new(text).ok_or(crate::codec::CodecError::LengthOutOfRange)?;
+        Self::copied_text(text)
+    }
+
+    /// Text already inside the bounds, copied into the profile's buffer, as
+    /// [`Bounded::copied`] copies bytes.
+    pub fn copied_text(text: Text<'_, MAX, MIN>) -> Result<Self, crate::codec::CodecError> {
+        T::from_view(text.0).map(Self)
+    }
+
+    /// The text buffer a profile built, held once its length is checked, as
+    /// [`Bounded::from_built`] holds bytes.
+    pub fn from_built_text(
+        text: Result<T, crate::codec::CodecError>,
+    ) -> Result<Self, crate::codec::CodecError> {
+        Self::from_str_buf(text?).ok_or(crate::codec::CodecError::LengthOutOfRange)
+    }
+}
+
 /// The entries of a list of at most `MAX` and at least `MIN`, in order, with how
 /// many there are: what a codec's source interface returns for a list
 /// (docs/adr/0065 §6 R2, R7).
@@ -481,6 +668,67 @@ mod tests {
         let counted = BoundedIter::<_, 3>::new(entries.iter()).unwrap();
         assert_eq!(counted.len(), 3);
         assert!(BoundedIter::<_, 2>::new(entries.iter()).is_none());
+    }
+
+    #[test]
+    fn bytes_are_held_between_their_bounds_and_an_array_inside_them_costs_no_check() {
+        let zid = [1u8; 16];
+        assert!(Bytes::<16, 1>::new(&zid[..]).is_some());
+        assert!(Bytes::<15, 1>::new(&zid[..]).is_none());
+        assert!(Bytes::<16, 1>::new(&[][..]).is_none());
+        let fixed: Bytes<'_, 16, 1> = (&zid).into();
+        assert_eq!(fixed.len(), 16);
+        assert_eq!(*fixed, &zid[..]);
+        // It compares with what it holds, as a slice or an array.
+        assert_eq!(fixed, &zid[..]);
+        assert_eq!(fixed, zid);
+        assert_eq!(fixed, &zid);
+        assert!(Text::<4>::new("ab").unwrap() == "ab");
+    }
+
+    #[test]
+    fn a_text_is_counted_in_the_bytes_the_wire_carries() {
+        // Two characters, four UTF-8 bytes.
+        assert!(Text::<4>::new("\u{e9}\u{e9}").is_some());
+        assert!(Text::<3>::new("\u{e9}\u{e9}").is_none());
+        assert_eq!(Text::<4>::new("ab").map(|t| t.len()), Some(2));
+    }
+
+    #[test]
+    fn the_default_of_bytes_of_one_byte_or_more_is_one_byte() {
+        assert_eq!(*Bytes::<'_, 16, 1>::default(), &[0u8][..]);
+        assert_eq!(Text::<'_, 8, 1>::default().len(), 1);
+        assert!(Bytes::<'_, 16>::default().is_empty());
+    }
+
+    #[test]
+    fn an_owned_buffer_is_held_once_checked_and_reads_back_without_a_check() {
+        use crate::storage::{InlineBytes, InlineStr, SceStr};
+        let buf = InlineBytes::<8>::from_slice(&[1, 2, 3]).unwrap();
+        assert!(Bounded::<_, 2>::from_buf(buf.clone()).is_none());
+        let held = Bounded::<_, 3, 1>::from_buf(buf).unwrap();
+        assert_eq!(*held.as_bytes(), &[1u8, 2, 3][..]);
+        let copied = Bounded::<InlineBytes<3>, 3, 1>::copied(held.as_bytes()).unwrap();
+        assert_eq!(*copied.as_bytes(), *held.as_bytes());
+        // A profile whose capacity is below the bound refuses for its capacity.
+        assert!(Bounded::<InlineBytes<2>, 3, 1>::copied(held.as_bytes()).is_err());
+        // Built by hand, the bounds are checked first and refused as a decode
+        // of the same bytes would refuse them.
+        assert_eq!(
+            Bounded::<InlineBytes<8>, 2>::from_slice(&[1, 2, 3]),
+            Err(crate::codec::CodecError::LengthOutOfRange)
+        );
+        assert_eq!(
+            Bounded::<InlineBytes<8>, 3>::from_slice(&[1, 2, 3]).map(|b| b.as_bytes() == [1, 2, 3]),
+            Ok(true)
+        );
+        assert!(Bounded::<InlineStr<8>, 3>::from_text("abcd").is_err());
+        let text = InlineStr::<8>::from_view("abc").unwrap();
+        assert!(Bounded::<_, 2>::from_str_buf(text.clone()).is_none());
+        assert_eq!(
+            *Bounded::<_, 3>::from_str_buf(text).unwrap().as_text(),
+            "abc"
+        );
     }
 
     #[test]

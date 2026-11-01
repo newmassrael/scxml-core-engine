@@ -53,7 +53,20 @@
 
         let encoded = {{ f.name | to_pascal_case }} {
 {% for field in f.fields %}
-{% if field.type == "bytes" and field.optional %}
+{% if field.bounded and field.optional %}
+            {# A field held within its bound is made through the type's one
+               door (docs/adr/0077 §3); every case is a value inside it. #}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_deref().map(|v| {
+                ::sce_forge_runtime::codec::Bounded::new(v)
+                    .unwrap_or_else(|| panic!("{{ f.name }} case {i}: {{ field.name }} is outside its bound"))
+            }),
+{% elif field.bounded and field.type == "bytes" %}
+            {{ field.name | to_snake_case }}: ::sce_forge_runtime::codec::Bounded::new(input_{{ field.name | to_snake_case }}.as_slice())
+                .unwrap_or_else(|| panic!("{{ f.name }} case {i}: {{ field.name }} is outside its bound")),
+{% elif field.bounded %}
+            {{ field.name | to_snake_case }}: ::sce_forge_runtime::codec::Bounded::new(input_{{ field.name | to_snake_case }})
+                .unwrap_or_else(|| panic!("{{ f.name }} case {i}: {{ field.name }} is outside its bound")),
+{% elif field.type == "bytes" and field.optional %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_deref(),
 {% elif field.type == "bytes" %}
             {# Borrowed zero-copy: the codec field is `&'a [u8]`, so bind a
@@ -90,7 +103,15 @@
         let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} decode must succeed");
 {% for field in f.fields %}
-{% if field.type == "bytes" %}
+{% if field.bounded and field.optional %}
+        {# A field held within its bound compares with the slice or text it
+           holds; an absent one is `None` on both sides. #}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }}.map(|v| v.into_inner()),
+            input_{{ field.name | to_snake_case }}.as_deref(),
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% elif field.type == "bytes" %}
         assert_eq!(
             round_tripped.{{ field.name | to_snake_case }},
             input_{{ field.name | to_snake_case }}.{% if field.optional %}as_deref(){% else %}as_slice(){% endif %},

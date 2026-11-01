@@ -125,14 +125,14 @@ fn a_tail_bytes_field_still_generates() {
     assert_eq!(code, Some(0), "a tail bytes field was refused:\n{stderr}");
 }
 
-/// And so does `length-ref`, the other variable form. Its length is written in a
-/// `uint8`, so the encode can refuse a longer run and the codec states so
-/// (`sce:encode-may-fail`, docs/adr/0065).
+/// And so does `length-ref`, the other variable form. Its type holds the run
+/// within its bound of 16, which its `uint8` length carries, so the encode
+/// refuses nothing and the codec states nothing (docs/adr/0077 §3).
 #[test]
 fn a_length_ref_bytes_field_still_generates() {
     let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="frame">
+       sce:kind="codec" sce:default-endian="big" name="frame">
   <datamodel>
     <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="record" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"

@@ -3029,8 +3029,7 @@ mod tests {
             shared
                 .try_as_borrowed()
                 .expect("within every bound")
-                .encode_to_vec()
-                .expect("encode"),
+                .encode_to_vec(),
             ENVELOPE.to_vec()
         );
     }
@@ -5647,7 +5646,7 @@ fn forge_codec_tlv_chain_truncate_under_exhaust_or_depth_compiles() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="truncate_exhaust">
+       sce:kind="codec" sce:default-endian="big" name="truncate_exhaust">
   <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
   <datamodel>
     <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -19851,19 +19850,19 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
 ///      (docs/adr/0077 §4), and not with `NeedMoreBytes`, which would tell a
 ///      streaming caller to wait for bytes that cannot help.
 ///   2. hand-assemble path — build `CodecTailOwned` by hand (the encode-side
-///      builder pattern), constructing the `payload` field via the SSOT
-///      `SceBytes::from_slice`. `N` is inferred from the field's
-///      `SceBytes<32>` type with NO turbofish and NO hardcoded cap — the
-///      property the N-preserving newtype exists for (a bare type alias
-///      erased `N` to `Vec<u8>`, forcing downstream builders to duplicate
-///      the SCXML `sce:max-size` SSOT).
+///      builder pattern), constructing the `payload` field through
+///      `Bounded::from_slice`, the bounds' door (docs/adr/0077 §3). The
+///      container and its `N` infer from the field's
+///      `Bounded<S::Bytes<32>, 32>` type with NO turbofish and NO hardcoded
+///      cap, so a builder never duplicates the SCXML `sce:max-size` SSOT; and
+///      bytes past the bound are refused there with `LengthOutOfRange`.
 #[test]
 fn forge_codec_tail_is_held_to_its_bound_and_its_owned_cap_infers() {
     const HARNESS: &str = r#"// Injected by forge_codec_tail_is_held_to_its_bound_and_its_owned_cap_infers.
 #[cfg(test)]
 mod tests {
     use crate::codec_tail::{CodecTail, CodecTailOwned};
-    use ::sce_forge_runtime::codec::{CodecError, SceBytes, SceCursor};
+    use ::sce_forge_runtime::codec::{Bounded, CodecError, SceCursor};
 
     fn frame(payload: usize) -> Vec<u8> {
         // msg_id, status, then the payload.
@@ -19894,8 +19893,9 @@ mod tests {
     #[test]
     fn tail_owned_hand_assembled_infers_cap() {
         // Encode-side builder: assemble the owned struct by hand and build
-        // the bytes field via the SSOT ctor. `N` infers from the field's
-        // `SceBytes<32>` type — no `::<32>` turbofish, no duplicated cap.
+        // the bytes field through its bounds' door. The container and the
+        // bounds infer from the field's `Bounded<S::Bytes<32>, 32>` type — no
+        // turbofish, no duplicated cap (docs/adr/0077 §3).
         //
         // The binding names the storage profile (bare `CodecTailOwned` = the
         // build's default). A hand-assembled value must: its fields reach the
@@ -19906,10 +19906,16 @@ mod tests {
         let owned: CodecTailOwned = CodecTailOwned {
             msg_id: 7,
             status: 9,
-            payload: SceBytes::from_slice(&data).expect("within the bound"),
+            payload: Bounded::from_slice(&data).expect("within the bound"),
         };
-        assert_eq!(owned.payload.len(), 30);
-        assert_eq!(owned.payload, b"\xcd".repeat(30).as_slice());
+        assert_eq!(owned.payload.as_bytes().len(), 30);
+        assert_eq!(owned.payload.as_bytes(), b"\xcd".repeat(30).as_slice());
+        // Bytes past the bound are refused where the value is built, with the
+        // error a decode of them gives.
+        assert_eq!(
+            Bounded::<<::sce_forge_runtime::codec::DefaultStorage as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>, 32>::from_slice(&[0u8; 33]).err(),
+            Some(CodecError::LengthOutOfRange)
+        );
         // Re-borrow + encode round-trips through the borrowed view.
         let borrowed = owned.as_borrowed();
         assert_eq!(borrowed.payload.len(), 30);
@@ -19970,17 +19976,17 @@ fn forge_codec_owned_literal_without_pinned_profile_fails_to_infer() {
 #[cfg(test)]
 mod tests {
     use crate::codec_tail::CodecTailOwned;
-    use ::sce_forge_runtime::codec::SceBytes;
+    use ::sce_forge_runtime::codec::Bounded;
 
     #[test]
     fn owned_literal_with_no_profile_pinning_use() {
-        let data = [0xCDu8; 50];
+        let data = [0xCDu8; 30];
         // No annotation on the binding, and `as_borrowed()` is an
         // `impl<S>` method: nothing here can determine `S`.
         let owned = CodecTailOwned {
             msg_id: 7,
             status: 9,
-            payload: SceBytes::from_slice(&data).expect("alloc copy is unbounded"),
+            payload: Bounded::from_slice(&data).expect("within the bound"),
         };
         let _ = owned.as_borrowed();
     }
@@ -21955,7 +21961,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_entry = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <datamodel>
     <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
@@ -21992,7 +21998,7 @@ fn axis1_camelcase_field_kinds_compile() {
     let tlv_parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="camelcase_tlv_entry.scxml" kind="codec" as="camelcase_tlv_entry"/>
   <datamodel>
     <sce:tlv-chain id="myChain" type="camelcase_tlv_entry"

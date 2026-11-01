@@ -18,7 +18,7 @@
 fn test_vector_{{ name }}_l{{ tv.source_line }}() {
     let actual = {{ name_pascal }} {
 {% for f in tv.fields %}
-        {{ f.name_snake }}: {{ f.value_literal_rust }},
+        {{ f.name_snake }}: {{ f.value_build_rust }},
 {% endfor %}
     };
 {% if encode_may_fail %}
@@ -50,9 +50,9 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
 {% if codec_is_borrowed %}
     // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
     // decode into its no-alloc owned mirror and assert every field still
-    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
-    // fields compare directly against the `&[u8]` / `&str` literals (both
-    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // equals the oracle. An owned bytes or text field held within its bound
+    // lends its value with the bounds, which compares against the `&[u8]` /
+    // `&str` literal (docs/adr/0077 §3). `try_into_owned` is fallible (the bounded
     // copy re-checks the decode bound); the decode above already proved the
     // value fits, so the projection cannot fail here.
     let owned = {{ name_pascal }}::decode(&mut SceCursor::new(expected))
@@ -61,7 +61,7 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
         .expect("<sce:test-vector> at SCXML L{{ tv.source_line }}: try_into_owned exceeded a bounded field");
 {% for f in tv.fields %}
     assert_eq!(
-        owned.{{ f.name_snake }}, {{ f.value_literal_rust }},
+        {{ f.owned_read_rust }}, {{ f.value_literal_rust }},
         "<sce:test-vector> at SCXML L{{ tv.source_line }}: into_owned field `{{ f.name_snake }}` mismatch"
     );
 {% endfor %}

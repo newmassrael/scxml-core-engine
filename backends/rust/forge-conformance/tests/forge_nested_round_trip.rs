@@ -52,12 +52,12 @@ fn body() -> CodecNestedBody<'static> {
     let mut locs = HeaplessVec::new();
     locs.push(CodecZenohLocator {
         locator_len: 3,
-        locator: "abc",
+        locator: Bounded::new("abc").expect("within the locator's bound"),
     })
     .unwrap();
     locs.push(CodecZenohLocator {
         locator_len: 2,
-        locator: "xy",
+        locator: Bounded::new("xy").expect("within the locator's bound"),
     })
     .unwrap();
     CodecNestedBody { n: 2, locs }
@@ -200,31 +200,32 @@ fn transcode_between_profiles_preserves_the_value() {
     );
 }
 
-/// A growable value that exceeds a declared capacity has no inline
-/// representation. The transcode must reject it with the same typed error the
-/// decoder raises — never truncate, never panic. This is the check a
-/// `cfg`-switched container silently skips in an `alloc` build.
+/// An owned `locator` holds no more than its `sce:max-size` (128): the growable
+/// profile's text grows past its declared capacity, and the bound is the
+/// `Bounded` around it (docs/adr/0077 §3), so a 200-byte locator, which has no
+/// frame, is no owned value on any profile. It is refused where it is made,
+/// with the error a decode of it gives — never truncated, never a value the
+/// inline profile would meet later.
 #[test]
-fn transcode_to_inline_rejects_a_value_past_its_declared_capacity() {
-    // `locator` declares `sce:max-size="128"`; the growable profile treats
-    // that as advisory, so this value is legal there and only there.
+fn an_owned_text_past_its_bound_is_no_owned_value() {
     let oversized = "l".repeat(200);
+    assert_eq!(
+        Bounded::<HeapStr<128>, 128>::from_text(&oversized).err(),
+        Some(CodecError::LengthOutOfRange),
+        "a 200-byte locator exceeds the declared max-size of 128",
+    );
+    let at_bound = "l".repeat(128);
     let locs: Vec<CodecZenohLocatorOwned<Heap>> = vec![CodecZenohLocatorOwned {
-        locator_len: oversized.len() as u64,
-        locator: HeapStr::from_text(&oversized).expect("the growable profile has no ceiling"),
+        locator_len: at_bound.len() as u64,
+        locator: Bounded::from_text(&at_bound).expect("128 bytes are within the bound"),
     }];
     let body = CodecNestedBodyOwned::<Heap> {
         n: 1,
         locs: Bounded::new(locs).expect("one entry is within the bound"),
     };
-
     assert!(
-        matches!(
-            body.transcode_in::<Inline>(),
-            Err(CodecError::TooManyElements)
-        ),
-        "a 200-byte locator exceeds the declared max-size of 128, so the \
-         non-allocating profile must reject it at the boundary",
+        body.transcode_in::<Inline>().is_ok(),
+        "a value within every bound moves to the non-allocating profile",
     );
 }
 
@@ -239,11 +240,10 @@ fn an_owned_list_past_its_bound_is_no_owned_value() {
             n: 1,
             locs: Bounded::new(vec![CodecZenohLocatorOwned {
                 locator_len: 1,
-                // Owned `locator` is the profile's text storage — build it
-                // through the same SSOT ctor codegen emits. `N` infers from
-                // the field type (`String` on the growable profile,
-                // `heapless::String<128>` on the inline one).
-                locator: sce_forge_runtime::codec::SceString::from_text("a").unwrap(),
+                // Owned `locator` is the profile's text storage held within
+                // its bound, built through the bounds' door. The container
+                // and `N` infer from the field type (docs/adr/0077 §3).
+                locator: Bounded::from_text("a").unwrap(),
             }])
             .expect("one entry is within the bound"),
         }
@@ -261,9 +261,9 @@ fn an_owned_list_past_its_bound_is_no_owned_value() {
         body_list: Bounded::new((0..4).map(|_| owned_body()).collect())
             .expect("4 entries are within the bound"),
     };
-    // Owned text storage compares against a `&str` literal directly (no
-    // `.as_str()`) — exercises the runtime's `SceStr: PartialEq<&str>` parity.
-    assert_eq!(owned.required_body.locs[0].locator, "a");
+    // Owned text lends its value with its bounds, which compares against a
+    // `&str` literal directly.
+    assert_eq!(owned.required_body.locs[0].locator.as_text(), "a");
     assert_eq!(
         owned.encode_to_vec(),
         owned

@@ -193,3 +193,30 @@ Landing: the commit that adds this section.
 - The runtime adds `Having`, and `GateVar::Member` carries whether the entry is bare.
 - A document whose only refusal was this gate drops `sce:encode-may-fail`; the conformance `chain_has_envelope`
   did. A gate of a key its identifier cannot hold stays refused where the import is resolved.
+
+## A bounded bytes or text field is held within its bound as a type (ADR 0077 step 2)
+
+Landing: the commit that adds this section.
+
+- In Rust, a `tail` or `length-ref` field of type `bytes` or `string` is held as `Bytes<'a, MAX>` or
+  `Text<'a, MAX>` (`Bytes<'a, MAX, 1>` under `sce:length-arith="+1"`), where it was `&'a [u8]` or `&'a str`: the
+  decoded struct, the view, `{Codec}Parts` and the source trait's accessor (`Bytes<'_, MAX>`). `MAX` is the
+  declared `sce:max-size` cut to what the length field carries. Both are names for `Bounded<&[u8], MAX, MIN>` and
+  `Bounded<&str, MAX, MIN>`, the list type of R2.
+- Build one with `Bounded::new(slice)` (checked, `None` outside the bounds) or, for bytes, `(&array).into()` (an
+  array whose length lies in the bounds, checked when compiled). Read it through `Deref`, `.len()`,
+  `.into_inner()` (the slice or `str`), or compare it with a slice, an array or a `str` directly
+  (`decoded.payload == b"abc"`). An `Option` of one compares after `.map(|v| v.into_inner())`.
+- The owned form holds the profile's container inside a `Bounded`: `Bounded<S::Bytes<N>, MAX>` where it was
+  `S::Bytes<N>`, and `Bounded<S::Str<N>, MAX>` for text. Build it by hand with `Bounded::from_slice(bytes)?` or
+  `Bounded::from_text(text)?` (`LengthOutOfRange` outside the bounds), where it was `SceBytes::from_slice` or
+  `SceString::from_text`; read it with `.as_bytes()` or `.as_text()`. An `OriginStorage` profile's container is
+  checked once after the profile builds it.
+- A codec whose only refusals were a length its field could not carry, or a `+1` length that could not be
+  negative, is now total: its `encode_to_vec` returns `Vec<u8>` and `measure` its `Measured`, and its
+  `sce:encode-may-fail` is untrue and refused. 30 SCE documents dropped it, among them the Zenoh `hello`,
+  `init_body`, `join`, `scout`, `source_info`, the extension `attachment`, `encoding_info` and `timestamp`, and
+  the `tlv_entry` and `keyexpr_entry` elements. Run the check of the introduction over every document and drop
+  each declaration it reports as untrue; a parent that held only such codecs drops its own.
+- A test that offered an over-bound value to an encode and expected the refusal makes the value instead and
+  expects `None` (or `LengthOutOfRange` from `from_slice`): the value has no frame, so it cannot be made.

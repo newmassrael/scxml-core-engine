@@ -270,8 +270,9 @@ where
 pub use crate::storage::*;
 // The list of a generated view, spelled from the same path as the rest.
 pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
-// A list of at most its bound (docs/adr/0065 §6 R2), spelled from the same path.
-pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Entries};
+// A list of at most its bound (docs/adr/0065 §6 R2), and bytes and text of at
+// most theirs (docs/adr/0077 §3), spelled from the same path.
+pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Bytes, Entries, Text};
 pub use crate::membership::{
     place_first, place_first_in, Except, Having, Key, OfKind, Placed, SkipAt, Slot, Slots, Without,
 };

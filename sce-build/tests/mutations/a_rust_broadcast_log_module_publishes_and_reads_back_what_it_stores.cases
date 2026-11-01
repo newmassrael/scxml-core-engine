@@ -39,20 +39,9 @@ mutation_targets tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2
 
 # --- publish ---
 
-# An element past `MAX_ENCODED_BYTES` is refused by the codec (the bounded sink answers
-# `BufferOverflow`) and nothing is published: an entry is never a truncated element. With the
-# answer dropped, `publish` goes on and publishes the bytes that fitted. Killed by
-# `an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated`: its
-# 20-byte payload must be `Err` and `log.head()` must be 0, and the mutant answers `Ok(0)`.
-mutation_case "publish goes on after the codec refuses the element" <<'PY'
-edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
-     r'''    element.encode(&mut sink{% for flag in context.flags %}{% if not flag.said %}, u8::from(flags.{{ flag.snake }}){% endif %}{% endfor %})?;''',
-     r'''    let _ = element.encode(&mut sink{% for flag in context.flags %}{% if not flag.said %}, u8::from(flags.{{ flag.snake }}){% endif %}{% endfor %});''')
-PY
-
 # The length word holds what the encode wrote, which is what `read` cuts the bytes by. Stored as
 # the bound, an element shorter than the largest comes back with zero bytes after it. Killed by
-# `an_element_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated`: the record with
+# `an_element_larger_than_its_bound_is_refused_where_it_is_made_and_not_truncated`: the record with
 # a 3-byte payload is stored with a length of 9 and comes back as a record of 8 payload bytes,
 # which does not encode to `[0x5B, 7, 7, 7]`.
 mutation_case "publish stores the bound as the length of every element" <<'PY'
@@ -178,6 +167,14 @@ edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
 PY
 
 # --- Mutants that are not cases ---
+#
+# The codec's answer to `publish`'s encode, dropped (`let _ = element.encode(..)`). Every element
+# of the conformance logs has a total codec whose payload's type holds it within its bound
+# (docs/adr/0077 §3), so it encodes to at most `MAX_ENCODED_BYTES` and the window it is written
+# into never answers `BufferOverflow`: the dropped answer is always `Ok`, and no log observes the
+# mutant. A record of 20 bytes, which killed it before, can no longer be made. It needs an element
+# whose codec refuses a value it can be handed (a gate it cannot derive, `PresentIfMismatch`) and a
+# test that publishes that value.
 #
 # The owned form a borrowing element is returned in (`.try_into_owned_in::<Inline>()?`), removed. The
 # module no longer compiles (the element borrows `bytes`, which does not outlive the call), so the

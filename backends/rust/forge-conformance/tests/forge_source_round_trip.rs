@@ -474,7 +474,10 @@ mod parts {
 
     #[test]
     fn an_embedded_body_is_written_and_read_back() {
-        let locator = CodecZenohLocatorParts { locator: "tcp/a:1" };
+        let locator = CodecZenohLocatorParts {
+            locator: sce_forge_runtime::codec::Bounded::new("tcp/a:1")
+                .expect("within the locator's bound"),
+        };
         let source = CodecEmbedBasicParts {
             tag: 5,
             locator: &locator,
@@ -508,10 +511,13 @@ mod said_inputs {
     };
     use super::codecs::codec_zenoh_open_body::{CodecZenohOpenBody, CodecZenohOpenBodyParts};
     use super::codecs::codec_zenoh_wireexpr::{CodecZenohWireexpr, CodecZenohWireexprParts};
-    use sce_forge_runtime::codec::{CodecError, VecSink};
+    use sce_forge_runtime::codec::{Bounded, CodecError, VecSink};
 
     fn wireexpr(suffix: Option<&str>) -> CodecZenohWireexprParts<'_> {
-        CodecZenohWireexprParts { id: 7, suffix }
+        CodecZenohWireexprParts {
+            id: 7,
+            suffix: suffix.map(|s| Bounded::new(s).expect("within the suffix's bound")),
+        }
     }
 
     #[test]
@@ -525,7 +531,7 @@ mod said_inputs {
             cookie,
         };
         assert!(CodecZenohOpenBody::input_a(&open(None)));
-        assert!(!CodecZenohOpenBody::input_a(&open(Some(&[1u8][..]))));
+        assert!(!CodecZenohOpenBody::input_a(&open(Some((&[1u8]).into()))));
     }
 
     #[test]
@@ -674,7 +680,7 @@ mod groups {
         assert_eq!(encode(sliced), [0x82, 0x08, 0x00, 0x00]);
         // The plain side's length is its value's.
         let plain = AfterShm::NotAfterShm {
-            value: &[1u8, 2, 3][..],
+            value: (&[1u8, 2, 3]).into(),
         };
         assert!(!CodecZenohValueZbuf::input_after_shm(
             &CodecZenohValueZbufParts { after_shm: plain }
@@ -735,7 +741,7 @@ mod groups {
         };
         assert_eq!(
             encode(HasPayload::HasPayload {
-                payload: &[9u8, 8][..]
+                payload: (&[9u8, 8]).into()
             }),
             [0x01, 0x02, 9, 8]
         );
