@@ -76,9 +76,22 @@ A commit that changes:
 - a public item of a codec runtime (`backends/*/forge-runtime`);
 - or a reject vector of the codec oracle;
 
-must also change the migration guide. Otherwise it is refused at the commit with the paths that made it
-consumer-visible. A commit whose change is not visible to a consumer (a doc comment, a private helper) states that in
-its message with a fixed phrase that the gate reads. The phrase is the author's claim, and the reviewer checks it.
+must also change the migration guide. Otherwise it is refused, with the paths that made it consumer-visible. A
+change whose trigger is not visible to a consumer states that in a commit message with a bullet,
+`- No consumer-visible change: <why>`. The gate reads the bullet; it is the author's claim, and the reviewer checks it.
+
+*Amended while landing.* The gate judges the push, not each commit (`tools/git-hooks/consumer-guide-gate.sh`,
+sourced by `pre-push`). A landing here is a `feat` commit and the `chore` commit that regenerates its goldens, and
+the section belongs to the `feat`. Judged commit by commit, the `chore` would be refused for a section its landing
+already has. What counts as consumer-visible (`tools/git-hooks/consumer_visible_change.py`):
+
+- a public declaration REMOVED or rewritten, since an addition breaks no consumer;
+- in a golden that already existed, since a golden added or removed whole is a fixture of SCE's own tests;
+- in a runtime's source outside its tests;
+- or a removed `"error"` line of an oracle reject.
+
+The predicates read one line at a time and are a tripwire, not a parser; the waiver bullet covers what they
+mistake.
 
 ### 3. Generation validates before it writes
 

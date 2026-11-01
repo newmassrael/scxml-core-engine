@@ -99,6 +99,27 @@ if (( ident_push_failed )); then
     exit 1
 fi
 
+# A landing that changes what a downstream consumer compiles against says how to
+# follow it (docs/adr/0078 §2). Judged over the push, since the guide section
+# belongs to a landing's `feat` commit and its goldens to the `chore` after it.
+# shellcheck source=tools/git-hooks/consumer-guide-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/consumer-guide-gate.sh"
+guide_push_failed=0
+while read -r _gref glocal _grref gremote; do
+    [[ -z "${glocal:-}" ]] && continue
+    [[ "$glocal" =~ ^0+$ ]] && continue   # a deletion publishes nothing
+    if [[ -z "${gremote:-}" || "$gremote" =~ ^0+$ ]]; then
+        gbase="$(git merge-base "$glocal" origin/HEAD 2>/dev/null || true)"
+        [[ -z "$gbase" ]] && continue      # no base to compare a new ref with
+    else
+        gbase="$gremote"
+    fi
+    consumer_guide_gate_range "${gbase}..${glocal}" || guide_push_failed=1
+done <<<"$PUSHED_REFS"
+if (( guide_push_failed )); then
+    exit 1
+fi
+
 RUNNER="$REPO_ROOT/scripts/gate"
 [[ -x "$RUNNER" ]] || {
     printf '\nERROR pre-push: gate runner missing at %s\n' "$RUNNER" >&2

@@ -1,0 +1,47 @@
+# Mutation cases for "a consumer-visible change carries its migration section".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_consumer_visible_change_carries_its_migration_section.cases`.
+#
+# `pre-push` refuses a push whose commits remove or rewrite a public declaration
+# of an existing golden or a codec runtime, or change the expected error of an
+# oracle reject, unless the push also changes the migration guide or carries a
+# written waiver (docs/adr/0078 §2). Each case takes one piece of that away; the
+# sandbox suite refuses each.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_consumer_visible_change_carries_its_migration_section
+mutation_targets tools/git-hooks/consumer-guide-gate.sh tools/git-hooks/consumer_visible_change.py
+mutation_oracles sce-build/tests/a_consumer_visible_change_carries_its_migration_section.rs
+
+mutation_case "a range with a visible change passes without its section" <<'PY'
+edit("tools/git-hooks/consumer-guide-gate.sh",
+     r'''    [[ -z "$visible" ]] && return 0''',
+     r'''    return 0''')
+PY
+
+mutation_case "any range passes as if it changed the guide" <<'PY'
+edit("tools/git-hooks/consumer-guide-gate.sh",
+     r'''    if [[ -n "$(git diff --name-only "$range" -- "$CONSUMER_GUIDE")" ]]; then''',
+     r'''    if true; then''')
+PY
+
+mutation_case "an unwritten waiver passes" <<'PY'
+edit("tools/git-hooks/consumer-guide-gate.sh",
+     r"""CONSUMER_GUIDE_WAIVER='^- No consumer-visible change: .+'""",
+     r"""CONSUMER_GUIDE_WAIVER='.*'""")
+PY
+
+mutation_case "a fixture's golden removed whole counts as a change a consumer had" <<'PY'
+edit("tools/git-hooks/consumer_visible_change.py",
+     r'''        return status == "M"''',
+     r'''        return True''')
+PY
+
+mutation_case "a removed oracle error is not counted" <<'PY'
+edit("tools/git-hooks/consumer_visible_change.py",
+     r'''            hit = any('"error"' in l for l in removed)''',
+     r'''            hit = False''')
+PY
