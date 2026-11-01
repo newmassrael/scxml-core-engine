@@ -563,7 +563,8 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
 - **The kind is generated for Rust.** `sce-codegen` writes `<name>.rs` for a `broadcast-log` document from
   `tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2`, through `render_broadcast_log_rust`, and the codegen matrix
   answers `Emit` for Rust alone: `awaits_runtime` is now per language, so every other language still answers
-  `RuntimeMissing` and is refused by `refuse_broadcast_log` with `broadcast-log/runtime-missing`, after the progress ceiling
+  `RuntimeMissing` and is refused by `refuse_broadcast_log` with `broadcast-log/runtime-missing` (that function is gone: the
+  last language it refused, Swift, now holds the log in part, see "What the Swift row landed"), after the progress ceiling
   it judges first (`judge_broadcast_log_progress_on_backend`, shared with Rust's arm; wait-free is Rust's ceiling, so it
   asks Rust nothing today). The module refuses a target without 64-bit and 8-bit atomics with a `compile_error!` under the
   cfg that gates the runtime module (a test reads the cfg out of `forge-runtime/src/lib.rs` and holds the two equal); states
@@ -1267,7 +1268,7 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   (a test pins the lines). The C++ words are a `std::size_t` count, so the renderer has no 32-bit refusal to count the context
   words into, unlike the C11 one. C++ is in `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses it for a flag
   input or a tag; with it, only Swift still refuses an element of this kind (`broadcast-log/runtime-missing`), and Rust a CBOR
-  text or byte-string entry.
+  text or byte-string entry (both are held since: see "What the Swift row landed" and "What the Rust CBOR owned form landed").
 - **The typed API.** A struct `<Log>Flags` holds the flags as `bool` members in the codec's order. `publish(publisher, element,
   flags, tag)` takes `const <Log>Flags &flags` and `std::uint8_t tag` where the element has them, passes each flag to
   `element.encode(sink, ...)` as the `std::uint8_t` 1 or 0 (through one `flag_input(bool)` of the log's namespace, so the value
