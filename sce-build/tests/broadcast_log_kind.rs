@@ -6549,14 +6549,14 @@ fn swift_has_the_64_bit_row_only_and_refuses_a_target_that_selects_the_narrow_on
         }
     }
     // The triple is named in the refusal when the deploy gave one.
-    let located = compile_single_as(
+    let Err(located) = compile_single_as(
         Language::Swift,
         "EventRing.swift",
         &event_ring(),
         &target_options(None, None, Some("thumbv7em-none-eabihf"), None),
-    )
-    .err()
-    .expect("a 32-bit target is refused");
+    ) else {
+        panic!("a 32-bit target is refused");
+    };
     assert!(
         unsupported_detail(located).contains("`thumbv7em-none-eabihf`"),
         "the target is named"
