@@ -269,7 +269,7 @@ where
 // one module path for the cursor, the sink and the storage policy alike.
 pub use crate::storage::*;
 // The list of a generated view, spelled from the same path as the rest.
-pub use crate::view::{ListIter, ListView, ListWalk};
+pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // A list of at most its bound (docs/adr/0065 §6 R2), spelled from the same path.
 pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Entries};
 

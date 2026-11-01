@@ -100,16 +100,22 @@ impl<'a, W: ListWalk<K>, const K: usize> Entries for ListView<'a, W, K> {
     }
 }
 
-/// A list `L` of at most `MAX` entries.
+/// A list `L` of at most `MAX` entries and at least `MIN`.
 ///
 /// The only ways to hold one are [`Self::new`], which counts the entries, and the
-/// conversions whose source cannot hold more than `MAX`, which the build checks.
-/// It reads as the list it holds ([`Deref`]); it has no mutable access, so its
-/// entries cannot grow past the bound once it is made.
+/// conversions whose source cannot hold more than `MAX` nor fewer than `MIN`,
+/// which the build checks. It reads as the list it holds ([`Deref`]); it has no
+/// mutable access, so its entries cannot leave the bounds once it is made.
+///
+/// `MIN` is none for every list but a chain closed by an entry flag, which is one
+/// entry or more (docs/adr/0065 §6 R7), so a list type that does not name it
+/// reads as before.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Bounded<L, const MAX: usize>(L);
+pub struct Bounded<L, const MAX: usize, const MIN: usize = 0>(L);
 
-impl<L: core::fmt::Debug, const MAX: usize> core::fmt::Debug for Bounded<L, MAX> {
+impl<L: core::fmt::Debug, const MAX: usize, const MIN: usize> core::fmt::Debug
+    for Bounded<L, MAX, MIN>
+{
     /// The list as it prints: the bound is a fact about it, not more of it, so a
     /// value holding a `Bounded` prints as one holding the list does.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -117,10 +123,11 @@ impl<L: core::fmt::Debug, const MAX: usize> core::fmt::Debug for Bounded<L, MAX>
     }
 }
 
-impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
-    /// `list` as a list of at most `MAX` entries, or `None` when it holds more.
+impl<L: Entries, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
+    /// `list` as a list of at most `MAX` entries and at least `MIN`, or `None`
+    /// when it holds more or fewer.
     pub fn new(list: L) -> Option<Self> {
-        if list.entry_count() <= MAX {
+        if (MIN..=MAX).contains(&list.entry_count()) {
             Some(Self(list))
         } else {
             None
@@ -128,14 +135,14 @@ impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
     }
 
     /// The entries in order, with their count.
-    pub fn iter(&self) -> BoundedIter<L::Iter<'_>, MAX> {
+    pub fn iter(&self) -> BoundedIter<L::Iter<'_>, MAX, MIN> {
         BoundedIter {
             iter: self.0.entries(),
             remaining: self.0.entry_count(),
         }
     }
 
-    /// How many entries the list holds, at most `MAX`.
+    /// How many entries the list holds, at most `MAX` and at least `MIN`.
     pub fn len(&self) -> usize {
         self.0.entry_count()
     }
@@ -146,7 +153,7 @@ impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
     }
 }
 
-impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
+impl<L: Entries, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     /// The entries of a storage profile's owned list, with their count.
     ///
     /// [`Self::iter`] over a profile's list `S::List<T, N>` names its entries as
@@ -154,7 +161,7 @@ impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
     /// as `&T`; this reads them through [`crate::storage::SceList::as_slice`]. The
     /// count is still the one [`Self::new`] checked, so a list whose slice and
     /// count disagree is caught by the walk and never written past its bound.
-    pub fn list_iter<T>(&self) -> BoundedIter<core::slice::Iter<'_, T>, MAX>
+    pub fn list_iter<T>(&self) -> BoundedIter<core::slice::Iter<'_, T>, MAX, MIN>
     where
         L: crate::storage::SceList<T>,
     {
@@ -165,7 +172,7 @@ impl<L: Entries, const MAX: usize> Bounded<L, MAX> {
     }
 }
 
-impl<L, const MAX: usize> Bounded<L, MAX> {
+impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     /// The list. Named so that it leaves the list's own `get(index)` reachable
     /// through [`Deref`].
     pub fn inner(&self) -> &L {
@@ -178,7 +185,7 @@ impl<L, const MAX: usize> Bounded<L, MAX> {
     }
 }
 
-impl<L, const MAX: usize> Deref for Bounded<L, MAX> {
+impl<L, const MAX: usize, const MIN: usize> Deref for Bounded<L, MAX, MIN> {
     type Target = L;
 
     fn deref(&self) -> &L {
@@ -187,7 +194,7 @@ impl<L, const MAX: usize> Deref for Bounded<L, MAX> {
 }
 
 impl<L: Entries + Default, const MAX: usize> Default for Bounded<L, MAX> {
-    /// The empty list, which every bound admits.
+    /// The empty list, which a list that may hold none admits.
     fn default() -> Self {
         let empty = L::default();
         assert!(empty.entry_count() == 0, "a list's default holds entries");
@@ -195,14 +202,86 @@ impl<L: Entries + Default, const MAX: usize> Default for Bounded<L, MAX> {
     }
 }
 
-impl<'a, T, const N: usize, const MAX: usize> From<&'a [T; N]> for Bounded<&'a [T], MAX> {
-    /// An array of `N` entries, which the build admits only where `N` is at most
-    /// `MAX`: a list of fixed length costs no check.
+impl<T: Default, const N: usize, const MAX: usize> Default
+    for Bounded<heapless::Vec<T, N>, MAX, 1>
+{
+    /// One default entry: the fewest a list of one entry or more holds, so the
+    /// default value of a codec that holds it is a frame its decode reads back.
+    fn default() -> Self {
+        const {
+            assert!(
+                N >= 1 && N <= MAX,
+                "the list cannot hold one entry inside its bound"
+            )
+        };
+        let mut one = heapless::Vec::new();
+        if one.push(T::default()).is_err() {
+            unreachable!("a list whose capacity is one or more holds one entry");
+        }
+        Self(one)
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize, const MAX: usize> Default
+    for Bounded<crate::view::NonEmptyListView<'a, W, K>, MAX, 1>
+where
+    W::Entry<'a>: Default + Clone,
+{
+    /// One default entry, as the list's own default holds.
+    fn default() -> Self {
+        const { assert!(MAX >= 1, "the list cannot hold one entry inside its bound") };
+        Self(crate::view::NonEmptyListView::default())
+    }
+}
+
+impl<T: Default, const N: usize, const MAX: usize, const MIN: usize>
+    Bounded<heapless::Vec<T, N>, MAX, MIN>
+{
+    /// Fill the list in place: `fill` is handed it cleared, and the count it
+    /// leaves is checked against the bounds, fewer than `MIN` being a frame cut
+    /// short. A decode builds a list here rather than in a local it then moves,
+    /// since a `heapless::Vec` moves by copying its whole capacity.
+    ///
+    /// On `Err` the list holds `MIN` default entries, so it is still inside its
+    /// bounds, whatever `fill` left.
+    pub fn refill(
+        &mut self,
+        fill: impl FnOnce(&mut heapless::Vec<T, N>) -> Result<(), crate::codec::CodecError>,
+    ) -> Result<(), crate::codec::CodecError> {
+        self.0.clear();
+        let filled = fill(&mut self.0).and_then(|()| match self.0.len() {
+            n if n < MIN => Err(crate::codec::CodecError::NeedMoreBytes),
+            n if n > MAX => Err(crate::codec::CodecError::TooManyElements),
+            _ => Ok(()),
+        });
+        if filled.is_err() {
+            self.0.clear();
+            for _ in 0..MIN {
+                if self.0.push(T::default()).is_err() {
+                    unreachable!("a list's capacity holds its fewest entries");
+                }
+            }
+        }
+        filled
+    }
+}
+
+impl<'a, T, const N: usize, const MAX: usize, const MIN: usize> From<&'a [T; N]>
+    for Bounded<&'a [T], MAX, MIN>
+{
+    /// An array of `N` entries, which the build admits only where `N` lies
+    /// between `MIN` and `MAX`: a list of fixed length costs no check.
     fn from(entries: &'a [T; N]) -> Self {
         const {
             assert!(
                 N <= MAX,
                 "the array holds more entries than the list's bound"
+            )
+        };
+        const {
+            assert!(
+                N >= MIN,
+                "the array holds fewer entries than the list's bound"
             )
         };
         Self(entries)
@@ -220,8 +299,9 @@ impl<T, const N: usize, const MAX: usize> From<heapless::Vec<T, N>>
     }
 }
 
-/// The entries of a list of at most `MAX`, in order, with how many there are: what
-/// a codec's source interface returns for a list (docs/adr/0065 §6 R2).
+/// The entries of a list of at most `MAX` and at least `MIN`, in order, with how
+/// many there are: what a codec's source interface returns for a list
+/// (docs/adr/0065 §6 R2, R7).
 ///
 /// A codec reads [`ExactSizeIterator::len`] before the first entry, for the count
 /// it writes or the continuation bit of each entry, and then walks the entries
@@ -229,7 +309,7 @@ impl<T, const N: usize, const MAX: usize> From<heapless::Vec<T, N>>
 /// has broken what an accessor is (a read of a value, docs/adr/0061 §3), and the
 /// walk panics rather than write a frame whose count disagrees with its entries.
 #[derive(Debug, Clone)]
-pub struct BoundedIter<I, const MAX: usize> {
+pub struct BoundedIter<I, const MAX: usize, const MIN: usize = 0> {
     iter: I,
     remaining: usize,
 }
@@ -257,23 +337,27 @@ impl<'s, T, const N: usize, const MAX: usize> From<&'s heapless::Vec<T, N>>
 /// The owned list's own capacity may still refuse an entry, on a profile whose
 /// capacity is below the decoded list's, which is
 /// [`crate::storage::try_collect_list`]'s error.
-pub fn try_collect_bounded<L, T, U, const N: usize, const MAX: usize>(
-    src: heapless::Vec<T, N>,
+///
+/// The decoded list is a `heapless::Vec` where it may hold none, or a `Bounded`
+/// of one where it holds at least `MIN`; the projection keeps its count, so the
+/// owned list keeps both bounds.
+pub fn try_collect_bounded<L, T, U, const N: usize, const MAX: usize, const MIN: usize>(
+    src: impl Into<Bounded<heapless::Vec<T, N>, MAX, MIN>>,
     f: impl FnMut(T) -> Result<U, crate::codec::CodecError>,
-) -> Result<Bounded<L, MAX>, crate::codec::CodecError>
+) -> Result<Bounded<L, MAX, MIN>, crate::codec::CodecError>
 where
     L: crate::storage::SceList<U>,
 {
     const { assert!(N <= MAX, "the list's capacity is past the list's bound") };
-    crate::storage::try_collect_list(src, f).map(Bounded)
+    crate::storage::try_collect_list(src.into().into_inner(), f).map(Bounded)
 }
 
-impl<I: Iterator + Clone, const MAX: usize> BoundedIter<I, MAX> {
-    /// `entries` as the entries of a list of at most `MAX`, counted once from a
-    /// clone, or `None` when there are more.
+impl<I: Iterator + Clone, const MAX: usize, const MIN: usize> BoundedIter<I, MAX, MIN> {
+    /// `entries` as the entries of a list of at most `MAX` and at least `MIN`,
+    /// counted once from a clone, or `None` when there are more or fewer.
     pub fn new(entries: I) -> Option<Self> {
         let count = entries.clone().count();
-        if count <= MAX {
+        if (MIN..=MAX).contains(&count) {
             Some(Self {
                 iter: entries,
                 remaining: count,
@@ -284,13 +368,16 @@ impl<I: Iterator + Clone, const MAX: usize> BoundedIter<I, MAX> {
     }
 }
 
-impl<I: Iterator, const MAX: usize> BoundedIter<I, MAX> {
-    /// Each entry through `f`: as many entries as before, so the same bound.
+impl<I: Iterator, const MAX: usize, const MIN: usize> BoundedIter<I, MAX, MIN> {
+    /// Each entry through `f`: as many entries as before, so the same bounds.
     ///
     /// It stands in for [`Iterator::map`], which would drop the count, so that a
     /// source keeping its entries in its own type presents them as the codec's
     /// with the call it would write anyway: `self.list.iter().map(Entry)`.
-    pub fn map<B, F: FnMut(I::Item) -> B>(self, f: F) -> BoundedIter<core::iter::Map<I, F>, MAX> {
+    pub fn map<B, F: FnMut(I::Item) -> B>(
+        self,
+        f: F,
+    ) -> BoundedIter<core::iter::Map<I, F>, MAX, MIN> {
         BoundedIter {
             iter: self.iter.map(f),
             remaining: self.remaining,
@@ -298,7 +385,7 @@ impl<I: Iterator, const MAX: usize> BoundedIter<I, MAX> {
     }
 }
 
-impl<I: Iterator, const MAX: usize> Iterator for BoundedIter<I, MAX> {
+impl<I: Iterator, const MAX: usize, const MIN: usize> Iterator for BoundedIter<I, MAX, MIN> {
     type Item = I::Item;
 
     fn next(&mut self) -> Option<I::Item> {
@@ -320,7 +407,10 @@ impl<I: Iterator, const MAX: usize> Iterator for BoundedIter<I, MAX> {
     }
 }
 
-impl<I: Iterator, const MAX: usize> ExactSizeIterator for BoundedIter<I, MAX> {}
+impl<I: Iterator, const MAX: usize, const MIN: usize> ExactSizeIterator
+    for BoundedIter<I, MAX, MIN>
+{
+}
 
 /// The one panic of a list walk, shared by every instance so that each costs a
 /// call and not a message of its own.
@@ -373,6 +463,54 @@ mod tests {
         list.push(5).unwrap();
         let bounded: Bounded<heapless::Vec<u8, 4>, 4> = list.into();
         assert_eq!(bounded.iter().copied().next(), Some(5));
+    }
+
+    #[test]
+    fn a_list_of_one_entry_or_more_holds_none_fewer() {
+        let empty: &[u8] = &[];
+        assert!(Bounded::<&[u8], 3, 1>::new(empty).is_none());
+        assert_eq!(
+            Bounded::<&[u8], 3, 1>::new(&[9u8][..]).map(|l| l.len()),
+            Some(1)
+        );
+        let array: Bounded<&[u8], 3, 1> = (&[1u8, 2]).into();
+        assert_eq!(array.iter().len(), 2);
+        assert!(BoundedIter::<_, 3, 1>::new(empty.iter()).is_none());
+        assert!(BoundedIter::<_, 3, 1>::new([4u8].iter()).is_some());
+    }
+
+    #[test]
+    fn the_default_of_a_list_of_one_entry_or_more_is_one_default_entry() {
+        let one = Bounded::<heapless::Vec<u8, 4>, 4, 1>::default();
+        assert_eq!(one.as_slice(), &[0u8][..]);
+    }
+
+    #[test]
+    fn a_refill_keeps_the_list_inside_its_bounds() {
+        let mut list = Bounded::<heapless::Vec<u8, 4>, 4, 1>::default();
+        list.refill(|v| {
+            v.push(7)
+                .and_then(|()| v.push(8))
+                .map_err(|_| unreachable!("a list of four holds two"))
+        })
+        .expect("two entries lie inside the bounds");
+        assert_eq!(list.as_slice(), &[7u8, 8][..]);
+        // A fill that leaves none is a frame cut short, and the list holds its
+        // fewest default entries again.
+        assert_eq!(
+            list.refill(|_| Ok(())),
+            Err(crate::codec::CodecError::NeedMoreBytes)
+        );
+        assert_eq!(list.as_slice(), &[0u8][..]);
+        // A fill that fails leaves the list inside its bounds too.
+        assert_eq!(
+            list.refill(|v| {
+                v.clear();
+                Err(crate::codec::CodecError::InvalidUtf8)
+            }),
+            Err(crate::codec::CodecError::InvalidUtf8)
+        );
+        assert_eq!(list.len(), 1);
     }
 
     /// A source whose entries are not the same on each walk: one entry on the

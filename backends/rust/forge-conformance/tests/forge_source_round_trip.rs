@@ -811,8 +811,26 @@ mod unknown_tags {
 // before the chain's first entry is short, gated or not (docs/adr/0065 §6 R7).
 mod chain_ends {
     use super::codecs::codec_chain_has_marker::CodecChainHasMarker;
+    use super::codecs::codec_zenoh_ext_entry::CodecZenohExtEntryParts;
     use super::codecs::codec_zenoh_ext_envelope::CodecZenohExtEnvelope;
-    use sce_forge_runtime::codec::{CodecError, SceCursor};
+    use sce_forge_runtime::codec::{Bounded, CodecError, SceCursor, VecSink};
+
+    // The list of the chain is one entry or more where the value is made, so no
+    // source presents it empty, and the default value holds one default entry:
+    // it encodes to a frame its decode reads back.
+    #[test]
+    fn a_chain_closed_by_an_entry_flag_is_presented_with_an_entry() {
+        let none: &[CodecZenohExtEntryParts<'_>] = &[];
+        assert!(Bounded::<_, 8, 1>::new(none).is_none());
+        let value = CodecZenohExtEnvelope::default();
+        assert_eq!(value.extensions.len(), 1);
+        let mut bytes = Vec::new();
+        let Ok(()) = CodecZenohExtEnvelope::encode_source(&value, &mut VecSink::new(&mut bytes));
+        // The header, and one entry: a unit extension of id 0, the last.
+        assert_eq!(bytes, [0x00, 0x00]);
+        let decoded = CodecZenohExtEnvelope::decode(&mut SceCursor::new(&bytes)).expect("a frame");
+        assert_eq!(decoded.extensions.len(), 1);
+    }
 
     #[test]
     fn a_frame_that_ends_before_a_chains_first_entry_is_short() {

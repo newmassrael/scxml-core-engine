@@ -349,10 +349,11 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     chain that ends with the frame (`terminate-on` not `entry-flag`), whose loop the entry-flag chain shares in
     every backend's generator. The decode is not the source interface, and every backend decodes the same frames,
     so the six backends change it in one step.
-  - The list of an ungated chain is bounded below by one, checked by its constructor as `Bounded` checks its
-    maximum.
-  - A chain gated by a flag that nothing else reads is held as a list in which no entry is the absent chain, in
-    place of the `Option`, and the flag is derived from whether it holds an entry.
+  - The list of the chain is bounded below by one, checked by its constructor as `Bounded` checks its maximum
+    (`Bounded<L, MAX, MIN>`, `MIN` defaulting to 0 so that every other list reads as before).
+  - A gated chain stays an `Option` of that list. An `Option` of a list of one entry or more is the same type as a
+    list in which no entry is the absent chain, and it is that under every gate R4 holds (a flag, an input, a
+    group, a disjunction), where the plain list would hold only under a flag that nothing else reads.
   - A source that presented a present empty chain wrote no frame its decode reproduces, so law 4 does not keep its
     bytes.
 
@@ -361,6 +362,20 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   scan, and 117 goldens lost the stop. It narrows the decode by the frames above and refuses them as short, so a
   value the encode accepts with an empty chain is now refused where it is read, not read as another value. The
   encode's types follow in a step of their own.
+
+  *The encode landed 2026-11-01, in Rust.* `Bounded` and `BoundedIter` take `MIN` after `MAX`, defaulting to 0, and
+  their constructors check it; an array converts where its length lies in the bounds, and a `heapless::Vec`, which
+  may be empty, converts only where `MIN` is 0. A chain closed by an entry flag is `Bounded<_, MAX, 1>` in every form
+  and in the source trait (`codec_totality::list_least`):
+  - The builder holds `Bounded<heapless::Vec<_, N>, N, 1>`, whose default is one default entry, so a codec's default
+    value is a frame its decode reads back; the envelope's default was a header its own decode reads as cut short.
+    The decode and the projection from the owned form fill it where it sits through `Bounded::refill`, which checks
+    the count it leaves and restores the fewest default entries on an error, so the list is never outside its bounds.
+  - A view of a chain that is always present holds `NonEmptyListView`, the first entry decoded and the list after
+    it, since a view needs a default and a list over bytes has none. A gated chain's view stays an `Option` of a
+    `ListView`, whose default is the absent chain, so no view of a Zenoh message grew.
+  The other backends write the list their value holds, past its bound or empty, as their encode's contract states
+  for every list; they take both bounds when they take the source interface (ADR 0058 §6).
 
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.

@@ -39,9 +39,21 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 
 /// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
 /// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
-/// takes, held as a list of at most `bound` entries (docs/adr/0065 §6 R2).
-pub(super) fn list_type(walk: &str, inputs: usize, bound: u64, gated: bool) -> String {
-    let list = format!("Bounded<ListView<'a, {walk}, {inputs}>, {bound}>");
+/// takes, held as a list inside the bounds of list field `field`
+/// (`codec_totality::list_bound_args`; docs/adr/0065 §6 R2, R7).
+///
+/// A list of one entry or more that is always present is held as its first
+/// entry and the list after it (`NonEmptyListView`), since a view needs a
+/// default and a `ListView` of one entry or more has none; a gated one is an
+/// `Option` of a `ListView`, whose default is the absent list.
+pub(super) fn list_type(walk: &str, inputs: usize, field: &CodecField) -> String {
+    let bounds = crate::forge::codec_totality::list_bound_args(field);
+    let gated = field.present_if.is_some();
+    let list = if !gated && crate::forge::codec_totality::list_least(field) > 0 {
+        format!("Bounded<{RUNTIME_CODEC}::NonEmptyListView<'a, {walk}, {inputs}>, {bounds}>")
+    } else {
+        format!("Bounded<ListView<'a, {walk}, {inputs}>, {bounds}>")
+    };
     if gated {
         format!("Option<{list}>")
     } else {
@@ -125,8 +137,9 @@ impl ViewList<'_> {
     ///
     /// The list is held as a `Bounded` (docs/adr/0065 §6 R2), made by its one
     /// constructor. The scan has refused an entry past the bound already, with
-    /// the error the eager decode gives, so the constructor's refusal is the same
-    /// error and is never reached.
+    /// the error the eager decode gives, and a chain closed by an entry flag
+    /// with no entry as short (R7), so the constructor's refusal is never
+    /// reached.
     fn build(&self) -> String {
         let args = self
             .inputs
@@ -139,9 +152,19 @@ impl ViewList<'_> {
         } else {
             "TooManyElements"
         };
-        format!(
-            "Bounded::new(ListView::new(_rest, _count, [{args}])).ok_or(CodecError::{refusal})?"
-        )
+        let list = format!("ListView::new(_rest, _count, [{args}])");
+        // An always-present list of one entry or more is its first entry and
+        // the list after it (`list_type`); the scan has read that first entry.
+        let list = if self.field.present_if.is_none()
+            && crate::forge::codec_totality::list_least(self.field) > 0
+        {
+            format!(
+                "{RUNTIME_CODEC}::NonEmptyListView::from_scan({list}).ok_or(CodecError::NeedMoreBytes)?"
+            )
+        } else {
+            list
+        };
+        format!("Bounded::new({list}).ok_or(CodecError::{refusal})?")
     }
 
     /// The field's value, from `build`, as the field holds it.
@@ -387,21 +410,47 @@ pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
 /// entry is moved into it whole. The scan bounded the list by the same `N` the
 /// destination holds, so the push cannot fail; the arm is there because `push`
 /// returns a `Result`.
-pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
+///
+/// A list of at least `least` entries, one or more (docs/adr/0065 §6 R7), is a
+/// `Bounded` in the builder, filled where it sits through its `refill`, which
+/// checks the count the walk leaves.
+pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool, least: u64) -> String {
     let fill = |list: &str, indent: &str, walk: &str| fill_list(list, indent, walk, entry);
-    if gated {
-        let body = fill("_vec", "                ", "_l");
-        format!(
-            "match &self.{id} {{\n            \
-                 Some(_l) => {{\n                \
-                     let _vec = _out.{id}.insert(HeaplessVec::new());\n                \
+    match (gated, least) {
+        (true, 0) => {
+            let body = fill("_vec", "                ", "_l");
+            format!(
+                "match &self.{id} {{\n            \
+                     Some(_l) => {{\n                \
+                         let _vec = _out.{id}.insert(HeaplessVec::new());\n                \
+                         {body}\n            \
+                     }}\n            \
+                     None => _out.{id} = None,\n        \
+                 }}"
+            )
+        }
+        (false, 0) => fill(&format!("_out.{id}"), "        ", &format!("self.{id}")),
+        (true, _) => {
+            let body = fill("_vec", "                    ", "_l");
+            format!(
+                "match &self.{id} {{\n            \
+                     Some(_l) => _out.{id}.insert(Default::default()).refill(|_vec| {{\n                    \
+                         {body}\n                    \
+                         Ok(())\n                \
+                     }})?,\n            \
+                     None => _out.{id} = None,\n        \
+                 }}"
+            )
+        }
+        (false, _) => {
+            let body = fill("_vec", "            ", &format!("self.{id}"));
+            format!(
+                "_out.{id}.refill(|_vec| {{\n            \
                      {body}\n            \
-                 }}\n            \
-                 None => _out.{id} = None,\n        \
-             }}"
-        )
-    } else {
-        fill(&format!("_out.{id}"), "        ", &format!("self.{id}"))
+                     Ok(())\n        \
+                 }})?;"
+            )
+        }
     }
 }
 
@@ -430,7 +479,16 @@ pub(super) fn into_builder_member(
     entry: &str,
 ) -> String {
     if field.is_repeat() || field.is_tlv_chain() {
-        fill_list(dest, "                ", src, entry)
+        match crate::forge::codec_totality::list_least(field) {
+            0 => fill_list(dest, "                ", src, entry),
+            _ => format!(
+                "{dest}.refill(|_vec| {{\n                    \
+                     {}\n                    \
+                     Ok(())\n                \
+                 }})?;",
+                fill_list("_vec", "                    ", src, entry)
+            ),
+        }
     } else if field.is_embed() {
         format!("{src}.into_builder(&mut {dest})?;")
     } else {

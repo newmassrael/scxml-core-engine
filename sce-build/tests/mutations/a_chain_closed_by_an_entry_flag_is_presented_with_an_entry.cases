@@ -1,0 +1,32 @@
+# Mutation cases for "a chain closed by an entry flag is presented with an
+# entry".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_closed_by_an_entry_flag_is_presented_with_an_entry.cases`.
+#
+# The list of a chain closed by an entry flag is one entry or more in every
+# form and in the source trait, so no source presents it empty and the default
+# value holds one default entry (docs/adr/0065 §6 R7). The conformance crate
+# generates its codecs from the documents when it builds, so each case reaches
+# the codecs the `chain_ends` test makes: a constructor that admits an empty
+# list, and a chain whose list has no lower bound, whose default value is then
+# a header the decode reads as cut short.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets backends/rust/forge-runtime/src/bounded.rs sce-build/src/forge/codec_totality.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "a list's constructor admits fewer entries than its bound" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''        if (MIN..=MAX).contains(&list.entry_count()) {''',
+     r'''        if list.entry_count() <= MAX {''')
+PY
+
+mutation_case "a chain closed by an entry flag has no fewest entries" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        } => 1,''',
+     r'''        } => 0,''')
+PY

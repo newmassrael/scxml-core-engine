@@ -305,6 +305,29 @@ pub fn list_bound(field: &CodecField) -> u64 {
     }
 }
 
+/// The fewest entries the list `field` holds where it is present: one for a
+/// chain closed by an entry flag, whose every entry but the last has the flag
+/// set (docs/adr/0065 §6 R7), and none for any other list.
+pub fn list_least(field: &CodecField) -> u64 {
+    match &field.bit_size {
+        BitSize::TlvChain {
+            terminate_on: crate::forge::model::TlvTerminateStrategy::EntryFlag { .. },
+            ..
+        } => 1,
+        _ => 0,
+    }
+}
+
+/// The bounds of the list `field` as the const arguments of a runtime list
+/// type after the list: the most entries, and the fewest where that is not
+/// none, which the types default to.
+pub fn list_bound_args(field: &CodecField) -> String {
+    match list_least(field) {
+        0 => list_bound(field).to_string(),
+        least => format!("{}, {least}", list_bound(field)),
+    }
+}
+
 /// The width in bits of an unsigned integer type, or `None` for another type.
 fn unsigned_bits(ty: &SceType) -> Option<u32> {
     Some(match ty {

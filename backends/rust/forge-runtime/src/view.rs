@@ -152,6 +152,133 @@ impl<'a, W: ListWalk<K>, const K: usize> IntoIterator for &ListView<'a, W, K> {
     }
 }
 
+/// A list of one entry or more as its first entry and the list after it: the
+/// list of a chain closed by an entry flag, whose every entry but the last has
+/// the flag set (docs/adr/0065 §6 R7), held by a view that is always present.
+///
+/// A [`ListView`] cannot be one entry or more by default, since a default view
+/// has no bytes to read an entry from; a view's default is the destination its
+/// decode fills, and a view of a codec with such a list needs one. This one's
+/// default is one default entry and nothing after it, the fewest the list holds,
+/// as the builder's list of one entry or more defaults to one default entry. A
+/// gated chain needs no default list (its absence is the `Option`'s), so it
+/// stays a [`ListView`] and its view holds no entry.
+pub struct NonEmptyListView<'a, W: ListWalk<K>, const K: usize> {
+    first: W::Entry<'a>,
+    rest: ListView<'a, W, K>,
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> NonEmptyListView<'a, W, K> {
+    /// The list `list` as its first entry and the list after it, the values
+    /// the chain carries advanced past the first; `None` when it holds none.
+    /// The generated scan is the only caller, after it has decoded the list.
+    pub fn from_scan(list: ListView<'a, W, K>) -> Option<Self> {
+        if list.count == 0 {
+            return None;
+        }
+        let mut cursor = SceCursor::new(list.span);
+        let mut args = list.args;
+        let first = W::decode(&mut cursor, &args).ok()?;
+        W::advance(&first, &mut args);
+        let rest_span = cursor.peek_slice(cursor.remaining()).ok()?;
+        Some(Self {
+            first,
+            rest: ListView::new(rest_span, list.count - 1, args),
+        })
+    }
+
+    /// The first entry.
+    pub fn first(&self) -> &W::Entry<'a> {
+        &self.first
+    }
+
+    /// How many entries the list holds, one or more.
+    pub const fn len(&self) -> usize {
+        1 + self.rest.len()
+    }
+
+    /// Whether the list holds no entry, which it never does.
+    pub const fn is_empty(&self) -> bool {
+        false
+    }
+
+    /// The entry at `index`, found by walking from the start.
+    pub fn get(&self, index: usize) -> Option<W::Entry<'a>>
+    where
+        W::Entry<'a>: Clone,
+    {
+        match index {
+            0 => Some(self.first.clone()),
+            _ => self.rest.get(index - 1),
+        }
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> Default for NonEmptyListView<'a, W, K>
+where
+    W::Entry<'a>: Default,
+{
+    /// One default entry and nothing after it.
+    fn default() -> Self {
+        Self {
+            first: Default::default(),
+            rest: ListView::default(),
+        }
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> Clone for NonEmptyListView<'a, W, K>
+where
+    W::Entry<'a>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            first: self.first.clone(),
+            rest: self.rest,
+        }
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> fmt::Debug for NonEmptyListView<'a, W, K>
+where
+    W::Entry<'a>: fmt::Debug + Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entry(&self.first)
+            .entries(self.rest.iter())
+            .finish()
+    }
+}
+
+/// Two lists are equal when they hold equal entries in the same order.
+impl<'a, W: ListWalk<K>, const K: usize> PartialEq for NonEmptyListView<'a, W, K>
+where
+    W::Entry<'a>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.first == other.first && self.rest == other.rest
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> crate::bounded::Entries for NonEmptyListView<'a, W, K>
+where
+    W::Entry<'a>: Clone,
+{
+    type Iter<'s>
+        = core::iter::Chain<core::iter::Once<W::Entry<'a>>, ListIter<'a, W, K>>
+    where
+        Self: 's;
+
+    fn entry_count(&self) -> usize {
+        self.len()
+    }
+
+    fn entries(&self) -> Self::Iter<'_> {
+        core::iter::once(self.first.clone()).chain(self.rest.iter())
+    }
+}
+
 /// The walk of a [`ListView`].
 pub struct ListIter<'a, W: ListWalk<K>, const K: usize> {
     cursor: SceCursor<'a>,
@@ -200,7 +327,7 @@ mod tests {
 
     // An entry is one byte, plus one more when the byte is odd; the previous
     // entry's evenness is the one value a walk carries.
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Clone, PartialEq)]
     struct Entry {
         head: u8,
         extra: Option<u8>,
@@ -355,6 +482,19 @@ mod tests {
             4,
             "a full walk decodes each entry once"
         );
+    }
+
+    #[test]
+    fn a_list_of_one_entry_or_more_is_its_first_entry_and_the_walk_after_it() {
+        let whole = list();
+        let split = NonEmptyListView::from_scan(whole).expect("three entries");
+        assert_eq!(split.len(), 3);
+        assert_eq!(split.first(), &whole.get(0).expect("a first entry"));
+        // The entry after the first is read with the value the first carried.
+        assert_eq!(split.get(1), whole.get(1));
+        assert_eq!(split.get(2), whole.get(2));
+        assert_eq!(split.get(3), None);
+        assert!(NonEmptyListView::from_scan(ListView::<'static, Walk, 1>::default()).is_none());
     }
 
     #[test]

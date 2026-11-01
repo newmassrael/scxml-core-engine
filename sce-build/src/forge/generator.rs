@@ -7121,9 +7121,11 @@ fn rust_owned_field_keys(
         // The list's bound, which the profile's container holds as its declared
         // capacity and a `Bounded` around it holds as a fact (docs/adr/0065 §6
         // R2): a growable profile's container is not bounded by its capacity.
+        // A chain closed by an entry flag is one entry or more (R7).
         let bound = crate::forge::codec_totality::list_bound(f);
+        let bounds = crate::forge::codec_totality::list_bound_args(f);
         let bounded = |entry: &str| {
-            format!("{RUNTIME_CODEC}::Bounded<{STORAGE_PARAM}::List<{entry}, {bound}>, {bound}>")
+            format!("{RUNTIME_CODEC}::Bounded<{STORAGE_PARAM}::List<{entry}, {bound}>, {bounds}>")
         };
         // A borrowed body has its own storage-generic mirror and threads the
         // parent's profile into it; a non-borrowed body is already owned and
@@ -7736,24 +7738,37 @@ fn rust_as_borrowed_field_into_stmt(
         } else {
             "Ok(_e.as_borrowed())"
         };
-        let project = |dest: &str, list: &str| {
-            format!("{RUNTIME_CODEC}::try_project_bounded_into({dest}, {list}, |_e| {elem})?")
+        // A builder's list of one entry or more is a `Bounded` filled where it
+        // sits through its `refill` (docs/adr/0065 §6 R7); the owned list it is
+        // projected from holds as many entries.
+        // `dest` is the destination as a mutable reference, `receiver` the same
+        // destination as the receiver of a method call.
+        let least = crate::forge::codec_totality::list_least(f);
+        let project = |dest: &str, receiver: &str, list: &str| {
+            match least {
+            0 => format!("{RUNTIME_CODEC}::try_project_bounded_into({dest}, {list}, |_e| {elem})?"),
+            _ => format!(
+                "{receiver}.refill(|_d| {RUNTIME_CODEC}::try_project_bounded_into(_d, {list}, |_e| {elem}))?"
+            ),
+        }
         };
         let stmt = if opt {
+            let inserted = format!("{out_ref}.insert(Default::default())");
             format!(
                 "match &{self_ref} {{\n            \
                      Some(_l) => {},\n            \
                      None => {out_ref} = None,\n        \
                  }}",
-                project(
-                    &format!("{out_ref}.insert(Default::default())"),
-                    "_l.inner()"
-                )
+                project(&inserted, &inserted, "_l.inner()")
             )
         } else {
             format!(
                 "{};",
-                project(&format!("&mut {out_ref}"), &format!("{self_ref}.inner()"))
+                project(
+                    &format!("&mut {out_ref}"),
+                    &out_ref,
+                    &format!("{self_ref}.inner()")
+                )
             )
         };
         return Ok(stmt);
@@ -8402,6 +8417,7 @@ fn render_codec(
                                 &codec_field_decode_local(&f.id, lang),
                                 &body_type,
                                 f.present_if.is_some(),
+                                crate::forge::codec_totality::list_least(f),
                             )
                             .into(),
                         );
@@ -8423,12 +8439,7 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_rs_type".into(),
-                            rust_view::list_type(
-                                &walk,
-                                repeat_thread.inputs.len(),
-                                crate::forge::codec_totality::list_bound(f),
-                                f.present_if.is_some(),
-                            )
+                            rust_view::list_type(&walk, repeat_thread.inputs.len(), f)
                             .into(),
                         );
                         obj.insert(
@@ -8526,19 +8537,23 @@ fn render_codec(
                     // the bare fixed-buffer + len pair (carrier-bit-
                     // as-truth — `_len = 0` signals absent).
                     let gated = f.present_if.is_some();
+                    // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
+                    // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
+                    // `HeaplessVec`), the Rust mirror of the C11 fixed-buffer
+                    // + len shape. The chain bound is `max_depth` (the
+                    // declared entry cap). A chain closed by an entry flag is
+                    // one entry or more, so its list says so where the value
+                    // is made (docs/adr/0065 §6 R7).
+                    let rust_list = match crate::forge::codec_totality::list_least(f) {
+                        0 => format!("HeaplessVec<{body_type}{body_lt}, {max_depth}>"),
+                        least => format!(
+                            "{RUNTIME_CODEC}::Bounded<HeaplessVec<{body_type}{body_lt}, {max_depth}>, {max_depth}, {least}>"
+                        ),
+                    };
                     let wrapped = match (lang, gated) {
                         (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
-                        // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
-                        // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
-                        // `HeaplessVec`), the Rust mirror of the C11
-                        // fixed-buffer + len shape. The chain bound is
-                        // `max_depth` (the declared entry cap).
-                        (crate::generator::Language::Rust, false) => {
-                            format!("HeaplessVec<{body_type}{body_lt}, {max_depth}>")
-                        }
-                        (crate::generator::Language::Rust, true) => {
-                            format!("Option<HeaplessVec<{body_type}{body_lt}, {max_depth}>>")
-                        }
+                        (crate::generator::Language::Rust, false) => rust_list,
+                        (crate::generator::Language::Rust, true) => format!("Option<{rust_list}>"),
                         // RFC §synth-5-B all-backend closures: cpp/kotlin/go/python emit
                         // TLV chain via the host-language list shape — Zenoh
                         // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
@@ -8627,6 +8642,7 @@ fn render_codec(
                                 &codec_field_decode_local(&f.id, lang),
                                 &body_type,
                                 gated,
+                                crate::forge::codec_totality::list_least(f),
                             )
                             .into(),
                         );
@@ -8656,12 +8672,7 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_rs_type".into(),
-                            rust_view::list_type(
-                                &walk,
-                                entry_thread.inputs.len(),
-                                crate::forge::codec_totality::list_bound(f),
-                                gated,
-                            )
+                            rust_view::list_type(&walk, entry_thread.inputs.len(), f)
                             .into(),
                         );
                         let view_stmt = rust_view::tlv_chain_decode_stmt(
@@ -14667,15 +14678,27 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // is later moved into it: a `heapless::Vec` moves by copying its
             // whole capacity, so every hop between the local and the returned
             // value would copy the declared maximum however few entries the
-            // wire held. See `RUST_DECODE_OUT`.
-            format!(
-                "{{\n            \
-                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
-                     _vec.clear();\n            \
-                     {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                     }}{overflow_check}\n        \
-                 }}"
-            )
+            // wire held. See `RUST_DECODE_OUT`. A chain closed by an entry
+            // flag is a `Bounded` of one entry or more, filled where it sits
+            // through its `refill` (docs/adr/0065 §6 R7).
+            if entry_flag_acc.is_some() {
+                format!(
+                    "{RUST_DECODE_OUT}.{id}.refill(|_vec| {{\n            \
+                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                         }}{overflow_check}\n            \
+                         Ok(())\n        \
+                     }})?;"
+                )
+            } else {
+                format!(
+                    "{{\n            \
+                         let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                         _vec.clear();\n            \
+                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                         }}{overflow_check}\n        \
+                     }}"
+                )
+            }
         }
         // C11: same shape as repeat (fixed-array `T elems[max_depth]`
         // paired with `size_t elems_len`) but bounded by max_depth and
@@ -15127,9 +15150,15 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // Loop body one level in from the `let`s that precede it, and the
             // guard back out at their level — the gated arm used to indent
             // both a level deeper than the block they sit in, which reads as
-            // if the guard were inside the loop.
+            // if the guard were inside the loop. A chain closed by an entry
+            // flag is filled inside its list's `refill`, one level deeper.
+            let (block, inner) = if entry_flag_acc.is_some() {
+                ("                ", "                    ")
+            } else {
+                ("            ", "                ")
+            };
             let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
+                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), block);
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
@@ -15137,24 +15166,36 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 (acc, _) => {
-                    let indent = "                ";
                     let mut lines =
                         chain_end_of_frame_stop(acc, "if cursor.remaining() == 0 { break; }");
                     lines.push(format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}();"));
                     }
-                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+                    lines.extend(entry_binds.update_lines(field, "_entry", lang, inner));
                     lines.push(format!(
                         "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;"
                     ));
                     if acc.is_some() {
                         lines.push("if !_more { break; }".to_string());
                     }
-                    chain_loop_body(indent, Some("            "), &lines)
+                    chain_loop_body(inner, Some(block), &lines)
                 }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, block);
+            if entry_flag_acc.is_some() {
+                return format!(
+                    "if {test} {{\n            \
+                         {RUST_DECODE_OUT}.{id}.insert(Default::default()).refill(|_vec| {{\n                \
+                             {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                             }}{overflow_check}\n                \
+                             Ok(())\n            \
+                         }})?;\n        \
+                     }} else {{\n            \
+                         {RUST_DECODE_OUT}.{id} = None;\n        \
+                     }}"
+                );
+            }
             // Built in the destination field; see the ungated emit above.
             format!(
                 "if {test} {{\n            \

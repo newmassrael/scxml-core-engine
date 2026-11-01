@@ -1519,7 +1519,9 @@ impl<'a> Plan<'a> {
         }
         if field.is_repeat() || field.is_tlv_chain() {
             return match form {
-                Some(Form::Builder) => format!("{storage}::BoundedIter::from({r})"),
+                Some(Form::Builder) if codec_totality::list_least(field) == 0 => {
+                    format!("{storage}::BoundedIter::from({r})")
+                }
                 Some(Form::Owned) => format!("{r}.list_iter()"),
                 _ => format!("{r}.iter()"),
             };
@@ -1772,7 +1774,7 @@ impl<'a> Plan<'a> {
                 format!(
                     "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
                     child.trait_path,
-                    codec_totality::list_bound(field)
+                    codec_totality::list_bound_args(field)
                 )
             };
         }
@@ -2056,7 +2058,7 @@ impl<'a> Plan<'a> {
                 format!(
                     "{RUNTIME_CODEC}::Bounded<&'a [{}], {}>",
                     child.parts_type,
-                    codec_totality::list_bound(field)
+                    codec_totality::list_bound_args(field)
                 )
             };
         }
@@ -2350,12 +2352,14 @@ impl<'a> Plan<'a> {
                 // A list's entries with their count (docs/adr/0065 §6 R2). The
                 // builder's `heapless::Vec` is sized to the bound, which its type
                 // proves; the view and the owned form hold a `Bounded`, the owned
-                // one around its profile's list, read as a slice.
+                // one around its profile's list, read as a slice. A builder's
+                // list of one entry or more is a `Bounded` too (R7).
+                let builder_holds_bounded = codec_totality::list_least(field) > 0;
                 match (form, gated) {
-                    (Form::Builder, true) => {
+                    (Form::Builder, true) if !builder_holds_bounded => {
                         format!("self.{accessor}.as_ref().map({storage}::BoundedIter::from)")
                     }
-                    (Form::Builder, false) => {
+                    (Form::Builder, false) if !builder_holds_bounded => {
                         format!("{storage}::BoundedIter::from(&self.{accessor})")
                     }
                     (Form::Owned, true) => {
