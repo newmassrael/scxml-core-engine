@@ -389,6 +389,12 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
     /// starts from the document's own values.
     private var lua: LuaState?
 
+    /// The address the host's BasicHTTP listener answers on for this machine (W3C SCXML C.2), which
+    /// `_ioprocessors['basichttp'].location` publishes. Support for that processor is per
+    /// deployment: a machine whose host declares none publishes no entry, rather than an address
+    /// nothing answers on. Set before the machine starts; the session reads it when it is made.
+    public var basicHTTPAccessURI = ""
+
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this machine's variables
     /// before it starts, by name. A `<data>` of one of these names takes the value in place of its
     /// own; a name this machine declares no variable for is never read.
@@ -426,7 +432,8 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
             LuaSession(
                 sessionID: sessionID,
                 name: "internal_chain_is_bounded",
-                scxmlLocation: scxmlProcessorLocation(sessionID: sessionID)
+                scxmlLocation: scxmlProcessorLocation(sessionID: sessionID),
+                basicHTTPLocation: basicHTTPAccessURI.isEmpty ? nil : basicHTTPAccessURI
             ))
         lua = session
         return session
