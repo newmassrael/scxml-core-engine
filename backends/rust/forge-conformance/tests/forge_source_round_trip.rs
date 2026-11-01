@@ -805,3 +805,26 @@ mod unknown_tags {
         assert_eq!(CodecZenohOamUnknownTag::from_unknown(ext).get(), 3);
     }
 }
+
+// A chain closed by an entry flag is one entry or more: every entry but the
+// last has the flag set, so the grammar has no word for none. A frame that ends
+// before the chain's first entry is short, gated or not (docs/adr/0065 §6 R7).
+mod chain_ends {
+    use super::codecs::codec_chain_has_marker::CodecChainHasMarker;
+    use super::codecs::codec_zenoh_ext_envelope::CodecZenohExtEnvelope;
+    use sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn a_frame_that_ends_before_a_chains_first_entry_is_short() {
+        // The header and no entry of the chain that always follows it.
+        assert_eq!(
+            CodecZenohExtEnvelope::decode(&mut SceCursor::new(&[0x00])).err(),
+            Some(CodecError::NeedMoreBytes)
+        );
+        // `E` set, and nothing after the header.
+        assert_eq!(
+            CodecChainHasMarker::decode(&mut SceCursor::new(&[0x80])).err(),
+            Some(CodecError::NeedMoreBytes)
+        );
+    }
+}

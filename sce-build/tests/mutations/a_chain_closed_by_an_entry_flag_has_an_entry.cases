@@ -1,0 +1,26 @@
+# Mutation cases for "a chain closed by an entry flag has an entry".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_closed_by_an_entry_flag_has_an_entry.cases`.
+#
+# A chain that ends at the entry whose flag is clear is one entry or more, so
+# its decode reads the first entry whatever follows, and a frame that ends
+# before it is short (docs/adr/0065 §6 R7). A chain that ends with the frame
+# keeps the stop at the end of the frame. The conformance crate generates its
+# codecs from the documents when it builds, so each case reaches the codecs the
+# `chain_ends` test decodes: a decode that stops before the first entry of a
+# chain closed by an entry flag reads a frame that ends there as the empty
+# chain.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
+
+mutation_case "a chain closed by an entry flag stops where the frame ends" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        Some(_) => Vec::new(),''',
+     r'''        Some(_) => vec![stop.to_string()],''')
+PY

@@ -1313,6 +1313,14 @@ the encoder is given it as it is.
 C11 holds a gated field in the optional value of its element, so it makes the
 same check and refuses with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`.
 
+**A chain closed by an entry flag holds an entry.** Every entry of such a chain
+but the last has the flag set, so the chain is one entry or more, gated or not.
+Every backend's decode reads its first entry whatever follows the place the
+chain starts, and a frame that ends before that entry is short, as one that
+ends after an entry whose flag is set is: the decode fails as it fails on any
+frame cut short. A chain that ends with the frame stops where the frame ends
+and may hold none (docs/adr/0065 §6 R7).
+
 A chain that ends only when the frame does (`terminate-on` not `entry-flag`)
 leaves nothing after it to gate, so `entry-id` on one is refused — unless it has
 an `<sce:entry-flag-bind>` (§4.6.3), which reads the identifier and needs no field

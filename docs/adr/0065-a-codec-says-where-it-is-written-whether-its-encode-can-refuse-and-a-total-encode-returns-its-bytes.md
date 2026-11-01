@@ -356,6 +356,12 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   - A source that presented a present empty chain wrote no frame its decode reproduces, so law 4 does not keep its
     bytes.
 
+  *The decode landed 2026-11-01, alone.* The generator's loop for a chain reads the stop at the end of the frame
+  only for a chain that ends with the frame (`chain_end_of_frame_stop`), in the six backends and in the Rust view's
+  scan, and 117 goldens lost the stop. It narrows the decode by the frames above and refuses them as short, so a
+  value the encode accepts with an empty chain is now refused where it is read, not read as another value. The
+  encode's types follow in a step of their own.
+
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.
 

@@ -178,7 +178,7 @@ use codecs::codec_variant_dispatch::{CodecVariantDispatch, CodecVariantDispatchV
 use codecs::codec_variant_peek_basic::{CodecVariantPeekBasic, CodecVariantPeekBasicView};
 use codecs::codec_zenoh_request::{CodecZenohRequest, CodecZenohRequestView};
 use codecs::codec_zenoh_response::{CodecZenohResponse, CodecZenohResponseView};
-use sce_forge_runtime::codec::{SceCursor, VecSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
 
 /// A deterministic byte source: the same frames on every run and every host.
 struct Rng(u64);
@@ -492,6 +492,33 @@ fn the_zenoh_request_and_response_are_decoded_as_views() {
         24
     );
     assert!(accepted > 20, "only {accepted} frames were accepted");
+}
+
+/// A chain closed by an entry flag is one entry or more, so the scan of a frame
+/// that ends before the chain's first entry refuses it as short, whether the
+/// chain is gated or not (docs/adr/0065 §6 R7), as the eager decode does.
+#[test]
+fn a_view_of_a_frame_that_ends_before_a_chains_first_entry_is_short() {
+    // head: T clear, and nothing after it.
+    let frame = [0x00];
+    assert_eq!(
+        CodecChainPrevCarrierView::decode(&mut SceCursor::new(&frame)).err(),
+        Some(CodecError::NeedMoreBytes)
+    );
+    assert_eq!(
+        CodecChainPrevCarrier::decode(&mut SceCursor::new(&frame)).err(),
+        Some(CodecError::NeedMoreBytes)
+    );
+    // head: E set, and nothing after it.
+    let frame = [0x02];
+    assert_eq!(
+        CodecChainPrevGatedView::decode(&mut SceCursor::new(&frame)).err(),
+        Some(CodecError::NeedMoreBytes)
+    );
+    assert_eq!(
+        CodecChainPrevGated::decode(&mut SceCursor::new(&frame)).err(),
+        Some(CodecError::NeedMoreBytes)
+    );
 }
 
 /// The walk of a chain hands each entry the value the scan handed it: the entry

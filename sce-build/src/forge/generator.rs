@@ -14533,10 +14533,9 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 // per-entry flag-input is waiting for.
                 (acc, _) => {
                     let indent = "                ";
-                    let mut lines = vec![
-                        "if cursor.remaining() == 0 { break; }".to_string(),
-                        format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"),
-                    ];
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if cursor.remaining() == 0 { break; }");
+                    lines.push(format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}();"));
                     }
@@ -14596,15 +14595,18 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 (acc, _) => {
                     let indent = "            ";
                     let entry = format!("out->{id_snake}[_just]");
-                    let mut lines = vec![
-                        "if (sce_forge_cursor_remaining(cursor) == 0) break;".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if (sce_forge_cursor_remaining(cursor) == 0) break;",
+                    );
+                    lines.extend([
                         format!(
                             "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
                         ),
                         "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
                         format!("size_t _just = out->{id_snake}_len;"),
                         format!("out->{id_snake}_len++;"),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
@@ -14646,11 +14648,12 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 // reads something off it, before it moves into the list.
                 (acc, _) => {
                     let indent = "            ";
-                    let mut lines = vec![
-                        "if (cursor.remaining() == 0) break;".to_string(),
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break;");
+                    lines.extend([
                         format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
                         "if (!_elem.has_value()) return std::nullopt;".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem->{acc}();"));
                     }
@@ -14698,10 +14701,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 // off it, before it goes into the list.
                 (acc, _) => {
                     let indent = "                    ";
-                    let mut lines = vec![
-                        "if (cursor.remaining() == 0) break".to_string(),
-                        format!("val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"),
-                    ];
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break");
+                    lines.push(format!(
+                        "val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"
+                    ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}()"));
                     }
@@ -14747,11 +14751,14 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 // the identifier a per-entry flag-input waits for.
                 (acc, _) => {
                     let indent = "\t\t";
-                    let mut lines = vec![
-                        "if cursor.Remaining() == 0 {\n\t\t\tbreak\n\t\t}".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if cursor.Remaining() == 0 {\n\t\t\tbreak\n\t\t}",
+                    );
+                    lines.extend([
                         format!("_elem, err := {body_decoder}(cursor{decode_arg})"),
                         "if err != nil {\n\t\t\treturn nil, err\n\t\t}".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
@@ -14796,11 +14803,14 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 // entry, before it is appended.
                 (acc, _) => {
                     let indent = "                ";
-                    let mut lines = vec![
-                        "if cursor.remaining() == 0:\n                    break".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if cursor.remaining() == 0:\n                    break",
+                    );
+                    lines.extend([
                         format!("_elem = {body_type}.decode(cursor{decode_arg})"),
                         "if _elem is None:\n                    return None".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
@@ -15015,10 +15025,9 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 ),
                 (acc, _) => {
                     let indent = "                ";
-                    let mut lines = vec![
-                        "if cursor.remaining() == 0 { break; }".to_string(),
-                        format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"),
-                    ];
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if cursor.remaining() == 0 { break; }");
+                    lines.push(format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}();"));
                     }
@@ -15056,11 +15065,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 ),
                 (acc, _) => {
                     let indent = "                ";
-                    let mut lines = vec![
-                        "if (cursor.remaining() == 0) break;".to_string(),
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break;");
+                    lines.extend([
                         format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
                         "if (!_elem.has_value()) return std::nullopt;".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem->{acc}();"));
                     }
@@ -15098,10 +15108,11 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 ),
                 (acc, _) => {
                     let indent = "                    ";
-                    let mut lines = vec![
-                        "if (cursor.remaining() == 0) break".to_string(),
-                        format!("val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"),
-                    ];
+                    let mut lines =
+                        chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break");
+                    lines.push(format!(
+                        "val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"
+                    ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}()"));
                     }
@@ -15142,11 +15153,14 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 ),
                 (acc, _) => {
                     let indent = "\t\t\t";
-                    let mut lines = vec![
-                        "if cursor.Remaining() == 0 {\n\t\t\t\tbreak\n\t\t\t}".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if cursor.Remaining() == 0 {\n\t\t\t\tbreak\n\t\t\t}",
+                    );
+                    lines.extend([
                         format!("_elem, err := {body_decoder}(cursor{decode_arg})"),
                         "if err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
@@ -15193,15 +15207,18 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 (acc, _) => {
                     let indent = "                ";
                     let entry = format!("{data}[_just]");
-                    let mut lines = vec![
-                        "if (sce_forge_cursor_remaining(cursor) == 0) break;".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if (sce_forge_cursor_remaining(cursor) == 0) break;",
+                    );
+                    lines.extend([
                         format!(
                             "sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});"
                         ),
                         "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
                         format!("size_t _just = {len};"),
                         format!("{len}++;"),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
@@ -15241,11 +15258,14 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 ),
                 (acc, _) => {
                     let indent = "                    ";
-                    let mut lines = vec![
-                        "if cursor.remaining() == 0:\n                        break".to_string(),
+                    let mut lines = chain_end_of_frame_stop(
+                        acc,
+                        "if cursor.remaining() == 0:\n                        break",
+                    );
+                    lines.extend([
                         format!("_elem = {body_type}.decode(cursor{decode_arg})"),
                         "if _elem is None:\n                        return None".to_string(),
-                    ];
+                    ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
@@ -18631,6 +18651,19 @@ impl ChainEntryBinds {
             });
         }
         lines
+    }
+}
+
+/// The first statements of a chain loop's body: `stop`, which ends the loop
+/// where the frame ends, for a chain that ends with the frame (`entry_flag`
+/// `None`), and none for a chain that ends on a flag of its entries. Such a
+/// chain is one entry or more, so it reads its first entry whatever follows,
+/// and a frame that ends before it is short (docs/adr/0065 §6 R7); the guard
+/// after the loop answers a frame that ends after an entry whose flag is set.
+fn chain_end_of_frame_stop(entry_flag: &Option<String>, stop: &str) -> Vec<String> {
+    match entry_flag {
+        None => vec![stop.to_string()],
+        Some(_) => Vec::new(),
     }
 }
 

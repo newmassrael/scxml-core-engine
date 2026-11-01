@@ -271,7 +271,8 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     let overflow_check =
         tlv_chain_guard(lang, *on_overflow, entry_flag_acc.is_some(), "            ");
     let indent = "                ";
-    let mut lines = vec!["if cursor.remaining() == 0 { break; }".to_string()];
+    let mut lines =
+        chain_end_of_frame_stop(&entry_flag_acc, "if cursor.remaining() == 0 { break; }");
     // The entry is bound to a local when the loop reads something off it: the
     // flag that ends the chain, the identifier a per-entry flag-input is
     // waiting for.
