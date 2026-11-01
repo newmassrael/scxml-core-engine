@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d81d136531455f0f9576fa01a2c502ca5ca47a88aee0b37d226a7f921bef6559
+// source-hash: 71d5d9f60a826f0f57e114ec1d28ebd3ef4101009d4ff3ec531fe406ae491212
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
