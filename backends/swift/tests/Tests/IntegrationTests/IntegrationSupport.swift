@@ -5,7 +5,19 @@
 // driver means by "the run reached it" is said once here and not once per stem.
 
 import Foundation
+import SceLua
 import SceRuntime
+
+/// What a run left in the variables of an ECMAScript-datamodel machine that is not the value the
+/// document's comment says it should be, each as `name=<read> (wanted <n>)`. Empty when every
+/// variable holds its integer: a driver asserts the list is empty, so a failure names every
+/// variable that is wrong and not only the first.
+func mismatches(
+    _ expected: [(name: String, want: Int64)], reading read: (String) -> LuaValue?
+) -> [String] {
+    expected.filter { read($0.name) != .integer($0.want) }
+        .map { "\($0.name)=\(String(describing: read($0.name))) (wanted \($0.want))" }
+}
 
 /// Lets the machine tick, for at most `timeout`, until `reached` holds, and says whether it did.
 ///
