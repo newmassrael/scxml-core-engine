@@ -279,26 +279,22 @@ fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
         with_src.contains("src=\"somewhere\""),
         "the fixture gained a src"
     );
-    for (text, construct) in [(
-        with_src,
-        "an <invoke type=\"sce-host-clock-now\"> with a src",
-    )] {
-        let (status, files, said) =
-            generate("host_refused.scxml", &[("host_refused.scxml", &text)]);
-        assert_eq!(
-            status,
-            Some(7),
-            "{construct} is refused, not written: {said}"
-        );
-        // The message arrives as JSON, which escapes the quotes of the type.
-        assert!(
-            said.replace("\\\"", "\"").contains(construct),
-            "the refusal names {construct}: {said}"
-        );
-        assert!(
-            files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
-            "a refused document writes no machine: {:?}",
-            files.iter().map(|f| &f.0).collect::<Vec<_>>()
-        );
-    }
+    let construct = "an <invoke type=\"sce-host-clock-now\"> with a src";
+    let (status, files, said) =
+        generate("host_refused.scxml", &[("host_refused.scxml", &with_src)]);
+    assert_eq!(
+        status,
+        Some(7),
+        "{construct} is refused, not written: {said}"
+    );
+    // The message arrives as JSON, which escapes the quotes of the type.
+    assert!(
+        said.replace("\\\"", "\"").contains(construct),
+        "the refusal names {construct}: {said}"
+    );
+    assert!(
+        files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
+        "a refused document writes no machine: {:?}",
+        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
 }
