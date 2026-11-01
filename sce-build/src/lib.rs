@@ -5644,6 +5644,32 @@ fn codec_says_inputs_recursive(
     .collect()
 }
 
+/// The values of `cm`'s variant arms whose body codec presents nothing, no
+/// field and no variant of its own: what a parent's gate on a chain of `cm`
+/// needs to tell an entry that holds nothing but its identifier
+/// (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6 R6).
+fn codec_empty_arm_tags(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> Vec<u64> {
+    let Some(variant) = &cm.variant else {
+        return Vec::new();
+    };
+    variant
+        .arms
+        .iter()
+        .filter(|arm| {
+            with_resolved_import_codec(&arm.body_alias, imports, base_dir, visited, |body| {
+                Some(body.model.fields.is_empty() && body.model.variant.is_none())
+            })
+            .unwrap_or(false)
+        })
+        .map(|arm| arm.value)
+        .collect()
+}
+
 /// The imports of a codec read from its document: each codec import resolved
 /// and judged in turn, each enum import read for its carrier.
 struct UnresolvedImports<'a> {
@@ -5675,6 +5701,21 @@ impl forge::codec_roles::InputImports for UnresolvedImports<'_> {
             )
         })
         .unwrap_or(false)
+    }
+
+    fn entry_shape(&mut self, alias: &str) -> Option<forge::codec_roles::EntryShape> {
+        with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
+            Some(forge::codec_roles::EntryShape {
+                fields: inner.model.fields.clone(),
+                variant: inner.model.variant.clone(),
+                empty_arm_tags: codec_empty_arm_tags(
+                    inner.model,
+                    inner.imports,
+                    inner.base_dir,
+                    inner.visited,
+                ),
+            })
+        })
     }
 }
 
@@ -6088,6 +6129,13 @@ fn validate_and_enrich_imports(
                 // a field of this codec; the parent cannot judge the name
                 // without the fields it is a name of.
                 ctx.codec_fields = cm.fields.clone();
+                // ADR 0065 §6 R6: with the fields, what tells whether the
+                // entry a gate on a chain of this codec names is bare.
+                ctx.codec_variant = cm.variant.clone();
+                let mut arms_visited: HashSet<PathBuf> = HashSet::new();
+                arms_visited.insert(source.path.clone());
+                ctx.codec_empty_arm_tags =
+                    codec_empty_arm_tags(cm, &parsed.imports, &inner_base, &mut arms_visited);
                 // Variant-default uniformity (Go): the
                 // imported codec emits a `NewT()` constructor iff its
                 // own constructor gate fires — either any field declares a

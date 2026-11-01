@@ -315,6 +315,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_fields: Vec<CodecField>,
 
+    /// The imported codec's variant, and the values of its arms whose body
+    /// presents nothing: with `codec_fields`, what tells whether the entry a
+    /// gate on a chain of it names holds nothing but its identifier
+    /// (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6 R6). `None` and
+    /// empty for a codec with no variant and for non-codec imports.
+    #[serde(skip)]
+    pub codec_variant: Option<crate::forge::model::CodecVariant>,
+    #[serde(skip)]
+    pub codec_empty_arm_tags: Vec<u64>,
+
     /// RFC variant-default-uniformity Go `NewT()` contract: `true` when
     /// the imported codec emits a `NewT()` constructor — either because
     /// any of its fields declares `<sce:flag value=>` (inner-default
@@ -1219,6 +1229,8 @@ fn resolve_single_import(
         codec_max_bytes: None,
         codec_first_flags: None,
         codec_fields: Vec::new(),
+        codec_variant: None,
+        codec_empty_arm_tags: Vec::new(),
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_view_is_borrowed: false,
@@ -39749,6 +39761,8 @@ mod tests {
             codec_max_bytes: None,
             codec_first_flags: None,
             codec_fields: Vec::new(),
+            codec_variant: None,
+            codec_empty_arm_tags: Vec::new(),
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_view_is_borrowed: false,
@@ -40635,6 +40649,8 @@ mod tests {
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
+                codec_variant: None,
+                codec_empty_arm_tags: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,
@@ -40689,6 +40705,8 @@ mod tests {
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
+                codec_variant: None,
+                codec_empty_arm_tags: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,

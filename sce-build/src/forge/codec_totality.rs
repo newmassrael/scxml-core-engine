@@ -191,6 +191,10 @@ impl InputImports for Resolved<'_> {
     fn says_input(&mut self, alias: &str, input: &str) -> bool {
         codec_roles::Contexts(self.0).says_input(alias, input)
     }
+
+    fn entry_shape(&mut self, alias: &str) -> Option<codec_roles::EntryShape> {
+        codec_roles::Contexts(self.0).entry_shape(alias)
+    }
 }
 
 impl Imports for Resolved<'_> {
@@ -918,6 +922,9 @@ mod tests {
         fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
             false
         }
+        fn entry_shape(&mut self, _alias: &str) -> Option<codec_roles::EntryShape> {
+            None
+        }
     }
 
     impl Imports for NoImports {
@@ -1101,6 +1108,9 @@ mod tests {
             }
             fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
                 false
+            }
+            fn entry_shape(&mut self, _alias: &str) -> Option<codec_roles::EntryShape> {
+                None
             }
         }
         impl Imports for Refusing {

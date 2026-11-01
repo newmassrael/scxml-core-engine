@@ -47,8 +47,8 @@ use std::fmt;
 use crate::forge::codec_totality::child_alias;
 use crate::forge::generator::{collect_parent_tag_derivations, ImportContext};
 use crate::forge::model::{
-    BitSize, CodecEncoding, CodecModel, CountRef, FlagBind, FlagBindSource, PresentIfPredicate,
-    PresentIfScope, TlvTerminateStrategy,
+    BitSize, CodecEncoding, CodecField, CodecModel, CodecVariant, CountRef, FlagBind,
+    FlagBindSource, PresentIfPredicate, PresentIfScope, TlvEntryId, TlvTerminateStrategy,
 };
 
 /// One element of a codec, as the table names it.
@@ -327,6 +327,74 @@ pub trait InputImports {
     /// Whether the codec imported as `alias` says its input `input` itself
     /// ([`CodecRoles::inputs`]).
     fn says_input(&mut self, alias: &str, input: &str) -> bool;
+    /// What the codec imported as `alias` is made of ([`EntryShape`]), or
+    /// `None` when it is no codec this one can read.
+    fn entry_shape(&mut self, alias: &str) -> Option<EntryShape>;
+}
+
+/// What a codec held as a chain's entry is made of: enough to tell whether the
+/// entry a gate on the chain names holds anything but its identifier
+/// ([`named_entry_is_bare`], docs/adr/0065 §6 R6).
+#[derive(Debug, Clone, Default)]
+pub struct EntryShape {
+    /// The codec's fields.
+    pub fields: Vec<CodecField>,
+    /// The codec's variant, when it has one.
+    pub variant: Option<CodecVariant>,
+    /// The values of the variant's arms whose body codec presents nothing: no
+    /// field and no variant of its own.
+    pub empty_arm_tags: Vec<u64>,
+}
+
+/// Whether the entry of the kind `key`, told apart by the identifier `id` of a
+/// chain that ends on the flag `chain_flag`, holds nothing but its identifier,
+/// so that the identifier is all its value is (docs/adr/0065 §6 R6, R6a).
+///
+/// That is so when the identifier is a whole flags carrier, the flags it leaves
+/// out are the one the chain writes by an entry's place, the carrier is the
+/// entry's one field, and the entry has no variant or one whose tag is a flag
+/// the identifier holds and whose arm for the key's tag presents nothing. An
+/// identifier that is one flag of the carrier, or a field beside others, leaves
+/// the rest of the entry to its content.
+pub fn named_entry_is_bare(
+    shape: &EntryShape,
+    id: &TlvEntryId,
+    chain_flag: Option<&str>,
+    key: u64,
+) -> bool {
+    if id.carrier.is_some() || shape.fields.len() != 1 {
+        return false;
+    }
+    let carrier = &shape.fields[0];
+    if carrier.id != id.name || carrier.flags.is_empty() {
+        return false;
+    }
+    if !id.except.iter().all(|e| Some(e.as_str()) == chain_flag) {
+        return false;
+    }
+    let Some(variant) = &shape.variant else {
+        return true;
+    };
+    let Some(tag_flag) = variant
+        .tag_flag
+        .as_deref()
+        .filter(|_| variant.tag_field.as_deref() == Some(carrier.id.as_str()))
+        .filter(|t| !id.except.iter().any(|e| e == t))
+        .and_then(|t| carrier.flags.iter().find(|f| f.name == t))
+    else {
+        return false;
+    };
+    let width = tag_flag.width;
+    let mask = if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
+    let tag = key.checked_shr(tag_flag.bit).unwrap_or(0) & mask;
+    variant
+        .arms
+        .iter()
+        .any(|arm| arm.value == tag && shape.empty_arm_tags.contains(&arm.value))
 }
 
 /// The imports a codec's generation resolved, each with the inputs it says
@@ -346,6 +414,17 @@ impl InputImports for Contexts<'_> {
         self.0
             .iter()
             .any(|i| i.alias == alias && i.codec_says_inputs.iter().any(|s| s == input))
+    }
+
+    fn entry_shape(&mut self, alias: &str) -> Option<EntryShape> {
+        self.0
+            .iter()
+            .find(|i| i.alias == alias && i.kind == "codec")
+            .map(|i| EntryShape {
+                fields: i.codec_fields.clone(),
+                variant: i.codec_variant.clone(),
+                empty_arm_tags: i.codec_empty_arm_tags.clone(),
+            })
     }
 }
 
@@ -1480,5 +1559,78 @@ fn flat<'a>(model: &CodecModel, ids: impl Iterator<Item = &'a str>) -> CodecRole
         input_checks: Vec::new(),
         groups: Vec::new(),
         unresolved: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Zenoh extension entry: a header whose identifier is the whole byte
+    /// but its continuation flag `Z`, and a variant on the header's `enc` bits
+    /// whose unit arm (0) has a body that presents nothing.
+    fn ext_entry() -> EntryShape {
+        let label = crate::DocumentLabel {
+            identifier: "codec_zenoh_ext_entry",
+            diagnostic_label: ".scxml-fixture",
+        };
+        let xml = include_str!("../../../tests/forge/resources/codec_zenoh_ext_entry.scxml");
+        let model = match crate::forge::parser::parse_forge(xml, label) {
+            Ok(Some(crate::forge::model::ForgeDocument::Codec(m))) => m,
+            _ => panic!("the extension entry is a codec document"),
+        };
+        EntryShape {
+            fields: model.fields,
+            variant: model.variant,
+            empty_arm_tags: vec![0],
+        }
+    }
+
+    fn whole_header_but_z() -> TlvEntryId {
+        TlvEntryId {
+            carrier: None,
+            name: "header".to_string(),
+            except: vec!["Z".to_string()],
+        }
+    }
+
+    #[test]
+    fn an_entry_whose_identifier_selects_an_empty_arm_is_bare() {
+        // 0x12: identifier 2, mandatory, the unit encoding.
+        assert!(named_entry_is_bare(
+            &ext_entry(),
+            &whole_header_but_z(),
+            Some("Z"),
+            0x12
+        ));
+    }
+
+    #[test]
+    fn an_entry_whose_identifier_selects_an_arm_with_a_body_has_content() {
+        // 0x32: the same identifier and the zint encoding, whose body is a number.
+        assert!(!named_entry_is_bare(
+            &ext_entry(),
+            &whole_header_but_z(),
+            Some("Z"),
+            0x32
+        ));
+    }
+
+    #[test]
+    fn an_identifier_that_leaves_out_what_the_chain_does_not_write_has_content() {
+        // A flag left out that is not the one ending the chain is the value's.
+        assert!(!named_entry_is_bare(
+            &ext_entry(),
+            &whole_header_but_z(),
+            None,
+            0x12
+        ));
+        // An identifier that is one flag of the header leaves the rest to the entry.
+        let ext_id = TlvEntryId {
+            carrier: Some("header".to_string()),
+            name: "ext_id".to_string(),
+            except: Vec::new(),
+        };
+        assert!(!named_entry_is_bare(&ext_entry(), &ext_id, Some("Z"), 0x2));
     }
 }
