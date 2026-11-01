@@ -83,10 +83,13 @@ for stem in "${LOWERED[@]}"; do
     # The stub a hybrid `<invoke>` that declares no candidates starts (W3C SCXML 6.4): `generate`
     # writes it, for every backend, beside the machine it belongs to, and the machine of the stub is
     # the child the parent instantiates. Matched by the name the build gives it, so a child the
-    # stem carries and `generate` copied there is not generated twice.
+    # stem carries and `generate` copied there is not generated twice. Generated from a path
+    # relative to the temp root: the machine's header names its source document, and an absolute
+    # path under a directory `mktemp` chose would put a different line in the committed file on
+    # every run.
     for stub in "$TMP/$stem"/*_hybrid[0-9]*.scxml; do
         [ -e "$stub" ] || continue
-        "$CODEGEN" generate "$stub" -l swift -o "$TMP/$stem/"
+        (cd "$TMP" && "$CODEGEN" generate "$stem/$(basename "$stub")" -l swift -o "$stem/")
     done
 done
 
@@ -100,7 +103,10 @@ sce_generated_tree_clear --recursive "$GENERATED_DIR"
 # documents, not something to order.
 declare -A MACHINE_FROM=()
 for stem in "${LOWERED[@]}"; do
-    for generated in "$TMP/$stem"/*_sm.swift; do
+    # A machine, and for a document that declares `sce:transition-function="emit"` the function
+    # beside it (SCE Accepted Subset §2.21): files of one SwiftPM target, named for the document.
+    for generated in "$TMP/$stem"/*_sm.swift "$TMP/$stem"/*_transition_function.swift; do
+        [ -e "$generated" ] || continue
         unit="$(basename "$generated")"
         if [ -n "${MACHINE_FROM[$unit]:-}" ]; then
             echo "error: ${MACHINE_FROM[$unit]} and $stem are both written as $unit; one of them needs another name" >&2
