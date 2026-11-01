@@ -455,10 +455,6 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
         "a_mesh_request_reaches_the_router",
         swift_refusal!("a Mesh remote-procedure `<invoke>` (Swift has no host Mesh core)"),
     ),
-    (
-        "an_invoke_left_before_it_starts_raises_nothing",
-        swift_refusal!("an `<invoke type>` no host declares"),
-    ),
     ("flat_lifecycle", swift_refusal!("the transition function")),
     (
         "invoke_candidate_selects_the_child",
@@ -467,10 +463,6 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
     (
         "invoke_expression_failure_is_reported",
         swift_refusal!("an `<invoke srcexpr>` that declares no `sce:candidates`"),
-    ),
-    (
-        "invoke_unsupported_type",
-        swift_refusal!("an `<invoke type>` no host declares"),
     ),
     (
         "nested_lifecycle",

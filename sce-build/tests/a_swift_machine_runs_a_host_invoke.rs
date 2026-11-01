@@ -224,22 +224,48 @@ fn a_machine_without_a_host_invoke_writes_no_invoker() {
     );
 }
 
-/// An invoke whose request is not lowered yet, and one of a type no host declared, are
-/// named in a refusal and not written wrong.
+/// §scxml-6.4.1: an `<invoke>` whose `type` no processor implements and no host declared is
+/// written, and what it does is one error.execution when the invoke would have started: it
+/// rides the deferral every other invoke does, so a state that exits first raises nothing.
+#[test]
+fn an_invoke_of_a_type_nobody_runs_is_deferred_and_raises_error_execution() {
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+       datamodel="sce-static" name="unsupported_type">
+  <state id="idle">
+    <invoke type="no-such-type" id="x"/>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let (status, files, said) = generate(
+        "unsupported_type.scxml",
+        &[("unsupported_type.scxml", text)],
+    );
+    assert_eq!(status, Some(0), "the document is written: {said}");
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "unsupported_type_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    assert!(
+        code.contains("deferInvoke(&pendingInvokes"),
+        "the invoke is deferred to the end of the macrostep:\n{code}"
+    );
+    assert!(
+        code.contains("names a processor this platform does not implement"),
+        "the execution raises error.execution:\n{code}"
+    );
+    assert!(
+        !code.contains("performHostInvoke") && !code.contains("registerInvoker"),
+        "no host runs it:\n{code}"
+    );
+}
+
+/// An invoke whose request is not lowered yet is named in a refusal and not written wrong.
 #[test]
 fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
-    let document = |invoke: &str| {
-        format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="idle" datamodel="sce-static" name="host_refused">
-  <state id="idle">
-    {invoke}
-  </state>
-</scxml>
-"#
-        )
-    };
     // The clock fixture, its first invoke given a `src`: a standard host type needs its
     // result imported, so the document that names one is the fixture and not a stub.
     let with_src = std::fs::read_to_string(fixtures().join("static_host_clock.scxml"))
@@ -253,16 +279,10 @@ fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
         with_src.contains("src=\"somewhere\""),
         "the fixture gained a src"
     );
-    for (text, construct) in [
-        (
-            document(r#"<invoke type="no-such-type" id="x"/>"#),
-            "an <invoke type=\"no-such-type\"> no host declared",
-        ),
-        (
-            with_src,
-            "an <invoke type=\"sce-host-clock-now\"> with a src",
-        ),
-    ] {
+    for (text, construct) in [(
+        with_src,
+        "an <invoke type=\"sce-host-clock-now\"> with a src",
+    )] {
         let (status, files, said) =
             generate("host_refused.scxml", &[("host_refused.scxml", &text)]);
         assert_eq!(

@@ -4324,7 +4324,12 @@ pub(crate) fn swift_invoke_unlowered(
 fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Option<String> {
     let type_name = &info.invoke_type;
     if !info.host_served {
-        return Some(format!("an <invoke type=\"{type_name}\"> no host declared"));
+        // §scxml-6.4.1: `type` names no processor this platform implements and no host
+        // declared, which classifies on `type` alone: one error.execution when the invoke
+        // would have started, and nothing of the request is read. Only an `idlocation` is
+        // named, because whether the id is written for an invoke that never ran is not
+        // something the clause says.
+        return (!info.base.idlocation.is_empty()).then(|| "an <invoke idlocation>".to_string());
     }
     if !info.namelist.is_empty() {
         return Some(format!(

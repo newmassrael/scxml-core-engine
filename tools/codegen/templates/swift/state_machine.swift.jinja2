@@ -532,7 +532,7 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     public var hasParallelStates: Bool { {{ 'true' if model.has_parallel_states else 'false' }} }
     public var needsScriptEngine: Bool { {{ 'true' if model.needs_script_engine else 'false' }} }
     public var needsDataModelInit: Bool { {{ 'true' if model.needs_script_engine else 'false' }} }
-    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker else 'false' }} }
+    public var hasInvokeSupport: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker or model.invokes | unsupported_refused else 'false' }} }
     public var hasChildTick: Bool { {{ 'true' if model.invokes | scxml or model.invokes | hybrid else 'false' }} }
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     public var needsParent: Bool { {{ 'true' if model.needs_parent else 'false' }} }

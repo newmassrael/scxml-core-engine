@@ -124,7 +124,16 @@
 {% endfor %}
 {% endfor %}
 {% set host_invokes = ns_host.all %}
-{% if child_invokes or host_invokes %}
+{# The `<invoke>`s whose `type` no processor implements and no host declared (W3C SCXML
+   6.4.1): deferred like the rest, and what the execution does is one error.execution. #}
+{% set ns_refused = namespace(all=[]) %}
+{% for state_id, state in model.states | dictsort %}
+{% for invoke_info in state.invokes | unsupported_refused %}
+{% set ns_refused.all = ns_refused.all + [invoke_info] %}
+{% endfor %}
+{% endfor %}
+{% set refused_invokes = ns_refused.all %}
+{% if child_invokes or host_invokes or refused_invokes %}
 
     // ------------------------------------------------------------------
     // {{ 'Child sessions' if child_invokes else 'Host invocations' }} (W3C SCXML 6.4)
@@ -169,6 +178,17 @@
 {% for invoke_info in host_invokes %}
             if pending.documentID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
                 sceStartHostInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
+                return
+            }
+{% endfor %}
+{% for invoke_info in refused_invokes %}
+            if pending.documentID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
+                // W3C SCXML 6.4.1: no processor implements `type`, so no session starts and
+                // `done.invoke.<id>` never fires: the platform places error.execution on the
+                // internal queue, and that is all.
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke type=\"{{ invoke_info.invoke_type | escape_swift }}\"> names a processor this platform does not implement"))
+{% endif %}
                 return
             }
 {% endfor %}
