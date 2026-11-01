@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_locator import CodecZenohLocator
 
 from dataclasses import dataclass, field
@@ -109,12 +109,19 @@ class CodecZenohHello:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible."""
+        :class:`BytearraySink`) are effectively infallible. Raises,
+        before the first byte, the error a decode of the frame would give
+        for a value it cannot carry: a byte string, text or list outside its
+        bound, or a gated field its gate disagrees with."""
         if (l & 0x01) != 0:
             if self.locators is None:
                 raise PresentIfMismatch("locators")
         elif self.locators is not None:
             raise PresentIfMismatch("locators")
+        if len(self.zid) < 1 or len(self.zid) > 16:
+            raise LengthOutOfRange()
+        if self.locators is not None and (len(self.locators) > 64):
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

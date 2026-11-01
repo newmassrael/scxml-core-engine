@@ -95,7 +95,10 @@ class CodecChainFlagEntry:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible."""
+        :class:`BytearraySink`) are effectively infallible. Raises,
+        before the first byte, the error a decode of the frame would give
+        for a value it cannot carry: a byte string, text or list outside its
+        bound, or a gated field its gate disagrees with."""
         if (wide & 0x01) == 0:
             if self.short_value is None:
                 raise PresentIfMismatch("short_value")

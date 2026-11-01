@@ -152,11 +152,13 @@ struct CodecChainFlagEntry {
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
     /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses a message whose gated field and the `sce:present-if` that
-    /// gates it contradict each other (`CodecError::PresentIfMismatch`).
-    /// Callers targeting
-    /// zero-alloc hot paths should call `encode` directly against a
-    /// caller-owned sink.
+    /// refuses the value before its first byte: a gated field and the
+    /// `sce:present-if` that gates it contradict each other
+    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
+    /// lies outside its bound (`CodecError::LengthOutOfRange`,
+    /// `CodecError::TooManyElements`). Callers that need the reason, and
+    /// zero-alloc hot paths, call `encode` directly against a caller-owned
+    /// sink.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec(std::uint8_t wide) const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);

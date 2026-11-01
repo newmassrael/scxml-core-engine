@@ -106,7 +106,10 @@ class CodecChainHasTagged:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible."""
+        :class:`BytearraySink`) are effectively infallible. Raises,
+        before the first byte, the error a decode of the frame would give
+        for a value it cannot carry: a byte string, text or list outside its
+        bound, or a gated field its gate disagrees with."""
         _has_entries_7 = any(_e.entry_type == 7 for _e in self.entries)
         _has_entries_9 = any(_e.entry_type == 9 for _e in self.entries)
         if _has_entries_7 or (self.header & 0x01) != 0:
@@ -119,6 +122,8 @@ class CodecChainHasTagged:
                 raise PresentIfMismatch("checksum")
         elif self.checksum is not None:
             raise PresentIfMismatch("checksum")
+        if len(self.entries) < 1 or len(self.entries) > 3:
+            raise TlvChainOverflow()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

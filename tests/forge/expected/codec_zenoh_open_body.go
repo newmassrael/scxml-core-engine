@@ -82,6 +82,9 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 	} else if s.Cookie.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
+	if s.Cookie.IsPresent() && (len(s.Cookie.Proven()) > 128) {
+		return codec.ErrLengthOutOfRange
+	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -112,8 +115,11 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
 // over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses a message with when a field's presence disagrees
-// with the `sce:present-if` that gates it (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// error Encode refuses the value with before its first byte: a field's
+// presence disagrees with the `sce:present-if` that gates it
+// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
+// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
 // should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohOpenBody) EncodeToBytes(A byte) ([]byte, error) {

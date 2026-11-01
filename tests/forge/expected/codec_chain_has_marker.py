@@ -139,7 +139,10 @@ class CodecChainHasMarker:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible."""
+        :class:`BytearraySink`) are effectively infallible. Raises,
+        before the first byte, the error a decode of the frame would give
+        for a value it cannot carry: a byte string, text or list outside its
+        bound, or a gated field its gate disagrees with."""
         _has_extensions_18 = self.extensions is not None and any((_e.header & 127) == 18 for _e in self.extensions)
         if not _has_extensions_18:
             if self.payload is None:
@@ -151,6 +154,12 @@ class CodecChainHasMarker:
                 raise PresentIfMismatch("slices")
         elif self.slices is not None:
             raise PresentIfMismatch("slices")
+        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
+            raise TlvChainOverflow()
+        if self.payload is not None and (len(self.payload) > 256):
+            raise LengthOutOfRange()
+        if self.slices is not None and (len(self.slices) > 4):
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

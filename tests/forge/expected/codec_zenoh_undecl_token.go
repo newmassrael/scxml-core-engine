@@ -85,8 +85,11 @@ func (s *CodecZenohUndeclToken) Encode(w codec.SceSink, Z byte) error {
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
 // over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses a message with when a field's presence disagrees
-// with the `sce:present-if` that gates it (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// error Encode refuses the value with before its first byte: a field's
+// presence disagrees with the `sce:present-if` that gates it
+// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
+// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
 // should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohUndeclToken) EncodeToBytes(Z byte) ([]byte, error) {

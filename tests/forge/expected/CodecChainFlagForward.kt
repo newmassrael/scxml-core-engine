@@ -46,6 +46,7 @@ data class CodecChainFlagForward(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, wide: UByte): CodecError? {
+        this.entries?.let { if (it.size < 1 || it.size > 4) return CodecError.TooManyElements }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -64,12 +65,17 @@ data class CodecChainFlagForward(
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray.
-    /// Callers targeting zero-alloc hot paths should call `encode`
-    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(wide: UByte): ByteArray {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
+    /// `null` when `encode` refuses the value before its first byte: a
+    /// gated field and the `sce:present-if` that gates it contradict each
+    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
+    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
+    /// `CodecError.TooManyElements`). Callers that need the reason, and
+    /// zero-alloc hot paths, call `encode` directly against a caller-owned
+    /// sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(wide: UByte): ByteArray? {
         val _list = mutableListOf<Byte>()
-        encode(MutableListSink(_list), wide)
+        if (encode(MutableListSink(_list), wide) != null) return null
         return _list.toByteArray()
     }
 

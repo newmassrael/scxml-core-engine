@@ -154,6 +154,12 @@ func (s *CodecOriginEnvelope) SetHasOpt(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecOriginEnvelope) Encode(w codec.SceSink) error {
+	if len(s.Note) > 16 {
+		return codec.ErrLengthOutOfRange
+	}
+	if len(s.Items) > 3 {
+		return codec.ErrTooManyElements
+	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -192,11 +198,18 @@ func (s *CodecOriginEnvelope) Encode(w codec.SceSink) error {
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice.
-// Callers targeting zero-alloc hot paths should call Encode directly
-// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
-func (s *CodecOriginEnvelope) EncodeToBytes() []byte {
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses the value with before its first byte: a field's
+// presence disagrees with the `sce:present-if` that gates it
+// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
+// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *CodecOriginEnvelope) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 583)
-	_ = s.Encode(codec.NewBytesSink(&_dst))
-	return _dst
+	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
+		return nil, err
+	}
+	return _dst, nil
 }

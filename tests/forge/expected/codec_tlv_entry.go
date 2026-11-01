@@ -56,6 +56,9 @@ func DecodeCodecTlvEntry(cursor *codec.SceCursor) (*CodecTlvEntry, error) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecTlvEntry) Encode(w codec.SceSink) error {
+	if len(s.EntryBody) > 32 {
+		return codec.ErrLengthOutOfRange
+	}
 	if err := w.WriteBytes([]byte{ byte(s.EntryType) }); err != nil {
 		return err
 	}
@@ -69,11 +72,18 @@ func (s *CodecTlvEntry) Encode(w codec.SceSink) error {
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice.
-// Callers targeting zero-alloc hot paths should call Encode directly
-// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
-func (s *CodecTlvEntry) EncodeToBytes() []byte {
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses the value with before its first byte: a field's
+// presence disagrees with the `sce:present-if` that gates it
+// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
+// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *CodecTlvEntry) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 34)
-	_ = s.Encode(codec.NewBytesSink(&_dst))
-	return _dst
+	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
+		return nil, err
+	}
+	return _dst, nil
 }

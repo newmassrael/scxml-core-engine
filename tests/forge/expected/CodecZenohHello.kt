@@ -66,6 +66,8 @@ data class CodecZenohHello(
         if ((L.toInt() and 0x01) != 0) {
             if (this.locators == null) return CodecError.PresentIfMismatch
         } else if (this.locators != null) return CodecError.PresentIfMismatch
+        if (this.zid.size < 1 || this.zid.size > 16) return CodecError.LengthOutOfRange
+        this.locators?.let { if (it.size > 64) return CodecError.TooManyElements }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -90,11 +92,13 @@ data class CodecZenohHello(
 
     /// Heap-backed convenience facade. Runs `encode` over a
     /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses a message whose gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError.PresentIfMismatch`).
-    /// Callers targeting zero-alloc hot paths should call `encode`
-    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    /// `null` when `encode` refuses the value before its first byte: a
+    /// gated field and the `sce:present-if` that gates it contradict each
+    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
+    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
+    /// `CodecError.TooManyElements`). Callers that need the reason, and
+    /// zero-alloc hot paths, call `encode` directly against a caller-owned
+    /// sink (e.g. `ByteArraySink`).
     fun encodeToByteArray(L: UByte): ByteArray? {
         val _list = mutableListOf<Byte>()
         if (encode(MutableListSink(_list), L) != null) return null
