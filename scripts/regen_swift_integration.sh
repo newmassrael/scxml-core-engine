@@ -86,10 +86,12 @@ for stem in "${LOWERED[@]}"; do
     # stem carries and `generate` copied there is not generated twice. Generated from a path
     # relative to the temp root: the machine's header names its source document, and an absolute
     # path under a directory `mktemp` chose would put a different line in the committed file on
-    # every run.
+    # every run. The generator finds its templates beside its source tree or under the directory it
+    # runs in, and it runs in the temp root here, so the directory is named.
     for stub in "$TMP/$stem"/*_hybrid[0-9]*.scxml; do
         [ -e "$stub" ] || continue
-        (cd "$TMP" && "$CODEGEN" generate "$stem/$(basename "$stub")" -l swift -o "$stem/")
+        (cd "$TMP" && SCE_TEMPLATE_DIR="$REPO_ROOT/tools/codegen/templates" \
+            "$CODEGEN" generate "$stem/$(basename "$stub")" -l swift -o "$stem/")
     done
 done
 
