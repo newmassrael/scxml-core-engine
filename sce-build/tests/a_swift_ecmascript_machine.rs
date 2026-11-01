@@ -98,6 +98,28 @@ fn a_guard_and_a_data_initialiser_are_lowered_to_lua_and_run_by_the_engine() {
     );
 }
 
+/// W3C SCXML 5.7.1: a `<send>`'s `<param>` whose `location` is empty names no location, so it raises
+/// `error.execution`, leaves its pair out and ends its block. The template skipped it without a word
+/// (measured 2026-11-01 by the integration stem `a_bad_send_param_ends_its_block`: two of three errors
+/// raised and the block that held the third ran on).
+#[test]
+fn a_send_param_with_an_empty_location_is_an_error_that_ends_its_block() {
+    let body = r##"
+  <state id="s0">
+    <onentry>
+      <send event="e"><param name="p" location=""/></send>
+      <assign location="after" expr="1"/>
+    </onentry>
+  </state>"##;
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, body), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("<send> <param name=p> names no location")
+            && machine.contains("paramFailed = true"),
+        "an empty location is reported and the block is ended: {machine}"
+    );
+}
+
 /// W3C SCXML B.2.8.1: which rung a payload got is known only where `_event` is bound, so the machine
 /// tells the engine there. Without the call `Engine.undecodablePayloads` stays 0 for every
 /// ecmascript machine and a payload a host sent as structure is lost to the document and to the host

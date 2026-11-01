@@ -698,6 +698,11 @@ public final class ABadSendParamEndsItsBlockPolicy: InvocablePolicy {
                     // it has. Read at the end of this element.
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
+                    // W3C SCXML 5.7.1: a `<param>` that names neither an `expr` nor a location, an
+                    // empty `location`, names no location: error.execution, this pair is left out,
+                    // and the error ends the block (4.9).
+                    engine.raise(EventWithMetadata.platformError(ABadSendParamEndsItsBlockEvent.errorExecution, message: "<send> <param name=p> names no location"))
+                    paramFailed = true
                     let sendEventData = payloadJSON(sendParts)
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external

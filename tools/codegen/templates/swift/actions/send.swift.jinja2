@@ -348,6 +348,14 @@
                     }
 {% elif ecmascript_datamodel and (param.expr or param.location) %}
 {{ ecma_param(param.name, param.expr or param.location, is_http) }}
+{% elif ecmascript_datamodel %}
+                    // W3C SCXML 5.7.1: a `<param>` that names neither an `expr` nor a location, an
+                    // empty `location`, names no location: error.execution, this pair is left out,
+                    // and the error ends the block (4.9).
+{% if 'error.execution' in model.events %}
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> names no location"))
+{% endif %}
+                    paramFailed = true
 {% endif %}
 {% endfor %}
 {% if ecma_namelist %}

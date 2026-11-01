@@ -472,15 +472,29 @@ public func payloadJSON(_ fields: PayloadPair...) -> String {
 }
 
 /// `payloadJSON` over an array of fields.
+///
+/// W3C SCXML 6.2: a name may repeat and every value must be delivered, which a JSON object cannot
+/// say with one key twice (a reader keeps the last), so a repeated name is one member whose value is
+/// the array of its values in document order, and a name that does not repeat is its value as it is.
+/// Members stand in the order their names first appear.
 public func payloadJSON(_ fields: [PayloadPair]) -> String {
+    var names: [String] = []
+    var values: [String: [String]] = [:]
+    for field in fields {
+        if values[field.name] == nil {
+            names.append(field.name)
+        }
+        values[field.name, default: []].append(field.json)
+    }
     var out = "{"
-    for (i, field) in fields.enumerated() {
+    for (i, name) in names.enumerated() {
         if i > 0 {
             out += ","
         }
-        out += quoteJSON(field.name)
+        out += quoteJSON(name)
         out += ":"
-        out += field.json
+        let all = values[name] ?? []
+        out += all.count == 1 ? all[0] : "[" + all.joined(separator: ",") + "]"
     }
     out += "}"
     return out

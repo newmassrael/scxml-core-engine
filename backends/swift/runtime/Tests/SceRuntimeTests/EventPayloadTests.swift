@@ -140,6 +140,15 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
     #expect(payloadJSON(.real("x", 5.0), .real("y", .nan), .signed64("z", -3)) == #"{"x":5,"y":null,"z":"-3"}"#)
 }
 
+// W3C SCXML 6.2: a name that repeats is delivered with every value, in document order, as the array
+// of them (a JSON object with one key twice would keep only the last), and a name that does not
+// repeat is its value alone. The members stand in the order the names first appear.
+@Test func aRepeatedNameIsOneMemberHoldingEveryValueInOrder() {
+    let got = payloadJSON(.integer("d", 1), .text("s", "kept"), .integer("d", 2), .integer("d", 3))
+    #expect(got == #"{"d":[1,2,3],"s":"kept"}"#)
+    #expect(payloadJSON(.integer("only", 1)) == #"{"only":1}"#)
+}
+
 // A value a `<param>` computes crosses as the JSON the pair of the same type writes:
 // a 64-bit integer as the text of its digits, a number as a number.
 @Test func aWireValueIsWrittenAsItsPairIs() {
