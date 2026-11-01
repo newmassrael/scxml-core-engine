@@ -1,0 +1,24 @@
+# Mutation cases for "a chain gate on an entry with content holds the chain
+# whole".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_gate_on_an_entry_with_content_holds_the_chain_whole.cases`.
+#
+# A gate `chain.has(k)` on a gated chain whose named entry carries content is a
+# group of the chain (docs/adr/0065 §6 R6b): where the gate holds, the value
+# holds the chain whole with the entry where it stands; where it does not, the
+# chain has no entry of the kind. The case drops the group for such an entry,
+# which leaves the envelope's gate a check the `roles` test finds.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test codec_roles
+mutation_targets sce-build/src/forge/codec_roles.rs
+mutation_oracles sce-build/tests/codec_roles.rs
+
+mutation_case "an entry with content makes no group" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''        if bare || chain.present_if.is_some() {''',
+     r'''        if bare {''')
+PY

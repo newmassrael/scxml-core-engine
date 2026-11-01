@@ -395,7 +395,7 @@ fn gate_words(group: &GateGroup) -> String {
             .map(|g| match g {
                 GateVar::Input(name) => name.clone(),
                 GateVar::Flag { carrier, flag } => format!("{carrier}_{flag}"),
-                GateVar::Member { chain, key } => format!("{chain}_{}", member_word(*key)),
+                GateVar::Member { chain, key, .. } => format!("{chain}_{}", member_word(*key)),
             })
             .collect::<Vec<_>>()
             .join("_or_")
@@ -456,8 +456,15 @@ pub(crate) fn chain_arm_type(
 ) -> String {
     let key = key_type(codec, group);
     let bound = codec_totality::list_bound(field);
+    // A bare entry is derived and its place held; an entry with content is
+    // held where it stands, the chain whole (R6b).
     if arm.values == [true] {
-        return format!("{RUNTIME_CODEC}::Placed<{list}, {key}, {bound}>");
+        let refinement = if group.member_is_bare() {
+            "Placed"
+        } else {
+            "Having"
+        };
+        return format!("{RUNTIME_CODEC}::{refinement}<{list}, {key}, {bound}>");
     }
     let except = format!(
         "{RUNTIME_CODEC}::Except<{list}, {key}, {}>",
@@ -1233,29 +1240,30 @@ impl<'a> Plan<'a> {
             .find(|f| f.id == clause.field_id)
             .expect("the parser found the chain a gate reads");
         let value = clause.entry_id.expect("a chain clause names an identifier");
-        let mut found = format!("{} == {value}u64", self.entry_identifier(chain, "&_e"));
         // A chain whose membership a group holds: the gate on the group's kind
         // is the arm the value holds, and any other kind is looked for in its
-        // walk, whose named entry has the group's key (docs/adr/0065 §6 R6a).
-        if let Some(group) = self
+        // walk (docs/adr/0065 §6 R6). A bare entry's chain is walked as slots,
+        // whose named entry has the group's key; one with content is walked as
+        // the chain it is, its entries read as any chain's.
+        let membership = self
             .roles
             .group_of(&chain.id)
-            .filter(|group| held_chain_key(group, chain).is_some())
+            .filter(|group| held_chain_key(group, chain).is_some());
+        if let Some(group) = membership.filter(|group| held_chain_key(group, chain) == Some(value))
         {
-            if held_chain_key(group, chain) == Some(value) {
-                let held = format!("src.{}()", self.group_accessor(group));
-                return self.gate_value(group, 0, &held);
-            }
-            found = format!(
+            let held = format!("src.{}()", self.group_accessor(group));
+            return self.gate_value(group, 0, &held);
+        }
+        let found = if membership.is_some_and(GateGroup::member_is_bare) {
+            format!(
                 "match &_e {{ {RUNTIME_CODEC}::Slot::Entry(_n) => {} == {value}u64, {RUNTIME_CODEC}::Slot::Named => false }}",
                 self.entry_identifier(chain, "_n")
-            );
-        }
+            )
+        } else {
+            format!("{} == {value}u64", self.entry_identifier(chain, "&_e"))
+        };
         let read = self.read_src(chain);
-        let held = self
-            .roles
-            .group_of(&chain.id)
-            .is_some_and(|group| held_chain_key(group, chain).is_some());
+        let held = membership.is_some();
         // A chain that is gated off holds no entry, and one a group holds is
         // read from the arm, where it may be absent.
         if chain.present_if.is_some() || held {
@@ -1607,6 +1615,9 @@ impl<'a> Plan<'a> {
     /// the entry is the decoded entry that holds the identifier and the arm it
     /// selects, which presents nothing.
     fn membership_key(&self, group: &GateGroup, chain_id: &str, key: u64) -> String {
+        if !group.member_is_bare() {
+            return self.membership_kind(group, chain_id, key);
+        }
         let chain = self
             .m()
             .fields
@@ -1620,7 +1631,6 @@ impl<'a> Plan<'a> {
             .find(|i| Some(i.alias.as_str()) == child_alias(chain))
             .expect("a chain imports its entry codec");
         let key_ty = key_type(self.name(), group);
-        let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
         let entry_ty = format!("super::{}::{}", import.namespace, import.type_name);
         let lifetime = if import.codec_is_borrowed {
             "<'static>"
@@ -1660,10 +1670,46 @@ impl<'a> Plan<'a> {
                 )
             }
         };
+        format!(
+            "{}#[allow(dead_code)]\n\
+             impl {key_ty} {{\n\
+             \x20   /// The entry of the kind: its identifier, and nothing else to say.\n\
+             \x20   pub fn named() -> {entry_ty}{lifetime} {{\n\
+             \x20       {entry_ty} {{ {carrier}: 0x{key:X}{body} }}\n\
+             \x20   }}\n\
+             }}\n\n",
+            self.membership_kind(group, chain_id, key),
+            carrier = self.l().codec_field_id(&carrier.id),
+        )
+    }
+
+    /// The type that names the kind of entry the membership `group` of the
+    /// chain `chain_id` asks for (`key`), read off every form of the entry
+    /// through its source as a gate reads it (docs/adr/0065 §6 R6).
+    fn membership_kind(&self, group: &GateGroup, chain_id: &str, key: u64) -> String {
+        let chain = self
+            .m()
+            .fields
+            .iter()
+            .find(|f| f.id == chain_id)
+            .expect("a membership names a chain of the codec");
+        let import = self
+            .input
+            .imports
+            .iter()
+            .find(|i| Some(i.alias.as_str()) == child_alias(chain))
+            .expect("a chain imports its entry codec");
+        let key_ty = key_type(self.name(), group);
+        let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
         let test = format!("{} == {key}u64", self.entry_identifier(chain, "entry"));
+        let what = if group.member_is_bare() {
+            "which is all of its value (docs/adr/0065 §6 R6a)"
+        } else {
+            "which a value holds where it stands (docs/adr/0065 §6 R6b)"
+        };
         format!(
             "/// The kind of entry `{chain_id}.has(0x{key:X})` names: an entry whose identifier is\n\
-             /// 0x{key:X}, which is all of its value (docs/adr/0065 §6 R6a).\n\
+             /// 0x{key:X}, {what}.\n\
              #[allow(dead_code)]\n\
              #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
              pub struct {key_ty};\n\n\
@@ -1671,15 +1717,7 @@ impl<'a> Plan<'a> {
              \x20   fn matches(entry: &E) -> bool {{\n\
              \x20       {test}\n\
              \x20   }}\n\
-             }}\n\n\
-             #[allow(dead_code)]\n\
-             impl {key_ty} {{\n\
-             \x20   /// The entry of the kind: its identifier, and nothing else to say.\n\
-             \x20   pub fn named() -> {entry_ty}{lifetime} {{\n\
-             \x20       {entry_ty} {{ {carrier}: 0x{key:X}{body} }}\n\
-             \x20   }}\n\
-             }}\n\n",
-            carrier = self.l().codec_field_id(&carrier.id),
+             }}\n\n"
         )
     }
 
@@ -1863,10 +1901,20 @@ impl<'a> Plan<'a> {
                             "None".to_string()
                         } else if held_chain_key(group, f).is_none() {
                             format!("Some({acc})")
-                        } else if arm.values == [true] || f.present_if.is_none() {
-                            format!("Some({acc}.slots())")
                         } else {
-                            format!("{acc}.map(|_e| _e.slots())")
+                            // A bare entry's chain is walked as slots, the named
+                            // entry at its place; one with content is walked as
+                            // the chain it is (R6b).
+                            let walk = if group.member_is_bare() {
+                                "slots()"
+                            } else {
+                                "into_inner()"
+                            };
+                            if arm.values == [true] || f.present_if.is_none() {
+                                format!("Some({acc}.{walk})")
+                            } else {
+                                format!("{acc}.map(|_e| _e.{walk})")
+                            }
                         }
                     })
                     .collect::<Vec<_>>()
@@ -3663,7 +3711,7 @@ impl<'a> Plan<'a> {
                 // identifier is all of it, written from the kind's entry. The
                 // identifier the named entry has is the key, which a bind of
                 // the entry after it reads.
-                if let Some(group) = membership {
+                if let Some(group) = membership.filter(|group| group.member_is_bare()) {
                     let key = held_chain_key(group, field).unwrap_or_default();
                     let named = format!("{}::named()", key_type(self.name(), group));
                     let named_updates: Vec<String> = binds

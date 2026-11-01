@@ -7447,7 +7447,7 @@ fn rust_group_storage(
             let ty = present(&str_of(obj_of(f), ty_key).unwrap_or_default());
             match (held_chain_key(group, f), ty_key) {
                 (None, _) => ty,
-                (Some(_), "view_rs_type") => {
+                (Some(_), "view_rs_type") if group.member_is_bare() => {
                     format!("{RUNTIME_CODEC}::Without<{}>", bounded_list(&ty))
                 }
                 (Some(_), _) => bounded_list(&ty),
@@ -7498,7 +7498,9 @@ fn rust_group_storage(
                                         && &c.field_id == carrier
                                         && &c.flag_name == flag
                                 }
-                                crate::forge::codec_roles::GateVar::Member { chain, key } => {
+                                crate::forge::codec_roles::GateVar::Member {
+                                    chain, key, ..
+                                } => {
                                     c.scope == PresentIfScope::Chain
                                         && &c.field_id == chain
                                         && c.entry_id == Some(*key)
@@ -7535,6 +7537,15 @@ fn rust_group_storage(
             } else {
                 format!("{local}.into_inner()")
             };
+            let bare = group.member_is_bare();
+            if arm.values == [true] && !bare {
+                // An entry with content stays where it stands: the chain whole,
+                // which the gate found an entry of the kind in (R6b).
+                return format!(
+                    "{}: {RUNTIME_CODEC}::Having::new({list}).expect(\"the gate found an entry of the kind\")",
+                    acc(f)
+                );
+            }
             if arm.values == [true] {
                 let place = if view {
                     format!("{RUNTIME_CODEC}::place_first_in::<_, {key}, {bound}>({list})")
@@ -7547,7 +7558,7 @@ fn rust_group_storage(
                 );
             }
             let refined = |list: &str| {
-                let list = if view {
+                let list = if view && bare {
                     format!("{RUNTIME_CODEC}::Without::whole({list})")
                 } else {
                     list.to_string()
@@ -7642,7 +7653,12 @@ fn rust_group_storage(
                             )
                         };
                         let a = acc(f);
-                        let expr = if arm.values == [true] {
+                        let expr = if arm.values == [true] && !group.member_is_bare() {
+                            format!(
+                                "{RUNTIME_CODEC}::Having::from_list({}).expect(\"the projection keeps each entry's identifier\")",
+                                collect(&format!("{a}.into_inner()"))
+                            )
+                        } else if arm.values == [true] {
                             format!(
                                 "{{ let (_r, _p) = {a}.into_parts(); {RUNTIME_CODEC}::Placed::from_list({}, _p).expect(\"the projection keeps each entry's identifier\") }}",
                                 collect("_r")
@@ -7759,6 +7775,12 @@ fn rust_group_storage(
         let chain_into =
             |f: &CodecField, arm: &GroupArm, src: &str, fill: &dyn Fn(&str) -> String| -> String {
                 let expect = ".expect(\"the projection keeps each entry's identifier\")";
+                if arm.values == [true] && !group.member_is_bare() {
+                    return format!(
+                        "{RUNTIME_CODEC}::Having::new({}){expect}",
+                        fill(&format!("{src}.inner()"))
+                    );
+                }
                 if arm.values == [true] {
                     return format!(
                         "{RUNTIME_CODEC}::Placed::new({}, {src}.place()){expect}",

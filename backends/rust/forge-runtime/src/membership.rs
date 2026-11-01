@@ -219,6 +219,117 @@ impl<L: core::fmt::Debug, K, const MAX: usize, const MIN: usize> core::fmt::Debu
     }
 }
 
+/// A chain of at most `MAX` entries, held whole as the list `L`, that holds an
+/// entry of the kind `K` (docs/adr/0065 §6 R6b): where a gate on an entry with
+/// content holds. The value holds the named entry where it stands among the
+/// others, so the place is where the first entry of the kind is, and nothing
+/// apart from the list says it.
+pub struct Having<L, K, const MAX: usize> {
+    list: L,
+    kind: PhantomData<fn() -> K>,
+}
+
+impl<L: Entries, K, const MAX: usize> Having<L, K, MAX> {
+    /// `list` as a chain that holds an entry of the kind `K` inside the bound,
+    /// or `None` when it holds more entries than the bound or none of the kind.
+    pub fn new(list: L) -> Option<Self>
+    where
+        L: OfKind<K>,
+    {
+        if list.entry_count() > MAX || list.first_of_kind().is_none() {
+            return None;
+        }
+        Some(Self {
+            list,
+            kind: PhantomData,
+        })
+    }
+
+    /// The chain as its walk: the same entries with their count, still holding
+    /// one of the kind, a walk of the type the other arm's walk is.
+    pub fn iter(&self) -> Having<BoundedIter<L::Iter<'_>, MAX>, K, MAX> {
+        Having {
+            list: BoundedIter::counted(self.list.entries(), self.list.entry_count()),
+            kind: PhantomData,
+        }
+    }
+
+    /// How many entries the chain holds, one or more.
+    pub fn len(&self) -> usize {
+        self.list.entry_count()
+    }
+
+    /// Whether the chain holds no entry, which it never does.
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+}
+
+impl<L, K, const MAX: usize> Having<L, K, MAX> {
+    /// The list.
+    pub fn inner(&self) -> &L {
+        &self.list
+    }
+
+    /// The list, without its refinement.
+    pub fn into_inner(self) -> L {
+        self.list
+    }
+
+    /// A storage profile's list as a chain that holds an entry of the kind `K`
+    /// inside the bound, read through its slice, or `None` when it is not one.
+    pub fn from_list<T>(list: L) -> Option<Self>
+    where
+        L: crate::storage::SceList<T>,
+        K: Key<T>,
+    {
+        let entries = list.as_slice();
+        if entries.len() > MAX || !entries.iter().any(|e| K::matches(e)) {
+            return None;
+        }
+        Some(Self {
+            list,
+            kind: PhantomData,
+        })
+    }
+
+    /// A storage profile's chain as its walk, read through its slice.
+    pub fn list_iter<T>(&self) -> Having<BoundedIter<core::slice::Iter<'_, T>, MAX>, K, MAX>
+    where
+        L: crate::storage::SceList<T>,
+    {
+        let entries = self.list.as_slice();
+        Having {
+            list: BoundedIter::counted(entries.iter(), entries.len()),
+            kind: PhantomData,
+        }
+    }
+}
+
+impl<L: Clone, K, const MAX: usize> Clone for Having<L, K, MAX> {
+    fn clone(&self) -> Self {
+        Self {
+            list: self.list.clone(),
+            kind: PhantomData,
+        }
+    }
+}
+
+impl<L: Copy, K, const MAX: usize> Copy for Having<L, K, MAX> {}
+
+impl<L: PartialEq, K, const MAX: usize> PartialEq for Having<L, K, MAX> {
+    fn eq(&self, other: &Self) -> bool {
+        self.list == other.list
+    }
+}
+
+impl<L: core::fmt::Debug, K, const MAX: usize> core::fmt::Debug for Having<L, K, MAX> {
+    /// The list as it prints: the refinement is a fact about it.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.list.fmt(f)
+    }
+}
+
 /// What the walk of a chain yields: an entry of the list, or the place of the
 /// entry of the kind the chain names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -654,6 +765,17 @@ mod tests {
         assert!(Without::skipping(whole, 3).is_none());
         let last = Without::skipping(whole, 2).expect("an entry at 2");
         assert!(last.entries().eq([&1, &2]));
+    }
+
+    #[test]
+    fn a_chain_held_whole_holds_an_entry_of_the_kind_inside_its_bound() {
+        let having = Having::<&[u8], Even, 3>::new(&[1, 4, 3][..]).expect("an even entry");
+        assert_eq!(having.len(), 3);
+        assert_eq!(having.iter().into_inner().len(), 3);
+        assert!(Having::<&[u8], Even, 3>::new(&[1, 3][..]).is_none());
+        assert!(Having::<&[u8], Even, 2>::new(&[1, 4, 3][..]).is_none());
+        let list = heapless::Vec::<u8, 4>::from_slice(&[3, 2]).expect("two");
+        assert!(Having::<_, Even, 4>::from_list(list).is_some());
     }
 
     #[test]

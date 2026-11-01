@@ -497,10 +497,27 @@ fn a_chains_membership_of_a_bare_entry_is_a_group_that_holds_the_chain() {
 }
 
 #[test]
-fn a_chains_membership_of_an_entry_with_content_stays_a_check() {
+fn a_chains_membership_of_an_entry_with_content_is_a_group_that_holds_it() {
     // `has(0x2)` names an entry by its 4-bit id alone, which leaves the entry
-    // its mandatory bit and its body: that is R6b, and the gate stays a check.
+    // its mandatory bit and its body: the value holds the entry where it
+    // stands, and the group holds the chain whole (docs/adr/0065 §6 R6b).
     let roles = roles_of("codec_chain_has_envelope");
+    let group = roles
+        .groups
+        .iter()
+        .find(|g| g.member().is_some())
+        .unwrap_or_else(|| panic!("{}", roles.table()));
+    assert_eq!(group.member(), Some(("extensions", 0x2)));
+    assert!(!group.member_is_bare());
+    assert!(roles.source_checks().next().is_none(), "{}", roles.table());
+}
+
+#[test]
+fn a_membership_of_an_always_present_chain_stays_a_check() {
+    // Both arms of a chain that is always present hold an entry or more, so a
+    // value's default needs the default entry in the arm its identifier
+    // selects, which is R6b-2; until then its gates stay checks.
+    let roles = roles_of("codec_chain_has_tagged");
     assert!(
         roles.groups.iter().all(|g| g.member().is_none()),
         "{}",

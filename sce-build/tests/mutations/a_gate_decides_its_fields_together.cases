@@ -39,8 +39,8 @@ PY
 
 mutation_case "a disjunction of the codec's own flags makes no group" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''    groups.extend(disjunction_groups(model, roles, derived_whole, bare));''',
-     r'''    let _ = disjunction_groups(model, roles, derived_whole, bare);''')
+     r'''    groups.extend(disjunction_groups(model, roles, derived_whole, held));''',
+     r'''    let _ = disjunction_groups(model, roles, derived_whole, held);''')
 PY
 
 mutation_case "a stated length a group holds is said twice" <<'PY'

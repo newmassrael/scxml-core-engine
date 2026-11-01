@@ -1,0 +1,22 @@
+# Mutation cases for "a chain held whole holds an entry of its kind".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_held_whole_holds_an_entry_of_its_kind.cases`.
+#
+# `Having` is the arm of a gate on an entry with content where the gate holds:
+# the chain whole, which holds an entry of the kind (docs/adr/0065 §6 R6b). Its
+# constructor is the one check of that; a constructor that admits a chain with
+# none would let a value say the gate holds over a chain that says it does not.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/membership.rs
+mutation_oracles backends/rust/forge-runtime/src/membership.rs
+
+mutation_case "a chain with no entry of the kind is held" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''        if list.entry_count() > MAX || list.first_of_kind().is_none() {''',
+     r'''        if list.entry_count() > MAX {''')
+PY

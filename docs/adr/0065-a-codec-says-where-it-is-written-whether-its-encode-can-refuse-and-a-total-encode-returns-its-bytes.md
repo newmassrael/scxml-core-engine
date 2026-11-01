@@ -359,6 +359,26 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     with the identifier and the empty arm). A delegating `Either` over the entry's source was not possible: a
     variant's source holds references to its arm bodies, which such a value would have to make itself.
   - `chain_has_marker`, the conformance mirror of the consumer's `put`, became total and lost its declaration.
+
+  *R6b designed 2026-11-01.* An entry with content is the value's to hold, not the codec's to derive, so the value
+  holds it where it stands among the others and the arm where the gate holds needs no place of its own: it is the
+  chain whole, refined to hold an entry of the kind (`Having<L, K, MAX>`), the place being where its first one is.
+  That is the dependent pair of the language above with nothing derived: `(E∖k)^a · k · E^b` held as the sequence it
+  is. A bare entry keeps `Placed`, since what the codec derives a value does not present (ADR 0058 §1). Both arms of
+  such a group walk as one `BoundedIter`, so its encode is the encode of any chain. It lands in two steps:
+  - R6b-1, one key on a gated chain (`chain_has_envelope`): the arms' defaults are an absent chain and nothing
+    to hold, as R6a's are.
+  - R6b-2, a chain that is always present, and several keys on one chain or a key in a disjunction
+    (`chain_has_tagged`): both arms of an always-present chain hold an entry or more, so a value's default holds
+    the default entry in the arm its identifier selects, and several keys hold one refinement for each key an
+    arm holds.
+
+  *R6b-1 landed 2026-11-01.* The runtime adds `Having<L, K, MAX>`. `GateVar::Member` says whether its entry is
+  bare, and `memberships` holds every one-clause gate whose key its identifier can hold (`named_key_fits`: no
+  wider than the flag or field, no bit the identifier leaves out), a bare entry on any chain and one with content
+  on a gated chain. Where such an entry's gate holds, the arm holds `Having` and its walk is the chain's, so the
+  encode, the decode and the view read the chain as any chain; only the refinement is new. `chain_has_envelope`
+  became total and lost its declaration.
 - **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
   clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
   grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte

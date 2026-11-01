@@ -180,3 +180,16 @@ Landing: the commit that adds this section.
   its entries where they came.
 - A document whose only refusal was this gate drops `sce:encode-may-fail`; the conformance `chain_has_marker`
   did. A consumer's `put` that gates its payload on the shared-memory marker follows the same shape.
+
+## A gate on a gated chain's entry with content is a group of the chain (ADR 0065 §6 R6b-1)
+
+Landing: the commit that adds this section.
+
+- A field gated on `chain.has(k)`, where the chain is itself gated and the entry of kind `k` carries more than its
+  identifier, is held with the chain in one group of the same names as R6a's (`{Chain}Has0x{k}`). Where the gate
+  holds, the chain is `Having<L, {...}Key, MAX>`: the chain whole, holding an entry of the kind where it stands.
+  Build it with `Having::new(list)` (or `Having::from_list`). Where it does not, the chain is
+  `Option<Except<L, Key, MAX, MIN>>`, as in R6a.
+- The runtime adds `Having`, and `GateVar::Member` carries whether the entry is bare.
+- A document whose only refusal was this gate drops `sce:encode-may-fail`; the conformance `chain_has_envelope`
+  did. A gate of a key its identifier cannot hold stays refused where the import is resolved.

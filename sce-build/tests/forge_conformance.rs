@@ -4263,9 +4263,13 @@ fn chain_has_decides_the_wire_layout_and_the_encoder_refuses_a_contradiction() {
     const HARNESS: &str = r#"// Injected by chain_has_decides_the_wire_layout_*.
 #[cfg(test)]
 mod tests {
-    use crate::codec_chain_has_envelope::CodecChainHasEnvelope;
+    use crate::codec_chain_has_envelope::{
+        CodecChainHasEnvelope, CodecChainHasEnvelopeExtensionsHas0x2 as Has0x2,
+        CodecChainHasEnvelopeExtensionsHas0x2Key as KindTwo,
+    };
     use crate::codec_chain_has_tagged::CodecChainHasTagged;
-    use ::sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
+    use crate::codec_zenoh_ext_entry::{CodecZenohExtEntry, CodecZenohExtEntryVariant};
+    use ::sce_forge_runtime::codec::{CodecError, Except, Having, SceCursor};
 
     // header E=1, one entry of kind 2 (last), then the SLICED layout:
     // a count of 1, and one slice (kind 0, len 2, bytes AA BB).
@@ -4278,24 +4282,34 @@ mod tests {
         CodecChainHasEnvelope::decode(&mut SceCursor::new(frame)).expect("decode envelope")
     }
 
+    // The gate on an entry with content is a group of the chain, held whole
+    // where the gate holds (docs/adr/0065 §6 R6b): the slices are on that side,
+    // the payload on the other.
     #[test]
     fn a_kind_two_entry_selects_the_sliced_layout() {
         let v = decode_env(&SLICED);
-        assert!(v.payload_len.is_none() && v.payload.is_none());
-        assert_eq!(v.slice_count, Some(1));
-        let slices = v.slices.as_ref().expect("slices follow a kind-2 entry");
-        assert_eq!(slices.len(), 1);
-        assert_eq!(slices[0].bytes, &[0xAA, 0xBB][..]);
-        assert_eq!(v.encode_to_vec().expect("encode"), SLICED.to_vec());
+        match &v.extensions_has_0x2 {
+            Has0x2::Has0x2 { extensions, slices } => {
+                assert_eq!(extensions.len(), 1);
+                assert_eq!(slices.len(), 1);
+                assert_eq!(slices[0].bytes, &[0xAA, 0xBB][..]);
+            }
+            Has0x2::NotHas0x2 { .. } => panic!("slices follow a kind-2 entry"),
+        }
+        assert_eq!(v.encode_to_vec(), SLICED.to_vec());
     }
 
     #[test]
     fn no_kind_two_entry_selects_the_plain_layout() {
         let v = decode_env(&PLAIN);
-        assert!(v.slice_count.is_none() && v.slices.is_none());
-        assert_eq!(v.payload_len, Some(2));
-        assert_eq!(v.payload, Some(&[0xAA, 0xBB][..]));
-        assert_eq!(v.encode_to_vec().expect("encode"), PLAIN.to_vec());
+        match &v.extensions_has_0x2 {
+            Has0x2::NotHas0x2 { extensions, payload } => {
+                assert_eq!(extensions.as_ref().map(|e| e.len()), Some(2));
+                assert_eq!(*payload, &[0xAA, 0xBB][..]);
+            }
+            Has0x2::Has0x2 { .. } => panic!("no kind-2 entry leaves the payload"),
+        }
+        assert_eq!(v.encode_to_vec(), PLAIN.to_vec());
     }
 
     // header E=0: no chain at all, so no kind 2 either: PLAIN again.
@@ -4303,30 +4317,33 @@ mod tests {
     fn an_absent_chain_has_no_entries() {
         let frame = [0x00u8, 0x01, 0xCC];
         let v = decode_env(&frame);
-        assert!(v.extensions.is_none());
-        assert_eq!(v.payload, Some(&[0xCC][..]));
-        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+        match &v.extensions_has_0x2 {
+            Has0x2::NotHas0x2 { extensions, payload } => {
+                assert!(extensions.is_none());
+                assert_eq!(*payload, &[0xCC][..]);
+            }
+            Has0x2::Has0x2 { .. } => panic!("an absent chain holds no entry"),
+        }
+        assert_eq!(v.encode_to_vec(), frame.to_vec());
     }
 
     #[test]
-    fn the_encoder_refuses_a_chain_and_a_layout_that_disagree() {
-        // Sliced layout described by the chain, plain layout supplied.
-        let mut v = decode_env(&SLICED);
-        v.payload_len = Some(2);
-        v.payload = Some(&[0xAA, 0xBB]);
-        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
-
-        // Plain layout described by the chain, the sliced fields supplied.
-        let mut v = decode_env(&PLAIN);
-        v.payload_len = None;
-        v.payload = None;
-        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
-
-        // A refusal writes nothing: the sink-based encode leaves it empty.
-        let mut out: Vec<u8> = Vec::new();
-        let mut sink = VecSink::new(&mut out);
-        assert_eq!(v.encode(&mut sink), Err(CodecError::PresentIfMismatch));
-        assert!(out.is_empty());
+    fn a_chain_and_its_layout_cannot_disagree() {
+        // A chain that holds a kind-2 entry is no chain of the plain side, and
+        // one that holds none is no chain of the sliced side: neither is a
+        // value, so the contradiction the encode once refused cannot be
+        // presented.
+        let entry = |header: u8| CodecZenohExtEntry {
+            header,
+            body: CodecZenohExtEntryVariant::CodecZenohExtUnit(Default::default()),
+        };
+        let kind_two = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[entry(0x02)])
+            .expect("one entry");
+        assert!(Except::<_, KindTwo, 4, 1>::new(kind_two.clone()).is_none());
+        assert!(Having::<_, KindTwo, 4>::new(kind_two).is_some());
+        let kind_three = ::sce_forge_runtime::heapless::Vec::<_, 4>::from_slice(&[entry(0x03)])
+            .expect("one entry");
+        assert!(Having::<_, KindTwo, 4>::new(kind_three).is_none());
     }
 
     #[test]
