@@ -515,7 +515,6 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "donedata_late_completion",
     "donedata_local_invoke",
     "empty_finalize_updates_the_location",
-    "event_descriptor_spellings_agree",
     "event_origin_is_a_location",
     "host_event_reaches_the_child",
     "invoke_param_error_starts_the_child",
@@ -528,7 +527,6 @@ pub const SWIFT_DRIVER_PENDING: &[&str] = &[
     "typed_reader_names",
     "undecodable_payload_is_reported",
     "wildcard_in_document_order",
-    "xml_data_is_a_dom_tree",
 ];
 
 /// Whether, and why, the Swift channel cannot host `stem`.
