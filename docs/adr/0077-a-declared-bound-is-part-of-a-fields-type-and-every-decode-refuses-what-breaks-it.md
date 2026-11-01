@@ -7,8 +7,8 @@
   - ADR 0065 §6 R1: the bound of a bounded byte string or text includes its `sce:max-size`, not only the range of its
     length field;
   - ADR 0058 §5 laws 1 and 3: the laws now hold on every backend's decode, not only on the Rust encode.
-- Evidence: a consumer (watching-zenoh) reported the defect from its committed generated code, by reading and not by
-  running it. `timestamp.scxml` declares `zid` as `sce:type="bytes" sce:bit-size="length-ref"
+- Evidence: a downstream consumer reported the defect from its committed generated code, by reading and not by
+  running it. Its timestamp codec declares `zid` as `sce:type="bytes" sce:bit-size="length-ref"
   sce:length-field="zid_len" sce:max-size="16"`, with `zid_len` a VLE. The Rust decode reads `zid_len`, slices that
   many bytes and returns `Ok`, so the frame `[time][zid_len=17][17 bytes]` decodes. Zenoh 1.10.2 refuses that frame
   (`commons/zenoh-codec/src/core/timestamp.rs`, `size > uhlc::ID::MAX_SIZE`), and zenoh-pico 1.10.2 took the same fix.
