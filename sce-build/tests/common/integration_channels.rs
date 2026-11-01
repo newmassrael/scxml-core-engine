@@ -492,19 +492,10 @@ pub const SWIFT_REFUSED: &[(&str, &str)] = &[
 /// generates and compiles every stem below; what it has not done is ask the machine whether it
 /// behaves.
 pub const SWIFT_DRIVER_PENDING: &[&str] = &[
-    "a_child_may_send_many_events_in_one_tick",
-    "a_child_reply_arrives_without_a_tick",
-    "a_computed_event_name_is_matched_like_any_other",
     "a_delayed_send_reaches_what_its_target_names",
-    "an_error_inside_a_foreach_ends_its_block",
-    "an_event_keeps_the_name_it_was_sent_under",
-    "a_payload_rides_on_its_own_event",
     "a_peer_named_at_run_time_reaches_the_router",
     "a_send_reaches_only_what_its_target_names",
     "a_target_expression_is_routed_as_its_literal_is",
-    "event_origin_is_a_location",
-    "invoke_precedes_dequeue_midrun",
-    "invoke_precedes_external_dequeue",
     "typed_reader_names",
 ];
 

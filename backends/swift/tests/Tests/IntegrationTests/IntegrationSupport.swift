@@ -7,6 +7,7 @@
 import Foundation
 import SceLua
 import SceRuntime
+import Testing
 
 /// What a run left in the variables of an ECMAScript-datamodel machine that is not the value the
 /// document's comment says it should be, each as `name=<read> (wanted <n>)`. Empty when every
@@ -38,4 +39,55 @@ func tickUntil<Policy: StatePolicy>(
         Thread.sleep(forTimeInterval: 0.005)
     }
     return true
+}
+
+/// Starts a machine on a manual clock, so the drive below owns every instant the run sees.
+func initializedOnVirtualTime<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {
+    let engine = Engine(policy: policy)
+    engine.setClock(ManualClock())
+    engine.initialize()
+    return engine
+}
+
+/// Drives a machine started with `initializedOnVirtualTime` until `done` holds (by default, until
+/// it is in a final state), moving its clock only to the next moment it says it is owed work, and
+/// says whether `done` held when the drive ended.
+///
+/// The drive ends without it when the machine owes nothing more, or when the next thing it owes
+/// lies beyond `budgetMs` of virtual time. Neither depends on how fast the host runs this thread,
+/// so the same calls reach the same configuration on an idle machine and on one running every
+/// suite at once; `budgetMs` bounds how long the DOCUMENT may take, not how late the host may be.
+func driveOnVirtualTime<Policy: StatePolicy>(
+    _ engine: Engine<Policy>, budgetMs: Int64 = 2000, maxSteps: Int = 10_000,
+    until done: ((Engine<Policy>) -> Bool)? = nil
+) -> Bool {
+    let reached = done ?? { $0.isInFinalState }
+    var remaining = budgetMs
+    var steps = 0
+    while !reached(engine) {
+        engine.tick()
+        if reached(engine) {
+            break
+        }
+        // `nil` is "nothing is owed", by this machine or any child it ticks; the tick above is
+        // done, so no further time can change that.
+        guard let due = engine.timeUntilNextScheduled() else {
+            break
+        }
+        let (seconds, attoseconds) = due.components
+        let dueMs = seconds * 1000 + (attoseconds + 999_999_999_999_999) / 1_000_000_000_000_000
+        if dueMs > remaining {
+            break
+        }
+        engine.advanceTimeMs(dueMs)
+        remaining -= dueMs
+        steps += 1
+        if steps > maxSteps {
+            Issue.record(
+                "the machine asked to be ticked \(maxSteps) times without reaching what the test waits for or consuming its \(budgetMs)ms budget; something re-arms itself at the current instant"
+            )
+            break
+        }
+    }
+    return reached(engine)
 }
