@@ -77,14 +77,14 @@ edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
      r'''.map({{ owned_copy(e) }}),''')
 PY
 
-# A string is copied by the container made for a string. Copied by the one made for a byte
-# string, the text is not checked to be text. Killed by
+# A string is copied by the runtime's copy of a text. Copied as a byte string, it would be held
+# in a container of bytes. Killed by
 # `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
-# (`<S::Str<8> as ::sce_forge_runtime::codec::SceStr>::from_view(self.note)?,`).
+# (`::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,`).
 mutation_case "a string is copied by the container of a byte string" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
-     r'''as ::sce_forge_runtime::codec::SceStr>::from_view''',
-     r'''as ::sce_forge_runtime::codec::SceByteBuf>::from_slice''')
+     r'''::sce_forge_runtime::codec::Bounded::copied_text''',
+     r'''::sce_forge_runtime::codec::Bounded::copied''')
 PY
 
 # The re-borrow reads each entry through the source interface, the one reading of the owned
@@ -107,14 +107,16 @@ edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
      r'''        Err(CodecError::TooManyElements)''')
 PY
 
-# The owned form is written as the view is, through `encode_source`, which refuses a value past
-# a bound before it writes a byte. Written by nothing, an owned value encodes to no bytes.
-# Killed by `the_owned_form_is_written_through_the_source_interface_as_the_view_is`
+# The owned form is written as the view is, through `encode_source`. Written by nothing, an
+# owned value encodes to no bytes. The anchor is the total encode's, the one a map of bounded
+# entries gets. Killed by `the_owned_form_is_written_through_the_source_interface_as_the_view_is`
 # (`ProbeCbor::encode_source(self, w)`).
 mutation_case "the owned encode writes nothing" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
-     r'''        {{ struct_name }}::encode_source(self, w)''',
-     r'''        Ok(())''')
+     r'''    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        {{ struct_name }}::encode_source(self, w)''',
+     r'''    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        Ok(())''')
 PY
 
 # With `--owned-origin` the mirror gains `try_into_owned_in_origin`, written by the template

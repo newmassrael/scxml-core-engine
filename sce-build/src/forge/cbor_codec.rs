@@ -168,17 +168,61 @@ pub(crate) const RUST_STORAGE_PARAM: &str = "S";
 /// the generator).
 pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 
+/// The bounds a string or byte string entry's value is held to by its Rust type
+/// (docs/adr/0065 §6 R1, docs/adr/0077 §3), as the const arguments of `Bytes`
+/// or `Text` after the lifetime: `sce:max-size` for a string or byte string
+/// that states one, and `sce:length` as both the most and the fewest for an
+/// exact byte string. `None` for an entry with no bound, which keeps a bare
+/// `&str` or `&[u8]`, and for any other entry.
+pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
+    match kind(e) {
+        "text" | "bytes" => e.max_size.map(|max| max.to_string()),
+        "bytes_exact" => e.length.map(|n| format!("{n}, {n}")),
+        _ => None,
+    }
+}
+
+/// The Rust type of the present value of `e` borrowed for `lifetime`: a `Text`
+/// or `Bytes` of its bounds where it has them ([`rust_bound_args`]), a bare
+/// `&str` or `&[u8]` where it has none, and any other entry as the language
+/// names it. The one spelling the decoded map and its source interface share.
+pub(crate) fn rust_view_value_type(l: &LangCtx, e: &CborEntry, lifetime: &str) -> String {
+    let text = matches!(e.present_type(), SceType::String);
+    match (e.present_type(), rust_bound_args(e)) {
+        (SceType::String | SceType::Bytes, Some(bounds)) => format!(
+            "{RUST_RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
+            if text { "Text" } else { "Bytes" }
+        ),
+        (SceType::String | SceType::Bytes, None) => {
+            let lifetime = if lifetime == "'_" {
+                String::new()
+            } else {
+                format!("{lifetime} ")
+            };
+            format!("&{lifetime}{}", if text { "str" } else { "[u8]" })
+        }
+        (other, _) => l.type_name(other).into_owned(),
+    }
+}
+
 /// The type the Rust owned mirror holds the present value of `e` as: a string in
 /// the profile's text container and a byte string in its byte container, each at
 /// the entry's declared capacity, and any other entry as the view holds it. Only
 /// asked of a codec that has a mirror, whose every string and byte string has a
 /// capacity ([`rust_owned_mirror`]).
+///
+/// The container is held inside a `Bounded` of the entry's bounds, as a
+/// positional codec's is (docs/adr/0077 §3), so the mirror's source read lends
+/// it with its bounds and checks nothing.
 pub(crate) fn rust_owned_value_type(l: &LangCtx, e: &CborEntry) -> String {
-    match e.present_type() {
+    let container = match e.present_type() {
         SceType::String => format!("{RUST_STORAGE_PARAM}::Str<{}>", rust_owned_capacity(e)),
         SceType::Bytes => format!("{RUST_STORAGE_PARAM}::Bytes<{}>", rust_owned_capacity(e)),
-        other => l.type_name(other).into_owned(),
-    }
+        other => return l.type_name(other).into_owned(),
+    };
+    let bounds = rust_bound_args(e)
+        .expect("a codec with an owned mirror bounds every string and byte string entry");
+    format!("{RUST_RUNTIME_CODEC}::Bounded<{container}, {bounds}>")
 }
 
 /// The capacity the Rust owned mirror holds the string or byte string `e` at: the
@@ -198,14 +242,16 @@ fn rust_owned_capacity(e: &CborEntry) -> u32 {
 /// other entry moved as `try_into_owned_in` moves it. A fallible build is written
 /// with its `?`, so the expression is the field's value.
 fn rust_owned_origin_expr(e: &CborEntry, field: &str) -> String {
-    let constructor = match e.present_type() {
-        SceType::String => "str_from",
-        SceType::Bytes => "bytes_from",
+    let (constructor, held) = match e.present_type() {
+        SceType::String => ("str_from", "from_built_text"),
+        SceType::Bytes => ("bytes_from", "from_built"),
         _ => return field.to_string(),
     };
+    // The profile builds the container from the view's bytes, and the bounds
+    // check the length it built once (`Bounded::from_built`).
     let build = |arg: &str| {
         format!(
-            "<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::OriginStorage>::{constructor}::<{}>({ORIGIN_PARAM}, {arg})",
+            "{RUST_RUNTIME_CODEC}::Bounded::{held}(<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::OriginStorage>::{constructor}::<{}>({ORIGIN_PARAM}, {arg}.into_inner()))",
             rust_owned_capacity(e)
         )
     };
@@ -604,11 +650,7 @@ fn rust_context(
         .cbor_entries
         .iter()
         .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
-    let mut ctx = common_context(l, m, imports, |e| match e.present_type() {
-        SceType::String => "&'a str".to_string(),
-        SceType::Bytes => "&'a [u8]".to_string(),
-        other => l.type_name(other).into_owned(),
-    })?;
+    let mut ctx = common_context(l, m, imports, |e| rust_view_value_type(l, e, "'a"))?;
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.
     ctx.insert(
@@ -616,7 +658,7 @@ fn rust_context(
         crate::forge::codec_totality::may_fail(m, imports).into(),
     );
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
-        for entry in entries.iter_mut() {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
             entry["field_type"] = if entry["required"].as_bool() == Some(true) {
                 value_type
@@ -624,6 +666,17 @@ fn rust_context(
                 l.codec_optional_of(&value_type)
             }
             .into();
+            // A string or byte string held within its bounds is made through
+            // the type's one door once read, and the door's refusal is the
+            // error the read gives for the same value (docs/adr/0077 §3).
+            if rust_bound_args(e).is_some() {
+                let refusal = if kind(e) == "bytes_exact" {
+                    "CborWrongLength"
+                } else {
+                    "CborOutOfRange"
+                };
+                entry["bounded_refusal"] = refusal.into();
+            }
         }
     }
     ctx.insert("lifetime".into(), if borrows { "<'a>" } else { "" }.into());
@@ -672,12 +725,11 @@ fn rust_context(
             for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
                 let owned = rust_owned_value_type(l, e);
                 entry["owned_field_type"] = if e.is_required() {
-                    owned.clone()
+                    owned
                 } else {
                     l.codec_optional_of(&owned)
                 }
                 .into();
-                entry["owned_type"] = owned.into();
             }
         }
     }

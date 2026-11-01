@@ -1,0 +1,44 @@
+# Mutation cases for "a CBOR entry holds its bound in its type".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cbor_entry_holds_its_bound_in_its_type.cases`.
+#
+# A CBOR string or byte string that states a bound is held, in every Rust form of
+# its map, as a `Text` or `Bytes` of that bound (docs/adr/0065 §6 R1), and an exact
+# byte string as `Bytes<'a, N, N>`. `rust_bound_args` is the one statement of which
+# entries do, and the decode makes each through the type's one door, whose refusal
+# is the error the read gives for the same value. Each case takes one piece of that
+# away; the tests read the text the generator wrote for it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror
+mutation_targets sce-build/src/forge/cbor_codec.rs
+mutation_oracles sce-build/tests/a_rust_cbor_codec_with_text_or_bytes_has_an_owned_mirror.rs
+
+mutation_case "a string's bound does not reach its type" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''        "text" | "bytes" => e.max_size.map(|max| max.to_string()),''',
+     r'''        "bytes" => e.max_size.map(|max| max.to_string()),''')
+PY
+
+mutation_case "a byte string's bound does not reach its type" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''        "text" | "bytes" => e.max_size.map(|max| max.to_string()),''',
+     r'''        "text" => e.max_size.map(|max| max.to_string()),''')
+PY
+
+mutation_case "an exact byte string admits any shorter length" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''        "bytes_exact" => e.length.map(|n| format!("{n}, {n}")),''',
+     r'''        "bytes_exact" => e.length.map(|n| format!("{n}")),''')
+PY
+
+mutation_case "the door answers an exact byte string with another error" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''                    "CborWrongLength"
+                } else {''',
+     r'''                    "CborOutOfRange"
+                } else {''')
+PY

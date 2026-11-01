@@ -185,7 +185,7 @@ impl Inbound {
                 Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
             (
                 envelope.source.to_string(),
-                envelope_id(envelope.id),
+                envelope_id(envelope.id.into()),
                 envelope.sequence_no,
             )
         };
@@ -274,12 +274,15 @@ impl Inbound {
 
 /// An envelope id as the rules hold it: its first eight bytes and its last
 /// eight, big-endian (`sce:std/mesh/envelope_id`). The envelope document
-/// fixes `id` at exactly 16 bytes, so a decoded id always splits.
-fn envelope_id(id: &[u8]) -> EnvelopeIdPayload {
-    let (hi, lo) = id.split_at(8);
+/// fixes `id` at exactly 16 bytes, which its type holds (docs/adr/0077 §3).
+fn envelope_id(id: &[u8; 16]) -> EnvelopeIdPayload {
+    let mut hi = [0u8; 8];
+    let mut lo = [0u8; 8];
+    hi.copy_from_slice(&id[..8]);
+    lo.copy_from_slice(&id[8..]);
     EnvelopeIdPayload {
-        hi: u64::from_be_bytes(hi.try_into().expect("a decoded envelope id is 16 bytes")),
-        lo: u64::from_be_bytes(lo.try_into().expect("a decoded envelope id is 16 bytes")),
+        hi: u64::from_be_bytes(hi),
+        lo: u64::from_be_bytes(lo),
     }
 }
 
@@ -288,6 +291,7 @@ mod tests {
     use super::*;
     use crate::generated::pattern_kind::PatternKind;
     use crate::generated::payload_codec::PayloadCodec;
+    use sce_forge_runtime::codec::Bounded;
 
     const PLAIN: Delivery = Delivery {
         dedup: false,
@@ -305,17 +309,15 @@ mod tests {
     fn wire(source: &str, id: u8, sequence_no: Option<u64>) -> Vec<u8> {
         let id = [id; 16];
         Envelope {
-            id: &id,
-            source,
-            event_type: "evt",
+            id: (&id).into(),
+            source: Bounded::new(source).expect("a source within its bound"),
+            event_type: Bounded::new("evt").expect("an event type within its bound"),
             pattern: PatternKind::FireForget,
             datacontenttype: PayloadCodec::None,
-            data: &[],
             sequence_no,
             ..Envelope::new()
         }
         .encode_to_vec()
-        .expect("a well-formed envelope encodes")
     }
 
     fn sequences(out: &Outcome) -> Vec<u64> {

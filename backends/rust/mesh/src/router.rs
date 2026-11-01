@@ -22,7 +22,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{Bounded, CodecError, Entries, SceCursor};
 use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
 
 use crate::generated::envelope::Envelope;
@@ -198,20 +198,22 @@ impl Router {
             None
         };
         let envelope = Envelope {
-            id: &id,
-            source: &self.machine,
-            event_type: &request.event_name,
+            id: (&id).into(),
+            source: within(self.machine.as_str())?,
+            event_type: within(request.event_name.as_str())?,
             pattern: if reply {
                 PatternKind::RpcReply
             } else {
                 PatternKind::FireForget
             },
             datacontenttype: payload_codec(&request.event_data),
-            data: request.event_data.as_bytes(),
+            data: within(request.event_data.as_bytes())?,
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's
             // `subject`, so a `<send>`'s id travels there.
-            subject: (!request.send_id.is_empty()).then_some(request.send_id.as_str()),
-            invoke_id: answering.as_ref().map(|id| &id[..]),
+            subject: (!request.send_id.is_empty())
+                .then(|| within(request.send_id.as_str()))
+                .transpose()?,
+            invoke_id: answering.as_ref().map(Into::into),
             rpc_status: reply.then_some(RpcStatus::Ok),
             ..Envelope::new()
         };
@@ -261,13 +263,13 @@ impl Router {
             None => peer.config.deadline_ms,
         };
         let envelope = Envelope {
-            id: &id,
-            source: &self.machine,
-            event_type: event,
+            id: (&id).into(),
+            source: within(self.machine.as_str())?,
+            event_type: within(event)?,
             pattern: PatternKind::RpcRequest,
             datacontenttype: payload_codec(&request.event_data),
-            data: request.event_data.as_bytes(),
-            invoke_id: Some(&wire_id),
+            data: within(request.event_data.as_bytes())?,
+            invoke_id: Some((&wire_id).into()),
             deadline_unix_ms: deadline_ms.map(|ms| now_unix_ms.saturating_add(ms)),
             ..Envelope::new()
         };
@@ -479,7 +481,7 @@ impl Router {
         if envelope.pattern != PatternKind::RpcReply {
             return None;
         }
-        let wire_id: [u8; 16] = envelope.invoke_id?.try_into().ok()?;
+        let wire_id: [u8; 16] = envelope.invoke_id?.into();
         match self.requests.check(&wire_id, peer) {
             Answer::Undeclared => Some(Signal::RpcReplyFromUndeclaredPeer {
                 source: envelope.source.to_string(),
@@ -520,7 +522,7 @@ fn reply_to(envelope: &Envelope<'_>) -> Option<[u8; 16]> {
     if envelope.pattern != PatternKind::RpcReply {
         return None;
     }
-    envelope.invoke_id?.try_into().ok()
+    envelope.invoke_id.map(Into::into)
 }
 
 impl Router {
@@ -569,7 +571,9 @@ impl Router {
                 token: pending.token,
                 data: rpc::invoke_error_data(
                     status,
-                    envelope.rpc_error_message,
+                    envelope
+                        .rpc_error_message
+                        .map(|message| message.into_inner()),
                     Some(&source),
                     wire_id,
                 ),
@@ -636,7 +640,7 @@ fn transmit(
     now_ms: i64,
 ) -> Result<Vec<Effect>, RouterError> {
     envelope.sequence_no = peer.config.stamp_sequence.then_some(peer.next_sequence);
-    let bytes = envelope.encode_to_vec().map_err(RouterError::Encode)?;
+    let bytes = envelope.encode_to_vec();
     // §mesh-10.6.3: the counter advances once per envelope written, so one
     // that could not be written leaves no hole; and it has no wrap guard,
     // 2^64 sends being beyond any deployment's lifetime.
@@ -674,13 +678,21 @@ fn payload_codec(event_data: &str) -> PayloadCodec {
 fn payload_text(envelope: &Envelope<'_>) -> Result<String, &'static str> {
     match envelope.datacontenttype {
         PayloadCodec::None => Ok(String::new()),
-        PayloadCodec::Json => core::str::from_utf8(envelope.data)
+        PayloadCodec::Json => core::str::from_utf8(envelope.data.into_inner())
             .map(str::to_string)
             .map_err(|_| "json"),
         PayloadCodec::Cbor => Err("cbor"),
         PayloadCodec::Typed => Err("typed"),
         PayloadCodec::Raw => Err("raw"),
     }
+}
+
+/// `value` as an envelope's text or byte string of at most `MAX` bytes. The
+/// envelope holds each within its bound (docs/adr/0077 §3), so a value past it
+/// has no envelope and is refused here, with the error its encode gave it
+/// before the type held the bound (`CodecError::CborOutOfRange`).
+fn within<L: Entries, const MAX: usize>(value: L) -> Result<Bounded<L, MAX>, RouterError> {
+    Bounded::new(value).ok_or(RouterError::Encode(CodecError::CborOutOfRange))
 }
 
 /// The first value the request carries for the `<param>` `name`.
@@ -698,14 +710,13 @@ fn deliver(envelope: &Envelope<'_>, peer: Option<&str>) -> Effect {
             event: envelope.event_type.to_string(),
             data,
             source: envelope.source.to_string(),
-            send_id: envelope.subject.map(str::to_string),
+            send_id: envelope.subject.map(|subject| subject.to_string()),
             // §mesh-10.7: `_event.invokeid` of an inbound request is its
             // wire invokeid, as RFC 4122 text.
             invoke_id: (envelope.pattern == PatternKind::RpcRequest)
                 .then_some(envelope.invoke_id)
                 .flatten()
-                .and_then(|id| <&[u8; 16]>::try_from(id).ok())
-                .map(rpc::uuid_text),
+                .map(|id| rpc::uuid_text(id.into())),
         },
         Err(codec) => Effect::Raise {
             peer: peer.map(str::to_string),
@@ -986,16 +997,15 @@ mod tests {
             (3, PayloadCodec::Raw, "raw"),
         ] {
             let bytes = Envelope {
-                id: &[id; 16],
-                source: "ecu",
-                event_type: "a",
+                id: (&[id; 16]).into(),
+                source: within("ecu").unwrap(),
+                event_type: within("a").unwrap(),
                 pattern: PatternKind::FireForget,
                 datacontenttype: codec,
-                data: &[0x01],
+                data: (&[0x01]).into(),
                 ..Envelope::new()
             }
-            .encode_to_vec()
-            .unwrap();
+            .encode_to_vec();
             assert_eq!(
                 hmi.receive("ecu", bytes, 0).unwrap(),
                 alloc::vec![Effect::Raise {
@@ -1104,19 +1114,18 @@ mod tests {
 
     fn reply(id: u8, status: Option<RpcStatus>, message: Option<&str>, data: &str) -> Vec<u8> {
         Envelope {
-            id: &[id; 16],
-            source: "hmi",
-            event_type: "service.response.force",
+            id: (&[id; 16]).into(),
+            source: within("hmi").unwrap(),
+            event_type: within("service.response.force").unwrap(),
             pattern: PatternKind::RpcReply,
             datacontenttype: payload_codec(data),
-            data: data.as_bytes(),
-            invoke_id: Some(&WIRE),
+            data: within(data.as_bytes()).unwrap(),
+            invoke_id: Some((&WIRE).into()),
             rpc_status: status,
-            rpc_error_message: message,
+            rpc_error_message: message.map(|m| within(m).unwrap()),
             ..Envelope::new()
         }
         .encode_to_vec()
-        .unwrap()
     }
 
     #[test]
@@ -1128,7 +1137,7 @@ mod tests {
         assert_eq!(envelope.event_type, "service.request.force");
         assert_eq!(envelope.data, br#"{"n":3}"#);
         assert_eq!(envelope.datacontenttype, PayloadCodec::Json);
-        assert_eq!(envelope.invoke_id, Some(&WIRE[..]));
+        assert_eq!(envelope.invoke_id.map(<[u8; 16]>::from), Some(WIRE));
         assert_eq!(envelope.id, &[1; 16]);
         // §mesh-9.5 precedence: the binding's deadline when the invoke gives none.
         assert_eq!(envelope.deadline_unix_ms, Some(1500));
@@ -1275,17 +1284,16 @@ mod tests {
         let mut ecu = requester(None);
         started(&mut ecu, None);
         let raw = Envelope {
-            id: &[2; 16],
-            source: "hmi",
-            event_type: "service.response.force",
+            id: (&[2; 16]).into(),
+            source: within("hmi").unwrap(),
+            event_type: within("service.response.force").unwrap(),
             pattern: PatternKind::RpcReply,
             datacontenttype: PayloadCodec::Raw,
-            data: &[0xFF],
-            invoke_id: Some(&WIRE),
+            data: (&[0xFF]).into(),
+            invoke_id: Some((&WIRE).into()),
             ..Envelope::new()
         }
-        .encode_to_vec()
-        .unwrap();
+        .encode_to_vec();
         assert!(matches!(
             ecu.receive("hmi", raw, 20).unwrap().as_slice(),
             [Effect::Raise {
@@ -1381,7 +1389,7 @@ mod tests {
         let bytes = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
         let reply = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(reply.pattern, PatternKind::RpcReply);
-        assert_eq!(reply.invoke_id, Some(&WIRE[..]));
+        assert_eq!(reply.invoke_id.map(<[u8; 16]>::from), Some(WIRE));
         assert_eq!(reply.rpc_status, Some(RpcStatus::Ok));
 
         assert_eq!(

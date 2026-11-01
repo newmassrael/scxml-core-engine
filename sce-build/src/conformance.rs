@@ -316,9 +316,10 @@ pub struct StructField {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
     /// The field is a `bytes` or `string` whose type holds its bound — a
-    /// `length-ref` or `tail` field of a binary codec, which the Rust codec
-    /// holds as a `Bytes` or `Text` (docs/adr/0077 §3), so a fragment builds
-    /// it through the type's door. Derived from the document, like `optional`.
+    /// `length-ref` or `tail` field of a binary codec, or a CBOR entry with a
+    /// `sce:max-size` or `sce:length` — which the Rust codec holds as a `Bytes`
+    /// or `Text` (docs/adr/0077 §3), so a fragment builds it through the type's
+    /// door. Derived from the document, like `optional`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bounded: bool,
     /// The field is a list — a property of an `sce:encoding="content-line"`
@@ -2505,6 +2506,7 @@ fn derive_codec_shape(
                 .find(|e| e.id == field.name)
                 .ok_or_else(|| missing(field, "CBOR"))?;
             field.optional = !entry.is_required();
+            field.bounded = crate::forge::cbor_codec::rust_bound_args(entry).is_some();
         }
     }
     if !*cbor && !*content_line {

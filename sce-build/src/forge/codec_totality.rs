@@ -882,20 +882,11 @@ fn flag_width(m: &CodecModel, id: &ElementId) -> u32 {
 
 fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>) {
     for e in entries {
+        // A string or byte string with a `sce:max-size`, and an exact byte
+        // string, are presented within their bounds (`Text`, `Bytes`;
+        // docs/adr/0065 §6 R1, docs/adr/0077 §3), so neither is refused; one
+        // with no bound has none to break.
         let refusal = match crate::forge::cbor_codec::kind(e) {
-            "text" | "bytes" => e.max_size.map(|max| {
-                (
-                    RefusalKind::CborOutOfRange,
-                    format!("the value may be longer than {max}, its max-size"),
-                )
-            }),
-            "bytes_exact" => Some((
-                RefusalKind::CborWrongLength,
-                format!(
-                    "the value may be another length than {}, its length",
-                    e.length.unwrap_or_default()
-                ),
-            )),
             "enum" => match e.present_type() {
                 SceType::Enum(r) => match imports.enum_carrier(&r.alias) {
                     Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64) => {
@@ -1017,6 +1008,25 @@ mod tests {
             .iter()
             .map(|r| (r.kind, r.element.clone()))
             .collect()
+    }
+
+    #[test]
+    fn a_cbor_map_of_strings_and_byte_strings_within_their_bounds_is_total() {
+        // Each is presented as a `Text` or `Bytes` of its bounds (docs/adr/0065
+        // §6 R1), and one with no bound has none to break, so no size is left
+        // for the encode to refuse.
+        let m = model(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="t">
+                 <datamodel>
+                 <data id="raw" sce:type="bytes" sce:direction="in"/>
+                 <data id="note" sce:type="string" sce:key="1" sce:max-size="8" sce:direction="out"/>
+                 <data id="blob" sce:type="bytes" sce:key="2" sce:max-size="12" sce:direction="out"/>
+                 <data id="tag" sce:type="bytes" sce:key="3" sce:length="4" sce:direction="out"/>
+                 <data id="free" sce:type="string" sce:key="4" sce:direction="out"/>
+               </datamodel></scxml>"#,
+        );
+        assert!(analyse(&m, &mut NoImports).is_total(), "{:?}", kinds(&m));
     }
 
     #[test]

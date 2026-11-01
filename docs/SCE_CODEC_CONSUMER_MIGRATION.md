@@ -259,3 +259,22 @@ Landing: the commit that adds this section.
   flag something else derives, or where one chain's atoms number more than eight, which is 256 arms.
 - A chain's identifier is judged before the codec's `sce:encode-may-fail`, so a document whose identifier names
   nothing of its entry codec is told that first.
+
+## A CBOR codec's strings and byte strings are held within their bounds (ADR 0065 §6 R1)
+
+Landing: the commit that adds this section.
+
+- In Rust, a CBOR map entry with `sce:max-size` is held as `Text<'a, MAX>` or `Bytes<'a, MAX>`, and an exact-length
+  one as `Bytes<'a, N, N>`, where they were `&'a str` and `&'a [u8]`. Build and read them as in the section on ADR
+  0077 step 2. The owned form holds `Bounded<S::Str<N>, MAX>`, `Bounded<S::Bytes<N>, MAX>` and
+  `Bounded<S::Bytes<N>, N, N>`. An entry with no size keeps its bare type.
+- An exact-length value converts to its array, `.into()` to `&[u8; N]` or `[u8; N]`, because its length is proved.
+- A CBOR map whose only refusals were these sizes is now total: its `encode_to_vec` returns `Vec<u8>`, and its
+  `sce:encode-may-fail` is untrue and refused. Three SCE documents dropped it, among them
+  `stdlib/mesh/envelope.scxml`. A map with an enum on a signed carrier keeps it.
+- The Rust mesh crate follows. Its `Envelope` takes these types, and `Router::send` and `Router::invoke` answer
+  `RouterError::Encode(CodecError::CborOutOfRange)` where they build the envelope, not where they encode it. Read
+  the payload of a decoded envelope with `envelope.data.into_inner()`.
+- `Bounded`'s `Default` is one impl over the new `Fewest` trait, which every list a bound holds implements. A
+  `Bounded<&[T], MAX>` of anything but bytes has no default.
+- The other backends do not change: their CBOR templates refuse these sizes as they did.

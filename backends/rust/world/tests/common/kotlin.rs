@@ -254,7 +254,7 @@ pub fn on_the_wire(world: &World) -> Vec<OnTheWire> {
                 line.to,
                 line.fate,
                 envelope.event_type.to_string(),
-                String::from_utf8_lossy(envelope.data).into_owned(),
+                String::from_utf8_lossy(envelope.data.into_inner()).into_owned(),
             )
         })
         .collect()

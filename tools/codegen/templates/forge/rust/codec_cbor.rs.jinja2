@@ -24,14 +24,26 @@ cbor::read_uint(&mut c)?
 cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }}
 {%- endif -%}
 {%- endmacro %}
+{#- The value of one entry as the map holds it: a string or byte string held
+    within its bounds is made through the type's one door, once read. The read
+    refused a value outside them already, with the error the door gives
+    (docs/adr/0077 §3). #}
+{% macro held_value(e) -%}
+{%- if e.bounded_refusal is defined -%}
+::sce_forge_runtime::codec::Bounded::new({{ decode_value(e) }}).ok_or(CodecError::{{ e.bounded_refusal }})?
+{%- else -%}
+{{ decode_value(e) }}
+{%- endif -%}
+{%- endmacro %}
 {#- The runtime's copy of a string or a byte string into the profile's container
-    for it, as a function the value is given to. A container of a declared
-    capacity refuses a value past it (`CodecError::TooManyElements`). #}
+    for it, held within the entry's bounds, as a function the value is given
+    to: the bounds carry over, and a container whose capacity is below them
+    refuses (`CodecError::TooManyElements`). #}
 {% macro owned_copy(e) -%}
 {%- if e.kind == "text" -%}
-<{{ e.owned_type }} as ::sce_forge_runtime::codec::SceStr>::from_view
+::sce_forge_runtime::codec::Bounded::copied_text
 {%- else -%}
-<{{ e.owned_type }} as ::sce_forge_runtime::codec::SceByteBuf>::from_slice
+::sce_forge_runtime::codec::Bounded::copied
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -96,7 +108,7 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
                     if {{ e.name }}.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    {{ e.name }} = Some({{ decode_value(e) }});
+                    {{ e.name }} = Some({{ held_value(e) }});
                 }
 {% endfor %}
                 _ => cbor::skip(&mut c)?,
@@ -173,8 +185,9 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
 // or the `sce:length` of an exact byte string): a container needs a capacity to be
 // declared at, and an entry with none has no owned form.
 //
-// `try_into_owned_in` enforces each declared bound on the inline profile
-// (`CodecError::TooManyElements`); `as_borrowed` re-borrows any profile back into
+// Each container is held inside a `Bounded` of its entry's bounds
+// (docs/adr/0077 §3), so a value is within them on every profile.
+// `try_into_owned_in` copies a view into the profile; `as_borrowed` re-borrows any profile back into
 // the view; `transcode_in` moves a value between profiles as a checked
 // projection; and `encode` writes the owned value through the source interface,
 // without the view.
@@ -200,11 +213,11 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
     /// held in the given storage profile. Call at a decode boundary when the
     /// decoded value must outlive the input buffer.
     ///
-    /// Fallible for profile uniformity: on the inline profile a string or byte
-    /// string longer than its declared capacity raises
-    /// `CodecError::TooManyElements`, on the growable profile the copy cannot
-    /// fail. Decode has already held each entry to its bound, so a value that
-    /// was decoded fits.
+    /// Fallible for profile uniformity. Every string and byte string of this
+    /// view is within its bounds, which its type holds (docs/adr/0077 §3), and
+    /// the inline and growable profiles hold each at its bound, so the copy
+    /// does not fail on them; a profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements`.
     pub fn try_into_owned_in{{ owned_generics_impl }}(self) -> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {
         Ok({{ struct_name }}Owned {
 {% for e in entries %}
@@ -253,15 +266,15 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 
-    // Every string and byte string of an owned form has a declared bound, so the
-    // encode can refuse a value (`CodecError::CborOutOfRange`, or
-    // `CodecError::CborWrongLength` for an exact byte string): the growable
-    // profile holds a value past a bound, which the encode then refuses.
+    // Every string and byte string of an owned form is held within its bounds
+    // (docs/adr/0077 §3), so the owned encode refuses what the view's does and
+    // no more.
+{% if encode_may_fail %}
 
     /// Encode `self` into the caller-owned sink, straight from the owned fields:
     /// the bytes [`{{ struct_name }}::encode`] writes for the value
-    /// [`Self::as_borrowed`] gives, without the projection. An entry past its
-    /// declared bound is refused, not written.
+    /// [`Self::as_borrowed`] gives, without the projection, or the refusal that
+    /// encode gives.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
         {{ struct_name }}::encode_source(self, w)
     }
@@ -273,5 +286,23 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
         self.encode(&mut VecSink::new(&mut out))?;
         Ok(out)
     }
+{% else %}
+
+    /// Encode `self` into the caller-owned sink, straight from the owned fields:
+    /// the bytes [`{{ struct_name }}::encode`] writes for the value
+    /// [`Self::as_borrowed`] gives, without the projection. The only error is
+    /// the sink's own (docs/adr/0065).
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        {{ struct_name }}::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
+        out
+    }
+{% endif %}
 }
 {% endif %}

@@ -31,7 +31,7 @@ mod mesh {
 }
 
 use codec_cbor_map::CodecCborMap;
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{Bounded, Bytes, CodecError, SceCursor, Text};
 
 const ID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -39,10 +39,10 @@ const ID: [u8; 16] = [
 
 fn value() -> CodecCborMap<'static> {
     CodecCborMap {
-        source: "node-a",
-        id: &ID,
+        source: Bounded::new("node-a").expect("within the source's bound"),
+        id: (&ID).into(),
         pattern: 3,
-        payload: &[0xde, 0xad],
+        payload: (&[0xde, 0xad]).into(),
         deadline: None,
         urgent: Some(true),
     }
@@ -65,7 +65,7 @@ fn decode(bytes: &[u8]) -> Result<CodecCborMap<'_>, CodecError> {
 
 #[test]
 fn a_value_is_written_in_its_one_deterministic_encoding() {
-    assert_eq!(value().encode_to_vec().expect("encodes"), expected());
+    assert_eq!(value().encode_to_vec(), expected());
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn an_optional_entry_is_written_only_when_present_and_in_key_order() {
     let mut want = expected();
     want[0] = 0xa6;
     want.extend_from_slice(&[0x0c, 0x1b, 0, 0, 0, 1, 0, 0, 0, 0]);
-    assert_eq!(v.encode_to_vec().expect("encodes"), want);
+    assert_eq!(v.encode_to_vec(), want);
 }
 
 #[test]
@@ -178,12 +178,12 @@ fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
         0x66,
     ];
     let envelope = Envelope {
-        id: &SAMPLE_ID,
-        source: "ecu",
-        event_type: "evt",
+        id: (&SAMPLE_ID).into(),
+        source: Bounded::new("ecu").expect("within the source's bound"),
+        event_type: Bounded::new("evt").expect("within the event type's bound"),
         pattern: PatternKind::FireForget,
         datacontenttype: PayloadCodec::Json,
-        data: &[0xAA, 0xBB],
+        data: (&[0xAA, 0xBB]).into(),
         ..Envelope::default()
     };
     let mut golden = vec![0xA6, 0x00, 0x50];
@@ -192,7 +192,7 @@ fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
     golden.extend_from_slice(&[0x02, 0x63, b'e', b'v', b't']);
     golden.extend_from_slice(&[0x03, 0x01, 0x04, 0x01, 0x05, 0x42, 0xAA, 0xBB]);
 
-    assert_eq!(envelope.encode_to_vec().expect("encodes"), golden);
+    assert_eq!(envelope.encode_to_vec(), golden);
     assert_eq!(
         Envelope::decode(&mut SceCursor::new(&golden)),
         Ok(envelope.clone())
@@ -212,14 +212,15 @@ fn the_mesh_envelope_writes_the_bytes_the_cpp_codec_writes() {
     );
 }
 
+/// A value that breaks its bound has no frame, so its type cannot hold it and
+/// no map of it can be made (docs/adr/0077 §3). At the bound it is one.
 #[test]
-fn a_value_that_breaks_its_bound_is_not_written() {
-    let mut v = value();
-    v.id = &ID[..15];
-    assert_eq!(v.encode_to_vec(), Err(CodecError::CborWrongLength));
+fn a_value_that_breaks_its_bound_cannot_be_made() {
+    assert!(Bytes::<'_, 16, 16>::new(&ID[..15]).is_none());
+    assert!(Bytes::<'_, 16, 16>::new(&ID[..]).is_some());
 
+    let at_bound = "x".repeat(64);
+    assert!(Text::<'_, 64>::new(&at_bound).is_some());
     let long = "x".repeat(65);
-    let mut v = value();
-    v.source = &long;
-    assert_eq!(v.encode_to_vec(), Err(CodecError::CborOutOfRange));
+    assert!(Text::<'_, 64>::new(&long).is_none());
 }

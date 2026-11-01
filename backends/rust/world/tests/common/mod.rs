@@ -233,7 +233,8 @@ pub fn sent_to_the_hub(world: &World) -> Vec<(String, Value)> {
             continue;
         }
         let envelope = Envelope::decode(&mut SceCursor::new(&line.bytes)).expect("an envelope");
-        let data: Value = serde_json::from_slice(envelope.data).expect("an event's data is JSON");
+        let data: Value =
+            serde_json::from_slice(envelope.data.into_inner()).expect("an event's data is JSON");
         sent.push((envelope.event_type.to_string(), data));
     }
     sent
@@ -747,7 +748,7 @@ pub fn diagnosis(world: &mut World) -> String {
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&line.bytes)) else {
                 continue;
             };
-            let Ok(data) = serde_json::from_slice::<Value>(envelope.data) else {
+            let Ok(data) = serde_json::from_slice::<Value>(envelope.data.into_inner()) else {
                 continue;
             };
             if envelope.event_type == "sheet.row" && whole(&data["key"]) == i128::from(*key) {

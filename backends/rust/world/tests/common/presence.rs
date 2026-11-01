@@ -190,7 +190,8 @@ pub fn heartbeats_at_the_hub(world: &World) -> Vec<(u32, i64, i64)> {
         if envelope.event_type != "presence.alive" {
             continue;
         }
-        let data: Value = serde_json::from_slice(envelope.data).expect("an event's data is JSON");
+        let data: Value =
+            serde_json::from_slice(envelope.data.into_inner()).expect("an event's data is JSON");
         heard.push((
             u32::try_from(whole(&data["client"])).expect("a client is a node"),
             i64::try_from(whole(&data["at"])).expect("a stamp is 64 bits"),

@@ -19,11 +19,12 @@
 //! * A map whose every string and byte string states a bound (`sce:max-size`, or
 //!   the `sce:length` of an exact byte string) has `{Name}Owned<S>`: each such
 //!   entry is held in the profile's `S::Str<N>` or `S::Bytes<N>` at the entry's
-//!   bound, every other entry as the view holds it, and an entry that may be absent
-//!   stays an `Option` of it.
-//! * `try_into_owned_in::<S>()` copies each of them with `from_view` or
-//!   `from_slice` and a `?`, so the inline profile refuses a value past its bound;
-//!   `try_into_owned()` is the default profile's.
+//!   bound, inside a `Bounded` of its bounds (docs/adr/0077 §3), every other entry
+//!   as the view holds it, and an entry that may be absent stays an `Option` of it.
+//! * `try_into_owned_in::<S>()` copies each of them with `Bounded::copied_text` or
+//!   `Bounded::copied` and a `?`, which carries the bounds over and refuses only for
+//!   a profile whose capacity is below them; `try_into_owned()` is the default
+//!   profile's.
 //! * The owned form is re-encoded exactly as the view is, through the codec's
 //!   source interface: it implements `{Name}Source`, `as_borrowed` reads through it,
 //!   and `encode` is `encode_source`.
@@ -50,11 +51,14 @@ use sce_build::{
 };
 
 /// A CBOR codec in codec format 2 whose `<datamodel>` holds `entries` verbatim.
-fn document(root_attrs: &str, entries: &str) -> String {
+///
+/// No probe declares `sce:encode-may-fail`: a string or byte string is presented
+/// within its bounds (docs/adr/0077 §3), so none of these maps refuses a value.
+fn document(entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2"{root_attrs} name="probe_cbor" version="1.0">
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="probe_cbor" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
 {entries}
@@ -86,8 +90,6 @@ const ONLY_UNBOUNDED: &str =
 /// Entries that borrow nothing.
 const SCALARS: &str = r#"    <data id="level" sce:type="uint8" sce:key="1" sce:direction="out"/>
     <data id="urgent" sce:type="optional&lt;bool&gt;" sce:key="2" sce:direction="out"/>"#;
-
-const MAY_FAIL: &str = r#" sce:encode-may-fail="true""#;
 
 fn label() -> DocumentLabel<'static> {
     DocumentLabel {
@@ -144,13 +146,13 @@ fn one_predicate_says_which_map_has_a_mirror() {
     // The map the mirror is generated for, and the three that have none: one with a
     // string that states no bound, one whose only entry is a byte string with no
     // bound, and one that borrows nothing.
-    for (root, entries, mirror, unbounded) in [
-        (MAY_FAIL, BOUNDED, true, false),
-        (MAY_FAIL, ONE_UNBOUNDED, false, true),
-        ("", ONLY_UNBOUNDED, false, true),
-        ("", SCALARS, false, false),
+    for (entries, mirror, unbounded) in [
+        (BOUNDED, true, false),
+        (ONE_UNBOUNDED, false, true),
+        (ONLY_UNBOUNDED, false, true),
+        (SCALARS, false, false),
     ] {
-        let m = codec(&document(root, entries));
+        let m = codec(&document(entries));
         assert_eq!(rust_owned_mirror(&m), mirror, "{entries}");
         assert_eq!(has_unbounded_text_or_bytes(&m), unbounded, "{entries}");
     }
@@ -158,7 +160,7 @@ fn one_predicate_says_which_map_has_a_mirror() {
 
 #[test]
 fn the_owned_form_holds_each_entry_in_a_container_of_its_bound() {
-    let code = generated(&document(MAY_FAIL, BOUNDED));
+    let code = generated(&document(BOUNDED));
     assert_holds(
         &code,
         &[
@@ -166,11 +168,11 @@ fn the_owned_form_holds_each_entry_in_a_container_of_its_bound() {
             // positional codec's derives and its profile parameter and default.
             "pub struct ProbeCbor<'a> {",
             "#[allow(dead_code)]\n#[derive(Debug, Clone, PartialEq)]\npub struct ProbeCborOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
-            "    /// Map key 1, required.\n    pub note: S::Str<8>,",
-            "    /// Map key 2, required.\n    pub blob: S::Bytes<12>,",
-            "    /// Map key 3, required.\n    pub tag: S::Bytes<4>,",
-            "    /// Map key 4.\n    pub label: Option<S::Str<5>>,",
-            "    /// Map key 5.\n    pub extra: Option<S::Bytes<6>>,",
+            "    /// Map key 1, required.\n    pub note: ::sce_forge_runtime::codec::Bounded<S::Str<8>, 8>,",
+            "    /// Map key 2, required.\n    pub blob: ::sce_forge_runtime::codec::Bounded<S::Bytes<12>, 12>,",
+            "    /// Map key 3, required.\n    pub tag: ::sce_forge_runtime::codec::Bounded<S::Bytes<4>, 4, 4>,",
+            "    /// Map key 4.\n    pub label: Option<::sce_forge_runtime::codec::Bounded<S::Str<5>, 5>>,",
+            "    /// Map key 5.\n    pub extra: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<6>, 6>>,",
             "    pub level: u8,",
             "    pub urgent: Option<bool>,",
         ],
@@ -178,19 +180,51 @@ fn the_owned_form_holds_each_entry_in_a_container_of_its_bound() {
 }
 
 #[test]
+fn the_view_holds_each_entry_within_its_bound_and_made_through_the_one_door() {
+    let code = generated(&document(BOUNDED));
+    assert_holds(
+        &code,
+        &[
+            "    /// Map key 1, required.\n    pub note: ::sce_forge_runtime::codec::Text<'a, 8>,",
+            "    /// Map key 2, required.\n    pub blob: ::sce_forge_runtime::codec::Bytes<'a, 12>,",
+            "    /// Map key 3, required.\n    pub tag: ::sce_forge_runtime::codec::Bytes<'a, 4, 4>,",
+            "    /// Map key 4.\n    pub label: Option<::sce_forge_runtime::codec::Text<'a, 5>>,",
+            "    /// Map key 5.\n    pub extra: Option<::sce_forge_runtime::codec::Bytes<'a, 6>>,",
+            // The door's refusal is the error the read gives for the same value.
+            "note = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_text(&mut c, Some(8))?).ok_or(CodecError::CborOutOfRange)?);",
+            "blob = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes(&mut c, Some(12))?).ok_or(CodecError::CborOutOfRange)?);",
+            "tag = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(&mut c, 4)?).ok_or(CodecError::CborWrongLength)?);",
+        ],
+    );
+}
+
+#[test]
+fn an_entry_with_no_bound_keeps_its_bare_type() {
+    let code = generated(&document(ONE_UNBOUNDED));
+    assert_holds(
+        &code,
+        &[
+            "pub note: ::sce_forge_runtime::codec::Text<'a, 8>,",
+            "pub free: &'a str,",
+            "free = Some(cbor::read_text(&mut c, None)?);",
+        ],
+    );
+}
+
+#[test]
 fn the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are() {
-    let code = generated(&document(MAY_FAIL, BOUNDED));
+    let code = generated(&document(BOUNDED));
     assert_holds(
         &code,
         &[
             "impl<'a> ProbeCbor<'a> {",
             "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
             "        Ok(ProbeCborOwned {",
-            "            note: <S::Str<8> as ::sce_forge_runtime::codec::SceStr>::from_view(self.note)?,",
-            "            blob: <S::Bytes<12> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.blob)?,",
-            "            tag: <S::Bytes<4> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.tag)?,",
-            "            label: self.label.map(<S::Str<5> as ::sce_forge_runtime::codec::SceStr>::from_view).transpose()?,",
-            "            extra: self.extra.map(<S::Bytes<6> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice).transpose()?,",
+            "            note: ::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,",
+            "            blob: ::sce_forge_runtime::codec::Bounded::copied(self.blob)?,",
+            "            tag: ::sce_forge_runtime::codec::Bounded::copied(self.tag)?,",
+            "            label: self.label.map(::sce_forge_runtime::codec::Bounded::copied_text).transpose()?,",
+            "            extra: self.extra.map(::sce_forge_runtime::codec::Bounded::copied).transpose()?,",
             "            level: self.level,",
             "            urgent: self.urgent,",
             // The default profile's form, and the move between profiles.
@@ -202,22 +236,23 @@ fn the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are(
 
 #[test]
 fn the_owned_form_is_written_through_the_source_interface_as_the_view_is() {
-    let code = generated(&document(MAY_FAIL, BOUNDED));
+    let code = generated(&document(BOUNDED));
     assert_holds(
         &code,
         &[
             // The interface says each entry of the owned form as the view's does.
             "impl<S: ::sce_forge_runtime::codec::CodecStorage> ProbeCborSource for ProbeCborOwned<S> {",
-            "    fn note(&self) -> &str {\n        <S::Str<8> as ::sce_forge_runtime::codec::SceStr>::as_str(&self.note)\n    }",
-            "    fn blob(&self) -> &[u8] {\n        <S::Bytes<12> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.blob)\n    }",
-            "    fn tag(&self) -> &[u8] {\n        <S::Bytes<4> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.tag)\n    }",
-            "    fn label(&self) -> Option<&str> {\n        self.label.as_ref().map(<S::Str<5> as ::sce_forge_runtime::codec::SceStr>::as_str)\n    }",
-            "    fn extra(&self) -> Option<&[u8]> {\n        self.extra.as_ref().map(<S::Bytes<6> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)\n    }",
+            "    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 8> {\n        ::sce_forge_runtime::codec::Bounded::as_text(&self.note)\n    }",
+            "    fn blob(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 12> {\n        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.blob)\n    }",
+            "    fn tag(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4, 4> {\n        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.tag)\n    }",
+            "    fn label(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 5>> {\n        self.label.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)\n    }",
+            "    fn extra(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 6>> {\n        self.extra.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)\n    }",
             "    fn level(&self) -> u8 {\n        self.level\n    }",
             // The re-borrow reads through it, and the encode is the one encode.
             "pub fn as_borrowed(&self) -> ProbeCbor<'_> {\n        ProbeCbor {\n            note: <Self as ProbeCborSource>::note(self),",
             "            label: <Self as ProbeCborSource>::label(self),",
-            "pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {\n        ProbeCbor::encode_source(self, w)\n    }",
+            "pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {\n        ProbeCbor::encode_source(self, w)\n    }",
+            "pub fn encode_to_vec(&self) -> Vec<u8> {",
             "/// Encode `self` into the caller-owned sink, straight from the owned fields:",
         ],
     );
@@ -225,12 +260,8 @@ fn the_owned_form_is_written_through_the_source_interface_as_the_view_is() {
 
 #[test]
 fn a_map_with_no_bound_on_one_entry_or_no_borrow_has_no_mirror() {
-    for (root, entries) in [
-        (MAY_FAIL, ONE_UNBOUNDED),
-        ("", ONLY_UNBOUNDED),
-        ("", SCALARS),
-    ] {
-        let code = generated(&document(root, entries));
+    for entries in [ONE_UNBOUNDED, ONLY_UNBOUNDED, SCALARS] {
+        let code = generated(&document(entries));
         assert!(!code.contains("ProbeCborOwned"), "{entries}\n{code}");
         assert!(!code.contains("try_into_owned"), "{entries}\n{code}");
         assert!(!code.contains("transcode_in"), "{entries}\n{code}");
@@ -238,13 +269,13 @@ fn a_map_with_no_bound_on_one_entry_or_no_borrow_has_no_mirror() {
         assert_holds(&code, &["pub trait ProbeCborSource {"]);
     }
     // The map that borrows and has no mirror keeps its view as it was.
-    let code = generated(&document("", ONLY_UNBOUNDED));
+    let code = generated(&document(ONLY_UNBOUNDED));
     assert_holds(&code, &["pub struct ProbeCbor<'a> {"]);
 }
 
 #[test]
 fn the_origin_projection_has_the_signature_every_other_owned_form_has() {
-    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    let code = generated_with_origin(&document(BOUNDED), true);
     assert_holds(
         &code,
         &[
@@ -258,16 +289,16 @@ fn the_origin_projection_has_the_signature_every_other_owned_form_has() {
 
 #[test]
 fn the_origin_projection_builds_text_and_bytes_through_the_profile_at_each_capacity() {
-    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    let code = generated_with_origin(&document(BOUNDED), true);
     assert_holds(
         &code,
         &[
             // A string by `str_from` and a byte string by `bytes_from`, at the capacity
             // of the entry, which for an exact byte string is its length, and given the
             // origin; the other entries move as they do in the copying projection.
-            "            note: <S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<8>(origin, self.note)?,",
-            "            blob: <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<12>(origin, self.blob)?,",
-            "            tag: <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<4>(origin, self.tag)?,",
+            "            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<8>(origin, self.note.into_inner()))?,",
+            "            blob: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<12>(origin, self.blob.into_inner()))?,",
+            "            tag: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<4>(origin, self.tag.into_inner()))?,",
             "            level: self.level,\n            urgent: self.urgent,\n        })",
         ],
     );
@@ -275,12 +306,12 @@ fn the_origin_projection_builds_text_and_bytes_through_the_profile_at_each_capac
 
 #[test]
 fn the_origin_projection_builds_an_optional_entry_only_when_it_is_present() {
-    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), true);
+    let code = generated_with_origin(&document(BOUNDED), true);
     assert_holds(
         &code,
         &[
-            "            label: self.label.map(|_v| <S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<5>(origin, _v)).transpose()?,",
-            "            extra: self.extra.map(|_v| <S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<6>(origin, _v)).transpose()?,",
+            "            label: self.label.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<5>(origin, _v.into_inner()))).transpose()?,",
+            "            extra: self.extra.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<6>(origin, _v.into_inner()))).transpose()?,",
         ],
     );
 }
@@ -288,7 +319,7 @@ fn the_origin_projection_builds_an_optional_entry_only_when_it_is_present() {
 #[test]
 fn the_default_output_has_no_origin_projection() {
     // `--owned-origin` is the only thing that writes it.
-    let code = generated_with_origin(&document(MAY_FAIL, BOUNDED), false);
+    let code = generated_with_origin(&document(BOUNDED), false);
     for absent in [
         "try_into_owned_in_origin",
         "OriginStorage",
@@ -296,7 +327,7 @@ fn the_default_output_has_no_origin_projection() {
         "bytes_from",
     ] {
         // None of these is a name the default module has: it copies through
-        // `from_view` and `from_slice`.
+        // `Bounded::copied` and `Bounded::copied_text`.
         assert!(
             !code.contains(absent),
             "`{absent}` in the default output:\n{code}"
@@ -311,13 +342,8 @@ fn the_default_output_has_no_origin_projection() {
 
 #[test]
 fn the_option_only_appends_the_projection_to_a_map_with_a_mirror() {
-    for (root, entries) in [
-        (MAY_FAIL, BOUNDED),
-        (MAY_FAIL, ONE_UNBOUNDED),
-        ("", ONLY_UNBOUNDED),
-        ("", SCALARS),
-    ] {
-        let text = document(root, entries);
+    for entries in [BOUNDED, ONE_UNBOUNDED, ONLY_UNBOUNDED, SCALARS] {
+        let text = document(entries);
         let off = generated_with_origin(&text, false);
         let on = generated_with_origin(&text, true);
         if rust_owned_mirror(&codec(&text)) {

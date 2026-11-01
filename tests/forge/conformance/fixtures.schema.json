@@ -852,7 +852,7 @@
       ],
       "properties": {
         "bounded": {
-          "description": "The field is a `bytes` or `string` whose type holds its bound — a `length-ref` or `tail` field of a binary codec, which the Rust codec holds as a `Bytes` or `Text` (docs/adr/0077 §3), so a fragment builds it through the type's door. Derived from the document, like `optional`.",
+          "description": "The field is a `bytes` or `string` whose type holds its bound — a `length-ref` or `tail` field of a binary codec, or a CBOR entry with a `sce:max-size` or `sce:length` — which the Rust codec holds as a `Bytes` or `Text` (docs/adr/0077 §3), so a fragment builds it through the type's door. Derived from the document, like `optional`.",
           "type": "boolean"
         },
         "compare": {

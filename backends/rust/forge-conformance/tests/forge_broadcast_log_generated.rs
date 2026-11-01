@@ -737,10 +737,23 @@ use log_modules::broadcast_log_conformance_text as text;
 use log_modules::broadcast_log_conformance_text::BroadcastLogConformanceTextRead as TextRead;
 use log_modules::broadcast_log_conformance_text_event::BroadcastLogConformanceTextEvent as TextEvent;
 use log_modules::broadcast_log_conformance_text_event::BroadcastLogConformanceTextEventOwned as TextEventOwned;
-use sce_forge_runtime::codec::{Heap, Inline};
+use sce_forge_runtime::codec::{Bounded, Heap, HeapStr, Inline, Text};
+
+/// The element of these values, `None` when one lies past the bound of its entry: the
+/// map's own field types say which.
+fn made<'a>(label: &'a str, blob: &'a [u8], note: Option<&'a str>) -> Option<TextEvent<'a>> {
+    Some(TextEvent {
+        label: Bounded::new(label)?,
+        blob: Bounded::new(blob)?,
+        note: match note {
+            Some(note) => Some(Bounded::new(note)?),
+            None => None,
+        },
+    })
+}
 
 fn text_event<'a>(label: &'a str, blob: &'a [u8], note: Option<&'a str>) -> TextEvent<'a> {
-    TextEvent { label, blob, note }
+    made(label, blob, note).expect("an element within its bounds")
 }
 
 #[test]
@@ -784,14 +797,14 @@ fn entries_of_a_cbor_element_with_text_come_back_whole_as_its_owned_form() {
         // The stored form is the map's owned form on the inline profile, and it
         // holds what was published, entry by entry.
         let got: TextEventOwned<Inline> = got;
-        assert_eq!(got.label.as_str(), element.label, "entry {n}: the text");
+        assert_eq!(got.label.as_text(), element.label, "entry {n}: the text");
         assert_eq!(
-            got.blob.as_slice(),
+            got.blob.as_bytes(),
             element.blob,
             "entry {n}: the byte string"
         );
         assert_eq!(
-            got.note.as_ref().map(|note| note.as_str()),
+            got.note.as_ref().map(|note| note.as_text()),
             element.note,
             "entry {n}: the optional text"
         );
@@ -809,25 +822,15 @@ fn entries_of_a_cbor_element_with_text_come_back_whole_as_its_owned_form() {
 }
 
 #[test]
-fn an_entry_past_its_bound_is_refused_by_the_codec_and_not_published() {
+fn an_entry_past_its_bound_cannot_be_made_and_one_at_its_bounds_is_published() {
+    // Each entry one byte past its bound: the text of 8, the byte string of 8 and the
+    // optional text of 4. No such element exists to publish (docs/adr/0065 §6 R1).
+    assert!(made("123456789", &[], None).is_none());
+    assert!(made("", &[0u8; 9], None).is_none());
+    assert!(made("", &[], Some("12345")).is_none());
+
     let log = text::BroadcastLogConformanceText::new();
     let mut publisher = log.publisher().expect("the first publisher");
-
-    // Each entry one byte past its bound: the text of 8, the byte string of 8 and the
-    // optional text of 4.
-    let past = [
-        text_event("123456789", &[], None),
-        text_event("", &[0u8; 9], None),
-        text_event("", &[], Some("12345")),
-    ];
-    for element in &past {
-        assert_eq!(
-            text::publish(&mut publisher, element),
-            Err(CodecError::CborOutOfRange),
-            "{element:?}"
-        );
-    }
-    assert_eq!(log.head(), 0, "a refused element publishes nothing");
 
     // The bounds themselves are held.
     text::publish(
@@ -890,23 +893,14 @@ fn a_stored_string_past_its_bound_is_refused_by_the_codec_and_not_handed_back() 
 }
 
 #[test]
-fn the_owned_form_keeps_its_bound_inline_and_its_encode_refuses_a_value_past_it() {
-    // A view can hold a text of any length; the owned form on the inline profile holds
-    // at most the declared 8, and the growable profile holds what it is given.
-    let past = text_event("123456789", &[], None);
+fn the_owned_form_keeps_its_bound_on_every_profile() {
+    // A text past the declared 8 has no frame, so neither the view nor the owned form
+    // holds it: the bound is the type around the container (docs/adr/0077 §3), and a
+    // growable profile's container is held to it as the inline one is.
+    assert!(Text::<'_, 8>::new("123456789").is_none());
     assert_eq!(
-        past.clone().try_into_owned_in::<Inline>(),
-        Err(CodecError::TooManyElements)
-    );
-    let heap: TextEventOwned<Heap> = past
-        .try_into_owned_in::<Heap>()
-        .expect("the growable profile holds it");
-    // The encode is the codec's: it refuses what the document does not admit, from the
-    // owned form as from the view, and the move to the inline profile is refused too.
-    assert_eq!(heap.encode_to_vec(), Err(CodecError::CborOutOfRange));
-    assert_eq!(
-        heap.transcode_in::<Inline>(),
-        Err(CodecError::TooManyElements)
+        Bounded::<HeapStr<8>, 8>::from_text("123456789"),
+        Err(CodecError::LengthOutOfRange)
     );
 
     // Within its bounds the profiles agree on the value and on its bytes.

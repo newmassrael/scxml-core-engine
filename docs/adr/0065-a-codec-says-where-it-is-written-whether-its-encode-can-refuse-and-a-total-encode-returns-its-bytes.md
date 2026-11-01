@@ -184,6 +184,15 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   nothing. The bounds are those of the length field: `0..=15` for a 4-bit length, `1..=16` for a length written as
   itself minus one. A field whose length is 64 bits or a VLE of 64 bits is unbounded and keeps `&[u8]`. The CBOR
   codecs' exact lengths and maximum sizes take the same types.
+  *Landed 2026-11-01, through ADR 0077.* `Bytes` and `Text` are names for R2's `Bounded`, with `MIN` last:
+  `Bytes<'a, MAX, MIN = 0>`.
+  - ADR 0077 §5 requires a bound of every `tail` and `length-ref` field, so none of them keeps `&[u8]`. A CBOR entry
+    with no size keeps its bare type.
+  - A CBOR exact length is `Bytes<'a, N, N>`, which converts to `&[u8; N]` and `[u8; N]`, and a value's default is its
+    fewest zero bytes (`Fewest`, one `Default` over every list a bound holds).
+  - A CBOR codec that refused only for a size became total, the Mesh envelope among them. The one refusal `cbor()`
+    still derives is an enum with a signed carrier.
+  - A content-line codec stays out of R1, for the reason in ADR 0077 §3.
 - **R2, bounded lists.** A list item of the trait is `Bounded<I, MAX>`, an iterator whose length was counted once,
   against `max-count` or the chain's depth, by its constructor. A builder's `heapless::Vec<_, N>` converts to it
   totally when `N <= MAX`, which the generator asserts at compile time. A slice or an iterator converts through the

@@ -83,7 +83,7 @@ pub fn sent_since(world: &World, mark: usize) -> Vec<(String, String, String, Va
         .filter(|line| matches!(line.fate, Fate::Sent { .. }))
         .map(|line| {
             let envelope = Envelope::decode(&mut SceCursor::new(&line.bytes)).expect("an envelope");
-            let data = serde_json::from_slice(envelope.data).unwrap_or(Value::Null);
+            let data = serde_json::from_slice(envelope.data.into_inner()).unwrap_or(Value::Null);
             (
                 line.from.clone(),
                 line.to.clone(),

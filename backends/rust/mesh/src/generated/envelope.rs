@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f3593d0da7c47c6e95770dd740ec6b7f10d9172b65629c75948b0c0e547691b7
+// source-hash: 58f5a17e479c571b0f1a95c9ced6b8f03b5d957325be03d16f15d59d99727b1b
 #![doc = "SCE-MAP: envelope.scxml:22 :: _forge_body"]
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -31,41 +31,41 @@ use super::rpc_status;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct Envelope<'a> {
     /// Map key 0, required.
-    pub id: &'a [u8],
+    pub id: ::sce_forge_runtime::codec::Bytes<'a, 16, 16>,
     /// Map key 1, required.
-    pub source: &'a str,
+    pub source: ::sce_forge_runtime::codec::Text<'a, 262144>,
     /// Map key 2, required.
-    pub event_type: &'a str,
+    pub event_type: ::sce_forge_runtime::codec::Text<'a, 262144>,
     /// Map key 3, required.
     pub pattern: pattern_kind::PatternKind,
     /// Map key 4, required.
     pub datacontenttype: payload_codec::PayloadCodec,
     /// Map key 5, required.
-    pub data: &'a [u8],
+    pub data: ::sce_forge_runtime::codec::Bytes<'a, 16777216>,
     /// Map key 6.
-    pub subject: Option<&'a str>,
+    pub subject: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 7.
-    pub correlation_id: Option<&'a [u8]>,
+    pub correlation_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>>,
     /// Map key 8.
-    pub reply_to: Option<&'a str>,
+    pub reply_to: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 9.
-    pub invoke_id: Option<&'a [u8]>,
+    pub invoke_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>>,
     /// Map key 10.
     pub rpc_status: Option<rpc_status::RpcStatus>,
     /// Map key 11.
-    pub rpc_error_message: Option<&'a str>,
+    pub rpc_error_message: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 12.
     pub deadline_unix_ms: Option<u64>,
     /// Map key 14.
     pub sequence_no: Option<u64>,
     /// Map key 15.
-    pub routing_id: Option<&'a [u8]>,
+    pub routing_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>>,
     /// Map key 16.
-    pub parallel_id: Option<&'a str>,
+    pub parallel_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 17.
-    pub region_id: Option<&'a str>,
+    pub region_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 18.
-    pub child_session_id: Option<&'a str>,
+    pub child_session_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
 }
 
 #[allow(dead_code)]
@@ -82,24 +82,24 @@ impl<'a> Envelope<'a> {
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         let mut c = *cursor;
         let count = cbor::read_map_len(&mut c)?;
-        let mut id: Option<&'a [u8]> = None;
-        let mut source: Option<&'a str> = None;
-        let mut event_type: Option<&'a str> = None;
+        let mut id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>> = None;
+        let mut source: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut event_type: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
         let mut pattern: Option<pattern_kind::PatternKind> = None;
         let mut datacontenttype: Option<payload_codec::PayloadCodec> = None;
-        let mut data: Option<&'a [u8]> = None;
-        let mut subject: Option<&'a str> = None;
-        let mut correlation_id: Option<&'a [u8]> = None;
-        let mut reply_to: Option<&'a str> = None;
-        let mut invoke_id: Option<&'a [u8]> = None;
+        let mut data: Option<::sce_forge_runtime::codec::Bytes<'a, 16777216>> = None;
+        let mut subject: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut correlation_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>> = None;
+        let mut reply_to: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut invoke_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>> = None;
         let mut rpc_status: Option<rpc_status::RpcStatus> = None;
-        let mut rpc_error_message: Option<&'a str> = None;
+        let mut rpc_error_message: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
         let mut deadline_unix_ms: Option<u64> = None;
         let mut sequence_no: Option<u64> = None;
-        let mut routing_id: Option<&'a [u8]> = None;
-        let mut parallel_id: Option<&'a str> = None;
-        let mut region_id: Option<&'a str> = None;
-        let mut child_session_id: Option<&'a str> = None;
+        let mut routing_id: Option<::sce_forge_runtime::codec::Bytes<'a, 16, 16>> = None;
+        let mut parallel_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut region_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut child_session_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
         for _ in 0..count {
             match cbor::read_uint(&mut c)? {
                 0 => {
@@ -107,21 +107,38 @@ impl<'a> Envelope<'a> {
                     if id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    id = Some(cbor::read_bytes_exact(&mut c, 16)?);
+                    id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
+                            &mut c, 16,
+                        )?)
+                        .ok_or(CodecError::CborWrongLength)?,
+                    );
                 }
                 1 => {
                     // A key given twice is not one map entry.
                     if source.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    source = Some(cbor::read_text(&mut c, Some(262144))?);
+                    source = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 2 => {
                     // A key given twice is not one map entry.
                     if event_type.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    event_type = Some(cbor::read_text(&mut c, Some(262144))?);
+                    event_type = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 3 => {
                     // A key given twice is not one map entry.
@@ -156,35 +173,63 @@ impl<'a> Envelope<'a> {
                     if data.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    data = Some(cbor::read_bytes(&mut c, Some(16777216))?);
+                    data = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes(
+                            &mut c,
+                            Some(16777216),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 6 => {
                     // A key given twice is not one map entry.
                     if subject.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    subject = Some(cbor::read_text(&mut c, Some(262144))?);
+                    subject = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 7 => {
                     // A key given twice is not one map entry.
                     if correlation_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    correlation_id = Some(cbor::read_bytes_exact(&mut c, 16)?);
+                    correlation_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
+                            &mut c, 16,
+                        )?)
+                        .ok_or(CodecError::CborWrongLength)?,
+                    );
                 }
                 8 => {
                     // A key given twice is not one map entry.
                     if reply_to.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    reply_to = Some(cbor::read_text(&mut c, Some(262144))?);
+                    reply_to = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 9 => {
                     // A key given twice is not one map entry.
                     if invoke_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    invoke_id = Some(cbor::read_bytes_exact(&mut c, 16)?);
+                    invoke_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
+                            &mut c, 16,
+                        )?)
+                        .ok_or(CodecError::CborWrongLength)?,
+                    );
                 }
                 10 => {
                     // A key given twice is not one map entry.
@@ -205,7 +250,13 @@ impl<'a> Envelope<'a> {
                     if rpc_error_message.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    rpc_error_message = Some(cbor::read_text(&mut c, Some(262144))?);
+                    rpc_error_message = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 12 => {
                     // A key given twice is not one map entry.
@@ -226,28 +277,51 @@ impl<'a> Envelope<'a> {
                     if routing_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    routing_id = Some(cbor::read_bytes_exact(&mut c, 16)?);
+                    routing_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
+                            &mut c, 16,
+                        )?)
+                        .ok_or(CodecError::CborWrongLength)?,
+                    );
                 }
                 16 => {
                     // A key given twice is not one map entry.
                     if parallel_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    parallel_id = Some(cbor::read_text(&mut c, Some(262144))?);
+                    parallel_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 17 => {
                     // A key given twice is not one map entry.
                     if region_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    region_id = Some(cbor::read_text(&mut c, Some(262144))?);
+                    region_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 18 => {
                     // A key given twice is not one map entry.
                     if child_session_id.is_some() {
                         return Err(CodecError::CborMalformed);
                     }
-                    child_session_id = Some(cbor::read_text(&mut c, Some(262144))?);
+                    child_session_id = Some(
+                        ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
+                            &mut c,
+                            Some(262144),
+                        )?)
+                        .ok_or(CodecError::CborOutOfRange)?,
+                    );
                 }
                 _ => cbor::skip(&mut c)?,
             }
@@ -286,21 +360,18 @@ impl<'a> Envelope<'a> {
         Ok(())
     }
 
-    /// Encode this map into `w`. An entry whose value breaks its declared
-    /// bound — an exact length, a maximum size — is refused, not written.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError>
-    where
-        CodecError: From<S::Error>,
-    {
+    /// Encode this map into `w`. No entry has a bound a value can break
+    /// (docs/adr/0065), so the only error is the sink's own.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
-    /// [`encode`](Self::encode) into a new `Vec`.
+    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::new();
-        self.encode(&mut VecSink::new(&mut out))?;
-        Ok(out)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
+        out
     }
 }
 
@@ -320,8 +391,9 @@ impl<'a> Envelope<'a> {
 // or the `sce:length` of an exact byte string): a container needs a capacity to be
 // declared at, and an entry with none has no owned form.
 //
-// `try_into_owned_in` enforces each declared bound on the inline profile
-// (`CodecError::TooManyElements`); `as_borrowed` re-borrows any profile back into
+// Each container is held inside a `Bounded` of its entry's bounds
+// (docs/adr/0077 §3), so a value is within them on every profile.
+// `try_into_owned_in` copies a view into the profile; `as_borrowed` re-borrows any profile back into
 // the view; `transcode_in` moves a value between profiles as a checked
 // projection; and `encode` writes the owned value through the source interface,
 // without the view.
@@ -338,41 +410,41 @@ pub struct EnvelopeOwned<
     S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage,
 > {
     /// Map key 0, required.
-    pub id: S::Bytes<16>,
+    pub id: ::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>,
     /// Map key 1, required.
-    pub source: S::Str<262144>,
+    pub source: ::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>,
     /// Map key 2, required.
-    pub event_type: S::Str<262144>,
+    pub event_type: ::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>,
     /// Map key 3, required.
     pub pattern: pattern_kind::PatternKind,
     /// Map key 4, required.
     pub datacontenttype: payload_codec::PayloadCodec,
     /// Map key 5, required.
-    pub data: S::Bytes<16777216>,
+    pub data: ::sce_forge_runtime::codec::Bounded<S::Bytes<16777216>, 16777216>,
     /// Map key 6.
-    pub subject: Option<S::Str<262144>>,
+    pub subject: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
     /// Map key 7.
-    pub correlation_id: Option<S::Bytes<16>>,
+    pub correlation_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
     /// Map key 8.
-    pub reply_to: Option<S::Str<262144>>,
+    pub reply_to: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
     /// Map key 9.
-    pub invoke_id: Option<S::Bytes<16>>,
+    pub invoke_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
     /// Map key 10.
     pub rpc_status: Option<rpc_status::RpcStatus>,
     /// Map key 11.
-    pub rpc_error_message: Option<S::Str<262144>>,
+    pub rpc_error_message: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
     /// Map key 12.
     pub deadline_unix_ms: Option<u64>,
     /// Map key 14.
     pub sequence_no: Option<u64>,
     /// Map key 15.
-    pub routing_id: Option<S::Bytes<16>>,
+    pub routing_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
     /// Map key 16.
-    pub parallel_id: Option<S::Str<262144>>,
+    pub parallel_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
     /// Map key 17.
-    pub region_id: Option<S::Str<262144>>,
+    pub region_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
     /// Map key 18.
-    pub child_session_id: Option<S::Str<262144>>,
+    pub child_session_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
 }
 
 #[allow(dead_code)]
@@ -381,63 +453,59 @@ impl<'a> Envelope<'a> {
     /// held in the given storage profile. Call at a decode boundary when the
     /// decoded value must outlive the input buffer.
     ///
-    /// Fallible for profile uniformity: on the inline profile a string or byte
-    /// string longer than its declared capacity raises
-    /// `CodecError::TooManyElements`, on the growable profile the copy cannot
-    /// fail. Decode has already held each entry to its bound, so a value that
-    /// was decoded fits.
+    /// Fallible for profile uniformity. Every string and byte string of this
+    /// view is within its bounds, which its type holds (docs/adr/0077 §3), and
+    /// the inline and growable profiles hold each at its bound, so the copy
+    /// does not fail on them; a profile whose capacity is below a bound raises
+    /// `CodecError::TooManyElements`.
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(
         self,
     ) -> Result<EnvelopeOwned<S>, CodecError> {
         Ok(EnvelopeOwned {
-            id: <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(self.id)?,
-            source: <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view(self.source)?,
-            event_type: <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view(
-                self.event_type,
-            )?,
+            id: ::sce_forge_runtime::codec::Bounded::copied(self.id)?,
+            source: ::sce_forge_runtime::codec::Bounded::copied_text(self.source)?,
+            event_type: ::sce_forge_runtime::codec::Bounded::copied_text(self.event_type)?,
             pattern: self.pattern,
             datacontenttype: self.datacontenttype,
-            data: <S::Bytes<16777216> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice(
-                self.data,
-            )?,
+            data: ::sce_forge_runtime::codec::Bounded::copied(self.data)?,
             subject: self
                 .subject
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
             correlation_id: self
                 .correlation_id
-                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .map(::sce_forge_runtime::codec::Bounded::copied)
                 .transpose()?,
             reply_to: self
                 .reply_to
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
             invoke_id: self
                 .invoke_id
-                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .map(::sce_forge_runtime::codec::Bounded::copied)
                 .transpose()?,
             rpc_status: self.rpc_status,
             rpc_error_message: self
                 .rpc_error_message
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
             deadline_unix_ms: self.deadline_unix_ms,
             sequence_no: self.sequence_no,
             routing_id: self
                 .routing_id
-                .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::from_slice)
+                .map(::sce_forge_runtime::codec::Bounded::copied)
                 .transpose()?,
             parallel_id: self
                 .parallel_id
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
             region_id: self
                 .region_id
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
             child_session_id: self
                 .child_session_id
-                .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::from_view)
+                .map(::sce_forge_runtime::codec::Bounded::copied_text)
                 .transpose()?,
         })
     }
@@ -491,28 +559,24 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeOwned<S> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 
-    // Every string and byte string of an owned form has a declared bound, so the
-    // encode can refuse a value (`CodecError::CborOutOfRange`, or
-    // `CodecError::CborWrongLength` for an exact byte string): the growable
-    // profile holds a value past a bound, which the encode then refuses.
+    // Every string and byte string of an owned form is held within its bounds
+    // (docs/adr/0077 §3), so the owned encode refuses what the view's does and
+    // no more.
 
     /// Encode `self` into the caller-owned sink, straight from the owned fields:
     /// the bytes [`Envelope::encode`] writes for the value
-    /// [`Self::as_borrowed`] gives, without the projection. An entry past its
-    /// declared bound is refused, not written.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError>
-    where
-        CodecError: From<K::Error>,
-    {
+    /// [`Self::as_borrowed`] gives, without the projection. The only error is
+    /// the sink's own (docs/adr/0065).
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         Envelope::encode_source(self, w)
     }
 
-    /// [`encode`](Self::encode) into a new `Vec`.
+    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::new();
-        self.encode(&mut VecSink::new(&mut out))?;
-        Ok(out)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
+        out
     }
 }
 
@@ -522,51 +586,51 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeOwned<S> {
 /// ([`Envelope::encode_source`]).
 pub trait EnvelopeSource {
     /// The entry with key 0, required.
-    fn id(&self) -> &[u8];
+    fn id(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 16>;
     /// The entry with key 1, required.
-    fn source(&self) -> &str;
+    fn source(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144>;
     /// The entry with key 2, required.
-    fn event_type(&self) -> &str;
+    fn event_type(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144>;
     /// The entry with key 3, required.
     fn pattern(&self) -> pattern_kind::PatternKind;
     /// The entry with key 4, required.
     fn datacontenttype(&self) -> payload_codec::PayloadCodec;
     /// The entry with key 5, required.
-    fn data(&self) -> &[u8];
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16777216>;
     /// The entry with key 6.
-    fn subject(&self) -> Option<&str>;
+    fn subject(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 7.
-    fn correlation_id(&self) -> Option<&[u8]>;
+    fn correlation_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>>;
     /// The entry with key 8.
-    fn reply_to(&self) -> Option<&str>;
+    fn reply_to(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 9.
-    fn invoke_id(&self) -> Option<&[u8]>;
+    fn invoke_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>>;
     /// The entry with key 10.
     fn rpc_status(&self) -> Option<rpc_status::RpcStatus>;
     /// The entry with key 11.
-    fn rpc_error_message(&self) -> Option<&str>;
+    fn rpc_error_message(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 12.
     fn deadline_unix_ms(&self) -> Option<u64>;
     /// The entry with key 14.
     fn sequence_no(&self) -> Option<u64>;
     /// The entry with key 15.
-    fn routing_id(&self) -> Option<&[u8]>;
+    fn routing_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>>;
     /// The entry with key 16.
-    fn parallel_id(&self) -> Option<&str>;
+    fn parallel_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 17.
-    fn region_id(&self) -> Option<&str>;
+    fn region_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 18.
-    fn child_session_id(&self) -> Option<&str>;
+    fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
 }
 
 impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
-    fn id(&self) -> &[u8] {
+    fn id(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 16> {
         (**self).id()
     }
-    fn source(&self) -> &str {
+    fn source(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
         (**self).source()
     }
-    fn event_type(&self) -> &str {
+    fn event_type(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
         (**self).event_type()
     }
     fn pattern(&self) -> pattern_kind::PatternKind {
@@ -575,25 +639,25 @@ impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
     fn datacontenttype(&self) -> payload_codec::PayloadCodec {
         (**self).datacontenttype()
     }
-    fn data(&self) -> &[u8] {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16777216> {
         (**self).data()
     }
-    fn subject(&self) -> Option<&str> {
+    fn subject(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).subject()
     }
-    fn correlation_id(&self) -> Option<&[u8]> {
+    fn correlation_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         (**self).correlation_id()
     }
-    fn reply_to(&self) -> Option<&str> {
+    fn reply_to(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).reply_to()
     }
-    fn invoke_id(&self) -> Option<&[u8]> {
+    fn invoke_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         (**self).invoke_id()
     }
     fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
         (**self).rpc_status()
     }
-    fn rpc_error_message(&self) -> Option<&str> {
+    fn rpc_error_message(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).rpc_error_message()
     }
     fn deadline_unix_ms(&self) -> Option<u64> {
@@ -602,28 +666,28 @@ impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
     fn sequence_no(&self) -> Option<u64> {
         (**self).sequence_no()
     }
-    fn routing_id(&self) -> Option<&[u8]> {
+    fn routing_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         (**self).routing_id()
     }
-    fn parallel_id(&self) -> Option<&str> {
+    fn parallel_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).parallel_id()
     }
-    fn region_id(&self) -> Option<&str> {
+    fn region_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).region_id()
     }
-    fn child_session_id(&self) -> Option<&str> {
+    fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).child_session_id()
     }
 }
 
 impl<'a> EnvelopeSource for Envelope<'a> {
-    fn id(&self) -> &[u8] {
+    fn id(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 16> {
         self.id
     }
-    fn source(&self) -> &str {
+    fn source(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
         self.source
     }
-    fn event_type(&self) -> &str {
+    fn event_type(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
         self.event_type
     }
     fn pattern(&self) -> pattern_kind::PatternKind {
@@ -632,25 +696,25 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     fn datacontenttype(&self) -> payload_codec::PayloadCodec {
         self.datacontenttype
     }
-    fn data(&self) -> &[u8] {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16777216> {
         self.data
     }
-    fn subject(&self) -> Option<&str> {
+    fn subject(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.subject
     }
-    fn correlation_id(&self) -> Option<&[u8]> {
+    fn correlation_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.correlation_id
     }
-    fn reply_to(&self) -> Option<&str> {
+    fn reply_to(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.reply_to
     }
-    fn invoke_id(&self) -> Option<&[u8]> {
+    fn invoke_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.invoke_id
     }
     fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
         self.rpc_status
     }
-    fn rpc_error_message(&self) -> Option<&str> {
+    fn rpc_error_message(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.rpc_error_message
     }
     fn deadline_unix_ms(&self) -> Option<u64> {
@@ -659,29 +723,29 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     fn sequence_no(&self) -> Option<u64> {
         self.sequence_no
     }
-    fn routing_id(&self) -> Option<&[u8]> {
+    fn routing_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.routing_id
     }
-    fn parallel_id(&self) -> Option<&str> {
+    fn parallel_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.parallel_id
     }
-    fn region_id(&self) -> Option<&str> {
+    fn region_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.region_id
     }
-    fn child_session_id(&self) -> Option<&str> {
+    fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.child_session_id
     }
 }
 
 impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwned<S> {
-    fn id(&self) -> &[u8] {
-        <S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.id)
+    fn id(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 16> {
+        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.id)
     }
-    fn source(&self) -> &str {
-        <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str(&self.source)
+    fn source(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
+        ::sce_forge_runtime::codec::Bounded::as_text(&self.source)
     }
-    fn event_type(&self) -> &str {
-        <S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str(&self.event_type)
+    fn event_type(&self) -> ::sce_forge_runtime::codec::Text<'_, 262144> {
+        ::sce_forge_runtime::codec::Bounded::as_text(&self.event_type)
     }
     fn pattern(&self) -> pattern_kind::PatternKind {
         self.pattern
@@ -689,36 +753,36 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwn
     fn datacontenttype(&self) -> payload_codec::PayloadCodec {
         self.datacontenttype
     }
-    fn data(&self) -> &[u8] {
-        <S::Bytes<16777216> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice(&self.data)
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16777216> {
+        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.data)
     }
-    fn subject(&self) -> Option<&str> {
+    fn subject(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.subject
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
-    fn correlation_id(&self) -> Option<&[u8]> {
+    fn correlation_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.correlation_id
             .as_ref()
-            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+            .map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
-    fn reply_to(&self) -> Option<&str> {
+    fn reply_to(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.reply_to
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
-    fn invoke_id(&self) -> Option<&[u8]> {
+    fn invoke_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.invoke_id
             .as_ref()
-            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+            .map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
     fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
         self.rpc_status
     }
-    fn rpc_error_message(&self) -> Option<&str> {
+    fn rpc_error_message(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.rpc_error_message
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
     fn deadline_unix_ms(&self) -> Option<u64> {
         self.deadline_unix_ms
@@ -726,25 +790,25 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwn
     fn sequence_no(&self) -> Option<u64> {
         self.sequence_no
     }
-    fn routing_id(&self) -> Option<&[u8]> {
+    fn routing_id(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 16, 16>> {
         self.routing_id
             .as_ref()
-            .map(<S::Bytes<16> as ::sce_forge_runtime::codec::SceByteBuf>::as_slice)
+            .map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
-    fn parallel_id(&self) -> Option<&str> {
+    fn parallel_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.parallel_id
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
-    fn region_id(&self) -> Option<&str> {
+    fn region_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.region_id
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
-    fn child_session_id(&self) -> Option<&str> {
+    fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.child_session_id
             .as_ref()
-            .map(<S::Str<262144> as ::sce_forge_runtime::codec::SceStr>::as_str)
+            .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
 }
 
@@ -752,15 +816,12 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwn
 impl<'a> Envelope<'a> {
     /// Encode what `src` says as one CBOR map into `w`: the entries present in
     /// ascending key order, every head in its shortest form. An entry past its
-    /// declared bound is refused before the first byte is written.
+    /// declared bound is not one a value of it can break: the only error is
+    /// the sink's (docs/adr/0065).
     pub fn encode_source<S: EnvelopeSource + ?Sized, K: SceSink>(
         src: &S,
         w: &mut K,
-    ) -> Result<(), CodecError>
-    where
-        CodecError: From<K::Error>,
-    {
-        Self::count_source(src)?;
+    ) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
@@ -769,10 +830,7 @@ impl<'a> Envelope<'a> {
     pub fn write_source<S: EnvelopeSource + ?Sized, K: SceSink>(
         src: &S,
         w: &mut K,
-    ) -> Result<(), CodecError>
-    where
-        CodecError: From<K::Error>,
-    {
+    ) -> Result<(), K::Error> {
         let mut count: u64 = 6;
         if src.subject().is_some() {
             count += 1;
@@ -813,22 +871,13 @@ impl<'a> Envelope<'a> {
         cbor::write_map_head(w, count)?;
         let v = src.id();
         cbor::write_uint(w, 0)?;
-        if v.len() != 16 {
-            return Err(CodecError::CborWrongLength);
-        }
-        cbor::write_bytes(w, v)?;
+        cbor::write_bytes(w, v.into_inner())?;
         let v = src.source();
         cbor::write_uint(w, 1)?;
-        if v.len() > 262144 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_text(w, v)?;
+        cbor::write_text(w, v.into_inner())?;
         let v = src.event_type();
         cbor::write_uint(w, 2)?;
-        if v.len() > 262144 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_text(w, v)?;
+        cbor::write_text(w, v.into_inner())?;
         let v = src.pattern();
         cbor::write_uint(w, 3)?;
         cbor::write_uint(w, u64::from(v.to_underlying()))?;
@@ -837,37 +886,22 @@ impl<'a> Envelope<'a> {
         cbor::write_uint(w, u64::from(v.to_underlying()))?;
         let v = src.data();
         cbor::write_uint(w, 5)?;
-        if v.len() > 16777216 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_bytes(w, v)?;
+        cbor::write_bytes(w, v.into_inner())?;
         if let Some(v) = src.subject() {
             cbor::write_uint(w, 6)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         if let Some(v) = src.correlation_id() {
             cbor::write_uint(w, 7)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
+            cbor::write_bytes(w, v.into_inner())?;
         }
         if let Some(v) = src.reply_to() {
             cbor::write_uint(w, 8)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         if let Some(v) = src.invoke_id() {
             cbor::write_uint(w, 9)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
+            cbor::write_bytes(w, v.into_inner())?;
         }
         if let Some(v) = src.rpc_status() {
             cbor::write_uint(w, 10)?;
@@ -875,10 +909,7 @@ impl<'a> Envelope<'a> {
         }
         if let Some(v) = src.rpc_error_message() {
             cbor::write_uint(w, 11)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         if let Some(v) = src.deadline_unix_ms() {
             cbor::write_uint(w, 12)?;
@@ -890,31 +921,19 @@ impl<'a> Envelope<'a> {
         }
         if let Some(v) = src.routing_id() {
             cbor::write_uint(w, 15)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
+            cbor::write_bytes(w, v.into_inner())?;
         }
         if let Some(v) = src.parallel_id() {
             cbor::write_uint(w, 16)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         if let Some(v) = src.region_id() {
             cbor::write_uint(w, 17)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         if let Some(v) = src.child_session_id() {
             cbor::write_uint(w, 18)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
+            cbor::write_text(w, v.into_inner())?;
         }
         Ok(())
     }
@@ -922,17 +941,17 @@ impl<'a> Envelope<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: EnvelopeSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: EnvelopeSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: EnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for Envelope<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error>
     where
         CodecError: From<K::Error>,
     {
@@ -943,12 +962,14 @@ impl<'a, S: EnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> 
 #[allow(dead_code)]
 impl<'a> Envelope<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
     pub fn measure<S: EnvelopeSource + ?Sized>(
         src: &S,
-    ) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    ) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a

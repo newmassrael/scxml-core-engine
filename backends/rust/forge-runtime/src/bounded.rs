@@ -198,44 +198,97 @@ impl<L, const MAX: usize, const MIN: usize> Deref for Bounded<L, MAX, MIN> {
     }
 }
 
-impl<L: Entries + Default, const MAX: usize> Default for Bounded<L, MAX> {
-    /// The empty list, which a list that may hold none admits.
+/// A list a bounded value's default is made of: the fewest entries it may
+/// hold, each the entry's own default. A list of none is empty, a list of one
+/// entry or more holds one (docs/adr/0065 §6 R7), and a byte string of an exact
+/// length holds that many zeros (docs/adr/0077 §3), so the default value of a
+/// codec that holds any of them is a frame its decode reads back.
+pub trait Fewest: Entries + Sized {
+    /// The list of `MIN` entries. A list that cannot hold `MIN` entries is
+    /// refused when the build reaches it.
+    fn fewest<const MIN: usize>() -> Self;
+}
+
+impl<L: Fewest, const MAX: usize, const MIN: usize> Default for Bounded<L, MAX, MIN> {
+    /// The fewest entries the bounds admit ([`Fewest`]).
     fn default() -> Self {
-        let empty = L::default();
-        assert!(empty.entry_count() == 0, "a list's default holds entries");
-        Self(empty)
+        const { assert!(MIN <= MAX, "the bounds admit no list") };
+        Self(L::fewest::<MIN>())
     }
 }
 
-impl<T: Default, const N: usize, const MAX: usize> Default
-    for Bounded<heapless::Vec<T, N>, MAX, 1>
-{
-    /// One default entry: the fewest a list of one entry or more holds, so the
-    /// default value of a codec that holds it is a frame its decode reads back.
-    fn default() -> Self {
-        const {
-            assert!(
-                N >= 1 && N <= MAX,
-                "the list cannot hold one entry inside its bound"
-            )
-        };
-        let mut one = heapless::Vec::new();
-        if one.push(T::default()).is_err() {
-            unreachable!("a list whose capacity is one or more holds one entry");
+impl<T: Default, const N: usize> Fewest for heapless::Vec<T, N> {
+    fn fewest<const MIN: usize>() -> Self {
+        const { assert!(MIN <= N, "the list cannot hold its fewest entries") };
+        let mut list = heapless::Vec::new();
+        for _ in 0..MIN {
+            if list.push(T::default()).is_err() {
+                unreachable!("a list whose capacity is its fewest holds them");
+            }
         }
-        Self(one)
+        list
     }
 }
 
-impl<'a, W: ListWalk<K>, const K: usize, const MAX: usize> Default
-    for Bounded<crate::view::NonEmptyListView<'a, W, K>, MAX, 1>
+#[cfg(feature = "alloc")]
+impl<T: Default> Fewest for alloc::vec::Vec<T> {
+    fn fewest<const MIN: usize>() -> Self {
+        (0..MIN).map(|_| T::default()).collect()
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> Fewest for ListView<'a, W, K> {
+    /// A view over no bytes, which holds no entry.
+    fn fewest<const MIN: usize>() -> Self {
+        const { assert!(MIN == 0, "a list view over no bytes holds no entry") };
+        ListView::default()
+    }
+}
+
+impl<'a, W: ListWalk<K>, const K: usize> Fewest for crate::view::NonEmptyListView<'a, W, K>
 where
     W::Entry<'a>: Default + Clone,
 {
     /// One default entry, as the list's own default holds.
-    fn default() -> Self {
-        const { assert!(MAX >= 1, "the list cannot hold one entry inside its bound") };
-        Self(crate::view::NonEmptyListView::default())
+    fn fewest<const MIN: usize>() -> Self {
+        const { assert!(MIN == 1, "a list of one entry or more holds one by default") };
+        crate::view::NonEmptyListView::default()
+    }
+}
+
+impl Fewest for &[u8] {
+    /// `MIN` zero bytes, borrowed from a constant.
+    fn fewest<const MIN: usize>() -> Self {
+        &const { [0u8; MIN] }
+    }
+}
+
+impl<'a, const N: usize> From<Bytes<'a, N, N>> for &'a [u8; N] {
+    /// Bytes of an exact length as the array they are: the type holds the
+    /// length, so the conversion checks nothing.
+    fn from(bytes: Bytes<'a, N, N>) -> Self {
+        match bytes.0.try_into() {
+            Ok(array) => array,
+            Err(_) => unreachable!("bytes of an exact length are that long"),
+        }
+    }
+}
+
+impl<'a, const N: usize> From<Bytes<'a, N, N>> for [u8; N] {
+    /// A copy of bytes of an exact length, the array the reference conversion
+    /// lends.
+    fn from(bytes: Bytes<'a, N, N>) -> Self {
+        *<&[u8; N]>::from(bytes)
+    }
+}
+
+impl Fewest for &str {
+    /// `MIN` NULs, the text of `MIN` zero bytes.
+    fn fewest<const MIN: usize>() -> Self {
+        match core::str::from_utf8(&const { [0u8; MIN] }) {
+            Ok(text) => text,
+            Err(_) => unreachable!("zero bytes are UTF-8"),
+        }
     }
 }
 
@@ -374,28 +427,6 @@ impl<const MAX: usize, const MIN: usize> PartialEq<str> for Bounded<&str, MAX, M
 impl<const MAX: usize, const MIN: usize> PartialEq<&str> for Bounded<&str, MAX, MIN> {
     fn eq(&self, other: &&str) -> bool {
         self.0 == *other
-    }
-}
-
-impl<const MAX: usize> Default for Bounded<&[u8], MAX, 1> {
-    /// One zero byte: the fewest a byte string of one byte or more holds, so the
-    /// default value of a codec that holds it is a frame its decode reads back.
-    fn default() -> Self {
-        const {
-            assert!(
-                MAX >= 1,
-                "the bytes cannot hold one byte inside their bound"
-            )
-        };
-        Self(&[0])
-    }
-}
-
-impl<const MAX: usize> Default for Bounded<&str, MAX, 1> {
-    /// One NUL, the one-byte text, for the reason [`Bytes`]' default is one byte.
-    fn default() -> Self {
-        const { assert!(MAX >= 1, "the text cannot hold one byte inside its bound") };
-        Self("\0")
     }
 }
 
@@ -695,10 +726,16 @@ mod tests {
     }
 
     #[test]
-    fn the_default_of_bytes_of_one_byte_or_more_is_one_byte() {
+    fn the_default_of_bytes_is_their_fewest_zero_bytes() {
         assert_eq!(*Bytes::<'_, 16, 1>::default(), &[0u8][..]);
         assert_eq!(Text::<'_, 8, 1>::default().len(), 1);
         assert!(Bytes::<'_, 16>::default().is_empty());
+        // An exact length: that many zeros, and the array it is.
+        assert_eq!(*Bytes::<'_, 16, 16>::default(), &[0u8; 16][..]);
+        let id = [7u8; 16];
+        let exact: Bytes<'_, 16, 16> = (&id).into();
+        assert_eq!(<[u8; 16]>::from(exact), id);
+        assert_eq!(<&[u8; 16]>::from(exact), &id);
     }
 
     #[test]

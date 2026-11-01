@@ -11,8 +11,10 @@
 //!
 //! The encoding rule is the codec's own, written once against the interface:
 //! the map head counts the entries present, and the entries follow in
-//! ascending key order with the shortest heads (RFC 8949 §4.2.1). An entry
-//! past its declared bound is refused, and a refusal found by writing into a
+//! ascending key order with the shortest heads (RFC 8949 §4.2.1). A string or
+//! byte string with a bound is presented within it (`Text`, `Bytes`;
+//! docs/adr/0077 §3), so only an enum whose carrier is signed can be refused,
+//! and a refusal found by writing into a
 //! sink that only counts leaves the caller's sink untouched.
 
 use super::super::*;
@@ -33,13 +35,11 @@ pub(in super::super) struct Input<'a> {
     pub(in super::super) inline_encode: bool,
 }
 
-/// The type an accessor returns for the value of `e` when it is present.
+/// The type an accessor returns for the value of `e` when it is present: a
+/// string or byte string within its bounds where it has them (docs/adr/0077
+/// §3), so a source cannot present a value the encode would have to refuse.
 fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
-    match e.present_type() {
-        SceType::String => "&str".to_string(),
-        SceType::Bytes => "&[u8]".to_string(),
-        other => input.l.type_name(other).into_owned(),
-    }
+    cbor_codec::rust_view_value_type(input.l, e, "'_")
 }
 
 fn accessor_type(input: &Input<'_>, e: &CborEntry) -> String {
@@ -52,16 +52,14 @@ fn accessor_type(input: &Input<'_>, e: &CborEntry) -> String {
 }
 
 /// The expression that reads the entry `acc` of `e` out of the owned mirror as the
-/// type [`accessor_type`] gives: the container a string or a byte string is held in
-/// read back as a `&str` or a `&[u8]`, and any other entry as it is held. The
-/// containers' own read, which the mirror's `as_borrowed` reaches through the
-/// interface.
-fn owned_read(input: &Input<'_>, e: &CborEntry, acc: &str) -> String {
-    let container = cbor_codec::rust_owned_value_type(input.l, e);
+/// type [`accessor_type`] gives: the `Bounded` a string or a byte string is held in
+/// lends it with its bounds, and any other entry is read as it is held. The read
+/// the mirror's `as_borrowed` reaches through the interface.
+fn owned_read(_input: &Input<'_>, e: &CborEntry, acc: &str) -> String {
     let runtime = cbor_codec::RUST_RUNTIME_CODEC;
     let read = match e.present_type() {
-        SceType::String => Some(format!("<{container} as {runtime}::SceStr>::as_str")),
-        SceType::Bytes => Some(format!("<{container} as {runtime}::SceByteBuf>::as_slice")),
+        SceType::String => Some(format!("{runtime}::Bounded::as_text")),
+        SceType::Bytes => Some(format!("{runtime}::Bounded::as_bytes")),
         _ => None,
     };
     match (read, e.is_required()) {
@@ -75,45 +73,18 @@ fn owned_read(input: &Input<'_>, e: &CborEntry, acc: &str) -> String {
 /// written where `totality` names one, and only there.
 fn write_value(input: &Input<'_>, totality: &Totality, e: &CborEntry) -> Vec<String> {
     let mut out = Vec::new();
-    let bound = |out: &mut Vec<String>, test: String, kind: RefusalKind| {
-        out.push(format!("if {test} {{"));
-        out.push(format!(
-            "    return Err({});",
-            totality.require(kind, &e.id)
-        ));
-        out.push("}".to_string());
+    // A string or byte string with bounds is held within them by its type
+    // (docs/adr/0077 §3), so there is nothing to check; the value written is
+    // the `str` or slice it holds.
+    let held = if cbor_codec::rust_bound_args(e).is_some() {
+        "v.into_inner()"
+    } else {
+        "v"
     };
     match cbor_codec::kind(e) {
         "bool" => out.push("cbor::write_bool(w, v)?;".to_string()),
-        "text" => {
-            if let Some(max) = e.max_size {
-                bound(
-                    &mut out,
-                    format!("v.len() > {max}"),
-                    RefusalKind::CborOutOfRange,
-                );
-            }
-            out.push("cbor::write_text(w, v)?;".to_string());
-        }
-        "bytes" => {
-            if let Some(max) = e.max_size {
-                bound(
-                    &mut out,
-                    format!("v.len() > {max}"),
-                    RefusalKind::CborOutOfRange,
-                );
-            }
-            out.push("cbor::write_bytes(w, v)?;".to_string());
-        }
-        "bytes_exact" => {
-            let length = e.length.expect("an exact byte string declares its length");
-            bound(
-                &mut out,
-                format!("v.len() != {length}"),
-                RefusalKind::CborWrongLength,
-            );
-            out.push("cbor::write_bytes(w, v)?;".to_string());
-        }
+        "text" => out.push(format!("cbor::write_text(w, {held})?;")),
+        "bytes" | "bytes_exact" => out.push(format!("cbor::write_bytes(w, {held})?;")),
         "enum" => {
             let SceType::Enum(r) = e.present_type() else {
                 unreachable!("`kind` is enum for an enum type");

@@ -147,7 +147,9 @@ decoding it.
   - The decode keeps the guard of §2, which refuses before it slices and in the length's own type; the value is then
     made through `new`, the type's only door, and its `None` is the same `LengthOutOfRange`.
   - This step reaches the binary fields §1 bounds, `length-ref` and `tail`. The exact lengths and maximum sizes of the
-    CBOR and content-line codecs, the rest of ADR 0065 R1, take the same types in a landing of their own.
+    CBOR codecs, the rest of ADR 0065 R1, take the same types in a landing of their own. A content-line codec is not
+    part of R1: a value it refuses for its size it also refuses for a control character, which no length type rules
+    out, so a bound in its type would leave its refusal where it is.
   - On C++, Go, Kotlin and Python the refusal joins the checks an encode makes before its first byte, and the
     convenience facade of a codec that has one returns an optional or an error, as it does for a gate the encode
     cannot derive. C++ and Kotlin name no chain overflow, so they refuse a chain past its depth as the count past

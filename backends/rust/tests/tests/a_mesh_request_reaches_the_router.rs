@@ -110,7 +110,7 @@ fn a_mesh_request_the_router_fails_is_error_invoke() {
 
 mod through_the_host_core {
     use super::*;
-    use sce_forge_runtime::codec::SceCursor;
+    use sce_forge_runtime::codec::{Bounded, SceCursor};
     use sce_rust_mesh::endpoint::{
         self, Endpoint, Environment, SharedEndpoint, Transport, TransportFailure,
     };
@@ -216,18 +216,17 @@ mod through_the_host_core {
         assert_eq!(request.deadline_unix_ms, Some(1_000_250));
 
         let reply = Envelope {
-            id: &[0xAA; 16],
-            source: "motor",
-            event_type: "service.response.force",
+            id: (&[0xAA; 16]).into(),
+            source: Bounded::new("motor").unwrap(),
+            event_type: Bounded::new("service.response.force").unwrap(),
             pattern: PatternKind::RpcReply,
             datacontenttype: PayloadCodec::Json,
-            data: b"\"ok\"",
+            data: b"\"ok\"".into(),
             invoke_id: request.invoke_id,
             rpc_status: Some(RpcStatus::Ok),
             ..Envelope::new()
         }
-        .encode_to_vec()
-        .unwrap();
+        .encode_to_vec();
         let calls = {
             let mut endpoint = shared.lock().unwrap();
             endpoint.receive("motor", reply);

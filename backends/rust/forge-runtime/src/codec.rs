@@ -272,7 +272,7 @@ pub use crate::storage::*;
 pub use crate::view::{ListIter, ListView, ListWalk, NonEmptyListView};
 // A list of at most its bound (docs/adr/0065 §6 R2), and bytes and text of at
 // most theirs (docs/adr/0077 §3), spelled from the same path.
-pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Bytes, Entries, Text};
+pub use crate::bounded::{try_collect_bounded, Bounded, BoundedIter, Bytes, Entries, Fewest, Text};
 pub use crate::membership::{
     place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
 };
