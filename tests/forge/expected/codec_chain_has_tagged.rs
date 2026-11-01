@@ -33,9 +33,7 @@ use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntry;
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasTagged {
     pub header: u8,
-    pub entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainHasTaggedEntry, 3>, 3, 1>,
-    pub priority: Option<u8>,
-    pub checksum: Option<u16>,
+    pub entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<HeaplessVec<CodecChainHasTaggedEntry, 3>>,
 }
 
 #[allow(dead_code)]
@@ -90,7 +88,8 @@ impl CodecChainHasTagged {
             cursor.advance(1)?;
             _v
         };
-        _out.entries.refill(|_vec| {
+        let mut entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainHasTaggedEntry, 3>, 3, 1> = Default::default();
+        entries.refill(|_vec| {
             let mut _more = false;
             for _ in 0..3u32 {
                 let _entry = CodecChainHasTaggedEntry::decode(cursor)?;
@@ -109,8 +108,8 @@ impl CodecChainHasTagged {
             }
             Ok(())
         })?;
-        let _has_entries_7 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
-        let _has_entries_9 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
+        let _has_entries_7 = entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
+        let _has_entries_9 = entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
         let priority = if _has_entries_7 || (header & 0x01u8) != 0 {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
@@ -128,8 +127,7 @@ impl CodecChainHasTagged {
             None
         };
         _out.header = header;
-        _out.priority = priority;
-        _out.checksum = checksum;
+        _out.entries_has_0x7_has_0x9_header_wide = match (_has_entries_7, _has_entries_9, (header & 0x01u8) != 0) { (true, true, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, true, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, false, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, true, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, false, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, true, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says") }, (false, false, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, false, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), checksum: checksum.unwrap_or_default() }, };
         Ok(())
     }
 
@@ -157,54 +155,141 @@ impl CodecChainHasTagged {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 14;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
         Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
-/// Flags of `CodecChainHasTagged` a parent sets in place of the ones a value presents:
-/// the end flag of a chain whose entries are `CodecChainHasTagged`, which the chain
-/// derives from where an entry stands.
-#[doc(hidden)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CodecChainHasTaggedOverrides {
-    /// The `wide` flag of `header`, when a parent sets it.
-    pub header_wide: Option<bool>,
+/// The fields `entries.has(0x7)`, `entries.has(0x9)`, `header.wide` decide (docs/adr/0065 §6 R4b, R4c): a value holds the
+/// ones of one arm, and `CodecChainHasTagged` derives the gates from which.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<Entries> {
+    /// While `entries.has(0x7)` holds and `entries.has(0x9)` holds and `header.wide` holds.
+    Has0x7Has0x9Wide {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+    },
+    /// While `entries.has(0x7)` holds and `entries.has(0x9)` holds and `header.wide` does not hold.
+    Has0x7Has0x9 {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+    },
+    /// While `entries.has(0x7)` holds and `entries.has(0x9)` does not hold and `header.wide` holds.
+    Has0x7Wide {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+        /// The `checksum` field.
+        checksum: u16,
+    },
+    /// While `entries.has(0x7)` does not hold and `entries.has(0x9)` holds and `header.wide` holds.
+    Has0x9Wide {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+    },
+    /// While `entries.has(0x7)` holds and `entries.has(0x9)` does not hold and `header.wide` does not hold.
+    Has0x7 {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+        /// The `checksum` field.
+        checksum: u16,
+    },
+    /// While `entries.has(0x7)` does not hold and `entries.has(0x9)` holds and `header.wide` does not hold.
+    Has0x9 {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1>,
+    },
+    /// While `entries.has(0x7)` does not hold and `entries.has(0x9)` does not hold and `header.wide` holds.
+    Wide {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1>,
+        /// The `priority` field.
+        priority: u8,
+        /// The `checksum` field.
+        checksum: u16,
+    },
+    /// While `entries.has(0x7)` does not hold and `entries.has(0x9)` does not hold and `header.wide` does not hold.
+    Neither {
+        /// The `entries` field.
+        entries: ::sce_forge_runtime::codec::Chain<Entries, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1>,
+        /// The `checksum` field.
+        checksum: u16,
+    },
 }
 
+impl<Entries> Default for CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<Entries>
+where
+    ::sce_forge_runtime::codec::Bounded<Entries, 3, 1>: Default,
+    Entries: ::sce_forge_runtime::codec::Entries + ::sce_forge_runtime::codec::OfKind<CodecChainHasTaggedEntriesHas0x7Key> + ::sce_forge_runtime::codec::OfKind<CodecChainHasTaggedEntriesHas0x9Key>,
+{
+    /// The chain's default, in the arm its entries' kinds select with every
+    /// other gate clear, each field at its type's default.
+    fn default() -> Self {
+        let _list = <::sce_forge_runtime::codec::Bounded<Entries, 3, 1> as Default>::default().into_inner();
+        match (<Entries as ::sce_forge_runtime::codec::OfKind<CodecChainHasTaggedEntriesHas0x7Key>>::first_of_kind(&_list).is_some(), <Entries as ::sce_forge_runtime::codec::OfKind<CodecChainHasTaggedEntriesHas0x9Key>>::first_of_kind(&_list).is_some(),) {
+            (true, true,) => Self::Has0x7Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(_list).expect("the default entries are of the kinds found"), priority: Default::default() },
+            (true, false,) => Self::Has0x7 { entries: ::sce_forge_runtime::codec::Chain::new(_list).expect("the default entries are of the kinds found"), priority: Default::default(), checksum: Default::default() },
+            (false, true,) => Self::Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(_list).expect("the default entries are of the kinds found") },
+            (false, false,) => Self::Neither { entries: ::sce_forge_runtime::codec::Chain::new(_list).expect("the default entries are of the kinds found"), checksum: Default::default() },
+        }
+    }
+}
+
+/// The kind of entry `entries.has(0x7)` names: an entry whose identifier is
+/// 0x7, which a value holds where it stands (docs/adr/0065 §6 R6b).
 #[allow(dead_code)]
-impl CodecChainHasTaggedOverrides {
-    /// Sets `wide` of `header` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn header_wide(value: bool) -> Self {
-        Self { header_wide: Some(value), ..Self::default() }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainHasTaggedEntriesHas0x7Key;
+
+impl<E: super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> ::sce_forge_runtime::codec::Key<E> for CodecChainHasTaggedEntriesHas0x7Key {
+    fn matches(entry: &E) -> bool {
+        u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(entry)) == 7u64
+    }
+}
+
+/// The kind of entry `entries.has(0x9)` names: an entry whose identifier is
+/// 0x9, which a value holds where it stands (docs/adr/0065 §6 R6b).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainHasTaggedEntriesHas0x9Key;
+
+impl<E: super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> ::sce_forge_runtime::codec::Key<E> for CodecChainHasTaggedEntriesHas0x9Key {
+    fn matches(entry: &E) -> bool {
+        u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(entry)) == 9u64
     }
 }
 
@@ -215,26 +300,16 @@ impl CodecChainHasTaggedOverrides {
 pub trait CodecChainHasTaggedSource {
     /// The `header` field.
     fn header(&self) -> u8;
-    /// The `entries` field.
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1>;
-    /// The `priority` field.
-    fn priority(&self) -> Option<u8>;
-    /// The `checksum` field.
-    fn checksum(&self) -> Option<u16>;
+    /// The fields `entries.has(0x7) || entries.has(0x9) || header.wide` decides, held together (docs/adr/0065 §6 R4).
+    fn entries_has_0x7_has_0x9_header_wide(&self) -> CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>>;
 }
 
 impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
     fn header(&self) -> u8 {
         (**self).header()
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
-        (**self).entries()
-    }
-    fn priority(&self) -> Option<u8> {
-        (**self).priority()
-    }
-    fn checksum(&self) -> Option<u16> {
-        (**self).checksum()
+    fn entries_has_0x7_has_0x9_header_wide(&self) -> CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>> {
+        (**self).entries_has_0x7_has_0x9_header_wide()
     }
 }
 
@@ -246,41 +321,43 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
 pub struct CodecChainHasTaggedParts<'a> {
     /// The `header` field.
     pub header: u8,
-    /// The `entries` field.
-    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts], 3, 1>,
-    /// The `priority` field.
-    pub priority: Option<u8>,
-    /// The `checksum` field.
-    pub checksum: Option<u16>,
+    /// The fields `entries.has(0x7) || entries.has(0x9) || header.wide` decides, held together (docs/adr/0065 §6 R4).
+    pub entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts]>,
 }
 
 impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedParts<'a> {
+    fn entries_has_0x7_has_0x9_header_wide(&self) -> CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>> {
+        match &self.entries_has_0x7_has_0x9_header_wide {
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: entries.iter() },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: entries.iter(), checksum: *checksum },
+        }
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
-        self.entries.iter()
-    }
-    fn priority(&self) -> Option<u8> {
-        self.priority
-    }
-    fn checksum(&self) -> Option<u16> {
-        self.checksum
     }
 }
 
 impl CodecChainHasTaggedSource for CodecChainHasTagged {
+    fn entries_has_0x7_has_0x9_header_wide(&self) -> CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3>> {
+        match &self.entries_has_0x7_has_0x9_header_wide {
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries, priority } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: entries.iter(), priority: *priority },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: entries.iter() },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries, priority, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: entries.iter(), priority: *priority, checksum: *checksum },
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries, checksum } => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: entries.iter(), checksum: *checksum },
+        }
+    }
     fn header(&self) -> u8 {
         self.header
-    }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone, 3, 1> {
-        self.entries.iter()
-    }
-    fn priority(&self) -> Option<u8> {
-        self.priority
-    }
-    fn checksum(&self) -> Option<u16> {
-        self.checksum
     }
 }
 
@@ -289,41 +366,38 @@ impl CodecChainHasTagged {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecChainHasTaggedSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, &CodecChainHasTaggedOverrides::default())
-    }
-
-    /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
-    #[doc(hidden)]
-    pub fn write_source_in<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainHasTaggedOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        let _k_entries: usize = src.entries().len();
-        let mut _c_header: u8 = src.header();
-        if let Some(_o) = over.header_wide {
-            _c_header = (_c_header & !0x1) | u8::from(_o);
-        }
-        if (src.entries().any(|_e| u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(&_e)) == 7u64) || (_c_header & 0x1) != 0) != src.priority().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if (!src.entries().any(|_e| u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(&_e)) == 9u64)) != src.checksum().is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
+    pub fn write_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
+        let (_m_entries, _m_priority, _m_checksum) = match src.entries_has_0x7_has_0x9_header_wide() {
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries, priority } => (Some(entries.into_inner()), Some(priority), None),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries, priority } => (Some(entries.into_inner()), Some(priority), None),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries, priority, checksum } => (Some(entries.into_inner()), Some(priority), Some(checksum)),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries, priority } => (Some(entries.into_inner()), Some(priority), None),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries, priority, checksum } => (Some(entries.into_inner()), Some(priority), Some(checksum)),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries } => (Some(entries.into_inner()), None, None),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries, priority, checksum } => (Some(entries.into_inner()), Some(priority), Some(checksum)),
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries, checksum } => (Some(entries.into_inner()), None, Some(checksum)),
+        };
+        let _k_entries: usize = _m_entries.clone().map_or(0, |_l| _l.len());
+        let _d_header_wide: bool = matches!(src.entries_has_0x7_has_0x9_header_wide(), CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { .. } | CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { .. } | CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { .. } | CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { .. });
+        let _c_header: u8 = (src.header() & !0x1) | u8::from(_d_header_wide);
         w.write_u8(_c_header)?;
-        for (_i, _e) in src.entries().enumerate() {
-            CodecChainHasTaggedEntry::write_source_in(&_e, w, &super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryOverrides::ctl_more(_i + 1 < _k_entries))?;
+        if let Some(_v) = _m_entries.clone() {
+            for (_i, _e) in _v.enumerate() {
+                CodecChainHasTaggedEntry::write_source_in(&_e, w, &super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryOverrides::ctl_more(_i + 1 < _k_entries))?;
+            }
         }
-        if let Some(_v) = src.priority() {
+        if let Some(_v) = _m_priority {
             w.write_u8(_v)?;
         }
-        if let Some(_v) = src.checksum() {
+        if let Some(_v) = _m_checksum {
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
             w.write_u8((_v & 0xFF) as u8)?;
         }
@@ -333,17 +407,17 @@ impl CodecChainHasTagged {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecChainHasTaggedSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecChainHasTaggedSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<S: CodecChainHasTaggedSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasTagged {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -351,10 +425,12 @@ impl<S: CodecChainHasTaggedSource + ?Sized> ::sce_forge_runtime::codec::SourceWr
 #[allow(dead_code)]
 impl CodecChainHasTagged {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecChainHasTaggedSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecChainHasTaggedSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a

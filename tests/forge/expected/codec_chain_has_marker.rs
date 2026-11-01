@@ -157,7 +157,7 @@ impl<'a> CodecChainHasMarker<'a> {
             slices = None;
         }
         _out.header = header;
-        _out.extensions_has_0x12 = if _has_extensions_18 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: match ::sce_forge_runtime::codec::place_first::<_, CodecChainHasMarkerExtensionsHas0x12Key, 4, 4>(extensions.expect("the gate found the chain").into_inner()) { Ok(_p) => _p, Err(_) => unreachable!("the gate found an entry of the kind") }, slices: slices.unwrap_or_default() } } else { CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.map(|_l| ::sce_forge_runtime::codec::Except::new(_l.into_inner()).expect("the gate found no entry of the kind")), payload: payload.unwrap_or_default() } };
+        _out.extensions_has_0x12 = if _has_extensions_18 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: match ::sce_forge_runtime::codec::place_first::<_, CodecChainHasMarkerExtensionsHas0x12Key, 4, 4>(extensions.expect("the gate found the chain").into_inner()) { Ok(_p) => _p, Err(_) => unreachable!("the gate found an entry of the kind") }, slices: slices.unwrap_or_default() } } else { CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: extensions.map(|_l| ::sce_forge_runtime::codec::Chain::new(_l.into_inner()).expect("the gates found the chain's kinds as the arm says")), payload: payload.unwrap_or_default() } };
         _out.payload_len = payload_len;
         _out.slice_count = slice_count;
         Ok(())
@@ -239,7 +239,7 @@ pub enum CodecChainHasMarkerExtensionsHas0x12<Extensions, Slices, Payload> {
     /// While `extensions.has(0x12)` does not hold.
     NotHas0x12 {
         /// The `extensions` field.
-        extensions: Option<::sce_forge_runtime::codec::Except<Extensions, CodecChainHasMarkerExtensionsHas0x12Key, 4, 1>>,
+        extensions: Option<::sce_forge_runtime::codec::Chain<Extensions, (), (CodecChainHasMarkerExtensionsHas0x12Key,), 4, 1>>,
         /// The `payload` field.
         payload: Payload,
     },
@@ -524,7 +524,7 @@ impl<'a> CodecChainHasMarker<'a> {
     pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasMarkerOwned<S>, CodecError> {
         Ok(CodecChainHasMarkerOwned {
             header: self.header,
-            extensions_has_0x12: match self.extensions_has_0x12 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: { let (_r, _p) = extensions.into_parts(); ::sce_forge_runtime::codec::Placed::from_list(::sce_forge_runtime::storage::try_collect_list(_r, |_e| _e.try_into_owned_in::<S>())?, _p).expect("the projection keeps each entry's identifier") }, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: ::sce_forge_runtime::codec::Bounded::copied(payload)? }, },
+            extensions_has_0x12: match self.extensions_has_0x12 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: { let (_r, _p) = extensions.into_parts(); ::sce_forge_runtime::codec::Placed::from_list(::sce_forge_runtime::storage::try_collect_list(_r, |_e| _e.try_into_owned_in::<S>())?, _p).expect("the projection keeps each entry's identifier") }, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Chain::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: ::sce_forge_runtime::codec::Bounded::copied(payload)? }, },
             payload_len: self.payload_len,
             slice_count: self.slice_count,
         })
@@ -574,7 +574,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
                 _out.extensions_has_0x12 = CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: _o_extensions, slices: _o_slices };
             }
             CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => {
-                let _o_extensions: Option<::sce_forge_runtime::codec::Except<HeaplessVec<CodecZenohExtEntry<'o>, 4>, CodecChainHasMarkerExtensionsHas0x12Key, 4, 1>> = match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Except::new({ let mut _v = HeaplessVec::new(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, _l.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier")), None => None };
+                let _o_extensions: Option<::sce_forge_runtime::codec::Chain<HeaplessVec<CodecZenohExtEntry<'o>, 4>, (), (CodecChainHasMarkerExtensionsHas0x12Key,), 4, 1>> = match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, _l.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier")), None => None };
                 let mut _o_payload: ::sce_forge_runtime::codec::Bytes<'o, 256> = Default::default();
                 _o_payload = payload.as_bytes();
                 _out.extensions_has_0x12 = CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: _o_extensions, payload: _o_payload };
