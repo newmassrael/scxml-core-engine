@@ -220,3 +220,11 @@ Landing: the commit that adds this section.
   each declaration it reports as untrue; a parent that held only such codecs drops its own.
 - A test that offered an over-bound value to an encode and expected the refusal makes the value instead and
   expects `None` (or `LengthOutOfRange` from `from_slice`): the value has no frame, so it cannot be made.
+- C++, Go, Kotlin and Python encode a value whose byte string, text, list or chain is outside its bound by
+  refusing it before the first byte, with the error a decode of that frame gives: `LengthOutOfRange`,
+  `TooManyElements`, and on Go and Python `TlvChainOverflow` for a chain (C++ and Kotlin answer
+  `TooManyElements`). They wrote such a value before, and a frame no decoder accepts came out. The convenience
+  facade of every codec with such a field is fallible: C++ `encode_to_vec` returns
+  `std::optional<std::vector<std::uint8_t>>`, Go `EncodeToBytes` returns `([]byte, error)` and Kotlin
+  `encodeToByteArray` returns `ByteArray?`. Python's `encode` raises the error. A broadcast log's `publish`
+  refuses such an element with it, where it was `BufferOverflow`.

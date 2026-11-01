@@ -35,7 +35,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}{{ "LengthOutOfRange, " if decode_refuses_length else "" }}NeedMoreBytes, {{ "PresentIfMismatch, " if encode_can_refuse else "" }}SceCursor, SceSink{{ ", TlvChainOverflow" if has_tlv_chain_fields else "" }}{{ ", TooManyElements" if decode_refuses_count else "" }}{{ ", UndeclaredEnumValue" if has_closed_enum_fields else "" }}
+from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}{{ "LengthOutOfRange, " if (decode_refuses_length or encode_refuses_length) else "" }}NeedMoreBytes, {{ "PresentIfMismatch, " if encode_refuses_mismatch else "" }}SceCursor, SceSink{{ ", TlvChainOverflow" if (has_tlv_chain_fields or encode_refuses_depth) else "" }}{{ ", TooManyElements" if (decode_refuses_count or encode_refuses_count) else "" }}{{ ", UndeclaredEnumValue" if has_closed_enum_fields else "" }}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -368,7 +368,10 @@ class {{ struct_name }}:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible."""
+        :class:`BytearraySink`) are effectively infallible.{% if encode_can_refuse %} Raises,
+        before the first byte, the error a decode of the frame would give
+        for a value it cannot carry: a byte string, text or list outside its
+        bound, or a gated field its gate disagrees with.{% endif %}"""
 {% if has_parent_flags %}
         # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.
         _ = parent_flags

@@ -42,9 +42,10 @@
 			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
 {% endfor %}
 		}
-{% if f.cbor %}
-		{# A CBOR encode refuses a value past its declared bound with an error
-		   (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+{% if f.cbor or f.encode_refuses_bound %}
+		{# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
+		   field (docs/adr/0077 §3), refuses a value past its declared bound
+		   with an error; every case is in bounds. #}
 		encoded, encodeErr := value.EncodeToBytes()
 		if encodeErr != nil {
 			t.Errorf("{{ f.name }} case %d encode refused: %v", i, encodeErr)

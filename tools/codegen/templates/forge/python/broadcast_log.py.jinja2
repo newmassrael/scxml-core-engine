@@ -151,9 +151,11 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
     that depends on the width of an entry alone. Returns the sequence number the
     entry took.
 
-    An element that encodes to more than ``MAX_ENCODED_BYTES`` bytes is refused
-    by the codec (``BufferOverflow`` from the bounded sink) and nothing is
-    published: an entry is never a truncated element.
+    An element whose byte string, text or list is outside its bound is refused
+    by the codec before its first byte, with the error a decode of that frame
+    gives (``LengthOutOfRange``, ``TooManyElements``; docs/adr/0077 §3), and
+    nothing is published: an entry is never a truncated element. An element
+    within its bounds encodes to at most ``MAX_ENCODED_BYTES`` bytes.
 {% if context.present %}
 {% if context.flags %}
 

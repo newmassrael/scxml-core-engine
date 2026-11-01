@@ -278,12 +278,14 @@ func TestBroadcastLogAnElementLargerThanItsBoundIsRefusedByTheCodecAndNotTruncat
 	}
 
 	// 1 + 20 = 21 bytes and 1 + 9 = 10 bytes into a log whose entries hold at
-	// most 9: the nearest above the bound is refused as the far above is.
+	// most 9: the nearest above the bound is refused as the far above is. The
+	// codec refuses the payload before its first byte, with the error a decode
+	// of that frame gives (docs/adr/0077 §3).
 	for _, size := range []int{20, 9} {
 		tooLong := bytes.Repeat([]byte{0xAA}, size)
 		_, err := blogbounded.Publish(publisher, &blogrecord.BroadcastLogConformanceRecord{Tag: 1, Payload: tooLong})
-		if !errors.Is(err, codec.ErrBufferOverflow) {
-			t.Fatalf("a payload of %d bytes past its declared bound: error %v, want codec.ErrBufferOverflow", size, err)
+		if !errors.Is(err, codec.ErrLengthOutOfRange) {
+			t.Fatalf("a payload of %d bytes past its declared bound: error %v, want codec.ErrLengthOutOfRange", size, err)
 		}
 		if log.Head() != 0 {
 			t.Fatalf("a refused element publishes nothing, the head is %d", log.Head())

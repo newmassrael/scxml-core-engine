@@ -43,7 +43,7 @@ from typing import Any, Optional
 
 import _sce_codegen
 from sce_forge_runtime.broadcast_log import BroadcastLog, Empty, Lagged
-from sce_forge_runtime.codec import BufferOverflow, CodecError, LengthOutOfRange, PresentIfMismatch
+from sce_forge_runtime.codec import CodecError, LengthOutOfRange, PresentIfMismatch
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
@@ -273,8 +273,10 @@ class TestGeneratedBroadcastLogs(unittest.TestCase):
         log = module.new_broadcast_log_conformance_deployed()
         publisher = log.publisher()
 
-        # 1 + 20 = 21 bytes into a log whose entries hold at most 9.
-        with self.assertRaises(BufferOverflow):
+        # 1 + 20 = 21 bytes into a log whose entries hold at most 9. The codec
+        # refuses the payload before its first byte, with the error a decode of
+        # that frame gives (docs/adr/0077 §3).
+        with self.assertRaises(LengthOutOfRange):
             module.publish(publisher, self.make_record(1, bytes([0xAA] * 20)))
         self.assertEqual(0, log.head(), "a refused element publishes nothing")
 

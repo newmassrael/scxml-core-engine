@@ -231,7 +231,9 @@ class BroadcastLogGeneratedTest {
         val refused = assertIs<BroadcastLogConformanceRecentRecordsPublish.Refused>(
             publishRecord(publisher, record(5, 1, 2, 3, 4, 5, 6, 7, 8, 9)),
         )
-        assertEquals(CodecError.BufferOverflow, refused.error, "the bounded sink refuses what does not fit")
+        // The codec refuses the payload before its first byte, with the error a
+        // decode of that frame gives (docs/adr/0077 §3).
+        assertEquals(CodecError.LengthOutOfRange, refused.error, "the codec refuses what its bound does not hold")
         assertEquals(0L, log.head(), "a refused element publishes nothing")
         assertEquals(BroadcastLogConformanceRecentRecordsRead.Empty, readRecord(log, reader))
         // The sequence has no gap where the refused element was: the next one is the first.

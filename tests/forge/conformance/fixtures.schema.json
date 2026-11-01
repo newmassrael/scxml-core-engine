@@ -493,6 +493,10 @@
               "description": "The document declares `sce:encode-may-fail` (docs/adr/0065): its `encode_to_vec` returns a `Result` the fragment unwraps, where a codec whose encode is total returns its bytes. Derived from the same parse the generator reads; fixtures.json never states it.",
               "type": "boolean"
             },
+            "encode_refuses_bound": {
+              "description": "The language's encode refuses a value outside a field's bound before its first byte (docs/adr/0077 §3), so its C++, Go or Kotlin convenience facade returns an optional or an error the fragment unwraps. Derived per language from the document; fixtures.json never states it.",
+              "type": "boolean"
+            },
             "fields": {
               "type": "array",
               "items": {
@@ -847,6 +851,10 @@
         "type"
       ],
       "properties": {
+        "bounded": {
+          "description": "The field is a `bytes` or `string` whose type holds its bound — a `length-ref` or `tail` field of a binary codec, which the Rust codec holds as a `Bytes` or `Text` (docs/adr/0077 §3), so a fragment builds it through the type's door. Derived from the document, like `optional`.",
+          "type": "boolean"
+        },
         "compare": {
           "$ref": "#/definitions/CompareMode"
         },

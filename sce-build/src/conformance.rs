@@ -718,6 +718,13 @@ pub enum FixtureSpec {
         /// same parse the generator reads; fixtures.json never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         encode_may_fail: bool,
+        /// The language's encode refuses a value outside a field's bound before
+        /// its first byte (docs/adr/0077 §3), so its C++, Go or Kotlin
+        /// convenience facade returns an optional or an error the fragment
+        /// unwraps. Derived per language from the document; fixtures.json never
+        /// states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        encode_refuses_bound: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1423,11 +1430,19 @@ impl Manifest {
                     cbor,
                     content_line,
                     encode_may_fail,
+                    encode_refuses_bound,
                 } => {
                     if *encode_may_fail {
                         return Err(format!(
                             "fixture {}: codec `encode_may_fail` is derived from the \
                              SCXML (sce:encode-may-fail); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if *encode_refuses_bound {
+                        return Err(format!(
+                            "fixture {}: codec `encode_refuses_bound` is derived from the \
+                             SCXML and the language; remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -3428,6 +3443,7 @@ pub fn render_harness(
                 cbor,
                 content_line,
                 encode_may_fail,
+                encode_refuses_bound,
             } => {
                 if document_exists(&scxml_path) {
                     derive_codec_shape(
@@ -3438,6 +3454,13 @@ pub fn render_harness(
                         content_line,
                         encode_may_fail,
                     )?;
+                    if !*cbor && !*content_line {
+                        let model = read_codec_model(&scxml_path, &fixture_name)?;
+                        *encode_refuses_bound = crate::forge::generator::encode_refuses_a_bound(
+                            &model.fields,
+                            language,
+                        );
+                    }
                 }
                 // RFC §synth-5-B test-vector: enrich the manifest with the
                 // SCXML-derived `<sce:test-vector>` flag so the per-language

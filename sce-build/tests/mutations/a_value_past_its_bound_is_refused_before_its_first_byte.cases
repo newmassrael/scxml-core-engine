@@ -1,0 +1,38 @@
+# Mutation cases for "a value past its bound is refused before its first byte".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_value_past_its_bound_is_refused_before_its_first_byte.cases`.
+#
+# C++, Go, Kotlin and Python hold a byte string and a list in a container any
+# length fits, so their encode refuses a value outside the field's bound before
+# its first byte, with the error a decode of that frame gives, and their
+# convenience facade answers no frame (docs/adr/0077 §3). Each case takes one
+# piece of that away; the program each runnable backend runs over
+# `codec_length_ref` and `codec_repeat_basic` refuses each.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test forge_conformance a_value_past_its_bound_is_refused_before_its_first_byte_on_every_runnable_backend
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/codec_failure.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "the encode guards no field" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    for field in fields {
+        let Some(kind) = BoundKind::of(field) else {''',
+     r'''    for field in fields.iter().take(0) {
+        let Some(kind) = BoundKind::of(field) else {''')
+PY
+
+mutation_case "a list's count past its bound is refused as a length" <<'PY'
+edit("sce-build/src/forge/codec_failure.rs",
+     r'''            BoundKind::Count => CodecFailure::TooManyElements,''',
+     r'''            BoundKind::Count => CodecFailure::LengthOutOfRange,''')
+PY
+
+mutation_case "the guard lets one past the bound through" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                (false, true) => format!("{n} > {most}"),''',
+     r'''                (false, true) => format!("{n} > {}", most + 1),''')
+PY

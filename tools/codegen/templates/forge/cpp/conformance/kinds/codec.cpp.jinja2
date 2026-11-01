@@ -54,9 +54,10 @@
 {% for field in f.fields %}
         _codec_val.{{ field.name }} = input_{{ field.name }};
 {% endfor %}
-{% if f.cbor %}
-        {# A CBOR encode refuses a value past its declared bound with
-           `std::nullopt` (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+{% if f.cbor or f.encode_refuses_bound %}
+        {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
+           field (docs/adr/0077 §3), refuses a value past its declared bound
+           with `std::nullopt`; every case is in bounds. #}
         auto encoded_or = _codec_val.encode_to_vec();
         CHECK(encoded_or.has_value(), "{{ f.name }} case %d encode refused", i);
         auto encoded = encoded_or.value_or(std::vector<std::uint8_t>{});

@@ -139,9 +139,11 @@ sealed interface {{ pascal }}Publish {
 
     /**
      * The element's codec refused to write it, and nothing was published. An
-     * element that encodes to more than [MAX_ENCODED_BYTES] bytes is refused
-     * with `CodecError.BufferOverflow` by the bounded sink: an entry is never a
-     * truncated element.
+     * element whose byte string, text or list is outside its bound is refused
+     * before its first byte with the error a decode of that frame gives
+     * (`CodecError.LengthOutOfRange`, `CodecError.TooManyElements`;
+     * docs/adr/0077 §3): an entry is never a truncated element. An element
+     * within its bounds encodes to at most [MAX_ENCODED_BYTES] bytes.
      */
     data class Refused(val error: CodecError) : {{ pascal }}Publish
 }

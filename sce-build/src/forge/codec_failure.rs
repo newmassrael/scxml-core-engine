@@ -22,6 +22,32 @@
 
 use crate::generator::Language;
 
+/// What a field's bound counts, which names the failure a value outside it is
+/// refused with ([`CodecFailure::over_bound`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundKind {
+    /// The bytes of a `bytes` or `string` field.
+    Length,
+    /// The entries of a `<sce:repeat>`.
+    Count,
+    /// The entries of a `<sce:tlv-chain>`, held to its `max-depth`.
+    Depth,
+}
+
+impl BoundKind {
+    /// What the bound of `field` counts, or `None` for a field whose size is
+    /// not held to a bound (a number, an embedded body).
+    pub fn of(field: &crate::forge::model::CodecField) -> Option<Self> {
+        use crate::forge::model::BitSize;
+        Some(match field.bit_size {
+            BitSize::Tail | BitSize::LengthRef => BoundKind::Length,
+            BitSize::Repeat { .. } => BoundKind::Count,
+            BitSize::TlvChain { .. } => BoundKind::Depth,
+            BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
+        })
+    }
+}
+
 /// A decode-side failure a generated codec can signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodecFailure {
@@ -210,6 +236,65 @@ impl CodecFailure {
             | CodecFailure::LineTooLong
             | CodecFailure::LineBadEscape
             | CodecFailure::LineBadValue => None,
+        }
+    }
+
+    /// The statement a generated encode uses to refuse a value whose length or
+    /// count is outside its field's bound, before its first byte is written
+    /// (docs/adr/0077 §3), on the backends whose encode returns or raises the
+    /// error itself. `None` for a failure an encode does not refuse with, and
+    /// for Rust, whose source cannot present such a value.
+    ///
+    /// The error is the one a decode of that frame gives (docs/adr/0058 law
+    /// 3). C++ and Kotlin name no chain overflow: their decode answers one
+    /// sentinel for a chain past its depth, so their encode refuses it as the
+    /// count past its bound it is ([`Self::over_bound`]).
+    pub fn encode_refusal_stmt(self, lang: Language) -> Option<&'static str> {
+        Some(match (lang, self) {
+            (Language::C11, CodecFailure::LengthOutOfRange) => {
+                "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;"
+            }
+            (Language::C11, CodecFailure::TooManyElements) => {
+                "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;"
+            }
+            (Language::C11, CodecFailure::TlvChainOverflow) => {
+                "return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
+            }
+            (Language::Cpp, CodecFailure::LengthOutOfRange) => {
+                "return ::SCE::Forge::CodecError::LengthOutOfRange;"
+            }
+            (Language::Cpp, CodecFailure::TooManyElements) => {
+                "return ::SCE::Forge::CodecError::TooManyElements;"
+            }
+            (Language::Kotlin, CodecFailure::LengthOutOfRange) => {
+                "return CodecError.LengthOutOfRange"
+            }
+            (Language::Kotlin, CodecFailure::TooManyElements) => {
+                "return CodecError.TooManyElements"
+            }
+            (Language::Go, CodecFailure::LengthOutOfRange) => "return codec.ErrLengthOutOfRange",
+            (Language::Go, CodecFailure::TooManyElements) => "return codec.ErrTooManyElements",
+            (Language::Go, CodecFailure::TlvChainOverflow) => "return codec.ErrTlvChainOverflow",
+            (Language::Python, CodecFailure::LengthOutOfRange) => "raise LengthOutOfRange()",
+            (Language::Python, CodecFailure::TooManyElements) => "raise TooManyElements()",
+            (Language::Python, CodecFailure::TlvChainOverflow) => "raise TlvChainOverflow()",
+            _ => return None,
+        })
+    }
+
+    /// The failure a value outside a field's bound is refused with on `lang`:
+    /// a byte or text length `LengthOutOfRange`, a list's count
+    /// `TooManyElements`, a chain past its depth `TlvChainOverflow` where the
+    /// backend names it and `TooManyElements` where it does not
+    /// (docs/adr/0077 §4).
+    pub fn over_bound(kind: BoundKind, lang: Language) -> Self {
+        match kind {
+            BoundKind::Length => CodecFailure::LengthOutOfRange,
+            BoundKind::Count => CodecFailure::TooManyElements,
+            BoundKind::Depth if matches!(lang, Language::Cpp | Language::Kotlin) => {
+                CodecFailure::TooManyElements
+            }
+            BoundKind::Depth => CodecFailure::TlvChainOverflow,
         }
     }
 

@@ -214,9 +214,10 @@ pub enum {{ pascal }}Read {
 /// The number counts modulo 2^{{ stamp_bits }}, as every sequence number of this log does.
 {% endif %}
 ///
-/// An element that encodes to more than `MAX_ENCODED_BYTES` bytes is refused by
-/// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
-/// published: an entry is never a truncated element.
+/// An element's byte strings, texts and lists hold their bounds in their types
+/// (docs/adr/0077 §3), so it encodes to at most `MAX_ENCODED_BYTES` bytes. An
+/// element its codec refuses for another reason is published as nothing: an
+/// entry is never a truncated element.
 {% if context.present %}
 {% if context.flags %}
 ///

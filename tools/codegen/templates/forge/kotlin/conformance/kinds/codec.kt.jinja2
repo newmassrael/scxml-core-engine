@@ -47,9 +47,10 @@
                 {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
             )
-{% if f.cbor %}
-            {# A CBOR encode refuses a value past its declared bound with
-               `null` (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+{% if f.cbor or f.encode_refuses_bound %}
+            {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a
+               bounded field (docs/adr/0077 §3), refuses a value past its
+               declared bound with `null`; every case is in bounds. #}
             val encoded = valueObj.encodeToByteArray()
                 ?: error("{{ f.name }} case $i encode refused")
 {% else %}

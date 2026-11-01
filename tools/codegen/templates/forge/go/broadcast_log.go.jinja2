@@ -139,9 +139,11 @@ func flagInput(on bool) byte {
 // Words words, and hands them to the runtime, which never refuses and never
 // waits. It returns the sequence number the entry took.
 //
-// An element that encodes to more than MaxEncodedBytes bytes is refused by the
-// codec (codec.ErrBufferOverflow from the bounded sink) and nothing is
-// published: an entry is never a truncated element.
+// An element whose byte string, text or list is outside its bound is refused
+// by the codec before its first byte, with the error a decode of that frame
+// gives (codec.ErrLengthOutOfRange, codec.ErrTooManyElements; docs/adr/0077
+// §3), and nothing is published: an entry is never a truncated element. An
+// element within its bounds encodes to at most MaxEncodedBytes bytes.
 {% if context.present %}
 //
 {% if context.flags %}

@@ -214,8 +214,10 @@ void a_record_larger_than_its_bound_is_refused_by_the_codec_and_not_truncated() 
         const Record too_long{.tag = 1, .payload = std::vector<std::uint8_t>(length, 0xAA)};
         const deployed::BroadcastLogConformanceDeployedPublished refused = deployed::publish(*publisher, too_long);
         CHECK(!refused.published(), "a payload past its bound is not published");
-        CHECK(refused.error.has_value() && *refused.error == ::SCE::Forge::CodecError::BufferOverflow,
-              "the bounded sink refuses it");
+        // The codec refuses the payload before its first byte, with the error a
+        // decode of that frame gives (docs/adr/0077 §3).
+        CHECK(refused.error.has_value() && *refused.error == ::SCE::Forge::CodecError::LengthOutOfRange,
+              "the codec refuses it");
         CHECK(refused.seq == broadcast::kNoSequence, "a refused element has no sequence number");
         CHECK(log.head() == 0, "a refused element publishes nothing");
     }

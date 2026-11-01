@@ -8664,14 +8664,13 @@ fn render_codec(
                 if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f) {
                     obj.insert("c_over_bound_cond".into(), cond.into());
                     // The error a decode of that frame gives (docs/adr/0058
-                    // law 3, docs/adr/0077 §4): a list's count past its bound
-                    // is TOO_MANY_ELEMENTS, a chain's TLV_CHAIN_OVERFLOW, a
-                    // byte or text length LENGTH_OUT_OF_RANGE.
-                    let status = match f.bit_size {
-                        BitSize::Repeat { .. } => "SCE_FORGE_CODEC_TOO_MANY_ELEMENTS",
-                        BitSize::TlvChain { .. } => "SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW",
-                        _ => "SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE",
-                    };
+                    // law 3, docs/adr/0077 §4), named once for every backend.
+                    use crate::forge::codec_failure::{BoundKind, CodecFailure};
+                    let c11 = crate::generator::Language::C11;
+                    let status = BoundKind::of(f)
+                        .map(|kind| CodecFailure::over_bound(kind, c11))
+                        .and_then(|failure| failure.observable_symbol(c11))
+                        .expect("a field held in an array has a bound C11 names");
                     obj.insert("c_over_bound_status".into(), status.into());
                 }
             }
@@ -10174,17 +10173,37 @@ fn render_codec(
     // codec no chain predicate gates, which keeps every existing golden
     // byte-stable. `encode_can_refuse` makes the infallible-looking facades
     // (`encode_to_vec` and kin) fallible for that codec alone.
-    let (present_if_encode_prologue, encode_can_refuse) = if field_encode_blocks {
+    let (mut present_if_encode_prologue, refuses_mismatch) = if field_encode_blocks {
         let roles = crate::forge::codec_roles::classify(m, imports);
         present_if_chain_encode_prologue(&m.fields, &chain_masks, &roles.checks, lang)
     } else {
         (String::new(), false)
     };
+    // A value outside a field's bound is refused there too, on the backends
+    // whose containers hold any length (docs/adr/0077 §3).
+    let (bound_lines, bound_failures) = encode_bound_guard_lines(&m.fields, lang);
+    let indent = encode_body_indent(lang);
+    for line in &bound_lines {
+        present_if_encode_prologue.push_str(&format!("{indent}{line}\n"));
+    }
+    let encode_can_refuse = refuses_mismatch || !bound_lines.is_empty();
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),
     );
     ctx.insert("encode_can_refuse".into(), encode_can_refuse.into());
+    // What the encode raises by name, for a backend that imports each error.
+    {
+        use crate::forge::codec_failure::CodecFailure;
+        ctx.insert("encode_refuses_mismatch".into(), refuses_mismatch.into());
+        for (key, failure) in [
+            ("encode_refuses_length", CodecFailure::LengthOutOfRange),
+            ("encode_refuses_count", CodecFailure::TooManyElements),
+            ("encode_refuses_depth", CodecFailure::TlvChainOverflow),
+        ] {
+            ctx.insert(key.into(), bound_failures.contains(&failure).into());
+        }
+    }
 
     // RFC §synth-5-B variant primitive (item B1 trunk): build per-arm rendering
     // context. Each arm's `body_alias` resolves against the codec's
@@ -19832,6 +19851,137 @@ fn present_if_chain_encode_prologue(
         .map(|line| format!("{indent}{line}\n"))
         .collect::<String>();
     (text, true)
+}
+
+/// The refusals at the top of a C++, Kotlin, Go or Python encode of a value
+/// whose byte string, text, list or chain lies outside its bound, each before
+/// the first byte is written (docs/adr/0077 §3), and the failures they raise.
+///
+/// These backends hold the value in a container any length fits (a vector, a
+/// `ByteArray`, a slice, `bytes`), so the bound is checked where the value is
+/// encoded, with the error a decode of the frame gives. A text is measured in
+/// the UTF-8 bytes the wire carries. A gated field is checked where it is
+/// present. Rust holds the bound in the field's type and refuses nothing here;
+/// C11 holds the value in an array of the bound and checks its length beside
+/// it (`c_over_bound_cond`).
+fn encode_bound_guard_lines(
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> (Vec<String>, Vec<crate::forge::codec_failure::CodecFailure>) {
+    use crate::forge::codec_failure::{BoundKind, CodecFailure};
+    use crate::forge::codec_totality;
+    use crate::generator::Language;
+    if !matches!(
+        lang,
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python
+    ) {
+        return (Vec::new(), Vec::new());
+    }
+    let mut lines = Vec::new();
+    let mut failures: Vec<CodecFailure> = Vec::new();
+    for field in fields {
+        let Some(kind) = BoundKind::of(field) else {
+            continue;
+        };
+        let (least, most) = match kind {
+            BoundKind::Length => match codec_totality::byte_bound(field, fields) {
+                Some(bound) => (
+                    bound.min,
+                    bound.max.expect("a byte bound has a largest length"),
+                ),
+                None => continue,
+            },
+            BoundKind::Count | BoundKind::Depth => (
+                codec_totality::list_least(field),
+                codec_totality::list_bound(field),
+            ),
+        };
+        let failure = CodecFailure::over_bound(kind, lang);
+        let refuse = failure
+            .encode_refusal_stmt(lang)
+            .expect("each of these backends refuses a value outside its bound");
+        if !failures.contains(&failure) {
+            failures.push(failure);
+        }
+        let text = kind == BoundKind::Length && matches!(field.sce_type, SceType::String);
+        let id = codec_field_local_name(&field.id, lang);
+        // The size of the value `v`, in what the wire counts.
+        let size = |v: &str| match lang {
+            Language::Cpp => format!("{v}.size()"),
+            Language::Kotlin if text => format!("{v}.encodeToByteArray().size"),
+            Language::Kotlin => format!("{v}.size"),
+            Language::Go => format!("len({v})"),
+            Language::Python if text => format!("len({v}.encode(\"utf-8\"))"),
+            _ => format!("len({v})"),
+        };
+        // A Kotlin size is an `Int`, which no larger bound can be passed by.
+        let checks_most = !(lang == Language::Kotlin && most > i32::MAX as u64);
+        let outside = |v: &str| {
+            let n = size(v);
+            let or = if lang == Language::Python { "or" } else { "||" };
+            match (least > 0, checks_most) {
+                (true, true) => format!("{n} < {least} {or} {n} > {most}"),
+                (true, false) => format!("{n} < {least}"),
+                (false, true) => format!("{n} > {most}"),
+                (false, false) => String::new(),
+            }
+        };
+        let gated = field.present_if.is_some();
+        let condition = match (lang, gated) {
+            (Language::Cpp, false) => outside(&id),
+            (Language::Cpp, true) => {
+                format!("{id}.has_value() && ({})", outside(&format!("(*{id})")))
+            }
+            (Language::Kotlin, false) => outside(&format!("this.{id}")),
+            (Language::Kotlin, true) => outside("it"),
+            (Language::Go, false) => outside(&format!("s.{id}")),
+            (Language::Go, true) => {
+                format!(
+                    "s.{id}.IsPresent() && ({})",
+                    outside(&format!("s.{id}.Proven()"))
+                )
+            }
+            (Language::Python, false) => outside(&format!("self.{id}")),
+            (Language::Python, true) => {
+                format!(
+                    "self.{id} is not None and ({})",
+                    outside(&format!("self.{id}"))
+                )
+            }
+            _ => unreachable!("the backends are matched above"),
+        };
+        if outside("v").is_empty() {
+            continue;
+        }
+        match lang {
+            Language::Cpp => lines.push(format!("if ({condition}) {refuse}")),
+            Language::Kotlin if gated => {
+                lines.push(format!("this.{id}?.let {{ if ({condition}) {refuse} }}"))
+            }
+            Language::Kotlin => lines.push(format!("if ({condition}) {refuse}")),
+            Language::Go => {
+                lines.push(format!("if {condition} {{"));
+                lines.push(format!("\t{refuse}"));
+                lines.push("}".to_string());
+            }
+            _ => {
+                lines.push(format!("if {condition}:"));
+                lines.push(format!("    {refuse}"));
+            }
+        }
+    }
+    (lines, failures)
+}
+
+/// Whether `lang`'s encode of a codec with `fields` refuses a value outside a
+/// field's bound ([`encode_bound_guard_lines`]), which makes its convenience
+/// facade return an optional or an error. The conformance fragments read it to
+/// unwrap that result.
+pub(crate) fn encode_refuses_a_bound(
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> bool {
+    !encode_bound_guard_lines(fields, lang).0.is_empty()
 }
 
 /// `decode_stmt`, followed by one boolean local per identifier a later

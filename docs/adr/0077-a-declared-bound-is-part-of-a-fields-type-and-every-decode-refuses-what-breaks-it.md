@@ -148,6 +148,11 @@ decoding it.
     made through `new`, the type's only door, and its `None` is the same `LengthOutOfRange`.
   - This step reaches the binary fields §1 bounds, `length-ref` and `tail`. The exact lengths and maximum sizes of the
     CBOR and content-line codecs, the rest of ADR 0065 R1, take the same types in a landing of their own.
+  - On C++, Go, Kotlin and Python the refusal joins the checks an encode makes before its first byte, and the
+    convenience facade of a codec that has one returns an optional or an error, as it does for a gate the encode
+    cannot derive. C++ and Kotlin name no chain overflow, so they refuse a chain past its depth as the count past
+    its bound it is (`TooManyElements`). The guard and the error each backend names are one table
+    (`codec_failure.rs`, `encode_refusal_stmt`, `over_bound`), which C11's own check reads too.
 - **The other five backends** do not have the source interface yet (ADR 0058 §6). Until they do, their encode
   refuses an over-bound field before the first byte, with the error of §4, as C11 already does. When a backend takes
   the source interface, the refusal moves into its bounded type, as in Rust.

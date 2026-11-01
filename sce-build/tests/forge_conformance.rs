@@ -15462,6 +15462,188 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
     );
 }
 
+// ── A value past its bound: what the generated encode DOES ─────────────────
+//
+// C++, Go, Kotlin and Python hold a byte string and a list in a container any
+// length fits, so their encode refuses a value outside the field's bound before
+// its first byte, with the error a decode of that frame gives (docs/adr/0077
+// §3), and their convenience facade answers no frame. Rust cannot be handed
+// such a value (its types hold the bounds), and C11 is held by
+// `codec_encode_bound_test.c`. `codec_length_ref` holds at most 32 bytes and
+// `codec_repeat_basic` at most 32 two-byte entries.
+
+const BOUND_SET: &[&str] = &[
+    "codec_length_ref.scxml",
+    "codec_repeat_elem.scxml",
+    "codec_repeat_basic.scxml",
+];
+
+fn bound_python_program() -> String {
+    r#"from bound_pkg.codec_length_ref import CodecLengthRef
+from bound_pkg.codec_repeat_basic import CodecRepeatBasic
+from bound_pkg.codec_repeat_elem import CodecRepeatElem
+from sce_forge_runtime.codec import BytearraySink, LengthOutOfRange, TooManyElements
+
+
+def refused(value, error):
+    out = bytearray()
+    try:
+        value.encode(BytearraySink(out))
+    except error:
+        assert out == bytearray(), "a refusal writes nothing"
+        return
+    raise AssertionError(f"{type(value).__name__} encoded a value past its bound")
+
+
+refused(CodecLengthRef(msg_id=1, len=33, payload=bytes(33)), LengthOutOfRange)
+at = CodecLengthRef(msg_id=1, len=32, payload=bytes(32)).encode_to_bytes()
+assert at == bytes([1, 32]) + bytes(32), at
+refused(CodecRepeatBasic(num_frags=33, frags=[CodecRepeatElem() for _ in range(33)]), TooManyElements)
+full = CodecRepeatBasic(num_frags=32, frags=[CodecRepeatElem() for _ in range(32)]).encode_to_bytes()
+assert len(full) == 1 + 32 * 2, len(full)
+"#
+    .to_string()
+}
+
+fn bound_go_program() -> String {
+    format!(
+        r#"package bound_exec
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	lengthref "{GOLDEN_GO_MODULE_PREFIX}/codec_length_ref"
+	repeat "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_basic"
+	elem "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_elem"
+)
+
+func TestAValuePastItsBoundIsRefusedBeforeItsFirstByte(t *testing.T) {{
+	var out []byte
+	long := lengthref.CodecLengthRef{{MsgId: 1, Len: 33, Payload: make([]byte, 33)}}
+	if err := long.Encode(codec.NewBytesSink(&out)); !errors.Is(err, codec.ErrLengthOutOfRange) {{
+		t.Fatalf("33 bytes past a bound of 32: error %v, want codec.ErrLengthOutOfRange", err)
+	}}
+	if len(out) != 0 {{
+		t.Fatalf("a refusal writes nothing, wrote %v", out)
+	}}
+	if _, err := long.EncodeToBytes(); !errors.Is(err, codec.ErrLengthOutOfRange) {{
+		t.Fatalf("the facade answers the refusal, got %v", err)
+	}}
+	at := lengthref.CodecLengthRef{{MsgId: 1, Len: 32, Payload: make([]byte, 32)}}
+	got, err := at.EncodeToBytes()
+	if err != nil || !bytes.Equal(got, append([]byte{{1, 32}}, make([]byte, 32)...)) {{
+		t.Fatalf("32 bytes at the bound: %v %v", got, err)
+	}}
+	many := repeat.CodecRepeatBasic{{NumFrags: 33, Frags: make([]elem.CodecRepeatElem, 33)}}
+	if _, err := many.EncodeToBytes(); !errors.Is(err, codec.ErrTooManyElements) {{
+		t.Fatalf("33 entries past a bound of 32: error %v, want codec.ErrTooManyElements", err)
+	}}
+	full := repeat.CodecRepeatBasic{{NumFrags: 32, Frags: make([]elem.CodecRepeatElem, 32)}}
+	if got, err := full.EncodeToBytes(); err != nil || len(got) != 1+32*2 {{
+		t.Fatalf("32 entries at the bound: %d bytes, %v", len(got), err)
+	}}
+}}
+"#
+    )
+}
+
+fn bound_cpp_program() -> String {
+    r#"#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+#include "codec_length_ref.h"
+#include "codec_repeat_basic.h"
+
+using LengthRef = ::SCE::Generated::CodecLengthRef::CodecLengthRef;
+using Repeat = ::SCE::Generated::CodecRepeatBasic::CodecRepeatBasic;
+using Elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem;
+using ::SCE::Forge::CodecError;
+
+int main() {
+    int failures = 0;
+    auto check = [&](bool ok, const char *what) {
+        if (!ok) {
+            std::fprintf(stderr, "%s\n", what);
+            ++failures;
+        }
+    };
+
+    LengthRef long_value{};
+    long_value.msgId = 1;
+    long_value.len = 33;
+    long_value.payload.assign(33, 0);
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    const auto refused = long_value.encode(sink);
+    check(refused.has_value() && *refused == CodecError::LengthOutOfRange,
+          "33 bytes past a bound of 32 are refused as a length out of range");
+    check(out.empty(), "a refusal writes nothing");
+    check(!long_value.encode_to_vec().has_value(), "the facade answers no frame");
+
+    LengthRef at{};
+    at.msgId = 1;
+    at.len = 32;
+    at.payload.assign(32, 0);
+    const auto at_bytes = at.encode_to_vec();
+    check(at_bytes.has_value() && at_bytes->size() == 34, "32 bytes at the bound encode");
+
+    Repeat many{};
+    many.num_frags = 33;
+    many.frags.assign(33, Elem{});
+    std::vector<std::uint8_t> many_out;
+    ::SCE::Forge::VectorSink many_sink(many_out);
+    const auto too_many = many.encode(many_sink);
+    check(too_many.has_value() && *too_many == CodecError::TooManyElements,
+          "33 entries past a bound of 32 are refused as too many");
+    check(many_out.empty(), "a refused list writes nothing");
+
+    Repeat full{};
+    full.num_frags = 32;
+    full.frags.assign(32, Elem{});
+    const auto full_bytes = full.encode_to_vec();
+    check(full_bytes.has_value() && full_bytes->size() == 1 + 32 * 2, "32 entries at the bound encode");
+
+    return failures == 0 ? 0 : 1;
+}
+"#
+    .to_string()
+}
+
+#[test]
+fn a_value_past_its_bound_is_refused_before_its_first_byte_on_every_runnable_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = run_python_program(&dir, BOUND_SET, "bound_pkg", bound_python_program()) {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = run_go_program(&dir, BOUND_SET, "bound_exec", bound_go_program()) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    let cpp = NativeMarkerBackend {
+        tool: "g++",
+        language: sce_build::generator::Language::Cpp,
+        runtime_includes: &["../backends/cpp/forge-runtime/include"],
+        header_extensions: &["h", "hpp"],
+        standard: "c++17",
+        source_name: "bound_exec.cpp",
+        set: BOUND_SET,
+        program: bound_cpp_program,
+    };
+    if let Err(e) = run_marker_native(&dir, &cpp) {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a value past its bound must be refused before its first byte on every backend that runs. \
+         Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
 // ── Entries that take a flag: what the generated code DOES ─────────────────
 //
 // The frames, shared by every backend's program. The carrier codec reads
@@ -15704,6 +15886,18 @@ func same(a, b []entry) bool {{
 	return true
 }}
 
+// mustEncode answers the bytes of an encode that refuses a list past its bound
+// (docs/adr/0077 §3), failing the test where it refuses one of these values.
+func mustEncode(t *testing.T) func([]byte, error) []byte {{
+	return func(b []byte, err error) []byte {{
+		t.Helper()
+		if err != nil {{
+			t.Fatalf("encode refused a value within its bounds: %v", err)
+		}}
+		return b
+	}}
+}}
+
 func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	narrowEntries := []entry{{{{0x83, 0x11, -1}}, {{0x05, 0x22, -1}}}}
 	wideEntries := []entry{{{{0x83, -1, 0x1234}}, {{0x05, -1, 0xABCD}}}}
@@ -15712,7 +15906,7 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(carrierEntries(c), narrowEntries) {{
 		t.Errorf("carrier narrow: %v", carrierEntries(c))
 	}}
-	if !bytes.Equal(c.EncodeToBytes(), narrow) {{
+	if !bytes.Equal(mustEncode(t)(c.EncodeToBytes()), narrow) {{
 		t.Errorf("carrier narrow round trip")
 	}}
 
@@ -15720,7 +15914,7 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(carrierEntries(c), wideEntries) {{
 		t.Errorf("carrier wide: %v", carrierEntries(c))
 	}}
-	if !bytes.Equal(c.EncodeToBytes(), wide) {{
+	if !bytes.Equal(mustEncode(t)(c.EncodeToBytes()), wide) {{
 		t.Errorf("carrier wide round trip")
 	}}
 
@@ -15728,7 +15922,7 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(forwardEntries(f), narrowEntries) {{
 		t.Errorf("forward narrow: %v", forwardEntries(f))
 	}}
-	if !bytes.Equal(f.EncodeToBytes(0), fwdNarrow) {{
+	if !bytes.Equal(mustEncode(t)(f.EncodeToBytes(0)), fwdNarrow) {{
 		t.Errorf("forward narrow round trip")
 	}}
 
@@ -15736,7 +15930,7 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(forwardEntries(f), wideEntries) {{
 		t.Errorf("forward wide: %v", forwardEntries(f))
 	}}
-	if !bytes.Equal(f.EncodeToBytes(1), wide) {{
+	if !bytes.Equal(mustEncode(t)(f.EncodeToBytes(1)), wide) {{
 		t.Errorf("forward wide round trip")
 	}}
 
@@ -15752,7 +15946,7 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if f.Entries.IsPresent() {{
 		t.Errorf("forward chain without its gate: %v", forwardEntries(f))
 	}}
-	if !bytes.Equal(f.EncodeToBytes(1), fwdAbsent) {{
+	if !bytes.Equal(mustEncode(t)(f.EncodeToBytes(1)), fwdAbsent) {{
 		t.Errorf("forward absent round trip")
 	}}
 }}
@@ -15802,7 +15996,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(repeatEntries(r), narrowEntries) {{
 		t.Errorf("repeat narrow: %v", repeatEntries(r))
 	}}
-	if !bytes.Equal(r.EncodeToBytes(), repNarrow) {{
+	if !bytes.Equal(mustEncode(t)(r.EncodeToBytes()), repNarrow) {{
 		t.Errorf("repeat narrow round trip")
 	}}
 
@@ -15810,7 +16004,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(repeatEntries(r), wideEntries) {{
 		t.Errorf("repeat wide: %v", repeatEntries(r))
 	}}
-	if !bytes.Equal(r.EncodeToBytes(), repWide) {{
+	if !bytes.Equal(mustEncode(t)(r.EncodeToBytes()), repWide) {{
 		t.Errorf("repeat wide round trip")
 	}}
 
@@ -15818,7 +16012,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(gatedEntries(g), narrowEntries) {{
 		t.Errorf("gated repeat narrow: %v", gatedEntries(g))
 	}}
-	if !bytes.Equal(g.EncodeToBytes(), gatedNarrow) {{
+	if !bytes.Equal(mustEncode(t)(g.EncodeToBytes()), gatedNarrow) {{
 		t.Errorf("gated repeat narrow round trip")
 	}}
 
@@ -15826,7 +16020,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if !same(gatedEntries(g), wideEntries) {{
 		t.Errorf("gated repeat wide: %v", gatedEntries(g))
 	}}
-	if !bytes.Equal(g.EncodeToBytes(), gatedWide) {{
+	if !bytes.Equal(mustEncode(t)(g.EncodeToBytes()), gatedWide) {{
 		t.Errorf("gated repeat wide round trip")
 	}}
 
@@ -15834,7 +16028,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	if g.Entries.IsPresent() {{
 		t.Errorf("gated repeat without its gate: %v", gatedEntries(g))
 	}}
-	if !bytes.Equal(g.EncodeToBytes(), gatedAbsent) {{
+	if !bytes.Equal(mustEncode(t)(g.EncodeToBytes()), gatedAbsent) {{
 		t.Errorf("gated repeat absent round trip")
 	}}
 }}
@@ -16612,6 +16806,18 @@ func same(a, b []entry) bool {{
 	return true
 }}
 
+// mustEncode answers the bytes of an encode that refuses a chain past its
+// depth (docs/adr/0077 §3), failing the test where it refuses one of these.
+func mustEncode(t *testing.T) func([]byte, error) []byte {{
+	return func(b []byte, err error) []byte {{
+		t.Helper()
+		if err != nil {{
+			t.Fatalf("encode refused a value within its bounds: %v", err)
+		}}
+		return b
+	}}
+}}
+
 func checkCarrier(t *testing.T, frame []byte, expected []entry, label string) {{
 	t.Helper()
 	cursor := codec.NewSceCursor(frame)
@@ -16622,7 +16828,7 @@ func checkCarrier(t *testing.T, frame []byte, expected []entry, label string) {{
 	if !same(shapes(v.Entries), expected) {{
 		t.Errorf("%s: %v", label, shapes(v.Entries))
 	}}
-	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+	if !bytes.Equal(mustEncode(t)(v.EncodeToBytes()), frame) {{
 		t.Errorf("%s round trip", label)
 	}}
 }}
@@ -16638,7 +16844,7 @@ func checkGated(t *testing.T, frame []byte, expected []entry, label string) {{
 	if !same(shapes(entries), expected) {{
 		t.Errorf("%s: %v", label, shapes(entries))
 	}}
-	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+	if !bytes.Equal(mustEncode(t)(v.EncodeToBytes()), frame) {{
 		t.Errorf("%s round trip", label)
 	}}
 }}
@@ -16653,7 +16859,7 @@ func checkTail(t *testing.T, frame []byte, expected []entry, label string) {{
 	if !same(shapes(v.Entries), expected) {{
 		t.Errorf("%s: %v", label, shapes(v.Entries))
 	}}
-	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+	if !bytes.Equal(mustEncode(t)(v.EncodeToBytes()), frame) {{
 		t.Errorf("%s round trip", label)
 	}}
 }}
@@ -16673,7 +16879,7 @@ func checkTailGated(t *testing.T, frame []byte, expected []entry, label string) 
 	}} else if !same(shapes(entries), expected) {{
 		t.Errorf("%s: %v", label, shapes(entries))
 	}}
-	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+	if !bytes.Equal(mustEncode(t)(v.EncodeToBytes()), frame) {{
 		t.Errorf("%s round trip", label)
 	}}
 }}
@@ -16699,7 +16905,7 @@ func TestAChainTellsItsEntriesWhatCameBeforeThem(t *testing.T) {{
 	if v.Entries.IsPresent() {{
 		t.Errorf("gated chain without its gate: %v", v.Entries)
 	}}
-	if !bytes.Equal(v.EncodeToBytes(), gAbsent) {{
+	if !bytes.Equal(mustEncode(t)(v.EncodeToBytes()), gAbsent) {{
 		t.Errorf("gated absent round trip")
 	}}
 
