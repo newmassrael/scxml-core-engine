@@ -787,6 +787,12 @@ GATES: dict[str, dict] = {
             # judges against the width the narrow row keeps.
             "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
             "backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h",
+            # The Kotlin replays of the two C ABIs (group key agreement, peer
+            # core), which the lane builds with Gradle and the capi crates'
+            # tests run under `SCE_REQUIRE_TOOLS`: an edit of one alone has to
+            # start the suite that runs it.
+            "backends/kotlin/mls-replay/**",
+            "backends/kotlin/peer-replay/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

@@ -70,6 +70,11 @@ on:
       - 'backends/kotlin/forge-runtime/**'
       - 'backends/kotlin/tests/src/main/kotlin/com/sce/integration/**'
       - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
+      # The Kotlin replays of the two C ABIs (group key agreement, peer core),
+      # which this lane builds and runs under `SCE_REQUIRE_TOOLS`: an edit of
+      # one alone has to start the suite that runs it.
+      - 'backends/kotlin/mls-replay/**'
+      - 'backends/kotlin/peer-replay/**'
       - 'tools/codegen/templates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -159,6 +164,11 @@ on:
       - 'backends/kotlin/forge-runtime/**'
       - 'backends/kotlin/tests/src/main/kotlin/com/sce/integration/**'
       - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
+      # The Kotlin replays of the two C ABIs (group key agreement, peer core),
+      # which this lane builds and runs under `SCE_REQUIRE_TOOLS`: an edit of
+      # one alone has to start the suite that runs it.
+      - 'backends/kotlin/mls-replay/**'
+      - 'backends/kotlin/peer-replay/**'
       - 'tools/codegen/templates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
