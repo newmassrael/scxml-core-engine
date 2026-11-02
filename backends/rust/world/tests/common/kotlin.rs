@@ -29,13 +29,23 @@ const DISTRIBUTION: &str = "backends/kotlin/world/build/install/sce-kotlin-world
 /// The machine the world hosts, by the name the step server knows it under.
 const MACHINE: &str = "todo_peer";
 
-/// The command that starts one step server, or `None` after saying why this run cannot
-/// have one.
+/// The command that starts one step server hosting the to-do list, or `None` after saying
+/// why this run cannot have one.
 ///
 /// # Panics
 ///
 /// When `SCE_REQUIRE_TOOLS` is set and the JVM or the build is missing.
 pub fn step_server() -> Option<ExternalCommand> {
+    step_server_for(MACHINE)
+}
+
+/// The command that starts one step server hosting `machine` (a name `Machines.kt` hosts),
+/// or `None` after saying why this run cannot have one.
+///
+/// # Panics
+///
+/// When `SCE_REQUIRE_TOOLS` is set and the JVM or the build is missing.
+pub fn step_server_for(machine: &str) -> Option<ExternalCommand> {
     let java = toolchain::require_or_skip("java", "host a generated Kotlin copy in a JVM")?;
     let lib = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
@@ -69,7 +79,7 @@ pub fn step_server() -> Option<ExternalCommand> {
             .arg("-cp")
             .arg(lib.join("*"))
             .arg("com.sce.world.MainKt")
-            .args(["--machine", MACHINE]),
+            .args(["--machine", machine]),
     )
 }
 

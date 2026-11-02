@@ -3931,6 +3931,7 @@ dependencies = [
  "sce-portable-bytes",
  "sce-rust-mesh",
  "sce-rust-mls",
+ "sce-rust-peer",
  "sce-rust-relay",
  "sce-rust-runtime",
  "sce-rust-scenarios",

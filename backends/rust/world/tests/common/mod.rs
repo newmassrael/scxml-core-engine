@@ -29,6 +29,7 @@ pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
 pub mod calendar;
 pub mod crowd;
+pub mod devices;
 pub mod kotlin;
 pub mod presence;
 pub mod resync;
@@ -1260,14 +1261,18 @@ pub fn record_edit_at(
     );
 }
 
-/// What a copy of the record list saved of itself.
+/// What a copy of the record list saved of itself. A copy that is another process's saves
+/// through its process, the same text.
 pub fn record_variables_of(world: &mut World, who: &str) -> Value {
-    let saved = world
-        .actor::<RecordList>(who)
-        .engine()
-        .save_at(0)
-        .expect("a running machine saves")
-        .to_json();
+    let saved = match world.external_saved(who) {
+        Some(saved) => saved,
+        None => world
+            .actor::<RecordList>(who)
+            .engine()
+            .save_at(0)
+            .expect("a running machine saves")
+            .to_json(),
+    };
     let saved: Value = serde_json::from_str(&saved).expect("a saved state is JSON");
     saved["variables"].clone()
 }

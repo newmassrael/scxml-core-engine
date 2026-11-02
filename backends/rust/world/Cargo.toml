@@ -54,6 +54,10 @@ sce-rust-relay = { path = "../relay" }
 # The group key agreement that gives the list its key of each epoch
 # (a_shared_list_keys_its_content_with_mls_through_a_relay).
 sce-rust-mls = { path = "../mls" }
+# The peer core every device of a list runs, a Rust device's in this process; a Kotlin device
+# runs the same core through its C ABI (`sce-rust-peer-capi`), whose shared library the test
+# builds as the ABI's own lane tests do (a_shared_list_is_held_through_the_core_on_every_device).
+sce-rust-peer = { path = "../peer" }
 # The replay of a scenario and the committed machines it replays, which the to-do
 # afternoon is replayed on as the standard shared record list in this process, written
 # to no file (a_world_run_is_what_every_backend_replays).
