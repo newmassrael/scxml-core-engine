@@ -342,6 +342,34 @@ so that what a host knew to be withheld is still known after a restart. The log 
 `Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
 Keys and the person's secret are kept where the host keeps secrets.
 
+### A machine that sends a write again
+
+A machine sends what it wrote again: a copy built again from its application's own log of commands
+sends every write and note it makes, as it made them, and a copy that shares what it holds on a resync
+sends alone an operation that was signed as a part of a change. The host signs each once
+(`Trust::seal_sent`, which the `Sealer` and the relay's `keep` are): it keeps a write by its register,
+its stamp and its content, and a note by the write it is about, so the same one sent again, before a
+restart or after it, leaves as the operation the host holds, with its number, its signature and its
+sealed text, and is reported as not signed (`Sealed::signed`). What an operation travels in (`parts`,
+and a note's `by`, `atWallTime` and `atCounter`) is not what it is about, and does not make it another.
+A write of the host's person under a stamp the device signed with another value or text is refused
+before anything is sealed or signed, with that reason: one stamp names one write, and a second content
+under it would be the device signing two things for one write. So a device's chain does not grow by a
+replay, and it never signs two things at one number.
+
+### A state that came back from a store
+
+What `restore_from_text` gives back may be older than the device's last operation: a backup, a copy of
+the host's storage, a save the device ran past before it was stopped. A host that signed at the next
+number it holds would then sign at a number it used, and every host given both would freeze the device.
+A host whose state came back calls `Trust::await_own_chain`: it signs nothing new, and still gives what
+it holds as it was, until it is given heads (a relay's) that the chain it holds of its person reaches
+(`Trust::confirm_own_chain`); `Trust::own_chain_behind` says which of its own operations to read back.
+The peer core does this on every restore, and its round reads the chain back from the relay
+(`docs/SCE_SHARED_LIST_RELAY.md`, section 6). `restore_from_text` alone does not wait, since a host
+with no relay to read from (a hub's, or a test's) has nothing to wait for. A device rebuilt from a copy
+of its secrets with no state at all is in the same case, and its host calls `await_own_chain` too.
+
 ### A copy of a device's secrets
 
 What a person can keep for themselves against a lost device is a copy of its secrets under a

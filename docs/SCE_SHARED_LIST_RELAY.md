@@ -97,7 +97,11 @@ things:
 1. brings the two logs level: the relay's entries come in and are checked, the entries the relay lacks
    go out;
 2. gives the relay what it lacks, by comparing heads and sending the missing ranges and the
-   checkpoints the host holds, so that nothing needs a queue that could be lost in a crash;
+   checkpoints the host holds, so that nothing needs a queue that could be lost in a crash. Before
+   it gives anything, when the relay's heads name more of the host's own person's chain than the host
+   holds, it asks for those operations (`operations`, the device's node) and takes them in, so that a
+   device whose state came back from an older store numbers its next operation past every one it
+   made (below);
 3. reads what the relay holds after its cursor and takes each record in as it would from anyone
    (`Trust::take_operation`). It returns the events the machine is to be told: the roster when the
    log moved, then each operation the host did not hold. A record that names an entry of the log the
@@ -132,6 +136,32 @@ order, the refusals, whether the machine is to be built again, whether it stalle
 device did with what was read; the device's state is saved and restored as one text. It reads no clock
 and starts no thread, so the C ABI every application lane links is a thin layer over it
 (`two_devices_hold_one_list_through_a_relay_with_a_core_each`).
+
+**A replay writes nothing twice.** An application that keeps its own log of commands as its original
+builds its machine again from it, and the machine sends its writes and notes again, as it made them.
+`keep` (and so `Keep` and `Peer::outbound`) signs a write or a note once: one the host holds already
+(the same register, stamp and content for a write, the same written-over write for a note) is
+`Kept::Held`, the operation with the number and the signature it has, and a courier gives the relay
+nothing it holds (`Trust::seal_sent`, `docs/SCE_SHARED_LIST_TRUST.md` section 5). Another content under
+a stamp the device signed is refused before anything is sealed or signed. The rebuilt machine is told
+the list by a resync, and the other members' machines are told nothing again
+(`a_copy_built_again_from_its_own_commands_writes_nothing_twice`).
+
+**A device whose state came back from a store reads its own chain back before it signs.** A saved
+state may be older than what the device published since (a backup, a copy of its storage, a save it ran
+past before it was stopped), and its next operation would then take a number it used, which every host
+given both takes as the device signing two histories and freezes it for. `Peer::restore` makes the trust
+wait (`Trust::await_own_chain`): a send that would make a new operation is refused with that reason, one
+the device holds is still `Kept::Held`, and the next round reads the device's own operations back
+(step 2 above) and tells them to the machine; the wait ends once the trust holds the chain as far as the
+relay's heads say (`Trust::confirm_own_chain`), and the device signs at the number after its last. The
+rule is the core's, so that no host forgets it, and it uses only `heads` and `operations`, which the
+relay served already. A host that drives a `Courier` and restores its `Trust` itself calls
+`await_own_chain` after `restore_from_text`. A host that rebuilds its machine after a restore makes a
+round, gives the core the machine's sends again, then makes a resync. What the rule rests on is the
+relay's word of how far the chain goes: a relay that withholds the device's own operations from its
+heads as well as from what it gives back makes the device sign at a used number, and every host given
+both holds the conflict as proof, which is the limit ADR 0034 states for a relay that withholds.
 
 ## 7. Two profiles, one relay
 
