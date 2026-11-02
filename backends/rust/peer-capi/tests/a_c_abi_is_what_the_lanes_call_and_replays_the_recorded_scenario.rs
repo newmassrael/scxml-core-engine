@@ -176,6 +176,7 @@ fn the_header_declares_exactly_what_the_library_exports() {
         ("SCE_PEER_KEPT_HELD", SCE_PEER_KEPT_HELD),
         ("SCE_PEER_KEPT_NOT_SIGNED", SCE_PEER_KEPT_NOT_SIGNED),
         ("SCE_PEER_KEPT_REFUSED", SCE_PEER_KEPT_REFUSED),
+        ("SCE_PEER_KEPT_WAITING", SCE_PEER_KEPT_WAITING),
         ("SCE_PEER_ROUND_SYNC", SCE_PEER_ROUND_SYNC),
         ("SCE_PEER_ROUND_RESYNC", SCE_PEER_ROUND_RESYNC),
         ("SCE_PEER_ROUND_REREAD", SCE_PEER_ROUND_REREAD),
@@ -191,6 +192,64 @@ fn the_header_declares_exactly_what_the_library_exports() {
         "#define SCE_PEER_ABI_VERSION {}u",
         SCE_PEER_ABI_VERSION
     )));
+}
+
+/// A send the core cannot sign yet is kept, and the answer says so and why: here the device of an
+/// invited person that has read nothing of its list. The standing counts it, and a send of
+/// another content under its stamp is refused at once.
+#[test]
+fn a_send_the_core_cannot_sign_yet_is_kept_and_says_why() {
+    let genesis = [0u8; 32];
+    let seed = [2u8; 32];
+    let write = c"{\"id\":1,\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"1000\",\"counter\":0,\"nodeId\":\"2\"}";
+    let other = c"{\"id\":1,\"field\":3,\"value\":\"2\",\"text\":\"\",\"wallTime\":\"1000\",\"counter\":0,\"nodeId\":\"2\"}";
+    // SAFETY: each call below passes a live handle, NUL-terminated texts and places valid for a
+    // write.
+    unsafe {
+        let peer = sce_peer_invited(c"home".as_ptr(), genesis.as_ptr());
+        assert!(!peer.is_null(), "{}", last_error());
+        assert_eq!(sce_peer_set_identity(peer, 2, seed.as_ptr()), SCE_PEER_OK);
+        let mut kept = -1;
+        let mut reason = empty();
+        assert_eq!(
+            sce_peer_outbound(
+                peer,
+                c"record_list.write".as_ptr(),
+                write.as_ptr(),
+                &mut kept,
+                &mut reason
+            ),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        assert_eq!(kept, SCE_PEER_KEPT_WAITING);
+        let why = taken(reason).expect("a send that waits says why");
+        assert!(why.contains("has not begun"), "{why}");
+        assert_eq!(standing_of(peer)["waiting"], 1);
+
+        let mut kept = -1;
+        let mut reason = empty();
+        assert_eq!(
+            sce_peer_outbound(
+                peer,
+                c"record_list.write".as_ptr(),
+                other.as_ptr(),
+                &mut kept,
+                &mut reason
+            ),
+            SCE_PEER_OK
+        );
+        assert_eq!(kept, SCE_PEER_KEPT_REFUSED);
+        let why = taken(reason).expect("a refusal says why");
+        assert!(why.contains("another content"), "{why}");
+        assert_eq!(
+            standing_of(peer)["waiting"],
+            1,
+            "the refused one is kept nowhere"
+        );
+        sce_peer_free(peer);
+    }
 }
 
 #[test]

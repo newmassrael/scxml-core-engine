@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 3u
+#define SCE_PEER_ABI_VERSION 4u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
@@ -72,6 +72,7 @@ extern "C" {
 #define SCE_PEER_KEPT_HELD 1
 #define SCE_PEER_KEPT_NOT_SIGNED 2
 #define SCE_PEER_KEPT_REFUSED 3
+#define SCE_PEER_KEPT_WAITING 4
 
 /* The kinds of round (sce_peer_start). */
 #define SCE_PEER_ROUND_SYNC 0
@@ -125,7 +126,9 @@ int32_t sce_peer_remove_member(ScePeer *peer, uint64_t node);
 /* What the device stands at in its list, as one JSON text. */
 int32_t sce_peer_standing(ScePeer *peer, ScePeerBuf *out);
 
-/* What the machine sent: *kept is SCE_PEER_KEPT_*, and *reason (may be NULL) says why when refused. */
+/* What the machine sent: *kept is SCE_PEER_KEPT_*, and *reason (may be NULL) says why when refused or
+ * kept waiting. A send the device may not sign yet waits, with every send after it, and the round
+ * that reads what it waits for signs it (the outcome's taken) or refuses it (the outcome's dropped). */
 int32_t sce_peer_outbound(ScePeer *peer, const char *event, const char *data, int32_t *kept, ScePeerBuf *reason);
 
 /* An exchange with the relay: begun, then each request polled and answered (or failed) until the

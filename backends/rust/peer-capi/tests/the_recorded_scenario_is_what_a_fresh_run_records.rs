@@ -6,15 +6,17 @@
 // list and grants bob writing, and bob's, invited with the hash of the genesis alice's core gave.
 // Every call each device's core is given and every text it gives back is recorded in order: the
 // administrator's acts and the genesis the opening gave, the machine's sends and what the core did
-// with each (taken, held, not signed, refused and why), each request the core puts to the relay and
-// the relay's answer, a failure of the transport, the outcome each machine is told, what each device
-// stands at, and bob's sealed state, after which his core is made again given nothing but the list
-// and the genesis, and restored from it. What it shows: a list is opened and a device admitted
-// through the ABI alone; bob's writes and his note reach alice's machine; a device restored from
-// its sealed state needs no key given again, says it waits for its own chain, signs nothing new
-// until the chain is read back, and gives a write it holds as held; another content under a stamp a
-// device signed is refused; a round that loses its transport ends, and the next goes on; and a
-// device taken off is refused by the relay, so that what it writes afterwards reaches no one.
+// with each (taken, held, not signed, kept waiting and why, refused and why), each request the core
+// puts to the relay and the relay's answer, a failure of the transport, the outcome each machine is
+// told, what each device stands at, and bob's sealed state, after which his core is made again given
+// nothing but the list and the genesis, and restored from it. What it shows: a list is opened and a
+// device admitted through the ABI alone; a write bob's machine makes before his device has read the
+// log that lets him write is kept, once, and his first round signs it and gives it the relay; bob's
+// writes and his note reach alice's machine; a device restored from its sealed state needs no key
+// given again, says it waits for its own chain, keeps a new write until the chain is read back and
+// then signs it, and gives a write it holds as held; another content under a stamp a device signed
+// is refused; a round that loses its transport ends, and the next goes on; and a device taken off is
+// refused by the relay, so that what it writes afterwards reaches no one.
 //
 // The core does no I/O, so a lane replays the scenario with no relay: it makes the same calls,
 // compares each request, outcome, standing, genesis and sealed state the core gives with the
@@ -273,6 +275,7 @@ impl Core {
             SCE_PEER_KEPT_HELD => "held",
             SCE_PEER_KEPT_NOT_SIGNED => "not_signed",
             SCE_PEER_KEPT_REFUSED => "refused",
+            SCE_PEER_KEPT_WAITING => "waiting",
             other => panic!("{other} is no answer to a send"),
         };
         (answer.to_string(), taken(reason).unwrap_or_default())
@@ -520,7 +523,7 @@ impl Recording {
 
     fn into_scenario(self) -> Value {
         json!({
-            "version": 3,
+            "version": 4,
             "list": LIST,
             "devices": self.devices,
             "steps": self.steps,
@@ -582,18 +585,34 @@ fn record() -> Value {
     assert_eq!(refused(&given), 0, "{given}");
     assert_eq!(given["pushed"], 3, "the genesis and two grants: {given}");
 
-    // Bob's device, invited with the hash of the genesis, reads the log.
+    // Bob's device, invited with the hash of the genesis, is used offline before it has read the
+    // log: his machine writes a field, and sends the write again. His core cannot sign it yet and
+    // keeps it, once. His first round reads the log that lets him write, signs the write, and gives
+    // it the relay with the rest of what it lacks.
     run.make(AT_BOB);
-    let joined = run.round(AT_BOB, "sync");
-    assert_eq!(refused(&joined), 0, "{joined}");
-
-    // Bob writes a field, writes it again, and notes that the second write is over the first; his
-    // machine also sends an event that is not signed, and a write under a stamp he signed with
-    // another value.
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
-        "taken"
+        "waiting"
     );
+    assert_eq!(
+        run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
+        "waiting",
+        "the same write waits once"
+    );
+    assert_eq!(run.standing(AT_BOB)["waiting"], 1);
+    let joined = run.round(AT_BOB, "sync");
+    assert_eq!(refused(&joined), 0, "{joined}");
+    assert_eq!(joined["pushed"], 1, "the write that waited: {joined}");
+    assert_eq!(
+        joined["taken"].as_array().map(Vec::len),
+        Some(1),
+        "{joined}"
+    );
+    assert_eq!(run.standing(AT_BOB)["waiting"], 0);
+
+    // Bob writes the field again, and notes that the second write is over the first; his machine
+    // also sends an event that is not signed, and a write under a stamp he signed with another
+    // value.
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 2000, 20)),
         "taken"
@@ -612,15 +631,16 @@ fn record() -> Value {
         "another content under a stamp bob signed"
     );
     let pushed = run.round(AT_BOB, "sync");
-    assert_eq!(pushed["pushed"], 3, "{pushed}");
+    assert_eq!(pushed["pushed"], 2, "{pushed}");
     let told = run.round(AT_ALICE, "sync");
     assert_eq!(named(&told, WRITE), 2, "{told}");
     assert_eq!(named(&told, SUPERSEDE), 1, "{told}");
 
     // Bob's device is saved, sealed, stopped and started again from its sealed state with no key
     // given again, and his machine, built again from his application's own log, sends his writes
-    // again: the core says it waits for his own chain, what it holds comes back held, a new write
-    // waits until a round has read his chain back, and then is taken.
+    // again: the core says it waits for his own chain, what it holds comes back held, and a new
+    // write is kept until a round has read his chain back. That round signs it at the number after
+    // his last and gives it the relay; sent again, it is held.
     let key = hex(&DATA_KEY);
     let sealed = run.save(AT_BOB, &key);
     assert_eq!(
@@ -628,23 +648,27 @@ fn record() -> Value {
         3,
         "his three operations"
     );
-    let waiting = run.standing(AT_BOB);
-    assert_eq!(waiting["awaits_own_chain"], true, "{waiting}");
-    assert_eq!(waiting["node"], "2", "his person came back from the state");
+    let restored = run.standing(AT_BOB);
+    assert_eq!(restored["awaits_own_chain"], true, "{restored}");
+    assert_eq!(restored["node"], "2", "his person came back from the state");
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
         "held"
     );
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(2, BOB, 3000, 30)),
-        "refused",
-        "nothing new before his chain is read back"
+        "waiting",
+        "nothing new is signed before his chain is read back, and nothing is lost"
     );
+    let waiting = run.standing(AT_BOB);
+    assert_eq!(waiting["waiting"], 1, "{waiting}");
     let back = run.round(AT_BOB, "sync");
     assert_eq!(refused(&back), 0, "{back}");
-    assert_eq!(back["pushed"], 0, "{back}");
+    assert_eq!(back["pushed"], 1, "the write that waited: {back}");
+    assert_eq!(back["taken"].as_array().map(Vec::len), Some(1), "{back}");
     let read_back = run.standing(AT_BOB);
     assert_eq!(read_back["awaits_own_chain"], false, "{read_back}");
+    assert_eq!(read_back["waiting"], 0, "{read_back}");
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 2000, 20)),
         "held"
@@ -655,11 +679,12 @@ fn record() -> Value {
     );
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(2, BOB, 3000, 30)),
-        "taken"
+        "held",
+        "the write that waited, signed once"
     );
     let rebuilt = run.round(AT_BOB, "resync");
     assert_eq!(refused(&rebuilt), 0, "{rebuilt}");
-    assert_eq!(rebuilt["pushed"], 1, "the one new write: {rebuilt}");
+    assert_eq!(rebuilt["pushed"], 0, "nothing new: {rebuilt}");
 
     // Alice's transport fails in the middle of a round; the round ends, and the next goes on.
     run.start(AT_ALICE, "sync");

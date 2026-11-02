@@ -341,6 +341,32 @@ when it is called production.
   it into a core given nothing but the list and the genesis, and every lane replays it so. Not done: a
   known-answer vector of the sealed form, and the core drawing a device's keys itself, so that a host does not
   handle a seed even once at setup.
+- **A send the core cannot sign yet is kept** (2026-11-02). The core refused what the device could not
+  sign yet: an invited device's write before a round had read the log that lets it write, and a restored
+  device's before its own chain was read back. The machine sends whenever its person edits, offline and
+  right after the application starts, which for a device with a sealed state is a restore, so the
+  refusal lost writes for every other device. The trust now keeps such a send (`Trust::keep_sent`, which
+  the relay's `keep` and `Peer::outbound` are: `Kept::Waiting` with why, `SCE_PEER_KEPT_WAITING`), with
+  every send after it, in order, and each round signs what waits as far as it may once the logs are level
+  and again once the device's own chain is read back (`Trust::sign_waiting`), before the relay is given
+  what it lacks, so the round that reads what a send waited for gives it the relay (`taken` in the
+  outcome). It waits also for a log that grants the person nothing yet, and for the key of the epoch a
+  list that keeps its content is in. The same send made again waits once and is signed once (step 3's
+  idempotence: one that the chain read back holds is the operation held), and another content under the
+  stamp of a write that waits is refused at once. What is final stays a refusal, and one more is final
+  in the core: a send of a person the log the core holds does not let write (a reader, a device taken
+  off, a key the log replaced) is refused by the device's own core, where it was signed and refused by
+  the relay, since no host admits it and the number it took was one no host would hold; `Trust::seal_sent`,
+  the `Sealer` behind a Mesh endpoint, is unchanged. When a round's log says the person never may, every
+  send that waited is refused then, each with why (`dropped` in the outcome), and `rebuild` is true: the
+  machine took the write in as made and no other copy will hold it, so its host builds it again and makes a
+  resync, as for an evicted operation, and takes the send out of its own log of commands. What waits is in
+  the trust's text and so in the sealed state, which is the core's version 4, bound into the state so that
+  a core of version 3, which would lose what waits, does not open it; the standing counts it (`waiting`).
+  The ABI is version 4: `sce_peer_outbound` gives an answer a lane of version 3 does not know, which the
+  version policy makes a new number. The recorded scenario now has bob's write before his first round kept
+  and taken, and his restored write kept and taken by the round that reads his chain back; it is recorded
+  again from a fresh run.
 
 ## Alternatives considered
 

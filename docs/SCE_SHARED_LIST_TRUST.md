@@ -364,10 +364,11 @@ section 6).
 A machine sends what it wrote again: a copy built again from its application's own log of commands
 sends every write and note it makes, as it made them, and a copy that shares what it holds on a resync
 sends alone an operation that was signed as a part of a change. The host signs each once
-(`Trust::seal_sent`, which the `Sealer` and the relay's `keep` are): it keeps a write by its register,
-its stamp and its content, and a note by the write it is about, so the same one sent again, before a
-restart or after it, leaves as the operation the host holds, with its number, its signature and its
-sealed text, and is reported as not signed (`Sealed::signed`). What an operation travels in (`parts`,
+(`Trust::seal_sent`, which the `Sealer` is, and `Trust::keep_sent`, which the relay's `keep` is): it
+keeps a write by its register, its stamp and its content, and a note by the write it is about, so the
+same one sent again, before a restart or after it, leaves as the operation the host holds, with its
+number, its signature and its sealed text, and is reported as not signed (`Sealed::signed`, and
+`Sent::Held`; one that waits to be signed waits once). What an operation travels in (`parts`,
 and a note's `by`, `atWallTime` and `atCounter`) is not what it is about, and does not make it another.
 A write of the host's person under a stamp the device signed with another value or text is refused
 before anything is sealed or signed, with that reason: one stamp names one write, and a second content
@@ -386,6 +387,23 @@ The peer core does this on every restore, and its round reads the chain back fro
 (`docs/SCE_SHARED_LIST_RELAY.md`, section 6). `restore_from_text` alone does not wait, since a host
 with no relay to read from (a hub's, or a test's) has nothing to wait for. A device rebuilt from a copy
 of its secrets with no state at all is in the same case, and its host calls `await_own_chain` too.
+
+### A send the person may not sign yet
+
+`Trust::seal_sent` answers at once, which is what a `Sealer` behind a Mesh endpoint needs: what it
+cannot sign now it refuses. A host whose sends a courier carries to a relay keeps them instead
+(`Trust::keep_sent`, which the relay's `keep` is): a send of the host's person that the person may
+not sign yet waits, with every send after it, in the order they were made, and `Trust::sign_waiting`
+signs them in that order once the person may (`docs/SCE_SHARED_LIST_RELAY.md`, section 6). What may
+not be signed yet: a log not begun, a log that grants the person nothing yet (or grants nothing to the
+key the device signs with), a list that keeps its content under an epoch whose key the host does not
+hold, and a host waiting for its own chain. What never may, under the log the host holds: a person
+whose latest grant does not let them write, a key the log replaced, a frozen chain, a forked log, a
+host with no person. A send of the second kind is refused at once, and one that waited is refused when
+the log comes to say so (`Waited::dropped`); a send of another content under the stamp of a write that
+waits, or that the device signed, is refused at once; the same send made again waits once. What
+waits is in `Trust::to_text`, in its order, and comes back with `restore_from_text`; it is judged
+when it is signed, as any send is.
 
 ### A copy of a device's secrets
 

@@ -34,9 +34,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
-private const val ABI_VERSION = 3
+private const val ABI_VERSION = 4
 private const val OK = 0
-private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused" to 3)
+private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused" to 3, "waiting" to 4)
 private val KINDS = mapOf("sync" to 0, "resync" to 1, "reread" to 2)
 private val PROFILES = mapOf("untrusted" to 0, "trusted_hub" to 1)
 

@@ -148,6 +148,10 @@ struct State {
     /// the chain is read back from where it was published ([`Trust::confirm_own_chain`]), the device
     /// signs nothing new, since the next number it would sign at may be one it used already.
     awaiting_own_chain: bool,
+    /// What this host's machine sent that its person may not sign yet, in the order it was sent
+    /// ([`Trust::keep_sent`]): signed in that order as soon as the person may sign
+    /// ([`Trust::sign_waiting`]), or refused, each, once the log says the person never will.
+    waiting: Vec<Waiting>,
     /// The checkpoints the host made or took in, one for each device and each instant and digest
     /// it speaks of: what a settlement is made from, and what shows an operation withheld.
     checkpoints: BTreeMap<(u64, i64, u32), Checkpoint>,
@@ -239,6 +243,7 @@ impl Trust {
                 forked: None,
                 own: None,
                 awaiting_own_chain: false,
+                waiting: Vec::new(),
                 checkpoints: BTreeMap::new(),
                 wires: BTreeMap::new(),
                 notes: BTreeMap::new(),
@@ -952,8 +957,9 @@ impl Trust {
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
     /// with the checkpoints it made or took in, and every operation it holds (the writes it
     /// relays and the notes of who wrote over what, every number of every chain), each as the
-    /// event and the data it goes on the wire with. It holds no key: a host keeps those where it
-    /// keeps its person's secret.
+    /// event and the data it goes on the wire with, and what its machine sent that waits to be
+    /// signed ([`Self::keep_sent`]), in order, as the machine sent it. It holds no key: a host keeps
+    /// those where it keeps its person's secret.
     pub fn to_text(&self) -> String {
         let state = self.state();
         json!({
@@ -962,6 +968,9 @@ impl Trust {
                 .flat_map(Chain::all)
                 .filter_map(|held| Some(json!([held.event, held.wire.to_json()?])))
                 .collect::<Vec<_>>(),
+            "waiting": state.waiting.iter()
+                .map(|send| json!([send.event, send.data]))
+                .collect::<Vec<_>>(),
         })
         .to_string()
     }
@@ -969,7 +978,9 @@ impl Trust {
     /// Take back what [`Self::to_text`] wrote: each checkpoint and each operation that today's log
     /// verifies is kept, and the rest are dropped, since what a host reads back from its own
     /// storage is not taken for true. The chain of this host's own person is what was kept of it,
-    /// so that what it writes next is the next one. Returns how many were kept.
+    /// so that what it writes next is the next one. What the machine sent that waited to be signed
+    /// waits again, in its order; it is judged when it is signed, as any send is. Returns how many
+    /// operations and checkpoints were kept.
     pub fn restore_from_text(&self, text: &str) -> usize {
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             return 0;
@@ -1015,6 +1026,20 @@ impl Trust {
             if verify_checkpoint(&state, &checkpoint).is_ok() {
                 store_checkpoint(&mut state, checkpoint);
                 kept += 1;
+            }
+        }
+        for row in rows("waiting") {
+            let (Some(event), Some(data)) = (
+                row.get(0).and_then(Value::as_str),
+                row.get(1).and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            let Some(send) = Waiting::of(&state.calendar, event, data) else {
+                continue;
+            };
+            if !state.waiting.iter().any(|held| held.is_the_same(&send)) {
+                state.waiting.push(send);
             }
         }
         kept
@@ -1798,22 +1823,15 @@ fn make_operation(
     // machine none of it, and one more operation would only be one more of them. An administrator
     // takes the device off, and a new device is granted.
     if let Some(from) = state.ops.get(&author).and_then(Chain::frozen) {
-        return Err(format!(
-            "{event}: this device's chain conflicts at {from}, and it signs nothing more until an administrator has taken it off"
-        ));
+        return Err(chain_frozen(event, from));
     }
     // A device whose state came back from a store may have signed past what the store holds: the
     // number this would take may be one it used already, so nothing new is signed until its own
     // chain is read back from where it was published (`Trust::await_own_chain`).
     if state.awaiting_own_chain {
-        return Err(format!(
-            "{event}: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
-        ));
+        return Err(awaiting_own_chain(event));
     }
-    let (log, log_hash) = state
-        .log
-        .tip()
-        .ok_or_else(|| format!("{event}: the membership log has not begun"))?;
+    let (log, log_hash) = state.log.tip().ok_or_else(|| log_not_begun(event))?;
     // The next number is past what this device has made and past every chain an earlier grant
     // ended; when it is past the end of one it begins a new chain and names nothing before it. An
     // operation numbered at the end an earlier grant set belongs to the chain that grant ended, and
@@ -1951,27 +1969,364 @@ impl Trust {
     /// under it would be the device signing two things for one write, which every host given both
     /// holds as proof and freezes the device for.
     pub fn seal_sent(&self, event: &str, data: &str) -> Result<Option<Sealed>, String> {
+        seal_in(&mut self.state(), event, data)
+    }
+}
+
+/// What [`Trust::seal_sent`] does, on the state the caller holds locked.
+fn seal_in(state: &mut State, event: &str, data: &str) -> Result<Option<Sealed>, String> {
+    if let Some(index) = state.forked {
+        if event == FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
+            return Err(log_forked(event, index));
+        }
+    }
+    if event == FLOOR_EVENT {
+        return Ok(seal_floor(state, data).map(|data| Sealed {
+            data,
+            signed: false,
+        }));
+    }
+    if event == SUPERSEDE_EVENT {
+        return seal_note(state, data).map(Some);
+    }
+    if !message::SIGNED_EVENTS.contains(&event) {
+        return Ok(None);
+    }
+    seal_write(state, data).map(Some)
+}
+
+/// Why nothing is sent: the membership log forked at `index`.
+fn log_forked(event: &str, index: u64) -> String {
+    format!(
+        "{event}: the membership log forked at {index}, and nothing is sent until an administrator resolves it"
+    )
+}
+
+/// Why nothing new is signed: the device's chain was shown to conflict at `from`.
+fn chain_frozen(event: &str, from: u64) -> String {
+    format!(
+        "{event}: this device's chain conflicts at {from}, and it signs nothing more until an administrator has taken it off"
+    )
+}
+
+/// Why nothing new is signed yet: the device's state came back from a store
+/// ([`Trust::await_own_chain`]).
+fn awaiting_own_chain(event: &str) -> String {
+    format!(
+        "{event}: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
+    )
+}
+
+/// Why nothing new is signed yet: the host holds no entry of the log.
+fn log_not_begun(event: &str) -> String {
+    format!("{event}: the membership log has not begun")
+}
+
+/// Why a write is not sealed yet: the host holds no key of the epoch the log is in.
+fn no_key_of_the_epoch(event: &str, epoch: u32) -> String {
+    format!(
+        "{event}: this host holds no key of epoch {epoch} yet, and writes nothing until it does"
+    )
+}
+
+/// Why a write of `author`'s under `stamp` (its register and stamp) about `subject` is not signed:
+/// the device signed another content under that stamp. One stamp names one write, and a second
+/// content under it would be the device signing two things for one write.
+fn another_content_signed(
+    state: &State,
+    author: u64,
+    stamp: &[u8],
+    subject: &[u8],
+) -> Option<String> {
+    let at = state
+        .ops
+        .get(&author)
+        .and_then(|chain| chain.stamped(stamp))
+        .filter(|other| other.key.as_slice() != subject)
+        .map(Held::seq)?;
+    Some(format!(
+        "{WRITE_EVENT}: this device signed another content for this write (its register and stamp) at {at}, and one write is signed with one content"
+    ))
+}
+
+/// A send of this host's machine that its person may not sign yet ([`Trust::keep_sent`]).
+#[derive(Debug, Clone)]
+struct Waiting {
+    /// The event, as the host keeps the name of a signed one.
+    event: &'static str,
+    /// Its payload, as the machine sent it.
+    data: String,
+    /// What it is about ([`message::Signing::subject`]): one write or note waits once.
+    subject: Vec<u8>,
+    /// A write's register and stamp ([`message::write_stamp`]), which names one write; none for a
+    /// note.
+    stamp: Option<Vec<u8>>,
+    /// The node of the person it names as its author.
+    author: u64,
+}
+
+impl Waiting {
+    /// The send `event` with `data` in the list `list`, when it is a signed event the data names
+    /// whole; `None` otherwise.
+    fn of(list: &str, event: &str, data: &str) -> Option<Self> {
+        let event = signed_name(event)?;
+        let value: Value = serde_json::from_str(data).ok()?;
+        let signing = message::signing(list, event, &value)?.ok()?;
+        let stamp = if event == WRITE_EVENT {
+            Some(message::write_stamp(&value).ok()?)
+        } else {
+            None
+        };
+        Some(Self {
+            event,
+            data: data.to_string(),
+            subject: signing.subject,
+            stamp,
+            author: signing.author,
+        })
+    }
+
+    /// Whether `other` is this send made again: the same event about the same thing.
+    fn is_the_same(&self, other: &Waiting) -> bool {
+        self.event == other.event && self.subject == other.subject
+    }
+}
+
+/// Whether this host's person may sign a new operation now ([`readiness`]).
+enum Readiness {
+    /// It may.
+    Ready,
+    /// Not yet, and why: a round that reads the log, the device's own chain or the key of an epoch
+    /// can change it.
+    NotYet(String),
+    /// Not under the log the host holds, and why: the person may not write, or has no key the log
+    /// grants, or the device is frozen, or there is no person.
+    Never(String),
+}
+
+/// Whether this host's person may sign `event` as a new operation now: the person is a member the
+/// log the host holds lets write, with the key the host signs with; the device is not waiting for
+/// its own chain; and, for a write of a list that keeps its content, the host holds the key of the
+/// epoch the log is in. What a round can change is [`Readiness::NotYet`]; what only a later entry of
+/// an administrator's could, and a device that may never sign again, is [`Readiness::Never`].
+fn readiness(state: &State, event: &str) -> Readiness {
+    let Some((node, identity)) = state.own.as_ref() else {
+        return Readiness::Never(format!("{event}: this host has no person"));
+    };
+    let node = *node;
+    if let Some(index) = state.forked {
+        return Readiness::Never(log_forked(event, index));
+    }
+    if let Some(from) = state.ops.get(&node).and_then(Chain::frozen) {
+        return Readiness::Never(chain_frozen(event, from));
+    }
+    if state.awaiting_own_chain {
+        return Readiness::NotYet(awaiting_own_chain(event));
+    }
+    let Some((tip, _)) = state.log.tip() else {
+        return Readiness::NotYet(log_not_begun(event));
+    };
+    let key = identity.public();
+    let Some(era) = state.log.era_for(node, tip) else {
+        return Readiness::NotYet(format!(
+            "{event}: the membership log grants node {node} nothing yet"
+        ));
+    };
+    if era.key != key {
+        let granted_before = state
+            .log
+            .eras()
+            .any(|(held, eras)| held == node && eras.iter().any(|earlier| earlier.key == key));
+        return if granted_before {
+            Readiness::Never(format!(
+                "{event}: the membership log gave node {node} another key than the one this device signs with"
+            ))
+        } else {
+            Readiness::NotYet(format!(
+                "{event}: the membership log grants the key this device signs with nothing yet"
+            ))
+        };
+    }
+    match era.role {
+        role if role < WRITER => Readiness::Never(format!(
+            "{event}: node {node} may not write (role {role} at entry {tip})"
+        )),
+        _ if event == WRITE_EVENT
+            && state.keeps_content()
+            && !state.epoch_keys.contains_key(&state.log.epoch()) =>
+        {
+            Readiness::NotYet(no_key_of_the_epoch(event, state.log.epoch()))
+        }
+        _ => Readiness::Ready,
+    }
+}
+
+/// What became of a send of this host's machine given to [`Trust::keep_sent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sent {
+    /// A new operation of the person's chain was signed for it.
+    Signed,
+    /// The host holds it already, as the operation made or admitted before for the same write or
+    /// note (or a settled instant with the members' settlement): nothing is signed.
+    Held,
+    /// It is no event that is signed: nothing is kept.
+    NotSigned,
+    /// The person may not sign it yet, and why: it is kept, and signed in its turn as soon as the
+    /// person may ([`Trust::sign_waiting`]).
+    Waiting(String),
+    /// It is refused, and why: nothing is kept.
+    Refused(String),
+}
+
+impl Sent {
+    fn of(sealed: Result<Option<Sealed>, String>) -> Self {
+        match sealed {
+            Ok(Some(sealed)) if sealed.signed => Sent::Signed,
+            Ok(Some(_)) => Sent::Held,
+            Ok(None) => Sent::NotSigned,
+            Err(reason) => Sent::Refused(reason),
+        }
+    }
+}
+
+/// What [`Trust::sign_waiting`] did with the sends that waited, each as the machine sent it.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Waited {
+    /// The sends signed now, in the order they were sent, or found held already (the device's own
+    /// chain, read back, held them): each `(event, data)`.
+    pub taken: Vec<(String, String)>,
+    /// The sends refused for good, each `(event, data, why)`: the log the host now holds says the
+    /// person may not write (a reader, a device taken off, a key the log replaced), or the send
+    /// would conflict with what the device signed. The machine took each in as made, and no copy
+    /// but its own will hold it.
+    pub dropped: Vec<(String, String, String)>,
+}
+
+impl Waited {
+    /// Whether nothing waited that came to anything.
+    pub fn is_empty(&self) -> bool {
+        self.taken.is_empty() && self.dropped.is_empty()
+    }
+}
+
+impl Trust {
+    /// What the host's machine sent, kept for a relay: [`Self::seal_sent`] for a host whose sends
+    /// a courier carries, where a send the person may not sign yet is kept and not refused.
+    ///
+    /// **A send that cannot be signed yet waits.** A machine sends whenever its person edits, and an
+    /// application that works offline edits before its device has read the log that lets it
+    /// write (an invited device before its first round, a device the list keys whose group's key
+    /// it has not read yet), or before a device restored from a store has read its own chain back
+    /// ([`Self::await_own_chain`]). Such a send is kept ([`Sent::Waiting`]), and so is every send
+    /// after it, in the order they were made, and [`Self::sign_waiting`] signs them once the person
+    /// may. A send the machine makes again while it waits waits once; another content under the
+    /// stamp of a write that waits, or that the device signed, is refused at once.
+    ///
+    /// **What is final is refused.** An event that is not signed is [`Sent::NotSigned`]; a write or
+    /// note the host holds already is [`Sent::Held`]; another person's that the host holds no
+    /// signature for, a person that may not write under the log the host holds (a reader, a
+    /// device taken off), a frozen chain, a forked log and a host with no person are
+    /// [`Sent::Refused`]. A device whose log grants it writing signs the send at once
+    /// ([`Sent::Signed`]), as [`Self::seal_sent`] does.
+    pub fn keep_sent(&self, event: &str, data: &str) -> Sent {
         let mut state = self.state();
-        if let Some(index) = state.forked {
-            if event == FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
-                return Err(format!(
-                    "{event}: the membership log forked at {index}, and nothing is sent until an administrator resolves it"
+        let Some(send) = Waiting::of(&state.calendar, event, data) else {
+            return Sent::of(seal_in(&mut state, event, data));
+        };
+        let held = if send.event == WRITE_EVENT {
+            state.wires.contains_key(&send.subject)
+        } else {
+            state.notes.contains_key(&send.subject)
+        };
+        let own = matches!(&state.own, Some((node, _)) if *node == send.author);
+        if held || !own {
+            return Sent::of(seal_in(&mut state, event, data));
+        }
+        if state
+            .waiting
+            .iter()
+            .any(|waiting| waiting.is_the_same(&send))
+        {
+            return Sent::Waiting(why_it_waits(&state, send.event));
+        }
+        if let Some(stamp) = &send.stamp {
+            let clash = state
+                .waiting
+                .iter()
+                .any(|waiting| waiting.stamp.as_ref() == Some(stamp));
+            if clash {
+                return Sent::Refused(format!(
+                    "{WRITE_EVENT}: a write of this device that waits to be signed has another content for this write (its register and stamp), and one write is signed with one content"
                 ));
             }
+            if let Some(reason) = another_content_signed(&state, send.author, stamp, &send.subject)
+            {
+                return Sent::Refused(reason);
+            }
         }
-        if event == FLOOR_EVENT {
-            return Ok(seal_floor(&state, data).map(|data| Sealed {
-                data,
-                signed: false,
-            }));
+        if !state.waiting.is_empty() {
+            let why = why_it_waits(&state, send.event);
+            state.waiting.push(send);
+            return Sent::Waiting(why);
         }
-        if event == SUPERSEDE_EVENT {
-            return seal_note(&mut state, data).map(Some);
+        match readiness(&state, send.event) {
+            Readiness::Ready => Sent::of(seal_in(&mut state, event, data)),
+            Readiness::NotYet(why) => {
+                state.waiting.push(send);
+                Sent::Waiting(why)
+            }
+            Readiness::Never(why) => Sent::Refused(why),
         }
-        if !message::SIGNED_EVENTS.contains(&event) {
-            return Ok(None);
+    }
+
+    /// Sign what the machine sent that waits ([`Self::keep_sent`]), in the order it was sent, as
+    /// far as the person may now: what a round calls once it has read the log and the device's own
+    /// chain, before it gives the relay what it lacks. A send that still may not be signed, and
+    /// every one after it, waits on. Once the log the host holds says the person never may (a
+    /// reader, a device taken off, a key the log replaced), every send that waits is refused, each
+    /// with why; a send that conflicts with what the device signed is refused alone. What it did is
+    /// returned, for the host to tell: the machine took each send in as made, so a send refused
+    /// here is one its copy holds and no other copy will.
+    pub fn sign_waiting(&self) -> Waited {
+        let mut state = self.state();
+        let mut waited = Waited::default();
+        while !state.waiting.is_empty() {
+            let send = state.waiting.remove(0);
+            match readiness(&state, send.event) {
+                Readiness::NotYet(_) => {
+                    state.waiting.insert(0, send);
+                    break;
+                }
+                Readiness::Never(why) => {
+                    waited
+                        .dropped
+                        .push((send.event.to_string(), send.data, why));
+                }
+                Readiness::Ready => match seal_in(&mut state, send.event, &send.data) {
+                    Ok(_) => waited.taken.push((send.event.to_string(), send.data)),
+                    Err(why) => waited
+                        .dropped
+                        .push((send.event.to_string(), send.data, why)),
+                },
+            }
         }
-        seal_write(&mut state, data).map(Some)
+        waited
+    }
+
+    /// How many sends of the machine wait to be signed ([`Self::keep_sent`]).
+    pub fn waiting(&self) -> usize {
+        self.state().waiting.len()
+    }
+}
+
+/// Why a send of `event` waits: what keeps the person from signing now, or, when nothing does, the
+/// sends before it that wait, since a device signs its sends in the order they were made.
+fn why_it_waits(state: &State, event: &str) -> String {
+    match readiness(state, event) {
+        Readiness::NotYet(why) => why,
+        Readiness::Ready | Readiness::Never(_) => format!(
+            "{event}: sends of this device made before it wait to be signed, and a device signs its sends in the order they were made"
+        ),
     }
 }
 
@@ -2014,25 +2369,16 @@ fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
     // here, before it is sealed under the stamp's nonce or signed: it would be the device signing two
     // things for one write.
     let stamp = message::write_stamp(&visible).map_err(|_| malformed())?;
-    if let Some(at) = state
-        .ops
-        .get(&signing.author)
-        .and_then(|chain| chain.stamped(&stamp))
-        .filter(|other| other.key != held)
-        .map(Held::seq)
-    {
-        return Err(format!(
-            "{event}: this device signed another content for this write (its register and stamp) at {at}, and one write is signed with one content"
-        ));
+    if let Some(reason) = another_content_signed(state, signing.author, &stamp, &held) {
+        return Err(reason);
     }
     let mut wire = visible.clone();
     if state.keeps_content() {
         let epoch = state.log.epoch();
-        let key = state.epoch_keys.get(&epoch).ok_or_else(|| {
-            format!(
-                "{event}: this host holds no key of epoch {epoch} yet, and writes nothing until it does"
-            )
-        })?;
+        let key = state
+            .epoch_keys
+            .get(&epoch)
+            .ok_or_else(|| no_key_of_the_epoch(event, epoch))?;
         let (number, text) = message::write_content(&visible).map_err(|_| malformed())?;
         let object = wire.as_object_mut().ok_or_else(malformed)?;
         object.insert("value".to_string(), Value::String("0".to_string()));

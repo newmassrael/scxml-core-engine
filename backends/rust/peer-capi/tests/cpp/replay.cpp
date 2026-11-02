@@ -105,6 +105,9 @@ int32_t kept_of(const std::string &name) {
     if (name == "refused") {
         return SCE_PEER_KEPT_REFUSED;
     }
+    if (name == "waiting") {
+        return SCE_PEER_KEPT_WAITING;
+    }
     die("an answer to a send the replay does not know");
 }
 

@@ -57,7 +57,11 @@ use serde_json::{json, Value};
 /// state, its secrets with the rest, under a data key the host wraps
 /// ([`sce_peer_save_sealed`], [`sce_peer_restore_sealed`]); the plain save and restore and the
 /// group's state in the clear are gone, and [`sce_peer_with_group`] makes a new device only.
-pub const SCE_PEER_ABI_VERSION: u32 = 3;
+/// Version 4: a send the device may not sign yet is kept and not refused
+/// (`SCE_PEER_KEPT_WAITING` from [`sce_peer_outbound`], an answer a lane of version 3 does not
+/// know), the outcome holds `taken` and `dropped` and the standing `waiting`, and the sealed state
+/// is the core's version 4, which holds what waits.
+pub const SCE_PEER_ABI_VERSION: u32 = 4;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -100,6 +104,9 @@ pub const SCE_PEER_KEPT_TAKEN: i32 = 0;
 pub const SCE_PEER_KEPT_HELD: i32 = 1;
 pub const SCE_PEER_KEPT_NOT_SIGNED: i32 = 2;
 pub const SCE_PEER_KEPT_REFUSED: i32 = 3;
+/// The device may not sign it yet: it is kept, and the round that reads what it waits for signs it
+/// and gives it the relay, or refuses it when the log says the person never may.
+pub const SCE_PEER_KEPT_WAITING: i32 = 4;
 
 /// The kinds of round [`sce_peer_start`] begins ([`RoundKind`]).
 pub const SCE_PEER_ROUND_SYNC: i32 = 0;
@@ -346,6 +353,16 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
                     .copied()
                     .flat_map(|round| numbered(&round.restored))
                     .collect::<Vec<_>>(),
+                "taken": outcome
+                    .taken()
+                    .into_iter()
+                    .map(|(event, data)| json!([event, data]))
+                    .collect::<Vec<_>>(),
+                "dropped": outcome
+                    .dropped()
+                    .into_iter()
+                    .map(|(event, data, why)| json!([event, data, why]))
+                    .collect::<Vec<_>>(),
                 "rebuild": outcome.rebuild(),
                 "stalled": outcome.stalled(),
                 "reread": outcome.reread.is_some(),
@@ -393,6 +410,7 @@ fn standing_text(standing: &Standing) -> String {
         "epoch": standing.epoch,
         "keys": standing.keys,
         "owed": standing.owed,
+        "waiting": standing.waiting,
     })
     .to_string()
 }
@@ -659,8 +677,8 @@ pub unsafe extern "C" fn sce_peer_standing(peer: *mut ScePeer, out: *mut ScePeer
 
 /// What the machine sent to `#hub` or `#people`: the event's name and its JSON payload, both
 /// NUL-terminated ([`Peer::outbound`]). `kept` is set to what the core did with it
-/// (`SCE_PEER_KEPT_*`), and, when it refused, `reason` (which may be null) to why; `reason` is set to
-/// an empty buffer otherwise.
+/// (`SCE_PEER_KEPT_*`), and, when it refused it or keeps it waiting, `reason` (which may be null) to
+/// why; `reason` is set to an empty buffer otherwise.
 ///
 /// # Safety
 /// `peer` is a live handle; `event` and `data` are NUL-terminated strings; `kept` is valid for a
@@ -685,6 +703,7 @@ pub unsafe extern "C" fn sce_peer_outbound(
             Kept::Held => (SCE_PEER_KEPT_HELD, None),
             Kept::NotSigned => (SCE_PEER_KEPT_NOT_SIGNED, None),
             Kept::Refused(why) => (SCE_PEER_KEPT_REFUSED, Some(why)),
+            Kept::Waiting(why) => (SCE_PEER_KEPT_WAITING, Some(why)),
         };
         // SAFETY: `kept` is valid for a write, `reason` null or valid for one.
         unsafe {

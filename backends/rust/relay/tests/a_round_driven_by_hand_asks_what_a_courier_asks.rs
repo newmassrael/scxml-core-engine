@@ -390,16 +390,32 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
         node: BOB,
         data: "AA".to_string(),
     };
+    // What became of two sends that waited: one signed, one refused for good.
+    let taken = (WRITE.to_string(), write(BOB, 2000, 2));
+    let dropped = (
+        WRITE.to_string(),
+        write(BOB, 3000, 3),
+        "node 2 may not write".to_string(),
+    );
     state.hold(Round {
         events: vec![held_event.clone()],
         messages: vec![held_message.clone()],
         evicted: vec![(ALICE, 9)],
         restored: vec![(ALICE, 8)],
+        taken: vec![taken.clone()],
+        dropped: vec![dropped.clone()],
         ..Round::default()
     });
     assert_eq!(state.untold(), 1);
     let read_back = CourierState::from_text(&state.to_text());
     assert_eq!(read_back.as_ref(), Some(&state), "{}", state.to_text());
+    // A text written before sends were kept waiting names neither, and is read as holding none.
+    let mut older: serde_json::Value = serde_json::from_str(&state.to_text()).unwrap();
+    let object = older.as_object_mut().unwrap();
+    object.remove("taken");
+    object.remove("dropped");
+    let older = CourierState::from_text(&older.to_string()).expect("an older text is read");
+    assert_ne!(older, state, "it holds what became of no send");
 
     let (_, outcome, after_sync) = drive(
         RoundMachine::start(RoundKind::Sync, state.clone(), u.bob.clone()),
@@ -410,6 +426,8 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     assert_eq!(next.messages, vec![held_message]);
     assert_eq!(next.evicted, vec![(ALICE, 9)]);
     assert_eq!(next.restored, vec![(ALICE, 8)]);
+    assert_eq!(next.taken, vec![taken.clone()]);
+    assert_eq!(next.dropped, vec![dropped.clone()]);
     assert_eq!(after_sync.untold(), 0);
 
     let (_, outcome, _) = drive(
@@ -425,6 +443,11 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     );
     assert_eq!(resync.evicted, vec![(ALICE, 9)]);
     assert_eq!(resync.restored, vec![(ALICE, 8)]);
+    assert_eq!(
+        (resync.taken, resync.dropped),
+        (vec![taken], vec![dropped]),
+        "a resync reads the relay again, and what became of a send is not read again"
+    );
 }
 
 /// The relay gives two records a batch, so a round has taken alice's writes in when it asks for the

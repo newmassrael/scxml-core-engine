@@ -23,7 +23,11 @@ reviewer learns one set of rules:
   and left it 2. The version is 3: what the device keeps is one sealed state, its secrets with the
   rest, under a data key the host wraps (section 6); `sce_peer_save`, `sce_peer_restore` and
   `sce_peer_group_state` are gone, and `sce_peer_with_group` no longer takes a group's state, since
-  a host no longer holds one;
+  a host no longer holds one. The version is 4: a send the device may not sign yet is kept and not
+  refused, so `sce_peer_outbound` gives an answer a lane of version 3 does not know
+  (`SCE_PEER_KEPT_WAITING`, section 4), a changed meaning of an output that the policy above makes
+  a new number; the outcome holds `taken` and `dropped` (section 5), the standing `waiting`
+  (section 8), and the sealed state is the core's version 4, which holds what waits (section 6);
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -49,7 +53,7 @@ What the library gives back is a `ScePeerBuf` (a pointer and a length), the libr
 `sce_peer_buf_free`. A buffer's text is its `len` bytes of UTF-8 and is **not** NUL-terminated. **An
 empty buffer (a null pointer and a length of 0) is how a call says there is nothing to give**: no
 request to put to the relay, no outcome to take, no settlement of an instant, no reason (the send was
-not refused). It is not a failure, and the status is `SCE_PEER_OK`. A call that fills a buffer sets it
+neither refused nor kept waiting). It is not a failure, and the status is `SCE_PEER_OK`. A call that fills a buffer sets it
 to empty first, so a host may free it whatever the status.
 
 The place a call fills with what it is for (the request, the outcome, the sealed state and its data
@@ -141,7 +145,23 @@ The machine's outbound `record_list.write` and `record_list.supersede`, addresse
 | `SCE_PEER_KEPT_TAKEN` | 0 | signed and remembered; the next round carries it to the relay |
 | `SCE_PEER_KEPT_HELD` | 1 | the device holds it already (a machine built again from its application's own log sends its writes again): nothing is signed, and the relay is given nothing new |
 | `SCE_PEER_KEPT_NOT_SIGNED` | 2 | it is no event that is signed; nothing is kept |
-| `SCE_PEER_KEPT_REFUSED` | 3 | the trust would not sign it, and `*reason` says why: another content under a stamp the device signed, a device with no person, a restored device whose own chain was not read back yet |
+| `SCE_PEER_KEPT_REFUSED` | 3 | the trust will not sign it, and `*reason` says why: another content under a stamp the device signed or that waits, another person's write the device holds no signature of, a person the log the device holds does not let write (a reader, a device taken off), a frozen chain, a device with no person; nothing is kept |
+| `SCE_PEER_KEPT_WAITING` | 4 | the device may not sign it yet, and `*reason` says why: it has not read the log that lets it write (an invited device before its first round, a log that grants it nothing yet), the key of the epoch the list's content is in, or, restored, its own chain; it is kept (below) |
+
+**A send the device may not sign yet is kept, not refused.** A machine sends whenever its person
+edits, offline too, and right after its application starts, which for a device that keeps a sealed
+state is a restore: a refusal there would lose the write for every other device. The core keeps it,
+and every send after it, in the order they were made, in what it seals (section 6). Each round signs
+what waits, in that order, as far as the device may, once the logs are level and again once the
+device's own chain is read back, before the relay is given what it lacks: the round that reads what a
+send waited for gives it the relay, and its outcome names it in `taken` (section 5). The same send
+made again while it waits waits once (`SCE_PEER_KEPT_WAITING` again), and one of another content under
+the stamp of a write that waits is refused at once. When a round's log says the person never may (a
+reader, a device taken off before it read the list), every send that waited is refused then, each with
+why, in the outcome's `dropped`, and `rebuild` is true: the machine took the write in as made and no
+other copy will hold it, so the host builds its machine again and makes a resync, as for an evicted
+operation, and a host that keeps its own log of commands takes the dropped send out of that log (and
+may tell its person). What waits counts in the standing (`waiting`, section 8).
 
 ## 5. A round
 
@@ -169,7 +189,9 @@ The outcome is a JSON object, read by its members' names:
 | `refused` | ended | each record the core or the relay refused, and why; the rest of the round went on |
 | `pushed` | ended | how many entries, operations and checkpoints the relay was given that it lacked |
 | `evicted`, `restored` | ended | the operations, each `[node, number]` as texts, the machine was told and is to be without, or was not told and is to be with |
-| `rebuild` | ended | whether the host is to build its machine again and make a resync (an operation was evicted or restored) |
+| `taken` | ended | the sends that waited (section 4) and were signed and given the relay, in the order they were made, each `[name, payload text]` as the machine sent it |
+| `dropped` | ended | the sends that waited and never will be signed, each `[name, payload text, reason]` (section 4) |
+| `rebuild` | ended | whether the host is to build its machine again and make a resync (an operation was evicted or restored, or a send was dropped) |
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
 | `steps` | ended | what the group's device did with what was read, each `{"step": "joined" or "applied", "epoch": text}`, `{"step": "removed"}` or `{"step": "refused", "reason": text}` |
@@ -190,7 +212,9 @@ What a device keeps between runs is **one sealed state**: its person's key, the 
 it holds, the keys of the epochs it holds (none of an epoch the list had destroyed), the group's
 device (its MLS state, and the commits, Welcomes and key packages it was given and waits to use), the
 membership log, what the trust holds, the state of the relay's client as it would be if the exchange
-that runs stopped there, and the commits and Welcomes the relay is still owed (section 7). The keys
+that runs stopped there, the commits and Welcomes the relay is still owed (section 7), and what the
+machine sent that waits to be signed (section 4), with what became of the sends that waited that an
+outcome has not said yet. The keys
 are given once, when the device is set up (`sce_peer_set_identity`, `sce_peer_set_administrator`,
 `sce_peer_with_group`); from then on a host never handles a protocol secret in the clear, and gives
 no key again to restore (ADR 0079 section 6).
@@ -216,7 +240,7 @@ made with are drawn from the data key by HKDF-Expand under labels of their own, 
 HMAC-SHA-256 under the second of what is sealed: a synthetic nonce, so the same key and the same state
 give the same bytes (which the recorded scenario holds), and a key a host gives twice gives away only
 whether two states were the same, never the keystream. The list's name, the device's node and the
-form (`sce-peer/state/3`) are associated data: a state opens only for the device it was sealed for,
+form (`sce-peer/state/4`) are associated data: a state opens only for the device it was sealed for,
 and a state of another list or node, another key, a changed byte and a cut are each
 `SCE_PEER_ERR_NOT_OPENED`, which a cipher cannot tell apart; bytes cut short of any sealed state or of
 another form are `SCE_PEER_ERR_UNREADABLE`. Either way the core took nothing. The core zeroes the data
@@ -285,16 +309,20 @@ key does it is the host's, and no platform code is in this repository.
   state is then as strong as the passphrase. The web: a WebCrypto AES-GCM key made with
   `extractable: false` and kept in IndexedDB, which wraps and unwraps and is never read out.
 
-The state is the core's version 3, the first that is sealed. The texts of versions 1 and 2 held no
-secret and were taken back only after the host gave every key again, which is what this version ends;
-they were never written outside this repository's tests (no device ships before ADR 0034's review),
-so they are not read.
+The state is the core's version 4. Version 3 was the first that is sealed; version 4 holds what waits
+to be signed, and since the version is bound into the sealed state, a core of version 3, which would
+open a state of version 4 and lose what waits, does not open it. The texts of versions 1 and 2 held no
+secret and were taken back only after the host gave every key again; they, and the sealed states of
+version 3, were never written outside this repository's tests (no device ships before ADR 0034's
+review), so they are not read.
 
 **A restored device signs nothing new until its own chain is read back.** The core cannot tell the
-last state from an older one, so a restored core refuses a send that would make a new operation (and
-still gives what it holds as held) until a round has read the device's own operations back from the
-relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6). A host that rebuilds its machine from its own log
-after a restore makes that round first, then gives the core the machine's sends, then makes a resync.
+last state from an older one, so a restored core keeps a send that would make a new operation
+(`SCE_PEER_KEPT_WAITING`, section 4), and still gives what it holds as held, until a round has read the
+device's own operations back from the relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6); that round
+signs what waited at the numbers after the device's last, and a send that waited and that the chain
+read back holds already is the operation it holds, signed once. A host that rebuilds its machine from
+its own log after a restore gives the core the machine's sends when it likes, and makes a resync.
 Whether it still waits is in what it stands at (`awaits_own_chain`, section 8).
 
 ## 7. An administrator's acts
@@ -349,6 +377,7 @@ refusal's words:
 | `epoch` | the latest epoch the log begins, 0 when none |
 | `keys` | the epochs whose keys the device holds: what it can open |
 | `owed` | how many commits and Welcomes the relay is still owed (section 7) |
+| `waiting` | how many sends of the machine wait to be signed (section 4): what a host shows as not sent yet |
 
 ## 9. The recorded scenario every lane replays
 
@@ -356,11 +385,13 @@ refusal's words:
 list through the ABI against the real relay in one process: alice's device, which holds the
 administrator's key, opens the list and grants bob writing, and bob's, invited with the hash of the
 genesis alice's core gave. Every call each core is given and every text it gives back is recorded in
-order: the opening and its genesis, the grant, what each device stands at, bob's writes and his note
-through `sce_peer_outbound`, an event that is not signed, another content under a stamp he signed
-(refused), each request and the relay's answer, the outcomes, bob's sealed state and his core made
-again given nothing but the list and the genesis and restored from it with no key given again, a
-write of his that comes back held and a new one that waits for his chain to be read back, a resync, a
+order: the opening and its genesis, the grant, what each device stands at, a write of bob's made
+before his device read the log, kept waiting (and sent again, waiting once) and signed by his first
+round, his writes and his note through `sce_peer_outbound`, an event that is not signed, another
+content under a stamp he signed (refused), each request and the relay's answer, the outcomes, bob's
+sealed state and his core made again given nothing but the list and the genesis and restored from it
+with no key given again, a write of his that comes back held and a new one kept waiting until his
+chain is read back, which the round that reads it signs and which then comes back held, a resync, a
 round of alice's whose transport fails, and bob taken off: a write his core signs before it read the
 removal reaches no one, since the relay refuses a device the log took off. A `save` step holds the
 data key and the sealed state, in hex; a `restore` step holds the same and the count, and a lane makes

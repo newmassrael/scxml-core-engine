@@ -21,7 +21,7 @@
  *   restore <d> <key> <state> <count>
  *                                   the device's core made again given nothing but the list (and the
  *                                   genesis), and the state taken back for its node under the key
- *   outbound <d> <event> <data> <taken|held|not_signed|refused> <reason>
+ *   outbound <d> <event> <data> <taken|held|not_signed|refused|waiting> <reason>
  *   start <d> <sync|resync|reread>
  *   request <d> <text>      the core asks this
  *   respond <d> <text>      the relay answered this
@@ -145,6 +145,9 @@ static int32_t kept_of(const char *name) {
     }
     if (strcmp(name, "refused") == 0) {
         return SCE_PEER_KEPT_REFUSED;
+    }
+    if (strcmp(name, "waiting") == 0) {
+        return SCE_PEER_KEPT_WAITING;
     }
     die("an answer to a send the replay does not know");
     return -1;
@@ -338,7 +341,7 @@ int main(int argc, char **argv) {
             if (kept != want) {
                 die("the core did not keep the send as recorded");
             }
-            expect_text(taken(out), reason, "the reason of the refusal");
+            expect_text(taken(out), reason, "the reason of the refusal or of the wait");
             free(event);
             free(data);
         } else if (strcmp(op, "start") == 0) {

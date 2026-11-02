@@ -13,7 +13,7 @@
 // host given both freezes the device.
 
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
-use sce_rust_trust::{Head, Identity, Sealed, Trust};
+use sce_rust_trust::{Head, Identity, Sealed, Sent, Trust};
 use serde_json::{json, Value};
 
 const LIST: &str = "home";
@@ -306,4 +306,104 @@ fn a_host_with_no_person_waits_for_nothing() {
     assert_eq!(hub.own_chain_behind(&[]), None);
     assert!(hub.confirm_own_chain(&[]));
     assert!(!hub.awaits_own_chain());
+}
+
+/// A host whose sends a courier carries keeps what its person may not sign yet. Alice's machine
+/// writes twice and notes that the second write is over the first before her host holds any of the
+/// log: each waits, in its order, the first sent again waits once, and another content under its
+/// stamp is refused at once. The host's text keeps what waits, and a host restarted from it holds the
+/// same. Given the log, the host still holds no key of the epoch it is in, and what waits, and a write
+/// made then, waits on; given the key, all of it is signed in its order at 1 to 4, and the first sent
+/// again is the operation held.
+#[test]
+fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
+    let alice = Trust::open(LIST);
+    alice.set_identity(ALICE, person(ALICE));
+    let sends = [
+        (WRITE, write(1, 1000, 10, "milk")),
+        (WRITE, write(1, 2000, 11, "bread")),
+        (SUPERSEDE, note(1, 1000, 2000)),
+    ];
+    for (event, data) in &sends {
+        match alice.keep_sent(event, &data.to_string()) {
+            Sent::Waiting(reason) => assert!(reason.contains("has not begun"), "{reason}"),
+            other => panic!("{event}: expected it to wait, got {other:?}"),
+        }
+    }
+    assert!(matches!(
+        alice.keep_sent(WRITE, &sends[0].1.to_string()),
+        Sent::Waiting(_)
+    ));
+    match alice.keep_sent(WRITE, &write(1, 1000, 12, "tea").to_string()) {
+        Sent::Refused(reason) => assert!(reason.contains("another content"), "{reason}"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(alice.waiting(), 3);
+    assert!(alice.sign_waiting().is_empty(), "nothing may be signed yet");
+    assert!(alice.signed_operations().is_empty());
+
+    let restarted = Trust::open(LIST);
+    restarted.set_identity(ALICE, person(ALICE));
+    assert_eq!(restarted.restore_from_text(&alice.to_text()), 0);
+    assert_eq!(restarted.waiting(), 3, "what waits is in the host's text");
+
+    for entry in &list(1) {
+        restarted.append(entry).unwrap();
+    }
+    assert!(restarted.sign_waiting().is_empty(), "no key of epoch 1 yet");
+    let later = write(2, 3000, 1, "");
+    match restarted.keep_sent(WRITE, &later.to_string()) {
+        Sent::Waiting(reason) => assert!(reason.contains("no key of epoch 1"), "{reason}"),
+        other => panic!("expected the write to wait, got {other:?}"),
+    }
+
+    restarted.set_epoch_key(1, [5; 32]);
+    let waited = restarted.sign_waiting();
+    let mut in_order: Vec<(String, String)> = sends
+        .iter()
+        .map(|(event, data)| (event.to_string(), data.to_string()))
+        .collect();
+    in_order.push((WRITE.to_string(), later.to_string()));
+    assert_eq!(waited.taken, in_order);
+    assert!(waited.dropped.is_empty());
+    assert_eq!(restarted.waiting(), 0);
+    assert_eq!(restarted.last_seq(ALICE), 4);
+    assert_eq!(
+        restarted.keep_sent(WRITE, &sends[0].1.to_string()),
+        Sent::Held
+    );
+}
+
+/// What waits is refused, each with why, once the log the host holds says its person may not write:
+/// alice is made a reader before her host signed what her machine sent. Nothing is signed, nothing
+/// waits any more, and the same write sent again is refused at once.
+#[test]
+fn what_waited_is_refused_once_the_log_says_the_person_may_not_write() {
+    let alice = Trust::open(LIST);
+    alice.set_identity(ALICE, person(ALICE));
+    let data = write(1, 1000, 10, "milk").to_string();
+    assert!(matches!(alice.keep_sent(WRITE, &data), Sent::Waiting(_)));
+    for entry in &list(0) {
+        alice.append(entry).unwrap();
+    }
+    let reader = alice
+        .draft(Body::Grant {
+            node: ALICE,
+            role: 1,
+            key: person(ALICE).public(),
+            final_seq: Some(0),
+        })
+        .sign(&admin())
+        .finish();
+    alice.append(&reader).unwrap();
+
+    let waited = alice.sign_waiting();
+    assert!(waited.taken.is_empty());
+    assert_eq!(waited.dropped.len(), 1, "{waited:?}");
+    let (event, sent, why) = &waited.dropped[0];
+    assert_eq!((event.as_str(), sent.as_str()), (WRITE, data.as_str()));
+    assert!(why.contains("may not write (role 1"), "{why}");
+    assert_eq!(alice.waiting(), 0);
+    assert!(alice.signed_operations().is_empty());
+    assert!(matches!(alice.keep_sent(WRITE, &data), Sent::Refused(_)));
 }

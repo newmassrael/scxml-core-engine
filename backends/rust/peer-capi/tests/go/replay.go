@@ -154,6 +154,8 @@ func keptOf(name string) C.int32_t {
 		return C.SCE_PEER_KEPT_NOT_SIGNED
 	case "refused":
 		return C.SCE_PEER_KEPT_REFUSED
+	case "waiting":
+		return C.SCE_PEER_KEPT_WAITING
 	}
 	fail("an answer to a send the replay does not know: %s", name)
 	return -1

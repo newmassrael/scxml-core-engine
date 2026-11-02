@@ -123,6 +123,7 @@ final class Replayer {
         case "held": return Int32(SCE_PEER_KEPT_HELD)
         case "not_signed": return Int32(SCE_PEER_KEPT_NOT_SIGNED)
         case "refused": return Int32(SCE_PEER_KEPT_REFUSED)
+        case "waiting": return Int32(SCE_PEER_KEPT_WAITING)
         default: die("an answer to a send the replay does not know")
         }
     }

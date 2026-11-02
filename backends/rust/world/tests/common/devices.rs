@@ -489,6 +489,7 @@ impl Device {
                     Some("held") => Kept::Held,
                     Some("not_signed") => Kept::NotSigned,
                     Some("refused") => Kept::Refused(reason.unwrap_or_default()),
+                    Some("waiting") => Kept::Waiting(reason.unwrap_or_default()),
                     _ => panic!("{name}: the core kept a send as nothing the ABI says: {reply}"),
                 }
             }

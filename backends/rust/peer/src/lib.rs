@@ -13,7 +13,9 @@
 //! - the machine's outbound `record_list.write` and `record_list.supersede`, as the event's name
 //!   and its JSON payload, are signed and remembered ([`Peer::outbound`]); the core says whether it
 //!   took one, held it already (a machine built again from its host's log sends its writes again,
-//!   and a write is signed once), found it is no event that is signed, or refused it and why;
+//!   and a write is signed once), found it is no event that is signed, keeps it until the device
+//!   may sign it (an invited device that has not read the log that lets it write, a restored one
+//!   that has not read its own chain back), or refused it and why;
 //! - a round with the relay ([`Peer::start`]) is a sequence of request texts the core gives
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
@@ -71,8 +73,12 @@ use serde_json::{json, Value};
 /// The version of the state [`Peer::save_sealed`] seals. Version 3 is the first that is sealed and
 /// holds the device's secrets with the rest. The texts of versions 1 and 2 held no secret, were
 /// taken back only after the host gave every key again, and were never written outside this
-/// repository's tests (ADR 0079 ships no device before its review); they are not read.
-pub const SAVE_VERSION: u64 = 3;
+/// repository's tests (ADR 0079 ships no device before its review); they are not read. Version 4
+/// holds what the machine sent that waits to be signed ([`Peer::outbound`], [`Kept::Waiting`]),
+/// and what became of the sends that waited that a round did not hand over; the version is bound
+/// into the sealed state, so a core of version 3, which would open it and lose them, does not open
+/// it. A state of version 3 was written by this repository's tests alone, and is not read.
+pub const SAVE_VERSION: u64 = 4;
 
 /// The names under which the sealed state keeps what the core holds beside the person's key and the
 /// keys of the epochs ([`Trust::secrets`]).
@@ -122,12 +128,32 @@ impl Outcome {
             .collect()
     }
 
+    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and was signed now, in
+    /// the order it was sent, each as the machine sent it: the relay was given it.
+    pub fn taken(&self) -> Vec<(String, String)> {
+        self.rounds()
+            .flat_map(|round| round.taken.iter().cloned())
+            .collect()
+    }
+
+    /// What the machine sent that waited to be signed and never will be, each with why: the log
+    /// the round read says the device's person may not write. The machine took each in as made and
+    /// no other copy will hold it, so the machine is built again ([`Self::rebuild`]); a host that
+    /// keeps its own log of commands takes each out of that log, and may tell its person.
+    pub fn dropped(&self) -> Vec<(String, String, String)> {
+        self.rounds()
+            .flat_map(|round| round.dropped.iter().cloned())
+            .collect()
+    }
+
     /// Whether the host is to build its machine again and make a [`RoundKind::Resync`]: the core
     /// found operations the machine was told and is to be without, or was not told and is to be
-    /// with ([`Round::evicted`], [`Round::restored`]).
+    /// with ([`Round::evicted`], [`Round::restored`]), or a send of the machine's own that it took
+    /// in will never be signed ([`Self::dropped`]).
     pub fn rebuild(&self) -> bool {
-        self.rounds()
-            .any(|round| !round.evicted.is_empty() || !round.restored.is_empty())
+        self.rounds().any(|round| {
+            !round.evicted.is_empty() || !round.restored.is_empty() || !round.dropped.is_empty()
+        })
     }
 
     /// Whether the round stopped before the end of what the relay holds; a later round goes on
@@ -297,6 +323,9 @@ pub struct Standing {
     pub keys: Vec<u32>,
     /// How many of the commits and Welcomes the administrator's acts made the relay is still owed.
     pub owed: usize,
+    /// How many sends of the machine wait to be signed ([`Kept::Waiting`]): what a host shows as
+    /// not sent yet.
+    pub waiting: usize,
 }
 
 /// What the list's content is sealed under, which decides how a member is admitted and taken off.
@@ -589,8 +618,8 @@ impl Peer {
     }
 
     /// Whether the device signs nothing new until a round has read its own chain back from the
-    /// relay ([`Self::restore_sealed`]): a send that would make a new operation is refused
-    /// meanwhile.
+    /// relay ([`Self::restore_sealed`]): a send that would make a new operation waits meanwhile
+    /// ([`Kept::Waiting`]).
     pub fn awaits_own_chain(&self) -> bool {
         self.trust.awaits_own_chain()
     }
@@ -616,22 +645,35 @@ impl Peer {
             epoch: self.trust.epoch(),
             keys: self.trust.epochs(),
             owed: self.owed.len(),
+            waiting: self.trust.waiting(),
         }
     }
 
     /// What the machine sent to `#hub` or `#people`, as the event's name and its JSON payload: a
     /// `record_list.write` or a `record_list.supersede` is signed and remembered, and the next
-    /// round carries it to the relay; what is not signed is kept nowhere; what the trust will not
+    /// round carries it to the relay; what is not signed is kept nowhere; what the trust will never
     /// sign is refused with the reason. The one place this is done is the relay's client
     /// ([`keep`]), which a host with a Mesh endpoint reaches through `Keep`.
+    ///
+    /// **A send the device may not sign yet waits, and is not lost.** A machine sends whenever its
+    /// person edits, offline too, and right after its application starts, which for a device that
+    /// keeps a sealed state is a restore. What the device may not sign yet is kept, in order, with
+    /// every send after it ([`Kept::Waiting`], and the reason): an invited device that has not read
+    /// the log that lets it write, one whose list keys its content under an epoch it holds no key
+    /// of yet, a device restored from a sealed state before a round has read its own chain back
+    /// (see [`Self::restore_sealed`]). The round that reads what it waits for signs it and gives it
+    /// the relay ([`Outcome::taken`]); a round whose log says the person never may (a reader, a
+    /// device taken off) refuses it then, and says so ([`Outcome::dropped`], [`Outcome::rebuild`]).
+    /// What waits is in the sealed state. A send of another content under the stamp of a write that
+    /// waits is refused at once, as one under a stamp the device signed is.
     ///
     /// **A replay writes nothing twice.** An application that keeps its own log of commands and
     /// builds its machine again from it gives the core the machine's sends again: a write or a note
     /// the device signed already is [`Kept::Held`], the operation it holds with its number and its
-    /// signature, and nothing new reaches the relay. A write under a stamp the device signed with
-    /// another content is refused, since it would be the device signing two things for one write.
-    /// After [`Self::restore_sealed`], a send the device holds no operation for is refused until a
-    /// round has read the device's own chain back from the relay (see there).
+    /// signature, and nothing new reaches the relay; one that waits is [`Kept::Waiting`] and waits
+    /// once. A write under a stamp the device signed with another content is refused, since it
+    /// would be the device signing two things for one write. A send of a person the log the core
+    /// holds does not let write is refused, since no host would admit it.
     pub fn outbound(&mut self, event: &str, data: &str) -> Kept {
         keep(&self.trust, event, data)
     }
@@ -791,18 +833,20 @@ impl Peer {
     /// operations past what the state holds would sign its next one at a number it used already,
     /// which every host that holds both takes as the device signing two histories and freezes it
     /// for. So the trust waits
-    /// ([`Trust::await_own_chain`], [`Self::awaits_own_chain`]): [`Self::outbound`] refuses, with that
-    /// reason, a send that would make a new operation, and still gives what the device holds as
-    /// [`Kept::Held`]. The next round reads the relay's heads, asks for the device's own operations
-    /// the relay holds past what the core does (`Operations`, the device's node), takes them in and
-    /// tells them to the machine, and the wait ends once the core holds the chain as far as the
-    /// relay does ([`Trust::confirm_own_chain`]); the device then signs at the number after its
-    /// last. The rule is the core's and not its host's, so that no host can forget it, and it asks
-    /// the relay nothing the protocol did not already serve. A host that rebuilds its machine from
-    /// its own log after a restore makes that round first, then gives the core the machine's sends,
-    /// then makes a [`RoundKind::Resync`] to tell the rebuilt machine the list. An older state may
-    /// also hold the key of an epoch the list has had destroyed since; the same round reads the
-    /// entry that destroys it, and the key is zeroed as the entry is taken.
+    /// ([`Trust::await_own_chain`], [`Self::awaits_own_chain`]): [`Self::outbound`] keeps a send
+    /// that would make a new operation, with that reason ([`Kept::Waiting`]), and still gives what
+    /// the device holds as [`Kept::Held`]. The next round reads the relay's heads, asks for the
+    /// device's own operations the relay holds past what the core does (`Operations`, the device's
+    /// node), takes them in and tells them to the machine, and the wait ends once the core holds the
+    /// chain as far as the relay does ([`Trust::confirm_own_chain`]); the device then signs what
+    /// waited at the numbers after its last, gives it the relay in the same round, and signs what
+    /// comes after as it comes. A send that waited and that the chain read back holds already is
+    /// the operation it holds, signed once. The rule is the core's and not its host's, so that no
+    /// host can forget it, and it asks the relay nothing the protocol did not already serve. A host
+    /// that rebuilds its machine from its own log after a restore may give the core the machine's
+    /// sends at once, and makes a [`RoundKind::Resync`] to tell the rebuilt machine the list. An
+    /// older state may also hold the key of an epoch the list has had destroyed since; the same
+    /// round reads the entry that destroys it, and the key is zeroed as the entry is taken.
     pub fn restore_sealed(
         &mut self,
         node: u64,

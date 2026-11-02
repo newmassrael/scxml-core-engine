@@ -169,18 +169,39 @@ the list by a resync, and the other members' machines are told nothing again
 **A device whose state came back from a store reads its own chain back before it signs.** A saved
 state may be older than what the device published since (a backup, a copy of its storage, a save it ran
 past before it was stopped), and its next operation would then take a number it used, which every host
-given both takes as the device signing two histories and freezes it for. `Peer::restore` makes the trust
-wait (`Trust::await_own_chain`): a send that would make a new operation is refused with that reason, one
-the device holds is still `Kept::Held`, and the next round reads the device's own operations back
-(step 2 above) and tells them to the machine; the wait ends once the trust holds the chain as far as the
-relay's heads say (`Trust::confirm_own_chain`), and the device signs at the number after its last. The
-rule is the core's, so that no host forgets it, and it uses only `heads` and `operations`, which the
-relay served already. A host that drives a `Courier` and restores its `Trust` itself calls
-`await_own_chain` after `restore_from_text`. A host that rebuilds its machine after a restore makes a
-round, gives the core the machine's sends again, then makes a resync. What the rule rests on is the
-relay's word of how far the chain goes: a relay that withholds the device's own operations from its
-heads as well as from what it gives back makes the device sign at a used number, and every host given
-both holds the conflict as proof, which is the limit ADR 0034 states for a relay that withholds.
+given both takes as the device signing two histories and freezes it for. `Peer::restore_sealed` makes
+the trust wait (`Trust::await_own_chain`): a send that would make a new operation is kept with that
+reason (below), one the device holds is still `Kept::Held`, and the next round reads the device's own
+operations back (step 2 above) and tells them to the machine; the wait ends once the trust holds the
+chain as far as the relay's heads say (`Trust::confirm_own_chain`), and the device signs at the number
+after its last. The rule is the core's, so that no host forgets it, and it uses only `heads` and
+`operations`, which the relay served already. A host that drives a `Courier` and restores its `Trust`
+itself calls `await_own_chain` after `restore_from_text`. A host that rebuilds its machine after a
+restore gives the core the machine's sends again when it likes, then makes a resync. What the rule
+rests on is the relay's word of how far the chain goes: a relay that withholds the device's own
+operations from its heads as well as from what it gives back makes the device sign at a used number,
+and every host given both holds the conflict as proof, which is the limit ADR 0034 states for a relay
+that withholds.
+
+**A send the device may not sign yet is kept, not refused.** A machine sends whenever its person edits,
+offline as well, and right after its application starts, which for a device that keeps a sealed state
+is a restore. `keep` (and so `Keep` and `Peer::outbound`, through `Trust::keep_sent`) keeps what the
+device may not sign yet as `Kept::Waiting`, with why, and every send after it, in the order they were
+made: an invited device that has not read the log, or a log that grants its person nothing yet; a list
+that keeps its content under an epoch whose key the device has not read; a device waiting for its own
+chain. The same send made again waits once, and another content under the stamp of a write that waits
+is refused at once. What waits is in the trust's text (`Trust::to_text`), and so in a sealed state. A
+round signs it, as far as it may, once the logs are level (step 1 above) and again once the device's
+own chain is read back (step 2), before the relay is given what it lacks, so the round that reads what
+a send waited for gives it the relay (`Trust::sign_waiting`, `Round::taken`). When the log says the
+person never may (a reader, a device taken off, a key the log replaced), every send that waited is
+refused with why (`Round::dropped`): the machine took it in as made and no other copy will hold it, so
+the round's outcome asks for the machine to be built again (`Outcome::rebuild` in the core). What is
+final is refused at once as before: an event that is not signed is not kept, another content under a
+signed stamp is refused, and a send of a person the log the device holds does not let write is refused
+by the device's own core, since no host would admit it and a number of the device's chain no host
+holds would be spent on it. A courier that a host drives over a `Trust` it holds does the same, since
+the signing is the round's.
 
 ## 7. Two profiles, one relay
 

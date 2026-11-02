@@ -14,9 +14,9 @@ import ctypes
 import json
 import sys
 
-ABI_VERSION = 3
+ABI_VERSION = 4
 OK = 0
-KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3}
+KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3, "waiting": 4}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}
 PROFILES = {"untrusted": 0, "trusted_hub": 1}
 

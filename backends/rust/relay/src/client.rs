@@ -9,7 +9,9 @@
 //! relay's entries come in and are checked; the entries the relay lacks go out). It gives the relay
 //! what it lacks of what the host holds, by comparing heads and sending the missing ranges, so that
 //! nothing needs a queue that could be lost in a crash: the host's own operations are in its
-//! `Trust` from the moment they are made. And it reads what the relay holds after its cursor, takes
+//! `Trust` from the moment they are made, and so is what its machine sent that its person may not
+//! sign yet, which the round signs, in order, once its reading of the log and of the device's own
+//! chain lets it ([`Trust::sign_waiting`]). And it reads what the relay holds after its cursor, takes
 //! each record in as it would from anyone ([`Trust::take_operation`]), and returns the events the
 //! machine is to be told.
 //!
@@ -34,7 +36,7 @@ use sce_rust_relay_transport::{Notice, Signal, Transport, TransportError};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry, LogError};
 use sce_rust_trust::message;
-use sce_rust_trust::{Checkpoint, CheckpointError, Head, TakeError, Trust};
+use sce_rust_trust::{Checkpoint, CheckpointError, Head, Sent, TakeError, Trust};
 use serde_json::{json, Value};
 
 use crate::driver::drive;
@@ -186,6 +188,16 @@ pub struct Round {
     /// held a device back went away with the operations that made it. The machine is built again as
     /// for `evicted`.
     pub restored: Vec<(u64, u64)>,
+    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and the round signed, in
+    /// the order it was sent, each `(event, data)` as the machine sent it: the relay was given it
+    /// with the rest of what it lacked.
+    pub taken: Vec<(String, String)>,
+    /// What the machine sent that waited to be signed and never will be, each `(event, data, why)`:
+    /// the log the round read says the person may not write (a reader, a device taken off). The
+    /// machine took each in as made and no other copy will hold it, so the host builds the machine
+    /// again without it, as for `evicted`, and a host that keeps its own log of commands takes it
+    /// out of that log.
+    pub dropped: Vec<(String, String, String)>,
     /// The round stopped before the end of what the relay holds: a record names an entry of the
     /// log the host does not have, or the device may not read yet. A later round goes on from there.
     pub stalled: bool,
@@ -208,10 +220,11 @@ pub struct Round {
 ///   goes on with it;
 /// - what a round took in and did not hand over, because it did not end, is kept here: the events
 ///   for the machine and the group's messages it read, and (from a host that composes rounds,
-///   [`Self::hold`]) what the machine is to be rebuilt without or with. The next round hands them
-///   over first, the events after the roster. A [`RoundKind::Resync`] reads everything again and
-///   drops the events and messages, and a [`RoundKind::Reread`] drops the messages, which it reads
-///   again; what the machine is to be rebuilt by is never dropped.
+///   [`Self::hold`]) what the machine is to be rebuilt without or with, and what became of the sends
+///   that waited to be signed. The next round hands them over first, the events after the roster. A
+///   [`RoundKind::Resync`] reads everything again and drops the events and messages, and a
+///   [`RoundKind::Reread`] drops the messages, which it reads again; what the machine is to be
+///   rebuilt by, and what became of a send, is never dropped.
 ///
 /// What a round took into the [`Trust`] stays there whether the round ends or not: the trust
 /// holds what verified, and a record given again is taken as one held already.
@@ -240,18 +253,26 @@ pub struct CourierState {
     /// Operations a round found the machine is to be rebuilt with, and did not hand over
     /// ([`Round::restored`]).
     restored: Vec<(u64, u64)>,
+    /// Sends that waited, which a round signed and did not say so of ([`Round::taken`]).
+    taken: Vec<(String, String)>,
+    /// Sends that waited, which a round refused for good and did not say so of
+    /// ([`Round::dropped`]).
+    dropped: Vec<(String, String, String)>,
 }
 
 impl CourierState {
-    /// Keep what `round` hands over (its events, the group's messages, and what the machine is to
-    /// be rebuilt without or with) for the next round to hand over, before what is kept already:
-    /// what a host that composes rounds of its own took from a round and did not hand over.
+    /// Keep what `round` hands over (its events, the group's messages, what the machine is to be
+    /// rebuilt without or with, and what became of the sends that waited) for the next round to
+    /// hand over, before what is kept already: what a host that composes rounds of its own took
+    /// from a round and did not hand over.
     pub fn hold(&mut self, round: Round) {
         let Round {
             mut events,
             mut messages,
             mut evicted,
             mut restored,
+            mut taken,
+            mut dropped,
             ..
         } = round;
         events.append(&mut self.untold);
@@ -262,6 +283,10 @@ impl CourierState {
         self.evicted = evicted;
         restored.append(&mut self.restored);
         self.restored = restored;
+        taken.append(&mut self.taken);
+        self.taken = taken;
+        dropped.append(&mut self.dropped);
+        self.dropped = dropped;
     }
 
     /// How many events for the machine are kept for the next round to hand over.
@@ -294,11 +319,18 @@ impl CourierState {
             "unread": self.unread.iter().map(Record::to_value).collect::<Vec<_>>(),
             "evicted": operations(&self.evicted),
             "restored": operations(&self.restored),
+            "taken": pairs(&self.taken),
+            "dropped": self
+                .dropped
+                .iter()
+                .map(|(event, data, why)| json!([event, data, why]))
+                .collect::<Vec<_>>(),
         })
         .to_string()
     }
 
-    /// Read back what [`Self::to_text`] wrote; `None` when the text is not that.
+    /// Read back what [`Self::to_text`] wrote; `None` when the text is not that. A text written
+    /// before the sends that wait were kept holds no `taken` and no `dropped`, and is read as none.
     pub fn from_text(text: &str) -> Option<Self> {
         let value: Value = serde_json::from_str(text).ok()?;
         let number = |name: &str| -> Option<u64> { value.get(name)?.as_str()?.parse::<u64>().ok() };
@@ -332,6 +364,24 @@ impl CourierState {
                 })
                 .collect()
         };
+        let triples = |name: &str| -> Option<Vec<(String, String, String)>> {
+            value
+                .get(name)?
+                .as_array()?
+                .iter()
+                .map(|triple| -> Option<(String, String, String)> {
+                    match triple.as_array()?.as_slice() {
+                        [event, data, why] => Some((
+                            event.as_str()?.to_string(),
+                            data.as_str()?.to_string(),
+                            why.as_str()?.to_string(),
+                        )),
+                        _ => None,
+                    }
+                })
+                .collect()
+        };
+        let absent = |name: &str| value.get(name).is_none();
         Some(Self {
             cursor: number("cursor")?,
             roster_len: number("rosterLen")?,
@@ -353,6 +403,16 @@ impl CourierState {
                 .collect::<Option<Vec<Record>>>()?,
             evicted: operations("evicted")?,
             restored: operations("restored")?,
+            taken: if absent("taken") {
+                Vec::new()
+            } else {
+                pairs("taken")?
+            },
+            dropped: if absent("dropped") {
+                Vec::new()
+            } else {
+                triples("dropped")?
+            },
         })
     }
 
@@ -387,6 +447,8 @@ impl CourierState {
         self.unread.append(&mut round.messages);
         self.evicted.append(&mut round.evicted);
         self.restored.append(&mut round.restored);
+        self.taken.append(&mut round.taken);
+        self.dropped.append(&mut round.dropped);
     }
 }
 
@@ -710,6 +772,8 @@ impl RoundMachine {
             messages: std::mem::take(&mut state.unread),
             evicted: std::mem::take(&mut state.evicted),
             restored: std::mem::take(&mut state.restored),
+            taken: std::mem::take(&mut state.taken),
+            dropped: std::mem::take(&mut state.dropped),
             ..Round::default()
         };
         Self {
@@ -962,6 +1026,9 @@ impl RoundMachine {
         match then {
             AfterLog::Push => {
                 retry_parked(&self.trust, &mut self.state.parked, &mut self.round);
+                // The log is level: a send that waited for the grant that lets the device write
+                // is signed now, and given the relay with the rest of what it lacks.
+                self.sign_waiting();
                 Phase::Push(Push {
                     stage: PushStage::Heads,
                     then: AfterPush::Pull,
@@ -1130,6 +1197,11 @@ impl RoundMachine {
             }
             _ => {
                 self.trust.confirm_own_chain(&heads);
+                // A send that waited for the device's own chain is signed at the number after the
+                // last of it, before the heads the relay is given from are read.
+                if reading {
+                    self.sign_waiting();
+                }
                 let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
                 Phase::Push(Push {
                     stage: PushStage::Devices(Devices {
@@ -1142,6 +1214,15 @@ impl RoundMachine {
                 })
             }
         }
+    }
+
+    /// Sign what the machine sent that waits, as far as what the round has read of the log and of
+    /// the device's own chain lets it ([`Trust::sign_waiting`]), and keep in the round what became
+    /// of it.
+    fn sign_waiting(&mut self) {
+        let waited = self.trust.sign_waiting();
+        self.round.taken.extend(waited.taken);
+        self.round.dropped.extend(waited.dropped);
     }
 
     /// The devices are done: the proof of conflicts the trust holds is given next.
@@ -1718,25 +1799,33 @@ pub enum Kept {
     Held,
     /// It is not an event that is signed: nothing is kept, and a relay carries nothing of it.
     NotSigned,
-    /// The host would not sign it, and why: among the reasons, another content under a stamp the
-    /// device signed, and a state that came back from a store before the device's own chain was
-    /// read back from the relay ([`Trust::await_own_chain`]).
+    /// The host would not sign it, and never will under the log it holds, and why: another content
+    /// under a stamp the device signed or that waits, another person's write the host holds no
+    /// signature of, a person the log does not let write (a reader, a device taken off), a frozen
+    /// chain, a host with no person.
     Refused(String),
+    /// The host may not sign it yet, and why: the device has not read the log that lets it write,
+    /// the key of the epoch the log is in, or, after its state came back from a store, its own
+    /// chain ([`Trust::await_own_chain`]). It is kept, with every send after it, in order; the
+    /// round that reads what it waits for signs it and gives it the relay ([`Round::taken`]), or,
+    /// when the log says the person never may, refuses it ([`Round::dropped`]).
+    Waiting(String),
 }
 
 /// Sign and remember what a machine sent, as the host of a machine that has no hub does: the one
-/// place a send becomes an operation of the host's chain ([`Trust::seal_sent`]), whether through
+/// place a send becomes an operation of the host's chain ([`Trust::keep_sent`]), whether through
 /// [`Keep`] behind a Mesh endpoint or through a host that is given the machine's sends itself. What
 /// is signed does not depend on whether the machine addressed the event to `#hub` or to `#people`:
 /// the event alone is signed. A write or a note the host holds already is signed once
 /// ([`Kept::Held`]), so a host may give it a machine's sends again, as many times as the machine
-/// makes them.
+/// makes them; one the host may not sign yet is kept until it may ([`Kept::Waiting`]).
 pub fn keep(trust: &Trust, event: &str, data: &str) -> Kept {
-    match trust.seal_sent(event, data) {
-        Ok(Some(sealed)) if sealed.signed => Kept::Taken,
-        Ok(Some(_)) => Kept::Held,
-        Ok(None) => Kept::NotSigned,
-        Err(reason) => Kept::Refused(reason),
+    match trust.keep_sent(event, data) {
+        Sent::Signed => Kept::Taken,
+        Sent::Held => Kept::Held,
+        Sent::NotSigned => Kept::NotSigned,
+        Sent::Waiting(reason) => Kept::Waiting(reason),
+        Sent::Refused(reason) => Kept::Refused(reason),
     }
 }
 
@@ -1764,6 +1853,9 @@ impl Sealer for Keep {
             )),
             Kept::NotSigned => Err(format!(
                 "{event}: this host has no hub, and a relay carries only what a member signed"
+            )),
+            Kept::Waiting(reason) => Err(format!(
+                "{event}: kept until it may be signed, and the relay is given it then: {reason}"
             )),
             Kept::Refused(reason) => Err(reason),
         }

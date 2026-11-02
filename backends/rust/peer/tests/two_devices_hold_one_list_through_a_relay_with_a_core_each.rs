@@ -326,9 +326,11 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
     assert!(again.events().is_empty(), "{:?}", again.events());
 }
 
-/// A device that may only read signs what its machine sends (its host is not where that is
-/// decided), and the relay refuses it: its round says so, and bob's machine is never told it. A
-/// device with no person signs nothing, and an event that is not signed is kept nowhere.
+/// A device that may only read, by the log its core has read, is refused what its machine sends by
+/// its own core: no host would admit an operation signed under a grant that does not let its
+/// person write, and one signed would take a number of the device's chain no host holds. Nothing
+/// is signed, the relay is given nothing, and bob's machine is never told it. A device with no
+/// person signs nothing, and an event that is not signed is kept nowhere.
 #[test]
 fn what_a_device_that_may_not_write_sends_is_refused_and_reaches_no_one() {
     let mut network = Network::new(Limits::default());
@@ -337,12 +339,14 @@ fn what_a_device_that_may_not_write_sends_is_refused_and_reaches_no_one() {
 
     let mut carol = invited(CAROL);
     network.round(&mut carol, CAROL, RoundKind::Sync);
-    assert_eq!(
-        carol.outbound(WRITE, &write(5, CAROL, 1000, 1)),
-        Kept::Taken
-    );
+    match carol.outbound(WRITE, &write(5, CAROL, 1000, 1)) {
+        Kept::Refused(reason) => assert!(reason.contains("may not write"), "{reason}"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert!(carol.trust().signed_operations().is_empty());
+    assert_eq!(carol.standing().waiting, 0, "nothing is kept");
     let refused = network.round(&mut carol, CAROL, RoundKind::Sync);
-    assert_eq!(refused.refused().len(), 1, "{:?}", refused.refused());
+    assert!(refused.refused().is_empty(), "{:?}", refused.refused());
     assert_eq!(refused.round.pushed, 0);
 
     let mut bob = invited(BOB);
@@ -1043,9 +1047,11 @@ fn a_write_sent_again_with_another_content_is_refused_and_nothing_is_signed() {
 }
 
 /// Alice's device writes four times and publishes them, and comes back from a save that held two.
-/// The core signs nothing new until a round has read her chain back: the round asks the relay for
-/// her operations past what the core holds right after the relay's heads, tells her machine the two
-/// it held no more, and the device then signs at 5. Bob holds one chain of hers, not a frozen one.
+/// The core signs nothing new until a round has read her chain back, and keeps the write her machine
+/// makes meanwhile: the round asks the relay for her operations past what the core holds right after
+/// the relay's heads, tells her machine the two it held no more, signs the write that waited at 5
+/// and gives it the relay. Sent again, it is the operation she holds. Bob holds one chain of hers,
+/// not a frozen one.
 #[test]
 fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     let mut network = Network::new(Limits::default());
@@ -1081,15 +1087,16 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     );
     assert!(alice.trust().awaits_own_chain());
     match alice.outbound(WRITE, &write(5, ALICE, 5000, 5)) {
-        Kept::Refused(reason) => assert!(reason.contains("signs nothing new"), "{reason}"),
-        other => panic!("expected a refusal, got {other:?}"),
+        Kept::Waiting(reason) => assert!(reason.contains("signs nothing new"), "{reason}"),
+        other => panic!("expected the write to wait, got {other:?}"),
     }
     assert_eq!(
         alice.outbound(WRITE, &write(1, ALICE, 1001, 1)),
         Kept::Held,
         "what the core holds is given as it was"
     );
-    assert_eq!(alice.trust().last_seq(ALICE), 2);
+    assert_eq!(alice.trust().last_seq(ALICE), 2, "nothing was signed");
+    assert_eq!(alice.standing().waiting, 1);
 
     alice.start(RoundKind::Sync).unwrap();
     let mut asked = Vec::new();
@@ -1107,7 +1114,13 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     assert!(operations.is_some(), "{asked:?}");
     assert_eq!(operations, heads.map(|at| at + 1), "{asked:?}");
     assert!(back.refused().is_empty(), "{:?}", back.refused());
-    assert_eq!(back.round.pushed, 0);
+    assert_eq!(back.round.pushed, 1, "the write that waited");
+    assert_eq!(
+        back.taken(),
+        vec![(WRITE.to_string(), write(5, ALICE, 5000, 5))]
+    );
+    assert!(back.dropped().is_empty());
+    assert!(!back.rebuild());
     let rows: Vec<Value> = named(&back, WRITE)
         .into_iter()
         .map(|write| write["id"].clone())
@@ -1118,11 +1131,13 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
         "the writes it held no more, once"
     );
     assert!(!alice.trust().awaits_own_chain());
-    assert_eq!(alice.trust().last_seq(ALICE), 4);
+    assert_eq!(alice.trust().last_seq(ALICE), 5, "signed after her last");
+    assert_eq!(alice.standing().waiting, 0);
 
     assert_eq!(
         alice.outbound(WRITE, &write(5, ALICE, 5000, 5)),
-        Kept::Taken
+        Kept::Held,
+        "the write that waited, signed once"
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
@@ -1132,4 +1147,151 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     assert!(bob.trust().equivocating().is_empty(), "no frozen chain");
     assert_eq!(bob.trust().last_seq(ALICE), 5);
     assert_eq!(alice.trust().heads(), bob.trust().heads());
+}
+
+/// Bob's device is used before it has read anything of the list: his machine writes a field,
+/// writes it again and notes that the second write is over the first, and sends the first again, as
+/// a machine built again from its application's log does. His core can sign none of it yet and
+/// keeps each, once, in the order it was made, and refuses at once another content under the stamp
+/// of a write that waits. What waits is in his sealed state: his device stops and starts again from
+/// it. His first round reads the log that lets him write, signs what waited in its order, and gives
+/// it the relay in the same round; alice's machine is told it.
+#[test]
+fn what_a_device_sends_before_it_may_sign_waits_and_reaches_everyone_in_order() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+
+    let mut bob = invited(BOB);
+    let sends = [
+        (WRITE, write(1, BOB, 1000, 10)),
+        (WRITE, write(1, BOB, 2000, 20)),
+        (SUPERSEDE, supersede(1, BOB, 1000, BOB, 2000)),
+    ];
+    for (event, data) in &sends {
+        match bob.outbound(event, data) {
+            Kept::Waiting(reason) => assert!(reason.contains("has not begun"), "{reason}"),
+            other => panic!("{event} {data}: expected it to wait, got {other:?}"),
+        }
+    }
+    assert!(
+        matches!(bob.outbound(WRITE, &sends[0].1), Kept::Waiting(_)),
+        "sent again, it waits once"
+    );
+    match bob.outbound(WRITE, &write(1, BOB, 1000, 11)) {
+        Kept::Refused(reason) => assert!(reason.contains("another content"), "{reason}"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(bob.standing().waiting, 3);
+    assert!(bob.trust().signed_operations().is_empty());
+
+    let mut bob = restarted(bob, BOB);
+    assert_eq!(
+        bob.standing().waiting,
+        3,
+        "what waits is in the sealed state"
+    );
+    let first = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(first.refused().is_empty(), "{:?}", first.refused());
+    assert!(first.dropped().is_empty());
+    let in_order: Vec<(String, String)> = sends
+        .iter()
+        .map(|(event, data)| (event.to_string(), data.clone()))
+        .collect();
+    assert_eq!(first.taken(), in_order);
+    assert_eq!(first.round.pushed, 3, "the three that waited");
+    assert_eq!(bob.standing().waiting, 0);
+    assert_eq!(bob.trust().last_seq(BOB), 3);
+
+    let told = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(named(&told, WRITE).len(), 2, "{:?}", told.events());
+    assert_eq!(named(&told, SUPERSEDE).len(), 1, "{:?}", told.events());
+    assert_eq!(alice.trust().heads(), bob.trust().heads());
+    assert!(alice.trust().equivocating().is_empty());
+}
+
+/// Bob's device reads the list before alice has granted him anything, and his machine writes: the
+/// log his core holds names him nowhere yet, so the write waits. Alice grants him writing, and the
+/// round of his that reads the grant signs the write and gives it the relay.
+#[test]
+fn a_write_made_before_the_grant_is_signed_by_the_round_that_reads_it() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = Peer::open(LIST);
+    alice.set_identity(ALICE, person(ALICE));
+    alice.set_administrator(administrator());
+    alice.open_list(Profile::Untrusted).unwrap();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+
+    let mut bob = invited(BOB);
+    let early = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(
+        early.stalled(),
+        "the relay lets no one read who is no member"
+    );
+    assert_eq!(
+        bob.trust().entries().len(),
+        2,
+        "the genesis and alice's grant"
+    );
+    match bob.outbound(WRITE, &write(1, BOB, 1000, 7)) {
+        Kept::Waiting(reason) => {
+            assert!(reason.contains("grants node 2 nothing yet"), "{reason}")
+        }
+        other => panic!("expected the write to wait, got {other:?}"),
+    }
+
+    alice.grant(BOB, 2, person(BOB).public()).unwrap();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let granted = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(granted.refused().is_empty(), "{:?}", granted.refused());
+    assert_eq!(granted.taken().len(), 1, "{granted:?}");
+    assert_eq!(granted.round.pushed, 1, "the write that waited");
+    let told = network.round(&mut alice, ALICE, RoundKind::Sync);
+    let writes = named(&told, WRITE);
+    assert_eq!(writes.len(), 1, "{:?}", told.events());
+    assert_eq!(writes[0]["value"], "7");
+}
+
+/// A device whose machine wrote before it read the log, and whose log turns out not to let its
+/// person write: carol may only read, and bob was taken off before his device first read the list.
+/// The round that reads the log refuses what waited, each with why, and says so: the machine took
+/// the write in and no other copy will hold it, so the host is told to build it again. Nothing was
+/// signed, the relay was given nothing, nothing waits any more, and the same write sent again is
+/// refused at once.
+#[test]
+fn what_waited_for_a_grant_that_does_not_let_the_person_write_is_refused_and_said() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice();
+    alice.remove_member(BOB).unwrap();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+
+    for (node, role) in [(CAROL, "role 1"), (BOB, "role 0")] {
+        let mut device = invited(node);
+        let sent = write(1, node, 1000, 1);
+        assert!(matches!(device.outbound(WRITE, &sent), Kept::Waiting(_)));
+        let read = network.round(&mut device, node, RoundKind::Sync);
+        let dropped = read.dropped();
+        assert_eq!(dropped.len(), 1, "{read:?}");
+        assert_eq!(
+            (dropped[0].0.as_str(), dropped[0].1.as_str()),
+            (WRITE, sent.as_str())
+        );
+        assert!(
+            dropped[0].2.contains("may not write") && dropped[0].2.contains(role),
+            "{}",
+            dropped[0].2
+        );
+        assert!(read.taken().is_empty());
+        assert!(
+            read.rebuild(),
+            "the machine holds a write no other copy will"
+        );
+        assert_eq!(read.round.pushed, 0);
+        assert_eq!(device.standing().waiting, 0);
+        assert!(device.trust().signed_operations().is_empty());
+        assert!(
+            matches!(device.outbound(WRITE, &sent), Kept::Refused(_)),
+            "sent again, it is refused at once"
+        );
+    }
 }

@@ -20,12 +20,18 @@ import com.sun.jna.ptr.LongByReference
 /** A status of the library that is not `OK`, with the reason it gave (`sce_peer_last_error`). */
 class ScePeerException(val status: Int, message: String) : RuntimeException(message)
 
-/** What the core did with a send of the machine (`SCE_PEER_KEPT_*`). */
+/**
+ * What the core did with a send of the machine (`SCE_PEER_KEPT_*`). [WAITING] is a send the device
+ * may not sign yet, kept with every send after it: the round that reads what it waits for signs it
+ * and gives it the relay (the outcome's `taken`), or refuses it when the log says the person never
+ * may (the outcome's `dropped`, and `rebuild`).
+ */
 enum class Kept(val code: Int) {
     TAKEN(ScePeerAbi.KEPT_TAKEN),
     HELD(ScePeerAbi.KEPT_HELD),
     NOT_SIGNED(ScePeerAbi.KEPT_NOT_SIGNED),
     REFUSED(ScePeerAbi.KEPT_REFUSED),
+    WAITING(ScePeerAbi.KEPT_WAITING),
     ;
 
     companion object {
@@ -33,7 +39,7 @@ enum class Kept(val code: Int) {
     }
 }
 
-/** What the core did with a send, and why when it refused it. */
+/** What the core did with a send, and why when it refused it or keeps it waiting. */
 data class Sent(val kept: Kept, val reason: String?)
 
 /** A device's sealed state, and the data key it was sealed under, for the host to wrap. */
