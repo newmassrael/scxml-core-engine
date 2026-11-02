@@ -53,9 +53,9 @@ for tool in "$CXX_COMPILER" "clang-$LLVM_MAJOR" cmake; do
         exit 2
     }
 done
-LLVM_DIR="/usr/lib/llvm-$LLVM_MAJOR/lib/cmake/llvm"
-[[ -d "$LLVM_DIR" ]] || {
-    echo "install_genmc: $LLVM_DIR is missing; install llvm-$LLVM_MAJOR-dev" >&2
+LLVM_PREFIX="/usr/lib/llvm-$LLVM_MAJOR"
+[[ -d "$LLVM_PREFIX/lib/cmake/llvm" ]] || {
+    echo "install_genmc: $LLVM_PREFIX/lib/cmake/llvm is missing; install llvm-$LLVM_MAJOR-dev" >&2
     exit 2
 }
 
@@ -64,10 +64,15 @@ trap 'rm -rf "$WORK"' EXIT
 
 echo "building genmc $GENMC_REV (LLVM $LLVM_MAJOR) in $WORK"
 git clone --quiet --depth 1 --branch "$GENMC_REV" "$GENMC_URL" "$WORK/genmc"
+# GenMC's CMake unsets `LLVM_DIR` before it looks for LLVM and finds it through
+# `CMAKE_PREFIX_PATH` alone, so a `-DLLVM_DIR` is dropped and a machine with an
+# older LLVM's development files on the default path builds against those
+# (measured 2026-11-02: LLVM 16's headers, and the LLVM 19 calls failed to
+# compile). The prefix is what selects the major.
 cmake -S "$WORK/genmc" -B "$WORK/build" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
-    -DLLVM_DIR="$LLVM_DIR" \
+    -DCMAKE_PREFIX_PATH="$LLVM_PREFIX" \
     -DCMAKE_INSTALL_PREFIX="$GENMC_ROOT" >/dev/null
 cmake --build "$WORK/build"
 cmake --install "$WORK/build" >/dev/null
