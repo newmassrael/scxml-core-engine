@@ -18,6 +18,10 @@
 //! the next exchange dials again before it asks. A refusal of the token at the upgrade (401) is
 //! [`TransportError::Unauthorized`].
 //!
+//! A link made with the empty token presents none, and dials the anonymous connection a device logs
+//! in on (ADR 0080); the token its login earned is given to it with [`Transport::set_token`], and
+//! the connection made without it, or with another, is given up for one that presents it.
+//!
 //! A `wss://` link runs TLS as `crate::tls` configures it: `ring`'s cryptography, named to rustls
 //! rather than taken from the process, and the public certificate authorities ([`WssLink::new`]) or
 //! the ones a deployment names ([`WssLink::believing`]). A certificate they did not issue fails the
@@ -72,9 +76,9 @@ enum Waited {
 }
 
 impl WssLink {
-    /// A link to the relay at `base` (`ws://host:port` or `wss://host:port`) with `token`, which
-    /// believes the public certificate authorities. Nothing is dialled until the first exchange; an
-    /// address that is not a WebSocket's is refused here.
+    /// A link to the relay at `base` (`ws://host:port` or `wss://host:port`) with `token` (the empty
+    /// one for none), which believes the public certificate authorities. Nothing is dialled until
+    /// the first exchange; an address that is not a WebSocket's is refused here.
     pub fn new(base: &str, token: &str) -> io::Result<Self> {
         Self::believing(base, token, &Roots::Public)
     }
@@ -128,11 +132,15 @@ pub fn endpoint(base: &str) -> io::Result<String> {
 }
 
 /// The upgrade a device asks for at `url` (an [`endpoint`]), presenting `token` as `Authorization:
-/// Bearer <token>`: what every client of the binding sends, the link's dial and a probe's alike.
+/// Bearer <token>`, or no header for the empty token: what every client of the binding sends, the
+/// link's dial and a probe's alike.
 pub fn upgrade_request(url: &str, token: &str) -> Result<UpgradeRequest, String> {
     let mut upgrade = url
         .into_client_request()
         .map_err(|error| error.to_string())?;
+    if token.is_empty() {
+        return Ok(upgrade);
+    }
     let value = http::HeaderValue::from_str(&format!("Bearer {token}"))
         .map_err(|_| "the token is not a header value".to_string())?;
     upgrade
@@ -281,5 +289,13 @@ impl Transport for WssLink {
 
     fn network(&self) -> Signal {
         self.network.clone()
+    }
+
+    fn set_token(&mut self, token: &str) -> bool {
+        if token != self.token {
+            self.token = token.to_string();
+            self.give_up("the token changed");
+        }
+        true
     }
 }

@@ -46,6 +46,9 @@ fn the_configuration_is_one_the_relay_takes_with_the_keys_the_unit_gives() {
     );
     assert!(config.plain.is_empty());
     assert!(config.tls_files.is_some());
+    // A member's device logs in, for a token of an hour, and no proxy is trusted.
+    assert_eq!(config.login.map(|login| login.token_seconds), Some(3600));
+    assert!(config.trusted_proxies.is_empty());
 }
 
 #[test]

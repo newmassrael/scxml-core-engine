@@ -12,6 +12,8 @@
 //! * [`relay`] - the relay: verify, keep, give back, by session and allowance.
 //! * [`protocol`] - the requests and responses, as JSON texts.
 //! * [`token`] - the login-bound token that names a device of one list, and nothing about a person.
+//! * [`login`] - a member's device logs in by proving the key its list's log gave its node, and the
+//!   relay issues its token: the relay's side ([`Doorway`]) and the device's ([`LoginMachine`]).
 //! * [`limits`] - the allowance of each device and the bounds on a request and a reply.
 //! * [`store`] - the append-only record a relay starts from, checked again as it is read.
 //! * [`client`] - a host's courier to a relay, the round it makes as a state machine that does no
@@ -39,6 +41,7 @@ pub mod client;
 pub mod driver;
 pub mod hub;
 pub mod limits;
+pub mod login;
 pub mod protocol;
 pub mod relay;
 pub mod store;
@@ -62,7 +65,8 @@ pub use client::{
 pub use driver::{drive, Driven, Exchange};
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
-pub use protocol::{Code, Record, Request, Response};
+pub use login::{Doorway, LoginMachine, LoginPolicy, LoginStep, Opened, Token};
+pub use protocol::{Code, Login, Record, Request, Response};
 pub use relay::Relay;
 pub use sce_rust_relay_transport::{
     Notice, Notices, Signal, Transport, TransportError, Watch, NOTICES_KEPT,

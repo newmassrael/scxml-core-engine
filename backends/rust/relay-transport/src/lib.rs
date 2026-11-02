@@ -82,6 +82,16 @@ pub trait Transport: Send {
     /// than wait on a path that may be gone. A transport whose medium follows the network itself
     /// may give a signal it does not watch.
     fn network(&self) -> Signal;
+
+    /// Present `token` from the next connection on, the empty text being no token at all (a device
+    /// that logs in, ADR 0080): a connection open now that was made with another is given up, and
+    /// the next exchange connects again. Whether the transport carries the relay's token; one whose
+    /// credentials its host carries itself (a host's own transport) carries none, says `false` and
+    /// keeps nothing, which is what a transport that does not override this does.
+    fn set_token(&mut self, token: &str) -> bool {
+        let _ = token;
+        false
+    }
 }
 
 /// Why an exchange did not bring the relay's response back.

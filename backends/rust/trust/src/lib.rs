@@ -11,6 +11,8 @@
 //! the one party each copy's user can trust: their own device.
 //!
 //! * [`identity`] - a person's key: it signs, and what it signed is checked by the public key.
+//! * [`login`] - the bytes a device signs to log in at a relay with the key its list's log gave its
+//!   node, under a domain no other signature here is made under.
 //! * [`membership`] - the list's log of who its administrators and members are, what each may do
 //!   from when, which epoch its content is sealed under, and whether its hub is trusted: an
 //!   append-only chain of entries signed by administrators, so that a host believes nothing a
@@ -53,6 +55,7 @@ mod chain;
 pub mod checkpoint;
 pub mod encoding;
 pub mod identity;
+pub mod login;
 pub mod membership;
 pub mod message;
 pub mod secrecy;

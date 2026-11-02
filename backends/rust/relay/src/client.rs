@@ -40,6 +40,7 @@ use sce_rust_trust::{Checkpoint, CheckpointError, Head, Sent, TakeError, Trust};
 use serde_json::{json, Value};
 
 use crate::driver::drive;
+use crate::hub::Hub;
 use crate::protocol::{Code, Record, Request, Response};
 use crate::relay::Relay;
 use crate::store::Store;
@@ -96,7 +97,8 @@ impl<T: Transport + ?Sized> Link for T {
 pub struct LinkError(pub String);
 
 /// A transport to a relay in this process: the tests', and a host that runs its relay beside it.
-/// It never blocks, holds no connection, and has nothing to tell its host.
+/// It never blocks, holds no connection, and has nothing to tell its host. Made with the empty
+/// token, it presents none, as a device that logs in does, from no address.
 pub struct DirectLink<S: Store> {
     relay: Arc<Mutex<Relay<S>>>,
     token: String,
@@ -119,7 +121,7 @@ impl<S: Store> DirectLink<S> {
     }
 }
 
-impl<S: Store + Send> Transport for DirectLink<S> {
+impl<S: Store + Send + 'static> Transport for DirectLink<S> {
     fn exchange(
         &mut self,
         request: &str,
@@ -130,11 +132,8 @@ impl<S: Store + Send> Transport for DirectLink<S> {
             return Err(TransportError::Cancelled);
         }
         let now = (self.clock)();
-        Ok(self
-            .relay
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .handle(&self.token, request, now))
+        let token = Some(self.token.as_str()).filter(|token| !token.is_empty());
+        Ok(self.relay.answer(token, None, request, now))
     }
 
     fn take_notices(&mut self) -> Vec<Notice> {
@@ -143,6 +142,11 @@ impl<S: Store + Send> Transport for DirectLink<S> {
 
     fn network(&self) -> Signal {
         self.network.clone()
+    }
+
+    fn set_token(&mut self, token: &str) -> bool {
+        self.token = token.to_string();
+        true
     }
 }
 

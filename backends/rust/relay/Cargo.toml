@@ -45,6 +45,11 @@ name = "a_deployed_relay_bounds_its_connections_and_stops_when_told"
 path = "tests/a_deployed_relay_bounds_its_connections_and_stops_when_told.rs"
 required-features = ["serve"]
 
+[[test]]
+name = "a_device_logs_in_over_a_websocket"
+path = "tests/a_device_logs_in_over_a_websocket.rs"
+required-features = ["serve"]
+
 [features]
 default = []
 # The client side of the WebSocket binding: the transport (`WssLink`) a device reaches the relay

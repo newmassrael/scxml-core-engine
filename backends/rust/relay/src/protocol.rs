@@ -108,6 +108,28 @@ pub enum Request {
     Operations { node: u64, from: u64, to: u64 },
     /// What the relay holds of each device's chain, and how long its log is.
     Heads,
+    /// A challenge for the device of `node` of `list` to log in against (ADR 0080 section 2): asked
+    /// on a connection that presents no token the relay takes, which names the list and the node
+    /// itself.
+    Challenge { list: String, node: u64 },
+    /// The device of `node` of `list` logs in: the `nonce` and `expires_at_ms` of a challenge the
+    /// relay gave, the device's `signature` of them (`sce_rust_trust::login`, in the URL alphabet),
+    /// and `entries` of the log for the relay to append first, as `Append` would, so that a device
+    /// brings a grant the relay was not given yet.
+    Login(Login),
+}
+
+/// What a device logs in with (`Request::Login`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Login {
+    pub list: String,
+    pub node: u64,
+    /// The challenge's nonce, in the URL alphabet, as the relay gave it.
+    pub nonce: String,
+    pub expires_at_ms: u64,
+    /// The signature of the login, in the URL alphabet.
+    pub signature: String,
+    pub entries: Vec<String>,
 }
 
 impl Request {
@@ -154,6 +176,23 @@ impl Request {
                 "to": to.to_string(),
             }),
             Request::Heads => json!({"op": "heads"}),
+            Request::Challenge { list, node } => {
+                json!({"op": "challenge", "list": list, "node": node.to_string()})
+            }
+            Request::Login(login) => {
+                let mut value = json!({
+                    "op": "login",
+                    "list": login.list,
+                    "node": login.node.to_string(),
+                    "nonce": login.nonce,
+                    "expires_at_ms": login.expires_at_ms.to_string(),
+                    "signature": login.signature,
+                });
+                if !login.entries.is_empty() {
+                    value["entries"] = json!(login.entries);
+                }
+                value
+            }
         };
         value["v"] = json!(VERSION);
         value.to_string()
@@ -225,6 +264,27 @@ impl Request {
                 to: number("to")?,
             }),
             Some("heads") => Ok(Request::Heads),
+            Some("challenge") => Ok(Request::Challenge {
+                list: text_of("list")?,
+                node: number("node")?,
+            }),
+            Some("login") => Ok(Request::Login(Login {
+                list: text_of("list")?,
+                node: number("node")?,
+                nonce: text_of("nonce")?,
+                expires_at_ms: number("expires_at_ms")?,
+                signature: text_of("signature")?,
+                entries: match value.get("entries") {
+                    None => Vec::new(),
+                    Some(entries) => entries
+                        .as_array()
+                        .ok_or("`entries` is not a list")?
+                        .iter()
+                        .map(|entry| entry.as_str().map(str::to_string))
+                        .collect::<Option<_>>()
+                        .ok_or("an entry is not text")?,
+                },
+            })),
             _ => Err("it is not a request the relay knows".to_string()),
         }
     }
@@ -295,6 +355,21 @@ pub enum Response {
         log_len: u64,
         cursor: u64,
     },
+    /// A challenge to log in against: the relay's name, the nonce (in the URL alphabet) and the
+    /// instant it expires at by the relay's clock, whether the relay holds the list, and the
+    /// difficulty of the work a creation of it would take, when the relay takes one.
+    Challenge {
+        audience: String,
+        nonce: String,
+        expires_at_ms: u64,
+        held: bool,
+        work: Option<u32>,
+    },
+    /// The token a login earned, and when it expires by the relay's clock.
+    Token {
+        token: String,
+        expires_at_ms: u64,
+    },
     Refused {
         code: Code,
         reason: String,
@@ -345,6 +420,33 @@ impl Response {
                     .collect::<Vec<_>>(),
                 "log_len": log_len.to_string(),
                 "cursor": cursor.to_string(),
+            }),
+            Response::Challenge {
+                audience,
+                nonce,
+                expires_at_ms,
+                held,
+                work,
+            } => {
+                let mut value = json!({
+                    "ok": "challenge",
+                    "audience": audience,
+                    "nonce": nonce,
+                    "expires_at_ms": expires_at_ms.to_string(),
+                    "held": held,
+                });
+                if let Some(bits) = work {
+                    value["work"] = json!(bits);
+                }
+                value
+            }
+            Response::Token {
+                token,
+                expires_at_ms,
+            } => json!({
+                "ok": "token",
+                "token": token,
+                "expires_at_ms": expires_at_ms.to_string(),
             }),
             Response::Refused { code, reason } => {
                 let mut value = json!({"refused": code.tag(), "reason": reason});
@@ -458,6 +560,24 @@ impl Response {
                 log_len: number("log_len")?,
                 cursor: number("cursor")?,
             }),
+            Some("challenge") => Ok(Response::Challenge {
+                audience: text_of("audience")?,
+                nonce: text_of("nonce")?,
+                expires_at_ms: number("expires_at_ms")?,
+                held: flag("held")?,
+                work: match value.get("work") {
+                    None => None,
+                    Some(bits) => Some(
+                        bits.as_u64()
+                            .and_then(|bits| u32::try_from(bits).ok())
+                            .ok_or("`work` is not a number of bits")?,
+                    ),
+                },
+            }),
+            Some("token") => Ok(Response::Token {
+                token: text_of("token")?,
+                expires_at_ms: number("expires_at_ms")?,
+            }),
             _ => Err("it is not a response the relay gives".to_string()),
         }
     }
@@ -503,9 +623,72 @@ mod tests {
                 to: 9,
             },
             Request::Heads,
+            Request::Challenge {
+                list: "home".to_string(),
+                node: u64::MAX,
+            },
+            Request::Login(Login {
+                list: "home".to_string(),
+                node: 2,
+                nonce: "AAAA".to_string(),
+                expires_at_ms: 60_000,
+                signature: "BBBB".to_string(),
+                entries: Vec::new(),
+            }),
+            Request::Login(Login {
+                list: "home".to_string(),
+                node: 2,
+                nonce: "AAAA".to_string(),
+                expires_at_ms: 60_000,
+                signature: "BBBB".to_string(),
+                entries: vec!["{\"x\":1}".to_string()],
+            }),
         ] {
             assert_eq!(Request::from_json(&request.to_json()), Ok(request));
         }
+    }
+
+    /// The texts of ADR 0080 section 2, as a relay in another language reads and writes them.
+    #[test]
+    fn a_challenge_and_a_login_are_the_texts_the_decision_gives() {
+        assert_eq!(
+            Request::from_json(r#"{"v":1,"op":"challenge","list":"home","node":"7"}"#),
+            Ok(Request::Challenge {
+                list: "home".to_string(),
+                node: 7
+            })
+        );
+        let answer = Response::Challenge {
+            audience: "relay.example".to_string(),
+            nonce: "AQID".to_string(),
+            expires_at_ms: 60_000,
+            held: true,
+            work: None,
+        }
+        .to_json();
+        let value: Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(value["ok"], "challenge");
+        assert_eq!(value["expires_at_ms"], "60000", "a 64-bit number is text");
+        assert!(value.get("work").is_none(), "no work is asked of a login");
+        let token: Value = serde_json::from_str(
+            &Response::Token {
+                token: "t".to_string(),
+                expires_at_ms: 9,
+            }
+            .to_json(),
+        )
+        .unwrap();
+        assert_eq!(
+            token,
+            json!({"v": 1, "ok": "token", "token": "t", "expires_at_ms": "9"})
+        );
+        assert!(
+            Request::from_json(
+                r#"{"v":1,"op":"login","list":"home","node":"7","nonce":"A","expires_at_ms":"1","signature":"B","entries":"x"}"#
+            )
+            .is_err(),
+            "entries are a list"
+        );
     }
 
     #[test]
@@ -556,6 +739,17 @@ mod tests {
                 }],
                 log_len: 5,
                 cursor: 6,
+            },
+            Response::Challenge {
+                audience: "relay.example".to_string(),
+                nonce: "AQID".to_string(),
+                expires_at_ms: 60_000,
+                held: false,
+                work: Some(20),
+            },
+            Response::Token {
+                token: "payload.tag".to_string(),
+                expires_at_ms: 3_600_000,
             },
             Response::refused(Code::RateLimited { retry_after_ms: 40 }, "slow down"),
             Response::refused(Code::Behind, "send the log"),

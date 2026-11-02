@@ -7,6 +7,7 @@
 //! [listen]
 //! plain = ["127.0.0.1:8780"]     # ws://, behind a proxy that terminates TLS or on a private network
 //! tls = ["0.0.0.0:443"]          # wss://, with the certificate below
+//! trusted_proxies = ["127.0.0.1"] # whose X-Forwarded-For names a connection's source
 //!
 //! [tls]
 //! certificate_chain = "/etc/sce-relay/chain.pem"
@@ -24,9 +25,19 @@
 //! handshake_seconds = 10
 //! idle_seconds = 300
 //! shutdown_grace_seconds = 10
+//! anonymous_requests = 8         # what a connection with no token may ask before it is closed
+//! anonymous_idle_seconds = 30
 //!
 //! [limits]
 //! max_lists = 10000
+//!
+//! [login]                        # a member's device logs in by its key (ADR 0080); on by default
+//! enabled = true
+//! token_seconds = 3600
+//! connections_per_minute = 30    # each per source: an IPv4 address, or an IPv6 /64
+//! challenges_per_minute = 30
+//! logins_per_minute = 30
+//! logins_per_node_per_hour = 60
 //! ```
 //!
 //! A file holds paths and numbers and never a secret: the keys are files of their own
@@ -37,12 +48,12 @@
 //! both is the command line's.
 
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sce_rust_relay::serve::Bounds;
-use sce_rust_relay::Limits;
+use sce_rust_relay::{Limits, LoginPolicy};
 use toml_edit::{Item, TableLike};
 
 use crate::slots::MOST_SLOTS;
@@ -85,6 +96,11 @@ pub struct Config {
     pub grace: Duration,
     /// What each device is held to.
     pub limits: Limits,
+    /// The proxies whose `X-Forwarded-For` names the source of a connection with no token.
+    pub trusted_proxies: Vec<IpAddr>,
+    /// What a member's login is held to, when the relay offers login (`None`: it offers none, and
+    /// every device presents a token of the authority).
+    pub login: Option<LoginPolicy>,
 }
 
 /// What a file or a command line says, before it is checked as a whole: `None` where it says
@@ -102,8 +118,17 @@ pub struct Settings {
     pub handshake_seconds: Option<u64>,
     pub idle_seconds: Option<u64>,
     pub grace_seconds: Option<u64>,
+    pub anonymous_requests: Option<u64>,
+    pub anonymous_idle_seconds: Option<u64>,
     /// Limits by name, in the order they were said: a later one of a name wins.
     pub limits: Vec<(String, u64)>,
+    pub trusted_proxies: Option<Vec<IpAddr>>,
+    pub login_enabled: Option<bool>,
+    pub token_seconds: Option<u64>,
+    pub connections_per_minute: Option<u64>,
+    pub challenges_per_minute: Option<u64>,
+    pub logins_per_minute: Option<u64>,
+    pub logins_per_node_per_hour: Option<u64>,
 }
 
 /// The limits a configuration may set, by the names of [`Limits`]' fields.
@@ -121,19 +146,22 @@ pub const LIMIT_NAMES: [&str; 10] = [
 ];
 
 /// The sections of a configuration file.
-const SECTIONS: [&str; 6] = [
+const SECTIONS: [&str; 7] = [
     "listen",
     "tls",
     "store",
     "authority",
     "connections",
     "limits",
+    "login",
 ];
 
 const DEFAULT_SLOTS: u64 = 1;
 const DEFAULT_HANDSHAKE_SECONDS: u64 = 10;
 const DEFAULT_IDLE_SECONDS: u64 = 300;
 const DEFAULT_GRACE_SECONDS: u64 = 10;
+/// The most a rate of the login's allowances is set to, a minute or an hour.
+const MOST_RATE: u64 = 1_000_000;
 
 impl Settings {
     /// What the configuration file `file`, whose text is `text`, says.
@@ -169,6 +197,9 @@ impl Settings {
                 match (section, key) {
                     ("listen", "plain") => settings.plain = Some(reader.addresses(value, &name)?),
                     ("listen", "tls") => settings.tls = Some(reader.addresses(value, &name)?),
+                    ("listen", "trusted_proxies") => {
+                        settings.trusted_proxies = Some(reader.hosts(value, &name)?)
+                    }
                     ("tls", "certificate_chain") => {
                         settings.tls_chain = Some(reader.path(value, &name)?)
                     }
@@ -189,6 +220,30 @@ impl Settings {
                     }
                     ("connections", "shutdown_grace_seconds") => {
                         settings.grace_seconds = Some(reader.number(value, &name)?)
+                    }
+                    ("connections", "anonymous_requests") => {
+                        settings.anonymous_requests = Some(reader.number(value, &name)?)
+                    }
+                    ("connections", "anonymous_idle_seconds") => {
+                        settings.anonymous_idle_seconds = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "enabled") => {
+                        settings.login_enabled = Some(reader.boolean(value, &name)?)
+                    }
+                    ("login", "token_seconds") => {
+                        settings.token_seconds = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "connections_per_minute") => {
+                        settings.connections_per_minute = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "challenges_per_minute") => {
+                        settings.challenges_per_minute = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "logins_per_minute") => {
+                        settings.logins_per_minute = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "logins_per_node_per_hour") => {
+                        settings.logins_per_node_per_hour = Some(reader.number(value, &name)?)
                     }
                     ("limits", limit) if LIMIT_NAMES.contains(&limit) => settings
                         .limits
@@ -221,7 +276,18 @@ impl Settings {
             handshake_seconds: over.handshake_seconds.or(self.handshake_seconds),
             idle_seconds: over.idle_seconds.or(self.idle_seconds),
             grace_seconds: over.grace_seconds.or(self.grace_seconds),
+            anonymous_requests: over.anonymous_requests.or(self.anonymous_requests),
+            anonymous_idle_seconds: over.anonymous_idle_seconds.or(self.anonymous_idle_seconds),
             limits,
+            trusted_proxies: over.trusted_proxies.or(self.trusted_proxies),
+            login_enabled: over.login_enabled.or(self.login_enabled),
+            token_seconds: over.token_seconds.or(self.token_seconds),
+            connections_per_minute: over.connections_per_minute.or(self.connections_per_minute),
+            challenges_per_minute: over.challenges_per_minute.or(self.challenges_per_minute),
+            logins_per_minute: over.logins_per_minute.or(self.logins_per_minute),
+            logins_per_node_per_hour: over
+                .logins_per_node_per_hour
+                .or(self.logins_per_node_per_hour),
         }
     }
 
@@ -305,10 +371,64 @@ impl Settings {
             0,
             3600,
         )?;
+        let defaults = Bounds::default();
+        // A login is a challenge and the login: a connection with no token makes two at least.
+        let anonymous_requests = between(
+            "[connections] anonymous_requests",
+            self.anonymous_requests
+                .unwrap_or(u64::from(defaults.anonymous_requests)),
+            2,
+            64,
+        )?;
+        let anonymous_idle = between(
+            "[connections] anonymous_idle_seconds",
+            self.anonymous_idle_seconds
+                .unwrap_or(defaults.anonymous_idle.as_secs()),
+            1,
+            3600,
+        )?;
         let mut limits = Limits::default();
         for (name, value) in &self.limits {
             set_limit(&mut limits, name, *value)?;
         }
+        let login = if self.login_enabled.unwrap_or(true) {
+            let policy = LoginPolicy::default();
+            let rate = |name: &str, value: Option<u64>, default: u32| -> Result<u32, ConfigError> {
+                let value = between(name, value.unwrap_or(u64::from(default)), 1, MOST_RATE)?;
+                Ok(u32::try_from(value).unwrap_or(u32::MAX))
+            };
+            Some(LoginPolicy {
+                token_seconds: between(
+                    "[login] token_seconds",
+                    self.token_seconds.unwrap_or(policy.token_seconds),
+                    60,
+                    86_400,
+                )?,
+                connections_per_minute: rate(
+                    "[login] connections_per_minute",
+                    self.connections_per_minute,
+                    policy.connections_per_minute,
+                )?,
+                challenges_per_minute: rate(
+                    "[login] challenges_per_minute",
+                    self.challenges_per_minute,
+                    policy.challenges_per_minute,
+                )?,
+                logins_per_minute: rate(
+                    "[login] logins_per_minute",
+                    self.logins_per_minute,
+                    policy.logins_per_minute,
+                )?,
+                logins_per_node_per_hour: rate(
+                    "[login] logins_per_node_per_hour",
+                    self.logins_per_node_per_hour,
+                    policy.logins_per_node_per_hour,
+                )?,
+                ..policy
+            })
+        } else {
+            None
+        };
         Ok(Config {
             plain,
             tls,
@@ -321,9 +441,13 @@ impl Settings {
                 max_connections: max_connections as usize,
                 handshake: Duration::from_secs(handshake),
                 idle: Duration::from_secs(idle),
+                anonymous_requests: u32::try_from(anonymous_requests).unwrap_or(u32::MAX),
+                anonymous_idle: Duration::from_secs(anonymous_idle),
             },
             grace: Duration::from_secs(grace),
             limits,
+            trusted_proxies: self.trusted_proxies.unwrap_or_default(),
+            login,
         })
     }
 }
@@ -429,6 +553,33 @@ impl Reader<'_> {
             .ok_or_else(|| self.at(item, format!("{name} is a whole number, 0 or more")))
     }
 
+    fn boolean(&self, item: &Item, name: &str) -> Result<bool, ConfigError> {
+        item.as_bool()
+            .ok_or_else(|| self.at(item, format!("{name} is true or false")))
+    }
+
+    /// A list of addresses with no port: the hosts of the proxies a relay trusts.
+    fn hosts(&self, item: &Item, name: &str) -> Result<Vec<IpAddr>, ConfigError> {
+        let shape = || {
+            self.at(
+                item,
+                format!(
+                    "{name} is a list of addresses with no port, like [\"127.0.0.1\", \"::1\"]"
+                ),
+            )
+        };
+        let array = item.as_array().ok_or_else(shape)?;
+        array
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .and_then(|text| text.parse::<IpAddr>().ok())
+                    .ok_or_else(shape)
+            })
+            .collect()
+    }
+
     fn path(&self, item: &Item, name: &str) -> Result<PathBuf, ConfigError> {
         let text = item
             .as_str()
@@ -479,6 +630,7 @@ mod tests {
 [listen]
 plain = ["127.0.0.1:8780"]
 tls = ["0.0.0.0:8443", "[::]:8443"]
+trusted_proxies = ["127.0.0.1", "::1"]
 
 [tls]
 certificate_chain = "chain.pem"
@@ -496,11 +648,20 @@ max = 64
 handshake_seconds = 5
 idle_seconds = 60
 shutdown_grace_seconds = 3
+anonymous_requests = 4
+anonymous_idle_seconds = 20
 
 [limits]
 burst = 10
 max_lists = 50
 max_request_bytes = 4096
+
+[login]
+token_seconds = 600
+connections_per_minute = 6
+challenges_per_minute = 7
+logins_per_minute = 8
+logins_per_node_per_hour = 9
 "#;
 
     #[test]
@@ -531,6 +692,8 @@ max_request_bytes = 4096
                 max_connections: 64,
                 handshake: Duration::from_secs(5),
                 idle: Duration::from_secs(60),
+                anonymous_requests: 4,
+                anonymous_idle: Duration::from_secs(20),
             }
         );
         assert_eq!(config.grace, Duration::from_secs(3));
@@ -543,6 +706,43 @@ max_request_bytes = 4096
                 ..Limits::default()
             }
         );
+        assert_eq!(
+            config.trusted_proxies,
+            vec![
+                "127.0.0.1".parse::<IpAddr>().unwrap(),
+                "::1".parse().unwrap()
+            ]
+        );
+        assert_eq!(
+            config.login,
+            Some(LoginPolicy {
+                token_seconds: 600,
+                connections_per_minute: 6,
+                challenges_per_minute: 7,
+                logins_per_minute: 8,
+                logins_per_node_per_hour: 9,
+                ..LoginPolicy::default()
+            })
+        );
+    }
+
+    #[test]
+    fn login_is_offered_unless_the_file_turns_it_off() {
+        let base = "[listen]\nplain = [\"127.0.0.1:0\"]\n[store]\ndirectory = \"s\"\n\
+                    [authority]\nkey_file = \"k\"\n";
+        let config = read(base).unwrap().finish().unwrap();
+        assert_eq!(
+            config.login,
+            Some(LoginPolicy::default()),
+            "an hour's token"
+        );
+        assert_eq!(config.login.map(|login| login.token_seconds), Some(3600));
+        assert!(config.trusted_proxies.is_empty(), "no proxy is trusted");
+        let off = read(&format!("{base}[login]\nenabled = false\n"))
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(off.login, None);
     }
 
     #[test]
@@ -599,6 +799,12 @@ max_request_bytes = 4096
                 "a list of addresses",
             ),
             ("[limits]\nbursts = 1\n", "[limits] bursts is not a setting"),
+            ("[login]\nenabled = 1\n", "[login] enabled is true or false"),
+            ("[login]\ntokens = 1\n", "[login] tokens is not a setting"),
+            (
+                "[listen]\ntrusted_proxies = [\"127.0.0.1:80\"]\n",
+                "addresses with no port",
+            ),
             ("[listen\n", "not TOML"),
             ("[store]\nslots = 1\nslots = 2\n", "not TOML"),
         ];
@@ -713,6 +919,27 @@ max_request_bytes = 4096
                     ..base()
                 },
                 "at least 1024",
+            ),
+            (
+                Settings {
+                    anonymous_requests: Some(1),
+                    ..base()
+                },
+                "[connections] anonymous_requests is 1",
+            ),
+            (
+                Settings {
+                    token_seconds: Some(10),
+                    ..base()
+                },
+                "[login] token_seconds is 10",
+            ),
+            (
+                Settings {
+                    logins_per_minute: Some(0),
+                    ..base()
+                },
+                "[login] logins_per_minute is 0",
             ),
         ];
         for (settings, said) in cases {

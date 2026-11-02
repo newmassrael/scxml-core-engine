@@ -15,17 +15,23 @@
 //! A request is made by a session, which a login token names ([`Authority`]). What a session may
 //! ask is decided by the log at the relay's head: a device reads when it is a member, and writes
 //! when it may write. Each request spends the session's allowance ([`Limits`]).
+//!
+//! A relay that offers login ([`Relay::with_login`]) also answers a connection that presents no
+//! token it takes: a member's device logs in there against the log the relay holds, and is issued
+//! its token ([`crate::login`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::net::IpAddr;
 
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Entry, LogError};
-use sce_rust_trust::{Checkpoint, CheckpointError, TakeError, Trust};
+use sce_rust_trust::{Checkpoint, CheckpointError, PublicKey, TakeError, Trust};
 use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
-use crate::protocol::{Code, Record, Request, Response};
+use crate::login::{self, Asked, Doorway, Opened};
+use crate::protocol::{Code, Login, Record, Request, Response};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
 
@@ -91,6 +97,8 @@ pub struct Relay<S: Store> {
     allowances: Allowances,
     /// Why the relay takes nothing: a record it was given could not be kept.
     failed: Option<String>,
+    /// What answers a connection with no token, when the relay offers login.
+    doorway: Option<Doorway>,
 }
 
 fn invalid_data(message: String) -> io::Error {
@@ -130,7 +138,119 @@ impl<S: Store> Relay<S> {
             lists,
             allowances: Allowances::default(),
             failed: None,
+            doorway: None,
         })
+    }
+
+    /// This relay offers login through `doorway`: a member's device logs in on a connection with
+    /// no token and is issued its token. A relay offers none until it is given one.
+    pub fn with_login(mut self, doorway: Doorway) -> Self {
+        self.doorway = Some(doorway);
+        self
+    }
+
+    /// Whether a connection that presents no token the relay takes is taken from `source` at
+    /// `now_ms`.
+    pub fn open_anonymous(&mut self, source: Option<IpAddr>, now_ms: u64) -> Opened {
+        match self.doorway.as_mut() {
+            None => Opened::NotOffered,
+            Some(doorway) => doorway.open(source, now_ms),
+        }
+    }
+
+    /// Answer a request text made at `now_ms` on a connection from `source` that presents no token
+    /// the relay takes, as a response text: a challenge, a login, and a refusal of the rest.
+    pub fn anonymous(&mut self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        let asked = match self.doorway.as_mut() {
+            None => return login::not_offered(request).to_json(),
+            Some(doorway) => doorway.ask(source, request, self.limits.max_request_bytes, now_ms),
+        };
+        let response = match asked {
+            Err(refused) => refused,
+            Ok(Asked::Challenge { list, node }) => {
+                let held = self.holds(&list);
+                match self.doorway.as_mut() {
+                    None => login::not_offered(request),
+                    Some(doorway) => {
+                        doorway.challenge(&list, node, held, self.authority.audience(), now_ms)
+                    }
+                }
+            }
+            Ok(Asked::Login(checked)) => {
+                let audience = self.authority.audience().to_string();
+                let admitted =
+                    self.admit_login(checked.login(), |key| checked.signed_by(key, &audience));
+                match (admitted, self.doorway.as_mut()) {
+                    (Err(refused), _) => refused,
+                    (Ok(()), None) => login::not_offered(request),
+                    (Ok(()), Some(doorway)) => doorway.redeem(&checked, &self.authority, now_ms),
+                }
+            }
+        };
+        response.to_json()
+    }
+
+    /// Whether the relay holds a log of `list`.
+    pub(crate) fn holds(&self, list: &str) -> bool {
+        self.lists.contains_key(list)
+    }
+
+    /// Whether the device `login` names may log in, by the log at the relay's head once the entries
+    /// it brought are appended: its latest grant gives it a role of at least 1 and a key, under
+    /// which `signed` holds. A list the relay holds no log of is not made by a login.
+    pub(crate) fn admit_login(
+        &mut self,
+        login: &Login,
+        signed: impl Fn(&PublicKey) -> bool,
+    ) -> Result<(), Response> {
+        let Some(held) = self
+            .lists
+            .get(&login.list)
+            .map(|state| state.trust.log_len())
+        else {
+            return Err(Response::refused(
+                Code::Behind,
+                "the relay holds no log of this list",
+            ));
+        };
+        for text in &login.entries {
+            let Some(entry) = Entry::from_json(text) else {
+                return Err(Response::refused(
+                    Code::Invalid,
+                    "an entry brought with the login is not an entry of a log",
+                ));
+            };
+            // An entry the relay holds a position for is its own to judge; one past its head is
+            // taken as `append` takes it, and the first that is not ends the login.
+            if entry.index < held {
+                continue;
+            }
+            match self.append(&login.list, text.clone(), entry) {
+                Response::Appended { .. } => {}
+                refused => return Err(refused),
+            }
+        }
+        let key = self.lists.get(&login.list).and_then(|state| {
+            state
+                .trust
+                .current_members()
+                .into_iter()
+                .find(|(node, _)| *node == login.node)
+                .map(|(_, key)| key)
+        });
+        let Some(key) = key else {
+            return Err(Response::refused(
+                Code::Forbidden,
+                format!("node {} is no member of this list", login.node),
+            ));
+        };
+        if !signed(&key) {
+            return Err(Response::refused(
+                Code::Unauthorized,
+                "the login is not signed by the key the log gives the node",
+            ));
+        }
+        Ok(())
     }
 
     /// The device a token names, when this relay issued it and it has not expired: what a
@@ -194,6 +314,7 @@ impl<S: Store> Relay<S> {
             | Request::Checkpoint { .. }
             | Request::PublishCommit { .. }
             | Request::PublishWelcome { .. } => WRITER,
+            Request::Challenge { .. } | Request::Login(_) => 0,
             Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,
         };
         if role < needs {
@@ -234,6 +355,12 @@ impl<S: Store> Relay<S> {
                 self.operations(&session.list, node, from, to)
             }
             Request::Heads => self.heads(&session.list),
+            // A session's token names its list and node already: a challenge and a login are
+            // answered on a connection with no token (`Self::anonymous`), as a hub routes them.
+            Request::Challenge { .. } | Request::Login(_) => Response::refused(
+                Code::Invalid,
+                "a challenge and a login are not a session's requests",
+            ),
         }
     }
 

@@ -72,20 +72,20 @@ PY
 
 mutation_case "A device that holds exactly what a request costs is made to wait" <<'PY'
 edit("backends/rust/relay/src/limits.rs",
-     "        if *held >= wanted {",
-     "        if *held > wanted {")
+     "    if *held >= wanted {",
+     "    if *held > wanted {")
 PY
 
 mutation_case "A device that was away gains more than its burst" <<'PY'
 edit("backends/rust/relay/src/limits.rs",
-     "        *held = held.saturating_add(gained).min(capacity);",
-     "        *held = held.saturating_add(gained);")
+     "    *held = held.saturating_add(gained).min(capacity);",
+     "    *held = held.saturating_add(gained);")
 PY
 
 mutation_case "A relay that refills nothing divides by the nothing" <<'PY'
 edit("backends/rust/relay/src/limits.rs",
-     "        } else if refill == 0 {",
-     "        } else if false {")
+     "    } else if refill == 0 {",
+     "    } else if false {")
 PY
 
 mutation_case "A device that is new to the relay starts with nothing" <<'PY'

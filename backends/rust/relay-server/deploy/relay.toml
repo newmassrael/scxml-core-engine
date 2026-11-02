@@ -13,6 +13,9 @@ tls = ["[::]:443"]
 # ws:// for a relay behind a proxy that terminates TLS, or on a private network: in place of `tls`
 # above, with no [tls] section.
 # plain = ["127.0.0.1:8780"]
+# The proxies whose X-Forwarded-For header names where a connection with no token comes from, which
+# its allowance is kept by (an address with no port, each). No other address's header is believed.
+# trusted_proxies = ["127.0.0.1"]
 
 [tls]
 # The certificate the relay presents, its own first and then the intermediates, as PEM. The private
@@ -39,3 +42,10 @@ shutdown_grace_seconds = 10
 # measure, and set your own (docs/SCE_RELAY_DEPLOY.md, section 9).
 max_lists = 200
 max_records_per_list = 50000
+
+[login]
+# A member's device logs in with the key its list's log gave its node, and the relay issues its
+# token (docs/SCE_RELAY_DEPLOY.md, section 6). Off for a deployment whose devices are all given
+# tokens by a service that holds the authority's key.
+enabled = true
+token_seconds = 3600

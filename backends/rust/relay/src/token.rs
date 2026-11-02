@@ -236,7 +236,7 @@ fn halves(token: &str) -> Result<(Vec<u8>, Vec<u8>), TokenError> {
 }
 
 /// Whether two tags are the same, in time that does not depend on where they first differ.
-fn equal(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn equal(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 

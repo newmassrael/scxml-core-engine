@@ -8,6 +8,14 @@
 //! <token>`. The upgrade is refused (401) when the relay did not issue the token or it has expired,
 //! and every request on the connection is judged again by the relay, so a token that expires on a
 //! connection that stays open stops being answered and the device reconnects with a new one. A
+//! relay that offers login (ADR 0080, [`Hub::open_anonymous`]) takes as well an upgrade that
+//! presents no token, or one it issued that expired: the connection is anonymous, asks for a
+//! challenge and logs in, and is held to its own bounds (a few requests, a short idle time, and its
+//! source's allowance, the source read from `X-Forwarded-For` only behind a proxy the server is told
+//! to trust, [`Server::trusting`]); one that presents a header the relay did not issue is still
+//! refused, so that a device knows its token went stale. A source that opened as many anonymous
+//! connections as it may this minute is refused (429). A request to log in is answered on any
+//! connection ([`Hub::answer`]). A
 //! binary message, or a text one longer than the relay takes, closes the connection. The certificate
 //! is the deployer's: [`serve_tls`] terminates TLS with it (on the configuration
 //! `crate::tls::server_config` makes, `ring`'s cryptography), and [`serve_connection`] runs on any
@@ -25,7 +33,7 @@
 //! once it has answered the request it is answering, which [`Server::drain`] waits for.
 
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +51,9 @@ use tokio_tungstenite::WebSocketStream;
 
 use crate::hub::Hub;
 use crate::limits::Limits;
+use crate::login::{self, Opened};
 use crate::tls::ServerConfig;
+use crate::token::TokenError;
 // The path a device connects to, and the client that connects there: the binding's two halves are
 // named from either module.
 pub use crate::wss::{WssLink, PATH};
@@ -74,24 +84,52 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
     H: Hub,
 {
-    let (ws, token) = upgrade(stream, hub.as_ref(), &clock, max_message).await?;
-    exchange(ws, &token, &hub, &clock, Watch::default()).await;
+    run_connection(stream, None, hub, clock, max_message).await
+}
+
+/// [`serve_connection`] for a stream from `peer`, when the listener said where it came from.
+async fn run_connection<S, H>(
+    stream: S,
+    peer: Option<SocketAddr>,
+    hub: Arc<H>,
+    clock: Clock,
+    max_message: usize,
+) -> Result<(), ServeError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    H: Hub,
+{
+    let (ws, caller) = upgrade(stream, hub.as_ref(), &clock, max_message, peer, &[]).await?;
+    exchange(ws, &caller, &hub, &clock, Watch::default()).await;
     Ok(())
 }
 
-/// Complete the upgrade of `stream` when it asks for the relay's path with a token the hub takes:
-/// the connection, and the token every request on it is made with.
+/// Who a connection's requests are made by: the token it presented, when the hub took it or issued
+/// it and it expired, where it comes from, and whether it is anonymous (it presented no token the
+/// hub takes, and is held to the bounds of one).
+struct Caller {
+    token: Option<String>,
+    source: Option<IpAddr>,
+    anonymous: bool,
+}
+
+/// Complete the upgrade of `stream`, from `peer` behind the `proxies` the server trusts, when it
+/// asks for the relay's path with a token the hub takes, or with none (or one the hub issued that
+/// expired) when the hub takes an anonymous connection from its source: the connection, and who its
+/// requests are made by.
 async fn upgrade<S, H>(
     stream: S,
     hub: &H,
     clock: &Clock,
     max_message: usize,
-) -> Result<(WebSocketStream<S>, String), ServeError>
+    peer: Option<SocketAddr>,
+    proxies: &[IpAddr],
+) -> Result<(WebSocketStream<S>, Caller), ServeError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
     H: Hub,
 {
-    let mut token: Option<String> = None;
+    let mut caller: Option<Caller> = None;
     let config = WebSocketConfig::default()
         .max_message_size(Some(max_message))
         .max_frame_size(Some(max_message));
@@ -102,46 +140,95 @@ where
         if request.uri().path() != PATH {
             return Err(refusal(http::StatusCode::NOT_FOUND, "no such relay path"));
         }
-        let presented = request
-            .headers()
+        let headers = request.headers();
+        let forwarded: Vec<&str> = headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect();
+        let source = peer.map(|peer| login::source_behind(peer.ip(), &forwarded, proxies));
+        let presented = headers
             .get(http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "));
-        let Some(presented) = presented else {
-            return Err(refusal(http::StatusCode::UNAUTHORIZED, "no token"));
-        };
-        let accepted = hub.authenticate(presented, clock()).is_ok();
-        if !accepted {
-            return Err(refusal(
-                http::StatusCode::UNAUTHORIZED,
-                "not a token of this relay",
-            ));
+        let now = clock();
+        match presented.map(|token| hub.authenticate(token, now)) {
+            Some(Ok(_)) => {
+                caller = Some(Caller {
+                    token: presented.map(str::to_string),
+                    source,
+                    anonymous: false,
+                });
+                return Ok(response);
+            }
+            // A token the relay issued that expired, or none: an anonymous connection, when the
+            // relay offers login.
+            Some(Err(TokenError::Expired)) | None => {}
+            Some(Err(_)) => {
+                return Err(refusal(
+                    http::StatusCode::UNAUTHORIZED,
+                    "not a token of this relay",
+                ))
+            }
         }
-        token = Some(presented.to_string());
-        Ok(response)
+        match hub.open_anonymous(source, now) {
+            Opened::Taken => {
+                caller = Some(Caller {
+                    token: presented.map(str::to_string),
+                    source,
+                    anonymous: true,
+                });
+                Ok(response)
+            }
+            Opened::NotOffered => Err(refusal(
+                http::StatusCode::UNAUTHORIZED,
+                if presented.is_some() {
+                    "not a token of this relay"
+                } else {
+                    "no token"
+                },
+            )),
+            Opened::RateLimited { retry_after_ms } => {
+                let mut refused = refusal(
+                    http::StatusCode::TOO_MANY_REQUESTS,
+                    "this address opened as many connections with no token as it may",
+                );
+                if let Ok(value) =
+                    http::HeaderValue::from_str(&retry_after_ms.div_ceil(1000).to_string())
+                {
+                    refused
+                        .headers_mut()
+                        .insert(http::header::RETRY_AFTER, value);
+                }
+                Err(refused)
+            }
+        }
     };
     let ws = tokio_tungstenite::accept_hdr_async_with_config(stream, verdict, Some(config))
         .await
         .map_err(|error| ServeError::Handshake(error.to_string()))?;
-    let token = token.expect("an upgrade completes only after the callback took the token");
-    Ok((ws, token))
+    let caller = caller.expect("an upgrade completes only after the callback said who calls");
+    Ok((ws, caller))
 }
 
 /// What an open connection is held to beyond its messages: how long it may wait for a request (and
-/// for its answer to be taken), the stop that closes it, and where its requests are counted.
+/// for its answer to be taken), how many requests it may make, the stop that closes it, and where
+/// its requests are counted.
 #[derive(Default)]
 struct Watch<'a> {
     idle: Option<Duration>,
+    requests: Option<u32>,
     stop: Option<&'a Stop>,
     tally: Option<&'a Tally>,
 }
 
 /// Answer each text message of `ws` with the hub's response, until the connection closes, a
 /// message that is not a request comes, or `watch` closes it. A request that was read is always
-/// answered: the stop and the idle bound are looked at only while the connection waits for one.
+/// answered: the stop and the idle bound are looked at only while the connection waits for one,
+/// and a connection that made as many requests as it may is closed once the last is answered.
 async fn exchange<S, H>(
     mut ws: WebSocketStream<S>,
-    token: &str,
+    caller: &Caller,
     hub: &Arc<H>,
     clock: &Clock,
     watch: Watch<'_>,
@@ -149,6 +236,7 @@ async fn exchange<S, H>(
     S: AsyncRead + AsyncWrite + Unpin,
     H: Hub,
 {
+    let mut answered: u32 = 0;
     loop {
         // The stop first: a server that is stopping answers no request it has not begun.
         let next = tokio::select! {
@@ -165,8 +253,16 @@ async fn exchange<S, H>(
             _ => break,
         };
         let answer = {
-            let (hub, clock, token) = (hub.clone(), clock.clone(), token.to_string());
-            tokio::task::spawn_blocking(move || hub.handle(&token, &text, clock())).await
+            let (hub, clock, token, source) = (
+                hub.clone(),
+                clock.clone(),
+                caller.token.clone(),
+                caller.source,
+            );
+            tokio::task::spawn_blocking(move || {
+                hub.answer(token.as_deref(), source, &text, clock())
+            })
+            .await
         };
         let Ok(answer) = answer else { break };
         if let Some(tally) = watch.tally {
@@ -174,6 +270,10 @@ async fn exchange<S, H>(
         }
         let sent = within(watch.idle, ws.send(Message::Text(answer.into()))).await;
         if !matches!(sent, Some(Ok(()))) {
+            break;
+        }
+        answered = answered.saturating_add(1);
+        if watch.requests.is_some_and(|most| answered >= most) {
             break;
         }
     }
@@ -256,14 +356,14 @@ where
     Opening: Future<Output = std::io::Result<S>> + Send + 'static,
 {
     loop {
-        let (stream, _peer): (TcpStream, SocketAddr) = listener.accept().await?;
+        let (stream, peer): (TcpStream, SocketAddr) = listener.accept().await?;
         let opening = open(stream);
         let (hub, clock) = (hub.clone(), clock.clone());
         tokio::spawn(async move {
             let Ok(stream) = opening.await else {
                 return;
             };
-            let _ = serve_connection(stream, hub, clock, max_message).await;
+            let _ = run_connection(stream, Some(peer), hub, clock, max_message).await;
         });
     }
 }
@@ -282,6 +382,11 @@ pub struct Bounds {
     /// How long an open connection may wait for its next request, and for its answer to be taken,
     /// before it is closed: a device connects again when it next has something to ask.
     pub idle: Duration,
+    /// The most requests a connection that presents no token the relay takes may make: a login is
+    /// a challenge and the login, and a device dials again with its token.
+    pub anonymous_requests: u32,
+    /// How long such a connection may wait for its next request, when that is shorter than `idle`.
+    pub anonymous_idle: Duration,
 }
 
 impl Bounds {
@@ -296,6 +401,8 @@ impl Default for Bounds {
             max_connections: 512,
             handshake: Duration::from_secs(10),
             idle: Duration::from_secs(300),
+            anonymous_requests: 8,
+            anonymous_idle: Duration::from_secs(30),
         }
     }
 }
@@ -380,6 +487,8 @@ struct Shared<H> {
     permits: Arc<Semaphore>,
     capacity: u32,
     tally: Tally,
+    /// The proxies whose `X-Forwarded-For` names a connection's source.
+    proxies: Vec<IpAddr>,
 }
 
 impl<H: Hub> Clone for Server<H> {
@@ -398,6 +507,14 @@ impl<H: Hub> Server<H> {
     /// A server that answers with `hub` at the time `clock` gives (milliseconds since the Unix
     /// epoch, the clock tokens expire by).
     pub fn new(hub: Arc<H>, clock: Clock, bounds: Bounds) -> Self {
+        Self::trusting(hub, clock, bounds, Vec::new())
+    }
+
+    /// [`Server::new`] behind the proxies at the addresses `proxies`: a connection from one of
+    /// them comes from the address its `X-Forwarded-For` names (`login::source_behind`), and one
+    /// from any other address comes from that address whatever it says. What the source is for is
+    /// the allowance of the connections that present no token.
+    pub fn trusting(hub: Arc<H>, clock: Clock, bounds: Bounds, proxies: Vec<IpAddr>) -> Self {
         let capacity = bounds.max_connections.clamp(1, Bounds::MOST_CONNECTIONS);
         Self {
             shared: Arc::new(Shared {
@@ -408,6 +525,7 @@ impl<H: Hub> Server<H> {
                 permits: Arc::new(Semaphore::new(capacity)),
                 capacity: u32::try_from(capacity).unwrap_or(u32::MAX),
                 tally: Tally::default(),
+                proxies,
             }),
         }
     }
@@ -444,8 +562,8 @@ impl<H: Hub> Server<H> {
                 () = shared.stop.wait() => return,
                 accepted = listener.accept() => accepted,
             };
-            let stream = match accepted {
-                Ok((stream, _peer)) => stream,
+            let (stream, peer) = match accepted {
+                Ok(accepted) => accepted,
                 Err(_) => {
                     shared.tally.accept_failures.fetch_add(1, Ordering::Relaxed);
                     tokio::time::sleep(ACCEPT_PAUSE).await;
@@ -464,10 +582,10 @@ impl<H: Hub> Server<H> {
             match &acceptor {
                 None => {
                     let opening = std::future::ready(Ok::<_, std::io::Error>(stream));
-                    tokio::spawn(server.connection(opening, permit));
+                    tokio::spawn(server.connection(opening, peer, permit));
                 }
                 Some(acceptor) => {
-                    tokio::spawn(server.connection(acceptor.accept(stream), permit));
+                    tokio::spawn(server.connection(acceptor.accept(stream), peer, permit));
                 }
             }
         }
@@ -485,8 +603,12 @@ impl<H: Hub> Server<H> {
 
     /// One connection: its TLS handshake and its upgrade within the bound, then its exchange. The
     /// permit is the connection's place under the bound, given back when it closes.
-    async fn connection<S, Opening>(self, opening: Opening, _permit: OwnedSemaphorePermit)
-    where
+    async fn connection<S, Opening>(
+        self,
+        opening: Opening,
+        peer: SocketAddr,
+        _permit: OwnedSemaphorePermit,
+    ) where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
         Opening: Future<Output = std::io::Result<S>> + Send + 'static,
     {
@@ -498,6 +620,8 @@ impl<H: Hub> Server<H> {
                 shared.hub.as_ref(),
                 &shared.clock,
                 shared.bounds.max_message,
+                Some(peer),
+                &shared.proxies,
             )
             .await
             .ok()
@@ -508,15 +632,26 @@ impl<H: Hub> Server<H> {
             }
             () = shared.stop.wait() => None,
         };
-        let Some((ws, token)) = upgraded else {
+        let Some((ws, caller)) = upgraded else {
             shared.tally.unopened.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        let watch = Watch {
-            idle: Some(shared.bounds.idle),
-            stop: Some(&shared.stop),
-            tally: Some(&shared.tally),
+        let bounds = &shared.bounds;
+        let watch = if caller.anonymous {
+            Watch {
+                idle: Some(bounds.idle.min(bounds.anonymous_idle)),
+                requests: Some(bounds.anonymous_requests),
+                stop: Some(&shared.stop),
+                tally: Some(&shared.tally),
+            }
+        } else {
+            Watch {
+                idle: Some(bounds.idle),
+                requests: None,
+                stop: Some(&shared.stop),
+                tally: Some(&shared.tally),
+            }
         };
-        exchange(ws, &token, &shared.hub, &shared.clock, watch).await;
+        exchange(ws, &caller, &shared.hub, &shared.clock, watch).await;
     }
 }

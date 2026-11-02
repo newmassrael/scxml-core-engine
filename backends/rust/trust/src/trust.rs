@@ -524,6 +524,44 @@ impl Trust {
             .map(|(node, identity)| (*node, identity.public()))
     }
 
+    /// The name of the list this host holds.
+    pub fn list(&self) -> String {
+        self.state().calendar.clone()
+    }
+
+    /// This host's person's signature of a login at the relay named `audience`, against the relay's
+    /// `nonce` that expires at `expires_at_ms` (`crate::login`), and the node it is for; `None` when
+    /// the host has no person. The audience is the one the device was configured with, never the
+    /// one a challenge said.
+    pub fn sign_login(
+        &self,
+        audience: &str,
+        nonce: &[u8],
+        expires_at_ms: u64,
+    ) -> Option<(u64, [u8; 64])> {
+        let state = self.state();
+        let (node, identity) = state.own.as_ref()?;
+        let bytes =
+            crate::login::signing_bytes(audience, &state.calendar, *node, nonce, expires_at_ms);
+        Some((*node, identity.sign(&bytes)))
+    }
+
+    /// The entry of the log that made the latest grant of `node`, when the host holds one: what a
+    /// device brings to a relay it logs in at, which may not have been given it yet.
+    pub fn latest_grant(&self, node: u64) -> Option<Entry> {
+        let state = self.state();
+        let index = state
+            .log
+            .latest()
+            .find(|(held, _)| *held == node)
+            .map(|(_, era)| era.index)?;
+        state
+            .log
+            .entries()
+            .get(usize::try_from(index).ok()?)
+            .cloned()
+    }
+
     /// The number of the last operation this host has admitted from the device of `node`, 0 when
     /// it has none. What an administrator reads to say where a removed device's chain ends
     /// (`Body::Grant::final_seq`): from this host, and from the checkpoints of the others.

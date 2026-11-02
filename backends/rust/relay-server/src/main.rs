@@ -36,7 +36,7 @@ use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use sce_rust_relay::serve::Server;
 use sce_rust_relay::tls::{self, Roots, ServerConfig};
-use sce_rust_relay::{Authority, FileStore, Shards};
+use sce_rust_relay::{Authority, Doorway, FileStore, Shards};
 use sce_rust_relay_server::config::{self, Config, Settings, TlsFiles};
 use sce_rust_relay_server::exit;
 use sce_rust_relay_server::logline::Log;
@@ -257,6 +257,17 @@ fn prepare(args: &ServeArgs) -> Result<Prepared, Refusal> {
         };
         Refusal::new(status, error.message)
     })?;
+    // A relay that offers login draws the key of its challenges once, at start: a relay started
+    // again voids every challenge it gave.
+    let hub = match config.login {
+        None => hub,
+        Some(policy) => hub.with_login(Doorway::new(policy).map_err(|why| {
+            Refusal::new(
+                exit::SOFTWARE,
+                format!("the operating system gave no random bytes: {why}"),
+            )
+        })?),
+    };
     Ok(Prepared {
         config,
         authority,
@@ -369,6 +380,7 @@ fn check(log: &Log, args: &ServeArgs) -> u8 {
                     ("slots", &prepared.config.slots),
                     ("audience", &prepared.authority.audience()),
                     ("tls", &prepared.tls.is_some()),
+                    ("login", &prepared.config.login.is_some()),
                 ],
             );
             exit::OK
@@ -453,7 +465,12 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
     }
 
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(now_ms);
-    let server = Server::new(Arc::new(hub), clock, config.bounds);
+    let server = Server::trusting(
+        Arc::new(hub),
+        clock,
+        config.bounds,
+        config.trusted_proxies.clone(),
+    );
     let mut listening = Vec::new();
     for (listener, secure) in listeners {
         let address = listener
@@ -476,6 +493,8 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
             ("audience", &authority.audience()),
             ("slots", &config.slots),
             ("max_connections", &config.bounds.max_connections),
+            ("login", &config.login.is_some()),
+            ("trusted_proxies", &config.trusted_proxies.len()),
         ],
     );
     if let Err(why) = notify("READY=1\nSTATUS=answering") {

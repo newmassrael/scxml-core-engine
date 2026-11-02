@@ -16,21 +16,64 @@
 //! and moving a slot is moving its store.
 
 use std::io;
-use std::sync::Mutex;
+use std::net::IpAddr;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::limits::Limits;
+use crate::login::{self, Asked, Doorway, Opened};
 use crate::protocol::{Code, Request, Response};
 use crate::relay::{token_reason, Relay};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
 
-/// What a transport asks of a relay: to know a token, and to answer a request made with one.
+/// What a transport asks of a relay: to know a token, to answer a request made with one, and, when
+/// the relay offers login (ADR 0080), to answer a connection that presents none it takes.
 pub trait Hub: Send + Sync + 'static {
     /// Whether `token` is one this hub issued and has not expired at `now_ms`, and for whom.
     fn authenticate(&self, token: &str, now_ms: u64) -> Result<Session, TokenError>;
 
     /// The response text to the request text `request`, made with `token` at `now_ms`.
     fn handle(&self, token: &str, request: &str, now_ms: u64) -> String;
+
+    /// Whether a connection that presents no token this hub takes (none, or one it issued that
+    /// expired) is taken from `source` at `now_ms`. A hub that offers no login takes none, which is
+    /// what a hub that does not override this does.
+    fn open_anonymous(&self, source: Option<IpAddr>, now_ms: u64) -> Opened {
+        let _ = (source, now_ms);
+        Opened::NotOffered
+    }
+
+    /// The response text to the request text `request`, made at `now_ms` on a connection from
+    /// `source` that presents no token this hub takes: a challenge and a login when it offers
+    /// login, and a refusal of everything else.
+    fn handle_anonymous(&self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        let _ = (source, now_ms);
+        login::not_offered(request).to_json()
+    }
+
+    /// The response text to the request text `request`, made at `now_ms` on a connection from
+    /// `source` that presented `token`, or none: what a transport calls for each request. A request
+    /// to log in (`login::is_anonymous`) is answered as on a connection with no token whatever it
+    /// presented, so that a device whose token expired on a connection that stays open logs in on
+    /// it; every other request is made with the token, and one with none is refused.
+    fn answer(
+        &self,
+        token: Option<&str>,
+        source: Option<IpAddr>,
+        request: &str,
+        now_ms: u64,
+    ) -> String {
+        match token {
+            Some(token) if !login::is_anonymous(request) => self.handle(token, request, now_ms),
+            _ => self.handle_anonymous(source, request, now_ms),
+        }
+    }
+}
+
+/// The value a lock holds, whether or not a thread panicked holding it: what a relay holds is
+/// checked as it is taken, and is never half-written by one.
+fn held<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl<S: Store + Send + 'static> Hub for Mutex<Relay<S>> {
@@ -44,6 +87,14 @@ impl<S: Store + Send + 'static> Hub for Mutex<Relay<S>> {
         self.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .handle(token, request, now_ms)
+    }
+
+    fn open_anonymous(&self, source: Option<IpAddr>, now_ms: u64) -> Opened {
+        held(self).open_anonymous(source, now_ms)
+    }
+
+    fn handle_anonymous(&self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        held(self).anonymous(source, request, now_ms)
     }
 }
 
@@ -63,6 +114,9 @@ pub struct Shards<S: Store> {
     authority: Authority,
     max_request_bytes: usize,
     slots: Vec<Mutex<Relay<S>>>,
+    /// What answers a connection with no token, one for every slot, when the relay offers login: a
+    /// source's allowance and the nonces used are the relay's, not a slot's.
+    doorway: Option<Mutex<Doorway>>,
 }
 
 impl<S: Store + Send + 'static> Shards<S> {
@@ -92,12 +146,24 @@ impl<S: Store + Send + 'static> Shards<S> {
             max_request_bytes: limits.max_request_bytes,
             authority,
             slots,
+            doorway: None,
         })
+    }
+
+    /// This relay offers login through `doorway` ([`Relay::with_login`]), one for all its slots.
+    pub fn with_login(mut self, doorway: Doorway) -> Self {
+        self.doorway = Some(Mutex::new(doorway));
+        self
     }
 
     /// How many slots the relay has.
     pub fn count(&self) -> usize {
         self.slots.len()
+    }
+
+    /// The slot that holds `list`.
+    fn slot(&self, list: &str) -> &Mutex<Relay<S>> {
+        &self.slots[slot_of(list, self.slots.len())]
     }
 }
 
@@ -131,6 +197,40 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .call(&session, request, now_ms)
             .to_json()
+    }
+
+    fn open_anonymous(&self, source: Option<IpAddr>, now_ms: u64) -> Opened {
+        match &self.doorway {
+            None => Opened::NotOffered,
+            Some(doorway) => held(doorway).open(source, now_ms),
+        }
+    }
+
+    /// The doorway and the list's slot are each locked for their part alone: the doorway to judge
+    /// the request and to redeem a login, the slot to read its log, so that a login waits for no
+    /// other list and no other login waits on a list.
+    fn handle_anonymous(&self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        let Some(doorway) = &self.doorway else {
+            return login::not_offered(request).to_json();
+        };
+        let asked = held(doorway).ask(source, request, self.max_request_bytes, now_ms);
+        let response = match asked {
+            Err(refused) => refused,
+            Ok(Asked::Challenge { list, node }) => {
+                let holds = held(self.slot(&list)).holds(&list);
+                held(doorway).challenge(&list, node, holds, self.authority.audience(), now_ms)
+            }
+            Ok(Asked::Login(checked)) => {
+                let audience = self.authority.audience();
+                let admitted = held(self.slot(&checked.login().list))
+                    .admit_login(checked.login(), |key| checked.signed_by(key, audience));
+                match admitted {
+                    Err(refused) => refused,
+                    Ok(()) => held(doorway).redeem(&checked, &self.authority, now_ms),
+                }
+            }
+        };
+        response.to_json()
     }
 }
 

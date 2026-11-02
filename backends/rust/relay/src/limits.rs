@@ -79,22 +79,89 @@ impl Allowances {
         let capacity = u64::from(limits.burst) * 1000;
         let wanted = u64::from(cost.max(1)).min(u64::from(limits.burst).max(1)) * 1000;
         let refill = u64::from(limits.refill_per_second);
-        let (held, at) = self
+        let bucket = self
             .spent
             .entry((list.to_string(), node))
             .or_insert((capacity, now_ms));
-        // A clock that goes back adds nothing, and never takes away.
-        let gained = now_ms.saturating_sub(*at).saturating_mul(refill);
-        *held = held.saturating_add(gained).min(capacity);
-        *at = (*at).max(now_ms);
-        if *held >= wanted {
-            *held -= wanted;
-            Ok(())
-        } else if refill == 0 {
-            Err(u64::MAX)
-        } else {
-            Err((wanted - *held).div_ceil(refill))
+        spend(bucket, capacity, wanted, refill, now_ms)
+    }
+}
+
+/// Spend `wanted` units of the token bucket `bucket` (what it holds, and the time in ms it was
+/// counted at) at `now_ms`, after it gained `refill` units for each millisecond since, up to
+/// `capacity`. `Err` is how long, in milliseconds, until it holds `wanted` again. Every allowance of
+/// a relay is one of these: a device's, and each table of [`Windows`].
+fn spend(
+    bucket: &mut (u64, u64),
+    capacity: u64,
+    wanted: u64,
+    refill: u64,
+    now_ms: u64,
+) -> Result<(), u64> {
+    let (held, at) = bucket;
+    // A clock that goes back adds nothing, and never takes away.
+    let gained = now_ms.saturating_sub(*at).saturating_mul(refill);
+    *held = held.saturating_add(gained).min(capacity);
+    *at = (*at).max(now_ms);
+    if *held >= wanted {
+        *held -= wanted;
+        Ok(())
+    } else if refill == 0 {
+        Err(u64::MAX)
+    } else {
+        Err((wanted - *held).div_ceil(refill))
+    }
+}
+
+/// So many of a thing for each key in each window of time, as a token bucket for each key that a
+/// window fills again: what a relay keeps per source and per node for those that log in (ADR 0080
+/// section 5). A key whose bucket is full is the same as a key never seen, so a key is forgotten once
+/// a window has passed since it last spent, and the table holds at most `most` keys: past it, a key
+/// it does not hold waits for the next sweep, so that a flood of keys costs a bounded table.
+pub(crate) struct Windows<K> {
+    spent: BTreeMap<K, (u64, u64)>,
+    swept_at: u64,
+    most: usize,
+}
+
+impl<K: Ord> Windows<K> {
+    pub(crate) fn new(most: usize) -> Self {
+        Self {
+            spent: BTreeMap::new(),
+            swept_at: 0,
+            most,
         }
+    }
+
+    /// Spend one of the `per_window` of `key` in each `window_ms` at `now_ms`. `Err` is how long, in
+    /// milliseconds, until it may. A request is `window_ms` units, and a bucket gains `per_window` of
+    /// them each millisecond, so that it is full again a window after it was spent.
+    pub(crate) fn take(
+        &mut self,
+        key: K,
+        per_window: u32,
+        window_ms: u64,
+        now_ms: u64,
+    ) -> Result<(), u64> {
+        let window_ms = window_ms.max(1);
+        let refill = u64::from(per_window.max(1));
+        let capacity = refill.saturating_mul(window_ms);
+        if now_ms.saturating_sub(self.swept_at) >= window_ms {
+            self.spent
+                .retain(|_, (_, at)| now_ms.saturating_sub(*at) < window_ms);
+            self.swept_at = now_ms;
+        }
+        if !self.spent.contains_key(&key) && self.spent.len() >= self.most {
+            return Err(window_ms.saturating_sub(now_ms.saturating_sub(self.swept_at)));
+        }
+        let bucket = self.spent.entry(key).or_insert((capacity, now_ms));
+        spend(bucket, capacity, window_ms, refill, now_ms)
+    }
+
+    /// How many keys the table holds.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.spent.len()
     }
 }
 
@@ -179,5 +246,43 @@ mod tests {
         };
         assert!(allowances.take("home", 1, 1, 0, &limits).is_ok());
         assert_eq!(allowances.take("home", 1, 1, 10, &limits), Err(u64::MAX));
+    }
+
+    #[test]
+    fn a_window_gives_so_many_to_each_key_and_fills_again_as_it_passes() {
+        let mut windows = Windows::new(16);
+        for _ in 0..3 {
+            assert_eq!(windows.take("a", 3, 60_000, 0), Ok(()));
+        }
+        // Three a minute: the next one a third of a minute after the first.
+        assert_eq!(windows.take("a", 3, 60_000, 0), Err(20_000));
+        assert_eq!(windows.take("a", 3, 60_000, 19_999), Err(1));
+        assert_eq!(windows.take("a", 3, 60_000, 20_000), Ok(()));
+        assert_eq!(windows.take("b", 3, 60_000, 20_000), Ok(()), "another key");
+        // A window after it last spent, a key is as full as one never seen, and is forgotten.
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows.take("c", 3, 60_000, 80_000), Ok(()));
+        assert_eq!(windows.len(), 1, "a and b were forgotten");
+        for _ in 0..2 {
+            assert_eq!(windows.take("c", 3, 60_000, 80_000), Ok(()));
+        }
+        assert!(windows.take("c", 3, 60_000, 80_000).is_err());
+    }
+
+    #[test]
+    fn a_window_holds_at_most_so_many_keys_and_a_new_one_waits_for_the_sweep() {
+        let mut windows = Windows::new(2);
+        assert!(windows.take(1, 5, 1_000, 0).is_ok());
+        assert!(windows.take(2, 5, 1_000, 0).is_ok());
+        assert_eq!(
+            windows.take(3, 5, 1_000, 400),
+            Err(600),
+            "the table is full"
+        );
+        assert!(windows.take(1, 5, 1_000, 400).is_ok(), "a key it holds");
+        assert!(
+            windows.take(3, 5, 1_000, 1_400).is_ok(),
+            "the sweep made room"
+        );
     }
 }
