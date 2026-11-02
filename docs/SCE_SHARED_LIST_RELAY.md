@@ -65,6 +65,27 @@ base64 with the URL alphabet and no padding, joined by a full stop. For the secr
 `AAAADXJlbGF5LmV4YW1wbGUAAAAEaG9tZQAAAAE3AAAADTE4MDAwMDAwMDAwMDA.z-lS-hdIHQ8_6aqSt6shwplWq3VOPIcCCbj0bLifhwo`
 (`a_token_is_the_bytes_the_documentation_gives`).
 
+**A member logs in, and the relay issues its token (ADR 0080).** A relay that offers login
+(`Relay::with_login`, `Shards::with_login`, `[login]` of `sce-relay`, on by default there) takes a
+connection that presents no token, or one it issued that expired: an anonymous connection. On it a
+device asks `challenge` for its list and node and gets the relay's audience, a nonce (16 bytes the
+relay draws and a 16-byte HMAC-SHA256 tag under a key the process holds, over the list, the node, the
+expiry and the 16 bytes, so the relay keeps nothing per challenge and a nonce made for one node or
+list is no use for another) and the expiry, the relay's clock and 60 s. The device signs, with its
+node's key, the parts `sce-relay/login/1`, the audience **it was configured with**, the list, the
+node in decimal, the nonce in the URL alphabet and the expiry in decimal, each its length as eight
+bytes big-endian and then its UTF-8 (`sce_rust_trust::login::signing_bytes`), and sends `login`. The
+relay checks the tag, the expiry, that the nonce was not used (used nonces are kept until they
+expire, in memory), appends the entries the login brought (the device brings the entry of its node's
+latest grant, which a relay that was not given it takes), finds the latest grant of the node in the
+log at its head (a role of at least 1, and a key), checks the signature under that key for its own
+audience, and answers an ordinary token of its authority for an hour (`[login] token_seconds`). A
+refusal says which check failed: `unauthorized` (the nonce, its expiry, its use, the signature),
+`forbidden` (no role), `behind` (the relay lacks the log the login stands on, or holds no log of the
+list: a login creates no list), `rate_limited` (section 4). The domain is no other signature's, so a
+login signature is no operation, entry, checkpoint or link, and the audience binds it to one relay.
+The device's side is `LoginMachine`, an exchange as a round is, run by the one driver.
+
 ## 3. Requests
 
 A request and its response are JSON texts with a version, every 64-bit number written as text. A
@@ -80,6 +101,13 @@ in process, a host's own through the peer core's C ABI, or the deployment transp
 | `feed cursor limit` | the records after the first `cursor`, in arrival order, bounded by the relay |
 | `operations node from to` | a range of one device's chain |
 | `heads` | the head of each chain the relay holds in full, the log's length and the number of records |
+| `challenge list node` | a challenge to log in against (section 2): the relay's audience, a nonce, its expiry, whether the relay holds the list; asked on any connection |
+| `login list node nonce expires_at_ms signature entries?` | the token of the device of `node`, when its login holds (section 2); asked on any connection |
+
+On a connection that presents no token the relay takes, `challenge` and `login` are answered and
+every other request is refused `unauthorized`; `create` and `join` (ADR 0080 sections 3 and 4) are
+refused `invalid` with a reason that names them, as by a relay that does not offer them, and a relay
+that offers no login refuses `challenge` and `login` `invalid` the same way.
 
 A refusal says why: `unauthorized`, `forbidden`, `rate_limited` (with when to ask again),
 `too_large`, `invalid`, `behind` (it names an entry of the log the relay has not been given yet: send
@@ -92,6 +120,15 @@ Each device of each list has an allowance that refills with time (a token bucket
 milli-requests, with the clock passed in by the caller); a write costs more than a read; a request,
 a feed and a range are bounded; a list holds at most a set number of records, and a relay at most a
 set number of lists. The defaults suit a household list and an operator sets their own (`Limits`).
+
+A connection with no token is held to its own bounds (ADR 0080 section 5, `LoginPolicy` and the
+server's `Bounds`): per source (an IPv4 address, an IPv6 /64, and one source for a transport that
+names no address) so many anonymous connections, challenges and logins a minute (30 each by default),
+per node of a list so many logins an hour (60), charged only once the signature held, so that a
+stranger spends no member's allowance; a few requests (8) and a short idle time (30 s) on one
+connection. Each table forgets a key a window after it last spent, and holds a bounded number of
+keys. A source behind a proxy is the address its `X-Forwarded-For` names, only on a connection from
+a proxy the server is told to trust (`Server::trusting`).
 
 ## 5. Storage
 
@@ -251,10 +288,11 @@ Not built, and not claimed:
   the library or the ones a deployment names (section 9), not the device's store: an authority a user
   or an enterprise installed on the device is not believed, and a root the system distrusts after the
   library was built is distrusted only by a new build of it.
-- **Login.** Who a person is, and when to issue them a token, is the application's (section 2). A
-  token the relay issues itself against a device's proof that it holds its node's key is not built,
-  nor an administrator's signed admission of a node that is not a member yet; an application with no
-  sign-in service of its own needs one of them (`docs/SCE_RELAY_DEPLOY.md` section 12).
+- **Admission of a device that is not a member yet.** A member logs in and the relay issues its
+  token (section 2, ADR 0080 steps 1 and 2). An administrator's signed invitation under which a
+  device that is not in the log leaves its key package, and the creation of a list by a device with no
+  token of the authority, are not built (ADR 0080 steps 3 and 4): today a list is created with a
+  token of the authority, and a device being invited leaves its key package with one.
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
 
@@ -273,6 +311,7 @@ does. A transport knows nothing of what the texts mean; the peer core, which doe
 | `exchange(request, deadline, cancel)` | carries one request text and returns the relay's response text, or a `TransportError` |
 | `take_notices()` | what became of the connection and what the relay pushed since last asked (`Notice::Connected`, `Lost(why)`, `Pushed(text)`), oldest first, never blocking, at most `NOTICES_KEPT` (`Notices` keeps them) |
 | `network()` | the `Signal` the host raises when the device's network changed |
+| `set_token(token)` | the token presented from the next connection on, the empty one for none (a login's, section 2); whether the transport carries one at all (a host's own transport, whose credentials are its host's, says no, the default) |
 
 The contract, which every binding keeps:
 
@@ -297,7 +336,10 @@ The contract, which every binding keeps:
   gives a token that expires on a connection that stays open, so that a host renews its token on one
   sign; `Deadline` and `Cancelled` say which stop came first.
 - **The token is the transport's.** The token of section 2 is carried as the medium carries
-  credentials: the WebSocket binding sends it as `Authorization: Bearer` at the upgrade.
+  credentials: the WebSocket binding sends it as `Authorization: Bearer` at the upgrade, and sends no
+  header for the empty token, which is the anonymous connection a device logs in on. A transport
+  given another token (`set_token`) gives up the connection made with the one before. The core holds
+  no token: a host that logs in gives the token the login's outcome holds to its transport.
 - **The network is the host's word.** Any thread raises `network()` at any time; a transport gives
   its connection up and connects again on its next exchange, and an exchange that waits when it is
   raised fails as the link's failure rather than wait on a path that may be gone.

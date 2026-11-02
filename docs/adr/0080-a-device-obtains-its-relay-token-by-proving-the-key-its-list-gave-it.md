@@ -227,6 +227,50 @@ may turn proof-of-possession login off (`[login] enabled = false`), and leaves c
 4. Lapse in the store, then `[creation] policy = "open"` with self-certifying names and proof of work.
 5. The runbook, and a probe that logs in.
 
+## Status of the plan
+
+**Steps 1 and 2 landed (2026-11-02).** What was built, and where the build chose what the decision
+left open:
+
+- **The relay** (`sce_rust_relay::login`, the `Doorway`; `Relay::with_login`, `Shards::with_login`).
+  A relay offers login once it is given a doorway; the library's relay offers none until then, and
+  `sce-relay` gives it one unless `[login] enabled = false`. The challenge's 16 bytes are HMAC-SHA256
+  under the process's key of a counter, so a relay draws once at start and a test or a recording
+  fixes the key (`Doorway::with_key`); the tag is HMAC-SHA256 under the same key over the list, the
+  node, `T` and those bytes, under domains of their own. Used nonces are kept until `T` to a bound
+  (100 000), past which a login waits for the oldest to expire. Entries brought with a login that the
+  relay holds a position for are passed over, the rest appended as `append` appends them, and none
+  makes a list the relay holds no log of (`behind`). A source is an IPv4 address or an IPv6 /64, and
+  one source for a transport that names no address; its defaults are 30 anonymous connections, 30
+  challenges and 30 logins a minute; a node's are 60 logins an hour, charged once the signature held,
+  so that a stranger spends no member's allowance. An anonymous connection makes at most 8 requests
+  and waits at most 30 s. `create` and `join` are answered `invalid`, with a reason that names them,
+  until steps 3 and 4.
+- **The signature's bytes** (`sce_rust_trust::login`): each part in the trust layer's framing, the
+  node and `T` in decimal and the nonce as its text in the URL alphabet, as the trust layer writes
+  every byte string it frames. The domain `sce-relay/login/1` is the trust crate's, beside every
+  other domain it signs under.
+- **The connection.** An upgrade with no `Authorization`, or with a token the relay issued that
+  expired, is anonymous; a token the relay did not issue is refused (401), and a source past its
+  allowance too (429, with `Retry-After`). A request to log in is answered on any connection
+  (`Hub::answer`), so a device whose token expired on a connection that stays open logs in on it.
+  `X-Forwarded-For` names the source only on a connection from an address of `[listen]
+  trusted_proxies`, read from the right past the trusted proxies.
+- **The core and the ABI.** `Peer::login(audience)` is an exchange as a round is (a `LoginMachine`
+  of the relay's client), and brings the entry of its node's latest grant. The audience is an argument
+  of `sce_peer_login(peer, audience)`, where section 7's table wrote `sce_peer_login(peer)`: the core
+  is a list's, not a relay's, and the name a device was configured with is its host's to give. A login
+  never creates a list yet (step 4). The core holds no token and does not log in again by itself: a
+  round the relay refuses `unauthorized` ends as before, and the host gives the link no token, logs
+  in over it and gives it the new token (`sce_peer_link_set_token`), since the token is the
+  transport's (ADR 0079 section 5) and a token the relay did not issue (its key changed) is refused at
+  the upgrade still. The ABI is version 5.
+- **The recorded scenario.** Bob's device logs in and is never handed a token, and once taken off is
+  refused one (`forbidden`); alice's device, which gives the relay the list's first entries, presents
+  a token of the authority, as a relay whose creation is `closed` takes it.
+- **Not built in these steps:** a probe that logs in (step 5), invitations and the join (step 3),
+  lapse and open creation (step 4).
+
 ## The owner's answers (2026-11-02)
 
 The owner accepted the proposals: a relay that names no policy is `closed`; administrators invite; tokens live an

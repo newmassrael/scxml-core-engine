@@ -107,7 +107,8 @@ unit hands it to the relay as a credential (`LoadCredential=`), so the relay's o
 
 **Changing the key** (it leaked, or on a schedule): make a new one with `keygen` to a new file, move it
 over the old, give it to the issuer, and restart the relay. Every token of the old key is refused from
-then on, and each device asks the issuer for a new one on the refusal, as it does when one expires.
+then on, and each device logs in again (section 6) or asks the issuer for a new one on the refusal, as
+it does when one expires.
 
 ## 4. TLS
 
@@ -180,8 +181,49 @@ other user's files, a system-call filter, and `MemoryMax=640M` for a server of 1
 ## 6. Tokens: who issues a device's token
 
 A device presents a token naming one list and its node in that list (`docs/SCE_SHARED_LIST_RELAY.md`
-section 2). **Whoever holds the authority's key issues tokens the relay takes.** In a deployment that
-is the application's sign-in service: it authenticates the person by its own means (an identity
+section 2). Two ways issue one, and a deployment may use both.
+
+**The relay issues a member's token itself (ADR 0080), by default.** A device that is a member of a
+list logs in on a connection with no token: it signs the relay's challenge with the key the list's
+membership log gave its node, and the relay, which holds the log, checks the signature and issues a
+token of its authority for `[login] token_seconds` (an hour). No service and no operator is in the
+loop, and the relay learns no account. A device whose token expired logs in again the same way. The
+relay draws the key of its challenges at start, so a restart voids every challenge it gave, and
+none of it is kept on disk.
+
+```toml
+[listen]
+# Behind a proxy that terminates TLS: the proxy's address, whose X-Forwarded-For names a connection's
+# source. A header from any other address is not believed.
+trusted_proxies = ["127.0.0.1"]
+
+[connections]
+anonymous_requests = 8          # what a connection with no token may ask before it is closed
+anonymous_idle_seconds = 30
+
+[login]
+enabled = true                  # false: every device presents a token of the authority
+token_seconds = 3600
+connections_per_minute = 30     # per source: an IPv4 address, or an IPv6 /64
+challenges_per_minute = 30
+logins_per_minute = 30
+logins_per_node_per_hour = 60
+```
+
+A source that opens more connections with no token than it may is refused at the upgrade (HTTP 429,
+with `Retry-After`), and one that asks more challenges or logins is answered `rate_limited`. Behind a
+proxy that terminates TLS, name the proxy in `trusted_proxies`, or every device is one source, the
+proxy's. What logs in, from where and when, is learned by the relay as it learns it of every
+connection; it logs counts, never a key, a token or a nonce. A member taken off is issued no new
+token; one it holds still connects until it expires, and every request is judged by the log.
+
+What the relay does not do yet (ADR 0080 steps 3 and 4): admit a device that is not a member (a
+device being invited leaves its key package with a token of the authority), and create a list for a
+device with no token of the authority. Creation is `closed`: a list is created with a token of the
+authority, as below.
+
+**Whoever holds the authority's key issues tokens the relay takes.** In a deployment with a sign-in
+service of its own, that is the service: it authenticates the person by its own means (an identity
 provider, a password, a passkey), decides which device of which list the request is for (the node the
 list's membership log gave that device), and issues a token good for a short time (an hour). The device
 presents it; when the relay answers `unauthorized` (the token expired, or the key changed) the device
@@ -204,8 +246,10 @@ knows a device by its node in one list.
   what the log lets its node read and spend that node's allowance; what is kept is decided by the
   members' signatures and the log, which no token changes.
 
-An application with no service of its own cannot issue tokens without an operator. Section 12 records
-the open decision.
+An application with no service of its own has its members' devices log in (above): a token of the
+authority is then needed only for the list's first entries and a device being invited, until ADR
+0080's steps 3 and 4. A deployment whose service issues every token may turn login off (`[login]
+enabled = false`).
 
 ## 7. Firewall
 
@@ -328,22 +372,19 @@ probe has lost its store. A token for any other list is used only to read that l
 | 2 | none | the command line: no token and no key, both, no time, or an address that is not `ws://` or `wss://` |
 
 A probe's write spends its node's allowance like a device's (a write and a read each run); a probe every
-minute is far inside the defaults. The probe list is one of the relay's lists (`max_lists`).
+minute is far inside the defaults. The probe list is one of the relay's lists (`max_lists`). A probe
+presents a token and does not log in (a probe that logs in is ADR 0080's step 5, not built).
 
 The relay does not use systemd's watchdog: the answer of a request is the liveness worth checking, and a
 ping from a thread of the process says nothing of it.
 
 ## 12. Open decisions for the owner
 
-- **Tokens for an application with no service of its own.** Section 6 needs a service that holds the
-  key. Without one, the textbook way is that the relay issues a member's token itself against a proof
-  of possession: the device signs a fresh challenge with the key the list's log gave its node, and the
-  relay checks the signature against the log it holds. It needs no person and no account, and it
-  covers only members. Creating a list and a joining device's key package (both before the device is
-  in the log) would need an admission rule as well: an administrator's signed admission of a node the
-  relay checks against the log, or creation open to anyone up to `max_lists`. That is an addition to
-  the protocol, the peer core and its C ABI, and a policy, and is not built. ADR 0080 (Proposed)
-  sets out the design for the owner to accept or amend.
+- **Tokens for an application with no service of its own** (decided: ADR 0080, accepted
+  2026-11-02). A member's device logs in and the relay issues its token (section 6), built
+  2026-11-02. An administrator's signed invitation under which a device not yet in the log leaves its
+  key package, and a list's creation under `[creation] policy` (`closed` by default, `open` with proof
+  of work and lapse), are the ADR's steps 3 and 4, not built yet.
 - **A private authority on a phone** waits on the ABI call that names one (section 4, option 2).
 - **Reloading a renewed certificate** without a restart is not built: a restart takes seconds and the
   devices dial again.

@@ -29,7 +29,12 @@ reviewer learns one set of rules:
   a new number; the outcome holds `taken` and `dropped` (section 5), the standing `waiting`
   (section 8), and the sealed state is the core's version 4, which holds what waits (section 6).
   The link that believes a deployment's own authority (`sce_peer_link_wss_believing`,
-  `SCE_PEER_ROOTS_*`, section 11) is a function added alone, and moves no number;
+  `SCE_PEER_ROOTS_*`, section 11) is a function added alone, and moves no number. The version is 5
+  (ADR 0080): a device logs in (`sce_peer_login`, section 5) and gives its link the token
+  (`sce_peer_link_set_token`, section 11), two functions added alone; but a link made with a null or
+  empty token now dials a connection that presents none, where version 4 presented the empty text
+  as a token the relay refused, a changed meaning of an input, and the outcome of a login holds
+  `token`, which the policy above makes a new number;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -87,7 +92,7 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_NULL_ARGUMENT` | 20 | a pointer, a handle or a place for the result is null |
 | `SCE_PEER_ERR_BAD_TEXT` | 21 | a text is not UTF-8 |
 | `SCE_PEER_ERR_PANIC` | 22 | the library panicked; the panic was caught |
-| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role); an address a link cannot be made to |
+| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role); an address a link cannot be made to; a token given to a host's own transport |
 | `SCE_PEER_ERR_CANCELLED` | 24 | `sce_peer_run` stopped because its cancellation was raised; the exchange ended as a failure of the link, and its outcome waits (section 11) |
 | `SCE_PEER_ERR_DEADLINE` | 25 | `sce_peer_run` stopped because its deadline passed, with the same end |
 
@@ -118,6 +123,7 @@ log is written (section 7).
 | `sce_peer_start(peer, kind)` | `Peer::start` | begins a round: `SCE_PEER_ROUND_SYNC`, `_RESYNC` or `_REREAD` |
 | `sce_peer_publish_checkpoint(peer, before, digest)` | `Peer::publish` of a checkpoint | begins the exchange that gives the relay the person's checkpoint up to `before` |
 | `sce_peer_publish_key_package(peer)` | `Peer::publish_key_package` | begins the exchange that leaves a key package of the group's device with the relay |
+| `sce_peer_login(peer, audience)` | `Peer::login` | begins the exchange that logs the device in at the relay named `audience` (the name it was configured with), whose outcome holds the token (section 5); `SCE_PEER_ERR_NO_PERSON` with no person |
 | `sce_peer_poll_request(peer, out)` | `Peer::poll_request` | the next request text for the relay; empty when none waits |
 | `sce_peer_respond(peer, response)` | `Peer::respond` | the relay's response text to that request |
 | `sce_peer_fail(peer, reason)` | `Peer::fail` | the transport did not carry the request or its answer |
@@ -126,12 +132,13 @@ log is written (section 7).
 | `sce_peer_save_sealed(peer, state, key)` | `Peer::save_sealed` | what the device keeps, its secrets with the rest, sealed under a data key drawn for this save; `key` is set to that key (32 bytes) for the host to wrap (section 6) |
 | `sce_peer_save_sealed_under(peer, key, state)` | `Peer::save_sealed_under` | the same, under a 32-byte data key the host gives: one it drew itself, or a recording's fixed key |
 | `sce_peer_restore_sealed(peer, node, state, len, key, count)` | `Peer::restore_sealed` | takes a sealed state back for the device of `node`, under the unwrapped data key, into a core just made for the list and given nothing else |
-| `sce_peer_link_wss(base, token)` | `WssLink::new` | a link to the relay over its WebSocket binding (section 11); null on failure |
+| `sce_peer_link_wss(base, token)` | `WssLink::new` | a link to the relay over its WebSocket binding (section 11), with no token when `token` is null or empty; null on failure |
 | `sce_peer_link_wss_believing(base, token, authorities, len, roots)` | `WssLink::believing` | the same, believing the certificate authorities in the bytes given (PEM or DER), alone or with the public ones (section 11); null on failure |
 | `sce_peer_link_host(exchange, release, context)` | a `Transport` over the host's function | a link whose transport the host carries itself (section 11); null when `exchange` is null |
 | `sce_peer_link_free(link)` | | frees a link, releasing a host's context; null is ignored |
 | `sce_peer_link_network_changed(link)` | the link's `Transport::network` raised | the device's network changed; any thread, at any time |
 | `sce_peer_link_take_notices(link, out)` | `Transport::take_notices` | what became of the connection and what the relay pushed, as one JSON array; empty when nothing |
+| `sce_peer_link_set_token(link, token)` | `Transport::set_token` | the token the link presents from its next dial, null or empty for none (section 11); `SCE_PEER_ERR_BAD_ARGUMENT` for a host's own transport |
 | `sce_peer_reply(reply, text, len)` | | from a host's transport: the response of the exchange, or the reason it has none |
 | `sce_peer_cancel_new()`, `sce_peer_cancel_free(cancel)` | a `Signal` | a cancellation of a run, and freeing it |
 | `sce_peer_cancel_raise(cancel)` | `Signal::raise` | cancels the run given it; any thread, at any time |
@@ -199,6 +206,7 @@ The outcome is a JSON object, read by its members' names:
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
 | `steps` | ended | what the group's device did with what was read, each `{"step": "joined" or "applied", "epoch": text}`, `{"step": "removed"}` or `{"step": "refused", "reason": text}` |
 | `owed` | ended | how many commits and Welcomes of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |
+| `token` | a login that ended | `{"token": text, "expires_at_ms": text}`: the token the relay issued, and when it expires by the relay's clock; the member is not written for any other exchange |
 | `failure` | failed | `"link"` (the transport), `"relay"` (the relay refused the round as a whole) or `"unexpected"` (an answer that is not the answer to the request) |
 | `code` | failed by the relay | the relay protocol's word for the refusal (`"forbidden"`, `"rate_limited"`, ...), and `retry_after_ms` as text when it is a rate limit |
 | `reason` | failed | why |
@@ -208,6 +216,20 @@ taken in by the group's device inside the core and are not in the outcome; what 
 them is in `steps`.
 
 The floor event is the pair `[name, payload text]` the machine is told.
+
+**A login** (`sce_peer_login(peer, audience)`, ADR 0080) is an exchange driven the same way: a
+`challenge` for the device's node, and a `login` signed with the device's person's key for
+`audience`, the relay's name the device was configured with (shipped with the relay's address, or
+carried in an invitation), never the one the relay says. A relay that names itself otherwise is
+signed nothing, and the outcome is a failure, `"unexpected"`. The login brings the entry of the
+node's latest grant the core holds, so that a relay that was not given it takes it. Its outcome is
+`"ended"` with `token` and tells the machine nothing (`events` empty), or a failure in the relay's
+word: `unauthorized` (the nonce, its time or the signature), `forbidden` (the log gives the node no
+role: a device taken off), `behind` (the relay lacks the log the login stands on, or holds no log of
+the list), `rate_limited`. It is carried over a link that presents no token, or one that expired
+(section 11). The core holds no token and logs in only when its host begins a login: a round the
+relay refuses `unauthorized` (an expired token) ends as any refused round does, and the host logs in
+and runs the round again.
 
 ## 6. What the device keeps
 
@@ -397,6 +419,9 @@ refusal's words:
 | `owed` | how many commits and Welcomes the relay is still owed (section 7) |
 | `waiting` | how many sends of the machine wait to be signed (section 4): what a host shows as not sent yet |
 
+The standing says nothing of a token: the core holds none, and the token a login earned is the
+host's, given to its link (section 11).
+
 ## 9. The recorded scenario every lane replays
 
 `backends/rust/peer-capi/tests/fixtures/two_devices_and_a_relay.json` is a run of two devices of one
@@ -411,7 +436,12 @@ sealed state and his core made again given nothing but the list and the genesis 
 with no key given again, a write of his that comes back held and a new one kept waiting until his
 chain is read back, which the round that reads it signs and which then comes back held, a resync, a
 round of alice's whose transport fails, and bob taken off: a write his core signs before it read the
-removal reaches no one, since the relay refuses a device the log took off. A `save` step holds the
+removal reaches no one, since the relay refuses a device the log took off. Bob's device is handed no
+token: it logs in (a `login` step, which names the audience, and its requests, answers and outcome)
+before its first round, and the relay's answers to its rounds are made with the token that login
+earned; once taken off, his device logs in again and is refused (`forbidden`). Alice's device, which
+gives the relay the list's first entries, presents a token of the relay's authority, as a relay
+whose creation of lists is closed takes. A `save` step holds the
 data key and the sealed state, in hex; a `restore` step holds the same and the count, and a lane makes
 the device's core again before it restores.
 
@@ -427,7 +457,8 @@ missing is skipped unless `SCE_REQUIRE_TOOLS` is set, and the Kotlin lane needs
 
 Everything in it is deterministic (Ed25519 signs deterministically; bob's state is sealed with
 `sce_peer_save_sealed_under` under a data key the recording fixes, and its nonce is a keyed hash of
-what it seals; nothing reads a clock or draws a random number), so a run now records the same file, and
+what it seals; the relay's challenges are made under a key the recording fixes; nothing reads a clock
+or draws a random number), so a run now records the same file, and
 `the_recorded_scenario_is_what_a_fresh_run_records` fails, naming the first step that differs, when the
 recording and a fresh run do not agree. It is recorded again with `SCE_PEER_SCENARIO=write cargo test
 -p sce-rust-peer-capi --test the_recorded_scenario_is_what_a_fresh_run_records --
@@ -463,11 +494,16 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
 `docs/SCE_SHARED_LIST_RELAY.md` section 9, and the run is the one driver every transport is run by.
 
 - `sce_peer_link_wss(base, token)` is the relay's WebSocket binding at `base` (`ws://host:port` or
-  `wss://host:port`), presenting `token`, the token the device's login earned. Nothing is dialled
-  until a run asks; the link dials again after anything that did not come to a response and after
-  the network changed. A token the relay refuses at the upgrade comes back as the relay's refusal
-  (`failure: "relay"`, `code: "unauthorized"`), as one that expires on an open connection does: the
-  host asks its application for a new token and makes a new link. Over `wss://` the link runs TLS
+  `wss://host:port`), presenting `token`, the token the device's login earned, or none when `token`
+  is null or empty. Nothing is dialled until a run asks; the link dials again after anything that did
+  not come to a response and after the network changed. A token the relay refuses at the upgrade
+  comes back as the relay's refusal (`failure: "relay"`, `code: "unauthorized"`), as one that expires
+  on an open connection does: the host logs in (`sce_peer_login`) over the same link and gives it the
+  new token, or asks its application's service for one. A relay that offers login takes a link with
+  no token, and one whose token it issued and that expired, as a connection that logs in; a token it
+  did not issue (its key changed) it refuses still, so a host that logs in after a refusal first gives
+  the link no token (`sce_peer_link_set_token(link, NULL)`). Over
+  `wss://` the link runs TLS
   on `ring`'s cryptography, which the library names to rustls itself, so a host installs and
   initialises nothing, on Android as anywhere; and it believes Mozilla's certificate authorities,
   compiled into the library, not the device's trust store. A relay whose certificate none of them
@@ -505,6 +541,15 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
   before the relay answered"`, `"the network changed"`, or the transport's words), and what the
   exchange took in is handed over by the next round, as section 5 says of any exchange that does not
   end.
+- `sce_peer_link_set_token(link, token)` gives the link the token it presents from its next dial
+  (null or empty for none): the one a login's outcome holds. A connection open now that was dialled
+  with another is given up, and the next run dials again (a `lost` notice, then `connected`). It is
+  called when no run uses the link. A host's own transport presents its own credentials and is
+  refused (`SCE_PEER_ERR_BAD_ARGUMENT`). A host's flow is: a link with no token, `sce_peer_login`,
+  `sce_peer_run`, the outcome's `token` to `sce_peer_link_set_token`, then rounds; when a round's
+  outcome is the relay's `unauthorized`, give the link no token and log in again over it, then give
+  it the new token. A host may log in before the token's `expires_at_ms` too (the relay's clock: a
+  host compares it with the time it got the token, not with its own clock's reading of it).
 - `sce_peer_cancel_new()` makes a cancellation, `sce_peer_cancel_raise(cancel)` raises it, and it
   stays raised: a host makes one for each run it may want to stop.
 - `sce_peer_link_network_changed(link)` says the device's network changed (an interface came or
