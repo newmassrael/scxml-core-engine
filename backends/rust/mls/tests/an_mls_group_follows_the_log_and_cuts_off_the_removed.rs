@@ -6,10 +6,12 @@
 // others; that a device the log has no grant for (or has with another key) is not added; that a
 // group whose roster is not the log's is undone; that a Welcome of another group with the same
 // members is not the list's; that a removed device derives the key of no later epoch and opens
-// nothing sealed after its removal; that a device keeps its place across a restart; and that a
-// section has a key of its own.
+// nothing sealed after its removal; that a device keeps its place across a restart; that a section
+// has a key of its own; and that an administrator's change the group or the log refuses writes
+// nothing to the log.
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
+use sce_rust_mls::host::Member;
 use sce_rust_mls::{Applied, Device, MlsError};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
@@ -469,4 +471,56 @@ fn a_section_has_a_key_of_its_own_that_every_member_of_the_epoch_derives() {
         alice.section_key("chores ").unwrap(),
         "the name is the whole name"
     );
+}
+
+/// The administrator's change makes its commit before it writes an entry of the log: a key package
+/// that is not the device's with the key given, or an entry the log refuses (signed by a key that is
+/// no administrator's), leaves the log as it was and the group with no commit waiting, so that the
+/// same change made right afterwards is made whole. A removal the group refuses (a member of the log
+/// that is in no group) writes nothing either.
+#[test]
+fn a_change_the_group_or_the_log_refuses_writes_nothing_to_the_log() {
+    let hosts = Hosts::new(&[1]);
+    hosts.grant(1, 3);
+    let trust = hosts.of(1).clone();
+    let mut alice = device(1);
+    alice.create_group().unwrap();
+    let mut member = Member::new(alice, trust.clone(), 1);
+    let package = device(2).key_package().unwrap();
+    let head = trust.head();
+
+    // Bob's key package, given with carol's key: the group refuses it, and no grant is written.
+    assert!(matches!(
+        member.add_member(&admin(), 2, 2, identity(3).public(), &package),
+        Err(MlsError::NotInLog(_))
+    ));
+    assert_eq!(trust.head(), head);
+    assert_eq!(trust.role(2), 0);
+
+    // His key, and the change signed by a key that is no administrator's: the log refuses the grant,
+    // and the commit made for it is given up.
+    assert!(matches!(
+        member.add_member(&identity(7), 2, 2, identity(2).public(), &package),
+        Err(MlsError::NotInLog(_))
+    ));
+    assert_eq!(trust.head(), head);
+
+    // The change made whole: the grant, then the entry that names the commit.
+    let issued = member
+        .add_member(&admin(), 2, 2, identity(2).public(), &package)
+        .unwrap();
+    assert_eq!(issued.entries.len(), 2);
+    assert_eq!(trust.role(2), 2);
+    assert_eq!(member.device().epoch(), Ok(1));
+
+    // Carol is granted on the log alone and is in no group: the group refuses her removal, and the
+    // log does not take her off.
+    hosts.grant(3, 2);
+    let head = trust.head();
+    assert!(matches!(
+        member.remove_member(&admin(), 3),
+        Err(MlsError::Malformed(_))
+    ));
+    assert_eq!(trust.head(), head);
+    assert_eq!(trust.role(3), 2);
 }
