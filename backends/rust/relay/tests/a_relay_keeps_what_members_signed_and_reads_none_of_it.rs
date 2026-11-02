@@ -1323,3 +1323,60 @@ fn a_relay_keeps_the_mls_messages_of_a_list_within_its_bounds_and_the_logs_word(
         Response::Accepted { new: true, .. }
     ));
 }
+
+/// The genesis of a list named `list`, by the administrator.
+fn genesis_of(list: &str) -> Entry {
+    Log::genesis_draft(
+        list,
+        Body::Genesis {
+            administrators: vec![admin().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&admin())
+    .finish()
+}
+
+#[test]
+fn a_relay_holds_as_many_lists_as_it_keeps_and_an_entry_it_refused_holds_none() {
+    let mut relay = relay_over(
+        MemoryStore::new(),
+        Limits {
+            max_lists: 2,
+            ..Limits::default()
+        },
+    );
+    let append = |relay: &mut Relay<MemoryStore>, list: &str, entry: &Entry| {
+        let request = Request::Append {
+            entry: entry.to_json(),
+        };
+        let token = authority().issue(list, 1, 1_000_000);
+        Response::from_json(&relay.handle(&token, &request.to_json(), 0)).unwrap()
+    };
+
+    // Entries the relay refuses, for lists it holds none of, make no list and take no room.
+    for n in 0..10 {
+        let answer = append(&mut relay, &format!("stranger-{n}"), &entries()[1]);
+        refused(&answer);
+    }
+
+    for list in ["home", "work"] {
+        let answer = append(&mut relay, list, &genesis_of(list));
+        assert!(
+            matches!(answer, Response::Appended { new: true, .. }),
+            "{list}: {answer:?}"
+        );
+    }
+    let answer = append(&mut relay, "third", &genesis_of("third"));
+    assert_eq!(refused(&answer), &Code::TooLarge, "a third list");
+
+    // The lists it holds go on.
+    let answer = append(&mut relay, "home", &genesis_of("home"));
+    assert!(
+        matches!(answer, Response::Appended { new: false, .. }),
+        "{answer:?}"
+    );
+    assert_eq!(relay.records("home"), 1);
+    assert_eq!(relay.records("third"), 0);
+}

@@ -314,11 +314,21 @@ impl<S: Store> Relay<S> {
         if let Err(full) = self.room(list) {
             return full;
         }
+        let new_list = !self.lists.contains_key(list);
+        if new_list && self.lists.len() >= self.limits.max_lists {
+            return Response::refused(Code::TooLarge, "the relay holds as many lists as it keeps");
+        }
         let state = self
             .lists
             .entry(list.to_string())
             .or_insert_with(|| ListState::new(list));
-        match state.trust.append(&entry) {
+        let taken = state.trust.append(&entry);
+        let log_len = state.trust.log_len();
+        if new_list && !matches!(taken, Ok(true)) {
+            // A list is held from the first entry the relay takes of it: one it refused takes no room.
+            self.lists.remove(list);
+        }
+        match taken {
             Ok(true) => match self.keep(list, Record::Entry(text)) {
                 Ok(_) => Response::Appended {
                     new: true,
@@ -328,7 +338,7 @@ impl<S: Store> Relay<S> {
             },
             Ok(false) => Response::Appended {
                 new: false,
-                len: state.trust.log_len(),
+                len: log_len,
             },
             Err(LogError::Gap { expected }) => Response::refused(
                 Code::Behind,

@@ -29,6 +29,11 @@ pub struct Limits {
     /// The most records the relay keeps for one list; past it, writes are refused until the
     /// operator has made room.
     pub max_records_per_list: usize,
+    /// The most lists the relay holds; past it, the first entry of another is refused. A relay of
+    /// several slots (`Shards`) holds this many in each. Lowering it refuses new lists and keeps the
+    /// ones held: what a relay holds bounds its memory as this times `max_records_per_list` times
+    /// the largest record.
+    pub max_lists: usize,
     /// The largest MLS message (a key package, a commit, a Welcome) the relay keeps, in bytes: a
     /// Welcome carries the group's tree, so a large group needs room.
     pub max_group_message_bytes: usize,
@@ -46,6 +51,7 @@ impl Default for Limits {
             max_feed: 500,
             max_range: 500,
             max_records_per_list: 1_000_000,
+            max_lists: 10_000,
             max_group_message_bytes: 32 * 1024,
             max_key_packages_per_node: 16,
         }

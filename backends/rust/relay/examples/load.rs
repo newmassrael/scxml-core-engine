@@ -86,6 +86,7 @@ fn run_server(args: &[String]) {
         burst: u32::MAX / 4,
         refill_per_second: u32::MAX / 4,
         max_records_per_list: 100_000_000,
+        max_lists: usize::MAX,
         ..Limits::default()
     };
     let open = |dir: &str| FileStore::open(dir).expect("the store directory opens");
