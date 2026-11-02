@@ -231,6 +231,32 @@ pub(crate) fn rust_owned_value_type(l: &LangCtx, m: &CodecModel, e: &CborEntry) 
     format!("{RUST_RUNTIME_CODEC}::Bounded<{container}, {bounds}>")
 }
 
+/// The string and byte string entries of the map `m` as the storage macro takes
+/// them ([`rust_storage_field`]): each one a profile answers for, held by
+/// `Inline` at [`rust_owned_capacity`]. A map with no owned mirror
+/// ([`rust_owned_mirror`]) declares none.
+pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
+    if !rust_owned_mirror(m) {
+        return Vec::new();
+    }
+    m.cbor_entries
+        .iter()
+        .filter_map(|e| {
+            let kind = match e.present_type() {
+                SceType::String => "Str",
+                SceType::Bytes => "Bytes",
+                _ => return None,
+            };
+            Some(rust_storage_field(
+                &m.name,
+                &e.id,
+                kind,
+                rust_owned_capacity(e),
+            ))
+        })
+        .collect()
+}
+
 /// The capacity `Inline` holds the string or byte string `e` at: the exact
 /// length of a byte string, or the `sce:max-size` of any other.
 fn rust_owned_capacity(e: &CborEntry) -> u32 {
@@ -706,24 +732,7 @@ fn rust_context(
     ctx.insert("emit_owned".into(), mirror.into());
     if mirror {
         let storage = rust_storage_trait(&m.name);
-        let fields = m
-            .cbor_entries
-            .iter()
-            .filter_map(|e| {
-                let kind = match e.present_type() {
-                    SceType::String => "Str",
-                    SceType::Bytes => "Bytes",
-                    _ => return None,
-                };
-                Some(rust_storage_field(
-                    &m.name,
-                    &e.id,
-                    kind,
-                    rust_owned_capacity(e),
-                ))
-            })
-            .collect();
-        insert_rust_storage(&mut ctx, &m.name, fields, &[]);
+        insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &[]);
         ctx.insert(
             "owned_generics_decl".into(),
             format!("<{RUST_STORAGE_PARAM}: {storage} = {RUST_RUNTIME_CODEC}::DefaultStorage>")

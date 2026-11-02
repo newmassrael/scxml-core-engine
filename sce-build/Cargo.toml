@@ -463,6 +463,13 @@ name = "diagram_cli"
 path = "tests/diagram_cli.rs"
 required-features = ["cli"]
 
+# `sce-codegen deployment` on the binary (docs/adr/0077 §7): one file named by the
+# deployment, checkable for drift, and a gate that is not one refused.
+[[test]]
+name = "deployment_cli"
+path = "tests/deployment_cli.rs"
+required-features = ["cli"]
+
 # Every kind's example drawn on the real binary, in both page languages:
 # the pictures a kind has, then its field table, the same bytes twice.
 [[test]]

@@ -3330,6 +3330,45 @@ enum Commands {
         /// The codec document to rewrite.
         scxml: String,
     },
+    /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
+    /// profile that holds each field of each codec of a set at the capacity a
+    /// deploy input's `codecs:` block gives it, or at its bound.
+    ///
+    /// A Rust tree takes a storage profile and holds no capacity, so one tree,
+    /// generated from the same documents, serves every deployment in a build.
+    /// Each deployment is a type in a file of its own: `<name>.rs`, written to
+    /// `--output-dir`, which is the directory of the tree's modules, since the
+    /// file names each codec's field tags as `super::<codec>`. Several
+    /// deployments are several runs, each with its own `--name`.
+    ///
+    /// A codec the build compiles under a `cfg` of its own is answered for under
+    /// the same one: `--gate serial_envelope='feature = "serial"'`. A capacity
+    /// for a codec, or a gate, that names no codec of the set is refused, as is
+    /// a capacity no form can hold.
+    Deployment {
+        /// The codec documents of the set, as the tree is generated from them.
+        /// Imports are resolved from beside each, as `generate` resolves them.
+        #[arg(required = true)]
+        scxml: Vec<String>,
+        /// The deploy input whose `codecs:` block gives the capacities.
+        #[arg(long)]
+        deploy: String,
+        /// The type the file declares, in upper camel case. The file is named
+        /// by it.
+        #[arg(long)]
+        name: String,
+        /// `<codec>=<cfg predicate>`: the `cfg` the build compiles that codec's
+        /// module under. Repeat for each such codec.
+        #[arg(long = "gate", value_name = "CODEC=PREDICATE")]
+        gate: Vec<String>,
+        /// Directory the file is written to: the directory of the tree's modules.
+        #[arg(short, long, default_value = ".")]
+        output_dir: String,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Print a `datamodel="sce-static"` statechart as the
     /// `datamodel="ecmascript"` document the Interpreter runs.
     ///
@@ -4135,6 +4174,22 @@ fn main() {
             cmd_codec_roles(&scxml, &include_dir, error_format)
         }
         Commands::CodecFormat { scxml } => cmd_codec_format(&scxml, error_format),
+        Commands::Deployment {
+            scxml,
+            deploy,
+            name,
+            gate,
+            output_dir,
+            include_dir,
+        } => cmd_deployment(
+            &scxml,
+            &deploy,
+            name,
+            &gate,
+            &output_dir,
+            &include_dir,
+            error_format,
+        ),
         Commands::Lower {
             scxml,
             include_dir,
@@ -4191,7 +4246,8 @@ fn main() {
 /// never compared.
 fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
     const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
-        generate files: generate, orchestrate, generate-w3c, generate-conformance and diagram";
+        generate files: generate, orchestrate, generate-w3c, generate-conformance, deployment \
+        and diagram";
     match command {
         // Both modes generate nothing, so a run in either would pass
         // having compared nothing.
@@ -4204,6 +4260,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Orchestrate(_)
         | Commands::GenerateW3c(_)
         | Commands::GenerateConformance { .. }
+        | Commands::Deployment { .. }
         | Commands::Diagram { .. } => None,
         Commands::GenerateIntegration { .. } => Some(
             "--assert-unchanged cannot apply to generate-integration: each stem is a shell \
@@ -12978,6 +13035,71 @@ fn cmd_codec_roles(scxml_paths: &[String], include_dirs: &[String], error_format
         }
     }
     out_bytes(out.as_bytes());
+}
+
+// ── Subcommand: deployment ─────────────────────────────────────
+//
+// A Rust deployment's file (docs/adr/0077 §7), from the codec set the tree is
+// generated from and the deploy input that gives its capacities. It carries the
+// §synth-6.2.6 header over both, since either changes what it holds.
+
+fn cmd_deployment(
+    scxml_paths: &[String],
+    deploy_path: &str,
+    name: String,
+    gates: &[String],
+    output_dir: &str,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let deploy = load_deploy_config(deploy_path, error_format);
+    let gates = gates
+        .iter()
+        .map(|gate| match gate.split_once('=') {
+            Some((codec, predicate)) if !codec.is_empty() && !predicate.trim().is_empty() => {
+                (codec.to_string(), predicate.trim().to_string())
+            }
+            _ => cli_exit(CliError::Usage {
+                detail: format!(
+                    "--gate {gate}: a gate is `<codec>=<cfg predicate>`, as \
+                     `serial_envelope=feature = \"serial\"`"
+                ),
+            }),
+        })
+        .collect();
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name,
+        capacities: deploy.codec_capacities(),
+        gates,
+        source: deploy_path.to_string(),
+    };
+    let documents: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
+    let document_refs: Vec<&Path> = documents.iter().map(PathBuf::as_path).collect();
+    let options = sce_build::ForgeCompileOptions {
+        include_dirs: include_dirs.iter().map(PathBuf::from).collect(),
+        ..Default::default()
+    };
+    let output = sce_build::compile_rust_deployment(&document_refs, &deployment, &options)
+        .unwrap_or_else(|refused| match refused {
+            sce_build::forge::deployment::RustDeploymentError::Refused(e) => {
+                error_format.emit_forge_and_exit(&e)
+            }
+            sce_build::forge::deployment::RustDeploymentError::Usage(detail) => {
+                cli_exit(CliError::Usage { detail })
+            }
+        });
+    let drift = document_set_drift_context(None, Some(deploy_path), &document_refs);
+    let dir = Path::new(output_dir);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: output_dir.to_string(),
+            source: e,
+        })
+    });
+    for (file, text) in &output.files {
+        write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(text), &drift);
+    }
+    finish_generated_output();
 }
 
 // ── Subcommand: codec-format ───────────────────────────────────

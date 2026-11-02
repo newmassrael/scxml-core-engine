@@ -148,6 +148,15 @@ pub enum Language {
 }
 
 impl Language {
+    /// Whether a deployment's capacities size this backend's generated tree
+    /// (docs/adr/0077 §7). C11 stores every field in an array its tree
+    /// declares, so a C11 tree is one deployment's. A Rust tree takes a storage
+    /// profile and serves every deployment in a build, each of which answers
+    /// for it from a file of its own. The other backends' containers grow.
+    pub fn tree_holds_capacities(self) -> bool {
+        matches!(self, Language::C11)
+    }
+
     /// Every backend, in the canonical order used wherever a run spans
     /// all of them (the `check` sweep, the codegen-matrix coverage
     /// tests, the manifest schema's language enum).

@@ -9,14 +9,11 @@
     A child codec compiled under a build feature cannot be a plain supertrait,
     since an attribute does not go on one: it is reached through a trait of its
     own, which asks for nothing in a build without the feature (docs/adr/0072). #}
-{%- macro declare(struct_name, runtime, fields, gated, bound, from_bound) %}
-{% for field in fields %}
-/// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct {{ field.tag }};
-
-impl {{ runtime }}::Holds{{ field.kind }}<{{ field.tag }}> for {{ runtime }}::Inline {
+{#- How the inline profile `profile` holds the field `field`, named by the path
+    `tag`: in a container of `field.capacity`. `Inline` in the tree and a
+    deployment in its own file both answer through this one form. #}
+{%- macro holds(runtime, profile, tag, field) %}
+impl {{ runtime }}::Holds{{ field.kind }}<{{ tag }}> for {{ profile }} {
 {% if field.kind == "List" %}
     type List<T> = ::sce_forge_runtime::heapless::Vec<T, {{ field.capacity }}> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
 {% elif field.kind == "Str" %}
@@ -25,6 +22,15 @@ impl {{ runtime }}::Holds{{ field.kind }}<{{ field.tag }}> for {{ runtime }}::In
     type Bytes = {{ runtime }}::InlineBytes<{{ field.capacity }}>;
 {% endif %}
 }
+{%- endmacro %}
+{%- macro declare(struct_name, runtime, fields, gated, bound, from_bound) %}
+{% for field in fields %}
+/// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct {{ field.tag }};
+
+{{ holds(runtime, runtime ~ "::Inline", field.tag, field) }}
 
 {% endfor %}
 {% for child in gated %}

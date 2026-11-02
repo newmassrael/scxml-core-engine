@@ -3312,8 +3312,33 @@ impl CodecModel {
         &mut self,
         capacities: &CodecCapacities,
     ) -> Result<(), crate::forge::error::ForgeError> {
+        for (at, capacity) in self.capacities_held(capacities)? {
+            self.fields[at].capacity = Some(capacity);
+        }
+        Ok(())
+    }
+
+    /// Refuse what [`Self::take_capacities`] refuses, and take nothing: what a
+    /// tree checks of a deployment it is not sized by. A Rust tree takes a
+    /// storage profile, and a deployment answers for it from a file of its own
+    /// (docs/adr/0077 §7), so a capacity that names no field is still refused
+    /// where the tree is generated.
+    pub fn check_capacities(
+        &self,
+        capacities: &CodecCapacities,
+    ) -> Result<(), crate::forge::error::ForgeError> {
+        self.capacities_held(capacities).map(drop)
+    }
+
+    /// Each field `capacities` gives this codec a capacity of, by its index
+    /// here, with the capacity; or the refusal of the first one no form can
+    /// hold.
+    fn capacities_held(
+        &self,
+        capacities: &CodecCapacities,
+    ) -> Result<Vec<(usize, u32)>, crate::forge::error::ForgeError> {
         let Some(declared) = capacities.get(&self.name) else {
-            return Ok(());
+            return Ok(Vec::new());
         };
         let invalid = |field: &str, rule: String| -> crate::forge::error::ForgeError {
             crate::forge::error::ValidationError::CodecCapacityInvalid {
@@ -3347,10 +3372,7 @@ impl CodecModel {
             }
             taken.push((at, *capacity));
         }
-        for (at, capacity) in taken {
-            self.fields[at].capacity = Some(capacity);
-        }
-        Ok(())
+        Ok(taken)
     }
 
     /// Minimum required frame bytes for decode (from fixed fields, and from the

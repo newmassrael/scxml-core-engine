@@ -3504,7 +3504,9 @@ pub struct ForgeCompileOptions {
     /// `codecs:` (docs/adr/0077 §7). It lives here because a capacity has to
     /// reach the codec compiled and each codec it imports, and a codec's
     /// document does not state it. Empty (the default) leaves every field at
-    /// its bound.
+    /// its bound. It sizes a tree that is one deployment's (C11,
+    /// [`generator::Language::tree_holds_capacities`]); a Rust tree only checks
+    /// it, and a Rust deployment is the file [`compile_rust_deployment`] writes.
     pub codec_capacities: forge::model::CodecCapacities,
     /// The `source-hash` digest the files [`compile_scxml_with_imports`]
     /// returns are written under, as lowercase hex: what a statechart
@@ -3979,6 +3981,30 @@ pub fn compile_forge_with_imports(
     compile_forge_from_parsed(&parsed, label, language, base_dir, options)
 }
 
+/// The file of a Rust deployment (docs/adr/0077 §7): a storage profile that
+/// holds each field of each codec `documents` hold or import at the capacity
+/// `deployment` gives it, or at its bound.
+///
+/// A Rust tree takes a profile and holds no capacity, so one tree, generated
+/// from the same documents by [`compile_forge_with_imports`], serves every
+/// deployment in a build. The file goes beside the tree's modules, which it
+/// names as `super::<codec>`. Its `deps` are every document read, for a build
+/// script's `rerun-if-changed`. `options` gives the include directories and the
+/// template source.
+pub fn compile_rust_deployment(
+    documents: &[&Path],
+    deployment: &forge::deployment::RustDeployment,
+    options: &ForgeCompileOptions,
+) -> Result<generator::GeneratedOutput, forge::deployment::RustDeploymentError> {
+    let (ctx, deps) = forge::deployment::context(documents, &options.include_dirs, deployment)?;
+    let text = forge::generator::render_rust_deployment(&find_template_base(), options, ctx)
+        .map_err(|e| forge::error::Located::in_file(e, deployment.source.clone()))?;
+    Ok(generator::GeneratedOutput {
+        files: vec![(forge::deployment::file_name(&deployment.name), text)],
+        deps,
+    })
+}
+
 /// Forge codegen entry point for callers who already hold a
 /// [`forge::model::ParsedForge`].
 ///
@@ -4006,9 +4032,18 @@ pub fn compile_forge_from_parsed(
 
     // What the deployment says this codec's storing forms hold is read before
     // anything sizes one (docs/adr/0077 §7). The parsed document stays the
-    // caller's: a capacity is no fact of it.
+    // caller's: a capacity is no fact of it. A tree that serves every
+    // deployment only checks it ([`generator::Language::tree_holds_capacities`]).
     let with_capacities;
     let parsed = match &parsed.document {
+        forge::model::ForgeDocument::Codec(m)
+            if options.codec_capacities.contains_key(&m.name)
+                && !language.tree_holds_capacities() =>
+        {
+            m.check_capacities(&options.codec_capacities)
+                .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+            parsed
+        }
         forge::model::ForgeDocument::Codec(m) if options.codec_capacities.contains_key(&m.name) => {
             let mut held = parsed.clone();
             if let forge::model::ForgeDocument::Codec(m) = &mut held.document {
@@ -6155,10 +6190,14 @@ fn validate_and_enrich_imports(
         if let Some(parsed) = source.parse()? {
             let mut doc = parsed.document;
             // A codec this one imports is sized by the same deployment
-            // (docs/adr/0077 §7).
+            // (docs/adr/0077 §7), where the tree is one deployment's.
             if let forge::model::ForgeDocument::Codec(cm) = &mut doc {
-                cm.take_capacities(&options.codec_capacities)
-                    .map_err(|e| Located::new(e, importing_doc, imp.line, None))?;
+                if language.tree_holds_capacities() {
+                    cm.take_capacities(&options.codec_capacities)
+                } else {
+                    cm.check_capacities(&options.codec_capacities)
+                }
+                .map_err(|e| Located::new(e, importing_doc, imp.line, None))?;
             }
             // Identity SSOT: recompute the name-derived emission context
             // (`#include` / `use` / `import`, namespace, type/member type)

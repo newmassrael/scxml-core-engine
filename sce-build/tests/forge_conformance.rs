@@ -14441,18 +14441,78 @@ fn with_capacity_of_frags(
     opts
 }
 
+/// The file of the Rust deployment `name` of the codec set `documents`, at
+/// `capacities` (docs/adr/0077 §7).
+fn deployment_file(
+    documents: &[&str],
+    name: &str,
+    capacities: sce_build::forge::model::CodecCapacities,
+    gates: std::collections::BTreeMap<String, String>,
+) -> Result<(String, String), sce_build::forge::deployment::RustDeploymentError> {
+    let output = deployment_output(documents, name, capacities, gates)?;
+    Ok(output
+        .files
+        .into_iter()
+        .next()
+        .expect("a deployment is one file"))
+}
+
+/// [`deployment_file`] with the documents it read.
+fn deployment_output(
+    documents: &[&str],
+    name: &str,
+    capacities: sce_build::forge::model::CodecCapacities,
+    gates: std::collections::BTreeMap<String, String>,
+) -> Result<sce_build::generator::GeneratedOutput, sce_build::forge::deployment::RustDeploymentError>
+{
+    let paths: Vec<std::path::PathBuf> = documents.iter().map(|d| resource_dir().join(d)).collect();
+    let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: name.to_string(),
+        capacities,
+        gates,
+        source: "deploy.yaml".to_string(),
+    };
+    sce_build::compile_rust_deployment(
+        &refs,
+        &deployment,
+        &golden_options(sce_build::generator::Language::Rust),
+    )
+}
+
+/// The tree's options with each codec's view, which a storing decode past a
+/// capacity judges a frame by (docs/adr/0077 §7).
+fn with_views() -> sce_build::ForgeCompileOptions {
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.views = true;
+    opts
+}
+
+/// A deployment that holds two of `codec_repeat_basic`'s list of 32.
+fn narrow_frags() -> sce_build::forge::model::CodecCapacities {
+    [(
+        "codec_repeat_basic".to_string(),
+        [("frags".to_string(), 2)].into(),
+    )]
+    .into()
+}
+
 /// A deployment's capacity is what a form that stores a field holds, and the
 /// field's bound stays the language (docs/adr/0077 §7): a frame inside the bound
-/// and past the capacity is refused by the eager decode with `CapacityExceeded`
-/// and read by the view, which stores nothing; a frame past the bound is
-/// malformed for both.
+/// and past the capacity is refused by the eager decode on that deployment with
+/// `CapacityExceeded` and read by the view, which stores nothing; a frame past
+/// the bound is malformed for both. The deployment is a type of its own file, so
+/// the tree's `Inline` still holds the bound, in the same build.
 #[test]
 fn a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on() {
     const HARNESS: &str = r#"// Injected by a_form_that_stores_refuses_past_its_capacity_*.
 #[cfg(test)]
 mod tests {
-    use crate::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicView};
-    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+    use crate::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicIn, CodecRepeatBasicView};
+    use crate::narrow::Narrow;
+    use ::sce_forge_runtime::codec::{CodecError, Lent, SceCursor};
+
+    type Held<'a> = CodecRepeatBasicIn<Lent<'a, Narrow>>;
 
     // Three entries: inside the bound of 32, past the capacity of 2.
     const THREE: [u8; 7] = [3, 0, 1, 0, 2, 0, 3];
@@ -14463,12 +14523,22 @@ mod tests {
 
     #[test]
     fn the_eager_decode_holds_its_capacity() {
-        let held = CodecRepeatBasic::decode(&mut SceCursor::new(&TWO)).expect("two entries");
+        let held = Held::decode(&mut SceCursor::new(&TWO)).expect("two entries");
         assert_eq!(held.frags.len(), 2);
         assert_eq!(
-            CodecRepeatBasic::decode(&mut SceCursor::new(&THREE)).err(),
+            Held::decode(&mut SceCursor::new(&THREE)).err(),
             Some(CodecError::CapacityExceeded)
         );
+        assert_eq!(
+            CodecRepeatBasicIn::<Narrow>::decode(&mut SceCursor::new(&THREE)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn the_tree_holds_no_deployment_capacity() {
+        let held = CodecRepeatBasic::decode(&mut SceCursor::new(&THREE)).expect("three");
+        assert_eq!(held.frags.len(), 3);
     }
 
     #[test]
@@ -14484,12 +14554,12 @@ mod tests {
     fn a_frame_is_judged_whole_before_it_is_called_too_big_to_hold() {
         const CUT: [u8; 8] = [4, 0, 1, 0, 2, 0, 3, 0];
         assert_eq!(
-            CodecRepeatBasic::decode(&mut SceCursor::new(&CUT)).err(),
+            Held::decode(&mut SceCursor::new(&CUT)).err(),
             Some(CodecError::NeedMoreBytes)
         );
-        let mut into = CodecRepeatBasic::default();
+        let mut into = Held::default();
         assert_eq!(
-            CodecRepeatBasic::decode_into(&mut SceCursor::new(&CUT), &mut into).err(),
+            Held::decode_into(&mut SceCursor::new(&CUT), &mut into).err(),
             Some(CodecError::NeedMoreBytes)
         );
     }
@@ -14497,7 +14567,7 @@ mod tests {
     #[test]
     fn a_frame_past_the_bound_is_malformed_for_every_form() {
         assert_eq!(
-            CodecRepeatBasic::decode(&mut SceCursor::new(&PAST)).err(),
+            Held::decode(&mut SceCursor::new(&PAST)).err(),
             Some(CodecError::TooManyElements)
         );
         assert_eq!(
@@ -14512,12 +14582,205 @@ mod tests {
         &resource_dir(),
         &["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"],
         language,
-        with_capacity_of_frags(language, 2),
+        with_views(),
     )
     .expect("the codec set generates");
+    files.push(
+        deployment_file(
+            &["codec_repeat_basic.scxml"],
+            "Narrow",
+            narrow_frags(),
+            Default::default(),
+        )
+        .expect("the deployment generates"),
+    );
     files.push(("capacity_behaviour.rs".to_string(), HARNESS.to_string()));
     rustc_run_generated_set(files, "capacity_behaviour", "test", RustcProfile::Alloc)
         .expect("a form holds its capacity, and the bound stays the language");
+}
+
+/// One Rust tree serves every deployment in a build (docs/adr/0077 §7): what a
+/// deploy input gives a field is checked where the tree is generated, and
+/// changes no byte of it.
+#[test]
+fn a_rust_tree_is_the_same_tree_whatever_a_deployment_holds() {
+    let language = sce_build::generator::Language::Rust;
+    let set = ["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"];
+    let plain = generate_files_for_codec_set_with(
+        &resource_dir(),
+        &set,
+        language,
+        golden_options(language),
+    )
+    .expect("the codec set generates");
+    let deployed = generate_files_for_codec_set_with(
+        &resource_dir(),
+        &set,
+        language,
+        with_capacity_of_frags(language, 2),
+    )
+    .expect("the codec set generates under a deployment");
+    assert_eq!(plain, deployed);
+}
+
+/// A deployment answers for every field of every codec its set holds or
+/// imports, a CBOR map's among them, so a codec that holds others is stored
+/// on it whole; and it is a heap-free profile, on a build with no allocator
+/// (docs/adr/0077 §7).
+#[test]
+fn a_deployment_answers_for_every_field_of_its_set() {
+    const PROBE: &str = r#"// Injected by a_deployment_answers_for_every_field_of_its_set.
+use crate::codec_cbor_map::{CodecCborMap, CodecCborMapOwned};
+use crate::codec_zenoh_request::{CodecZenohRequestIn, CodecZenohRequestOwned};
+use crate::mcu::Mcu;
+use ::sce_forge_runtime::codec::{CodecError, Lent};
+
+pub fn stored() -> CodecZenohRequestOwned<Mcu> {
+    Default::default()
+}
+
+// A CBOR map is stored by its projection, after the whole map has parsed.
+pub fn mirrored(map: CodecCborMap<'_>) -> Result<CodecCborMapOwned<Mcu>, CodecError> {
+    map.try_into_owned_in::<Mcu>()
+}
+
+pub fn lent<'a>(frame: &'a [u8]) -> Option<CodecZenohRequestIn<Lent<'a, Mcu>>> {
+    CodecZenohRequestIn::<Lent<'a, Mcu>>::decode(&mut ::sce_forge_runtime::codec::SceCursor::new(frame)).ok()
+}
+
+// A storing decode copies each byte string into the deployment's own buffer,
+// which it can only as a profile that copies.
+pub fn copied(frame: &[u8]) -> Option<CodecZenohRequestOwned<Mcu>> {
+    CodecZenohRequestOwned::<Mcu>::decode(&mut ::sce_forge_runtime::codec::SceCursor::new(frame)).ok()
+}
+"#;
+    let language = sce_build::generator::Language::Rust;
+    let set = ["codec_zenoh_request.scxml", "codec_cbor_map.scxml"];
+    let capacities = [(
+        "codec_zenoh_msg_put".to_string(),
+        [("payload".to_string(), 64)].into(),
+    )]
+    .into();
+    let output = deployment_output(&set, "Mcu", capacities, Default::default())
+        .expect("the deployment generates");
+    // The tree is every document the deployment read: the set and what it imports.
+    let mut closure: Vec<String> = output
+        .deps
+        .iter()
+        .filter(|path| path.extension().is_some_and(|e| e == "scxml"))
+        .filter_map(|path| path.file_name()?.to_str().map(str::to_string))
+        .collect();
+    closure.sort();
+    closure.dedup();
+    assert!(
+        closure.len() > set.len(),
+        "the set imports codecs: {closure:?}"
+    );
+    let closure: Vec<&str> = closure.iter().map(String::as_str).collect();
+    let mut files =
+        generate_files_for_codec_set_with(&resource_dir(), &closure, language, with_views())
+            .expect("the codec set generates");
+    let (name, text) = output
+        .files
+        .into_iter()
+        .next()
+        .expect("a deployment is one file");
+    assert_eq!(name, "mcu.rs");
+    // The capacity it is given, and the bound where it is given none.
+    assert!(
+        text.contains("HoldsBytes<super::codec_zenoh_msg_put::CodecZenohMsgPutPayloadField> for Mcu {\n    type Bytes = ::sce_forge_runtime::codec::InlineBytes<64>;"),
+        "{text}"
+    );
+    assert!(
+        text.contains("HoldsStr<super::codec_cbor_map::CodecCborMapSourceField> for Mcu {\n    type Str = ::sce_forge_runtime::codec::InlineStr<64>;"),
+        "{text}"
+    );
+    files.push((name, text));
+    files.push(("deployment_probe.rs".to_string(), PROBE.to_string()));
+    rustc_run_generated_set(
+        files,
+        "deployment_every_field",
+        "build",
+        RustcProfile::NoAlloc,
+    )
+    .expect("a deployment answers for every field its set declares");
+}
+
+/// A codec the build compiles under a `cfg` of its own is answered for under the
+/// same one, which the caller names (docs/adr/0077 §7).
+#[test]
+fn a_deployment_answers_a_gated_codec_under_its_gate() {
+    let gates = [(
+        "codec_repeat_basic".to_string(),
+        "feature = \"repeat\"".to_string(),
+    )]
+    .into();
+    let (_, text) = deployment_file(
+        &["codec_repeat_basic.scxml"],
+        "Narrow",
+        narrow_frags(),
+        gates,
+    )
+    .expect("the deployment generates");
+    assert!(
+        text.contains(
+            "#[cfg(feature = \"repeat\")]\nimpl ::sce_forge_runtime::codec::HoldsList<super::codec_repeat_basic::CodecRepeatBasicFragsField> for Narrow {"
+        ),
+        "{text}"
+    );
+}
+
+/// What a deployment cannot answer is refused, each by what is wrong with it
+/// (docs/adr/0077 §7): a capacity no form can hold or for no codec of the set,
+/// a gate for no codec of the set, and a name that is not a type's.
+#[test]
+fn a_deployment_that_names_what_its_set_has_not_is_refused() {
+    use sce_build::forge::deployment::RustDeploymentError;
+    use sce_build::forge::diagnostic::SingleDiagnostic;
+
+    let set = ["codec_repeat_basic.scxml"];
+    for (capacities, phrase) in [
+        (
+            [(
+                "codec_repeat_basic".to_string(),
+                [("frags".to_string(), 33)].into(),
+            )]
+            .into(),
+            "past the field's bound 32",
+        ),
+        (
+            [(
+                "codec_nothing".to_string(),
+                [("frags".to_string(), 2)].into(),
+            )]
+            .into(),
+            "no document of the set is a codec of this name",
+        ),
+    ] {
+        match deployment_file(&set, "Narrow", capacities, Default::default()) {
+            Err(RustDeploymentError::Refused(e)) => {
+                assert_eq!(
+                    e.diagnostic_payload().code.as_str(),
+                    "codec/capacity-invalid"
+                );
+                assert!(e.to_string().contains(phrase), "{e}");
+            }
+            other => panic!("{phrase}: refused as a capacity, got {other:?}"),
+        }
+    }
+    let gates = [("codec_nothing".to_string(), "feature = \"x\"".to_string())].into();
+    match deployment_file(&set, "Narrow", narrow_frags(), gates) {
+        Err(RustDeploymentError::Usage(detail)) => {
+            assert!(detail.contains("'codec_nothing'"), "{detail}")
+        }
+        other => panic!("a gate for no codec: {other:?}"),
+    }
+    match deployment_file(&set, "narrow", narrow_frags(), Default::default()) {
+        Err(RustDeploymentError::Usage(detail)) => {
+            assert!(detail.contains("not a Rust type name"), "{detail}")
+        }
+        other => panic!("a name that is no type's: {other:?}"),
+    }
 }
 
 /// C11 stores every field, so its array is the capacity, and a frame past it is

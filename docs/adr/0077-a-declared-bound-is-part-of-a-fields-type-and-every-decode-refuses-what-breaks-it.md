@@ -367,6 +367,25 @@ are one value held two ways. So:
   covariant, and its decode cannot run out. `{Codec}Owned<S>` is what stores, and it is built from that value after the
   whole map has parsed, so store after parse holds by construction. Moving it onto `{Codec}In<S>` would give up the
   covariance and gain nothing. One storing type means one here too.
+- **A deployment's file, as landed.** `sce-codegen deployment` and `compile_rust_deployment` take the documents a tree
+  is generated from and a deploy input, and write one file: the type, `Copying`, and for each field of each codec the
+  set holds or imports, the `Holds*` impl at its capacity or its bound. Its list of fields is the one the tree declares
+  tags from, one function for both, so the two cannot name different fields. The file goes beside the tree's modules
+  and names them as they name one another, `super::<codec>`. A Rust tree checks a capacity and takes none
+  (`Language::tree_holds_capacities`), so its bytes do not depend on the deploy input. C11's tree still takes them.
+- **Views are the build's choice, `--views`.** The text above has a deployment that states a capacity generate the
+  views. With one tree for every deployment that is the deploy input reaching into the tree, so it stops: a test that
+  compares a tree generated with and without a deploy input found it. A tree without views judges a frame past a
+  capacity by its lent form, which is correct and costs a whole value on the stack, so a build with a deployment
+  generates its tree with `--views`.
+- **A module's `cfg` is the build's, and the caller says it.** A consumer may compile a codec's module under a feature
+  of its own, and a file that names a module the build leaves out does not compile. Neither the documents nor the deploy
+  input know a build's layout, so the gate is an input of the file's generation, `--gate <codec>=<predicate>`, and a gate
+  for a codec the set does not hold is refused.
+- **Inline only, so far.** A deployment holds every field inline. A heap node's policy limit, which this section counts
+  as a capacity, needs a growable container that refuses past a number; `HeapBytes<N>` treats `N` as advisory, and
+  the algorithm kind relies on that. It is a landing of its own, with a key in the deploy input saying which kind of
+  node the deployment is.
 
 ## Alternatives
 

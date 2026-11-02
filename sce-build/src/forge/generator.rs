@@ -7350,9 +7350,16 @@ fn rust_lent_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
     )
 }
 
-/// The variable fields of a positional codec, as [`rust_storage_field`] takes
-/// them: each field the owned form holds in a container of the profile's.
-fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
+/// The fields of the codec `m` a storage profile answers for, as
+/// [`rust_storage_field`] takes them: each field the owned form holds in a
+/// container of the profile's, at what `m` says a form that stores it holds
+/// (its bound, or a deployment's capacity where `m` has taken one). The tree
+/// declares a tag for each, and a deployment's file answers for the same list,
+/// so the two cannot name different fields.
+pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
+    if m.encoding == CodecEncoding::Cbor {
+        return crate::forge::cbor_codec::rust_storage_fields(m);
+    }
     m.fields
         .iter()
         .filter_map(|f| {
@@ -22241,6 +22248,23 @@ pub fn generate_rust(
     )
 }
 
+/// The file of a Rust deployment (docs/adr/0077 §7), rendered from the context
+/// [`crate::forge::deployment`] builds.
+pub(crate) fn render_rust_deployment(
+    template_dir: &Path,
+    options: &crate::ForgeCompileOptions,
+    ctx: serde_json::Map<String, serde_json::Value>,
+) -> Result<String, ForgeError> {
+    let mut env = generator::new_env();
+    load_forge_templates(
+        &mut env,
+        &template_dir.join("forge/rust"),
+        crate::generator::Language::Rust,
+        options,
+    )?;
+    LangCtx::new(crate::generator::Language::Rust, &[]).render(&env, "deployment", ctx)
+}
+
 /// Generate Rust code with cross-file import support.
 pub fn generate_rust_with_imports(
     doc: &ForgeDocument,
@@ -22303,9 +22327,11 @@ pub fn generate_rust_with_imports_and_externs(
             crate::generator::Language::Rust,
             CodecForms {
                 owned_origin: options.owned_origin,
-                // A form past its capacity is judged by the view
-                // (docs/adr/0077 §7).
-                views: options.views || !options.codec_capacities.is_empty(),
+                // A form past its capacity is judged by the view where the
+                // tree has views and by its lent form where it has none
+                // (docs/adr/0077 §7). Which, is the build's choice: the tree
+                // serves every deployment, so the deploy input does not make it.
+                views: options.views,
                 inline_encode: options.inline_encode,
             },
         )?,

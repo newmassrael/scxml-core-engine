@@ -464,3 +464,41 @@ Landing: the commit that adds this section.
 - A CBOR codec keeps its two types. Its `{Codec}<'a>` is its view, with no storing role, and `{Codec}Owned<S>` is what
   stores. `try_into_owned_in` bounds on `{Codec}From<'a>` as a positional codec's does.
 - The wire does not change.
+
+## A deployment is a type in a file of its own (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A Rust tree no longer holds a capacity. `generate --deploy` and `ForgeCompileOptions::codec_capacities` still check
+  what the deploy input says of a Rust tree, and refuse it as before, but the tree is the same bytes with it or without
+  it. `Inline` holds each field at its bound. C11 is unchanged: its tree stores in arrays, so it is one deployment's.
+- A deploy input with capacities no longer turns on a Rust tree's views. Generate the tree with `--views`
+  (`ForgeCompileOptions::views`) where a deployment stores: a decode past a capacity judges the frame by the view, and
+  without one by the codec's lent form, a whole value on the stack. A tree that relied on `--deploy` for its views loses
+  `{Codec}View` until the flag is given.
+- What a Rust node holds is a deployment, a type generated from the deploy input into a file of its own, which goes in
+  the directory of the tree's modules:
+
+  ```sh
+  sce-codegen deployment --deploy mcu.yaml --name Mcu -o out/codecs codec_msg_put.scxml codec_request.scxml
+  ```
+
+  From Rust, `sce_build::compile_rust_deployment(&documents, &RustDeployment { name, capacities, gates, source },
+  &options)` gives the file and the documents it read. Pass the documents the tree is generated from: the deployment
+  answers for every field of every codec they hold or import, at the capacity the deploy input gives it or at its
+  bound, so `Mcu` is a profile of every codec of the set.
+- Declare the file as a module beside the codec modules, which it names as `super::<codec>`. Name the profile where
+  `Inline` was: `{Codec}Owned<Mcu>`, and the eager form `{Codec}In<Lent<'a, Mcu>>`, which borrows bytes and text and
+  holds lists at the deployment's capacity. Several deployments are several files, each its own type, in one build.
+- A codec module the build compiles under a `cfg` of its own is answered for under the same one:
+  `--gate codec_serial_envelope='feature = "codec-serial"'`, or `RustDeployment::gates`. Without it, the file names a
+  module the build leaves out and does not compile.
+- The file carries the source-hash header over the documents and the deploy input, so `--assert-unchanged` and `verify`
+  see a changed capacity.
+- A program that relied on `generate --deploy` to size `Inline` gets the bound there now, with nothing refused: it holds
+  more than the deployment said. Move each use to the deployment's type.
+- A capacity is refused as before (`codec/capacity-invalid`): one no form can hold under the codec's document, and one
+  for a codec no document of the set is under the deploy input. A gate for no codec of the set, and a name that is not
+  an upper camel case type name, are refused as usage.
+- A deployment holds every field inline. A heap node's policy limit has no container yet: on `Heap` a field grows to its
+  bound.

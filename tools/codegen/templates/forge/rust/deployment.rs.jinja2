@@ -1,0 +1,31 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/forge_rust_storage.jinja2' as storage %}
+{#- A deployment of a Rust codec tree (docs/adr/0077 §7): one type, which
+    copies a frame's bytes into containers of its own and answers, for each
+    field of each codec of the set the tree declares a tag for, the container
+    of that field's capacity. The file sits beside the tree's modules and names
+    a codec's tags as they name one another. #}
+// SCE Forge: Auto-generated deployment `{{ deployment }}` from {{ source }}
+// Do not edit — regenerate from the deploy input and the codec documents.
+
+/// The deployment of {{ source }}: a storage profile whose every field of a
+/// codec of its set is held inline, at the capacity the deploy input gives it
+/// or at the field's bound. Past what it holds a storing decode refuses with
+/// `CodecError::CapacityExceeded`, and a frame it cannot hold is still judged
+/// whole first (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct {{ deployment }};
+
+impl ::sce_forge_runtime::codec::Copying for {{ deployment }} {}
+{% for codec in codecs %}
+
+// `{{ codec.name }}`
+{% for field in codec.fields %}
+{% if codec.cfg %}
+{{ codec.cfg }}
+{% endif %}
+{{ storage.holds("::sce_forge_runtime::codec", deployment, codec.module ~ "::" ~ field.tag, field) }}
+{% endfor %}
+{% endfor %}
