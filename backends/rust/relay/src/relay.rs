@@ -30,14 +30,42 @@ use sce_rust_trust::{Checkpoint, CheckpointError, PublicKey, TakeError, Trust};
 use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
-use crate::login::{self, Asked, Doorway, Opened};
+use crate::login::{self, Asked, Checked, Doorway, Opened};
 use crate::protocol::{Code, Join, Joined, Login, Record, Request, Response};
-use crate::store::Store;
+use crate::store::{Openly, Store};
 use crate::token::{Authority, Session, TokenError};
 
 /// The role at which a device may write, and the one at which it may read.
 const WRITER: u8 = 2;
 const READER: u8 = 1;
+
+/// How long a login's touch of a list created openly may go before its mark is written again: a
+/// relay writes a mark at most once an hour for a list, however often its devices log in, and a
+/// list lapses that much later than its last login's instant, so that the instant the mark holds
+/// never makes it lapse early.
+pub const TOUCH_STEP_MS: u64 = 3_600_000;
+
+/// What a sweep of lapsed lists did ([`Relay::lapse`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Lapsed {
+    /// How many lists created openly were removed, for no login had touched them for long enough.
+    pub removed: usize,
+    /// How many lists created openly the relay still holds.
+    pub kept: usize,
+    /// Why a removal failed, for each that did: the relay takes nothing more until it is started
+    /// again from its store, as for a record it could not write.
+    pub failures: Vec<String>,
+}
+
+impl Lapsed {
+    /// What two sweeps did together: a relay's of each of its slots.
+    pub fn and(mut self, other: Lapsed) -> Lapsed {
+        self.removed += other.removed;
+        self.kept += other.kept;
+        self.failures.extend(other.failures);
+        self
+    }
+}
 
 struct ListState {
     /// Holds the log, the chains and the checkpoints, with no key and no person: a verifier.
@@ -52,6 +80,13 @@ struct ListState {
     /// The nodes a key package was kept for under an invitation, each with when its invitation
     /// expires: the record of the invitation's use (ADR 0080 section 4).
     joins: BTreeMap<u64, u64>,
+    /// The mark the store keeps of a list a device created with no token, which lapses; `None` for
+    /// a list created with a token of the authority, which does not.
+    openly: Option<Openly>,
+    /// When a login last touched the list, by the relay's clock: what the store's mark says once
+    /// the relay starts, and every login since, which the mark is written with at most once a
+    /// [`TOUCH_STEP_MS`].
+    touched_at_ms: u64,
 }
 
 impl ListState {
@@ -63,7 +98,22 @@ impl ListState {
             welcomes: BTreeSet::new(),
             key_packages: BTreeMap::new(),
             joins: BTreeMap::new(),
+            openly: None,
+            touched_at_ms: 0,
         }
+    }
+
+    /// Whether the list was created openly and no login has touched it for `idle_ms`, and the
+    /// step a mark lags a login by, at `now_ms`: so that a list never lapses before its time, even
+    /// on a relay that started again since its last login and holds the mark's instant alone.
+    fn lapsed(&self, idle_ms: u64, now_ms: u64) -> bool {
+        self.openly.is_some_and(|mark| {
+            let touched = self.touched_at_ms.max(mark.touched_at_ms);
+            now_ms
+                >= touched
+                    .saturating_add(idle_ms)
+                    .saturating_add(TOUCH_STEP_MS)
+        })
     }
 
     /// How many joins wait for an administrator at `now_ms`: their invitation has not expired, and
@@ -151,6 +201,17 @@ impl<S: Store> Relay<S> {
                 }
             }
         }
+        // A mark of a list the store holds no record of is what a crash between a creation's mark
+        // and its first record, or between a removal's records and its mark, left: it is removed.
+        for (list, mark) in store.marks()? {
+            match lists.get_mut(&list) {
+                Some(state) => {
+                    state.openly = Some(mark);
+                    state.touched_at_ms = mark.touched_at_ms;
+                }
+                None => store.remove(&list)?,
+            }
+        }
         Ok(Self {
             store,
             authority,
@@ -198,12 +259,30 @@ impl<S: Store> Relay<S> {
             }
             Ok(Asked::Login(checked)) => {
                 let audience = self.authority.audience().to_string();
-                let admitted =
-                    self.admit_login(checked.login(), |key| checked.signed_by(key, &audience));
+                let admitted = self.admit_login(
+                    checked.login(),
+                    |key| checked.signed_by(key, &audience),
+                    now_ms,
+                );
                 match (admitted, self.doorway.as_mut()) {
                     (Err(refused), _) => refused,
                     (Ok(()), None) => login::not_offered(request),
                     (Ok(()), Some(doorway)) => doorway.redeem(&checked, &self.authority, now_ms),
+                }
+            }
+            Ok(Asked::Create(checked)) => {
+                let spent = match self.doorway.as_mut() {
+                    None => Err(login::not_offered(request)),
+                    Some(doorway) => doorway.spend_create(&checked, now_ms),
+                };
+                let audience = self.authority.audience().to_string();
+                let created = spent.and_then(|()| self.take_create(&checked, &audience, now_ms));
+                match (created, self.doorway.as_ref()) {
+                    (Err(refused), _) => refused,
+                    (Ok(()), None) => login::not_offered(request),
+                    (Ok(()), Some(doorway)) => {
+                        doorway.token(checked.login(), &self.authority, now_ms)
+                    }
                 }
             }
             Ok(Asked::Join(checked)) => {
@@ -285,13 +364,15 @@ impl<S: Store> Relay<S> {
         self.lists.contains_key(list)
     }
 
-    /// Whether the device `login` names may log in, by the log at the relay's head once the entries
-    /// it brought are appended: its latest grant gives it a role of at least 1 and a key, under
-    /// which `signed` holds. A list the relay holds no log of is not made by a login.
+    /// Whether the device `login` names may log in at `now_ms`, by the log at the relay's head once
+    /// the entries it brought are appended: its latest grant gives it a role of at least 1 and a
+    /// key, under which `signed` holds. A list the relay holds no log of is not made by a login. A
+    /// login admitted touches its list, which keeps a list created openly from lapsing.
     pub(crate) fn admit_login(
         &mut self,
         login: &Login,
         signed: impl Fn(&PublicKey) -> bool,
+        now_ms: u64,
     ) -> Result<(), Response> {
         let Some(held) = self
             .lists
@@ -340,7 +421,166 @@ impl<S: Store> Relay<S> {
                 "the login is not signed by the key the log gives the node",
             ));
         }
+        self.touch(&login.list, now_ms)
+    }
+
+    /// A login touched `list` at `now_ms`. The mark of a list created openly is written again when
+    /// the one the store holds is a [`TOUCH_STEP_MS`] old or more; a mark the store did not take
+    /// stops the relay taking anything, as a record it did not take does.
+    fn touch(&mut self, list: &str, now_ms: u64) -> Result<(), Response> {
+        let Some(state) = self.lists.get_mut(list) else {
+            return Ok(());
+        };
+        state.touched_at_ms = state.touched_at_ms.max(now_ms);
+        let Some(mark) = state.openly else {
+            return Ok(());
+        };
+        if now_ms < mark.touched_at_ms.saturating_add(TOUCH_STEP_MS) {
+            return Ok(());
+        }
+        let touched = Openly {
+            touched_at_ms: now_ms,
+            ..mark
+        };
+        if let Err(error) = self.store.mark(list, &touched) {
+            let reason = self.store_failed("take a list's mark", &error);
+            return Err(Response::refused(Code::Unavailable, reason));
+        }
+        if let Some(state) = self.lists.get_mut(list) {
+            state.openly = Some(touched);
+        }
         Ok(())
+    }
+
+    /// Take the creation `checked` (ADR 0080 section 3), which the doorway found holds its
+    /// challenge, its work and its name, at the relay named `audience` at `now_ms`: its entries, from
+    /// the list's genesis, verify as `append` verifies them, the latest grant of the node they give
+    /// it a role of at least 1 and a key, and the login is signed by that key for this relay. The
+    /// store keeps the list's mark first and then its entries, so that the list lapses as every
+    /// list created openly does. A creation of a list the relay holds already (two devices that
+    /// create a lapsed list at once) is a login. A relay that holds as many lists as it keeps takes
+    /// no other.
+    pub(crate) fn take_create(
+        &mut self,
+        checked: &Checked,
+        audience: &str,
+        now_ms: u64,
+    ) -> Result<(), Response> {
+        if let Some(reason) = &self.failed {
+            return Err(Response::refused(Code::Unavailable, reason.clone()));
+        }
+        let login = checked.login();
+        let signed = |key: &PublicKey| checked.signed_by(key, audience);
+        if self.lists.contains_key(&login.list) {
+            return self.admit_login(login, signed, now_ms);
+        }
+        if self.lists.len() >= self.limits.max_lists {
+            return Err(Response::refused(
+                Code::TooLarge,
+                "the relay holds as many lists as it keeps",
+            ));
+        }
+        if login.entries.len() > self.limits.max_records_per_list {
+            return Err(Response::refused(
+                Code::TooLarge,
+                "this list holds as many records as the relay keeps",
+            ));
+        }
+        let mut state = ListState::new(&login.list);
+        for text in &login.entries {
+            let entry = Entry::from_json(text).ok_or_else(|| {
+                Response::refused(Code::Invalid, "an entry of the creation is not one")
+            })?;
+            match state.trust.append(&entry) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(Response::refused(
+                        Code::Invalid,
+                        "an entry of the creation is given twice",
+                    ))
+                }
+                Err(error) => return Err(Response::refused(Code::Invalid, format!("{error:?}"))),
+            }
+        }
+        let key = state
+            .trust
+            .current_members()
+            .into_iter()
+            .find(|(node, _)| *node == login.node)
+            .map(|(_, key)| key)
+            .ok_or_else(|| {
+                Response::refused(
+                    Code::Forbidden,
+                    format!(
+                        "node {} is no member of the list its creation gives",
+                        login.node
+                    ),
+                )
+            })?;
+        if !signed(&key) {
+            return Err(Response::refused(
+                Code::Unauthorized,
+                "the creation is not signed by the key the log gives the node",
+            ));
+        }
+        let mark = Openly {
+            created_at_ms: now_ms,
+            touched_at_ms: now_ms,
+        };
+        if let Err(error) = self.store.mark(&login.list, &mark) {
+            let reason = self.store_failed("take a list's mark", &error);
+            return Err(Response::refused(Code::Unavailable, reason));
+        }
+        state.openly = Some(mark);
+        state.touched_at_ms = now_ms;
+        self.lists.insert(login.list.clone(), state);
+        for text in &login.entries {
+            self.keep(&login.list, Record::Entry(text.clone()))?;
+        }
+        Ok(())
+    }
+
+    /// Remove every list created openly that no login has touched for `idle_ms` at `now_ms` (and
+    /// the [`TOUCH_STEP_MS`] a mark may lag a login by), whole: its records and its mark from the
+    /// store, then what the relay holds of it, its allowances among them. A list created with a
+    /// token of the authority never lapses. A removal the store refused stops the relay taking
+    /// anything, as a record it did not take does, and the sweep there: a relay started again reads
+    /// the list whole or not at all. What the sweep did is returned, and names no list.
+    pub fn lapse(&mut self, idle_ms: u64, now_ms: u64) -> Lapsed {
+        let mut lapsed = Lapsed::default();
+        if let Some(reason) = &self.failed {
+            lapsed.failures.push(reason.clone());
+            return lapsed;
+        }
+        let due: Vec<String> = self
+            .lists
+            .iter()
+            .filter(|(_, state)| state.lapsed(idle_ms, now_ms))
+            .map(|(list, _)| list.clone())
+            .collect();
+        for list in due {
+            if let Err(error) = self.store.remove(&list) {
+                let reason = self.store_failed("remove a list that lapsed", &error);
+                lapsed.failures.push(reason);
+                break;
+            }
+            self.lists.remove(&list);
+            self.allowances.forget(&list);
+            lapsed.removed += 1;
+        }
+        lapsed.kept = self
+            .lists
+            .values()
+            .filter(|state| state.openly.is_some())
+            .count();
+        lapsed
+    }
+
+    /// Whether `list` is one a device created with no token, which lapses.
+    pub fn is_created_openly(&self, list: &str) -> bool {
+        self.lists
+            .get(list)
+            .is_some_and(|state| state.openly.is_some())
     }
 
     /// The device a token names, when this relay issued it and it has not expired: what a
@@ -404,7 +644,10 @@ impl<S: Store> Relay<S> {
             | Request::Checkpoint { .. }
             | Request::PublishCommit { .. }
             | Request::PublishWelcome { .. } => WRITER,
-            Request::Challenge { .. } | Request::Login(_) | Request::Join(_) => 0,
+            Request::Challenge { .. }
+            | Request::Login(_)
+            | Request::Join(_)
+            | Request::Create(_) => 0,
             Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,
         };
         if role < needs {
@@ -446,11 +689,15 @@ impl<S: Store> Relay<S> {
                 self.operations(&session.list, node, from, to)
             }
             Request::Heads => self.heads(&session.list),
-            // A session's token names its list and node already: a challenge, a login and a join
-            // are answered on a connection with no token (`Self::anonymous`), as a hub routes them.
-            Request::Challenge { .. } | Request::Login(_) | Request::Join(_) => Response::refused(
+            // A session's token names its list and node already: a challenge, a login, a join and
+            // a creation are answered on a connection with no token (`Self::anonymous`), as a hub
+            // routes them.
+            Request::Challenge { .. }
+            | Request::Login(_)
+            | Request::Join(_)
+            | Request::Create(_) => Response::refused(
                 Code::Invalid,
-                "a challenge, a login and a join are not a session's requests",
+                "a challenge, a login, a join and a creation are not a session's requests",
             ),
         }
     }
@@ -504,8 +751,7 @@ impl<S: Store> Relay<S> {
     /// is restarted from what it did write.
     fn keep(&mut self, list: &str, record: Record) -> Result<u64, Response> {
         if let Err(error) = self.store.append(list, &record) {
-            let reason = format!("the store did not take a record: {error}");
-            self.failed = Some(reason.clone());
+            let reason = self.store_failed("take a record", &error);
             return Err(Response::refused(Code::Unavailable, reason));
         }
         let state = self
@@ -515,6 +761,15 @@ impl<S: Store> Relay<S> {
         state.note(&record);
         state.records.push(record);
         Ok(state.records.len() as u64)
+    }
+
+    /// The store did not do `what` (a record, a list's mark, a removal) and `error` says why: what
+    /// the relay holds in memory is no longer what it could start again from, so it takes nothing
+    /// more until it is restarted from what the store holds, and says why to whoever asks.
+    fn store_failed(&mut self, what: &str, error: &io::Error) -> String {
+        let reason = format!("the store did not {what}: {error}");
+        self.failed = Some(reason.clone());
+        reason
     }
 
     /// Whether the list has room for one more record.

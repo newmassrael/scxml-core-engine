@@ -22,7 +22,7 @@ use std::sync::{Mutex, MutexGuard};
 use crate::limits::Limits;
 use crate::login::{self, Asked, Doorway, Opened};
 use crate::protocol::{Code, Request, Response};
-use crate::relay::{token_reason, Relay};
+use crate::relay::{token_reason, Lapsed, Relay};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
 
@@ -161,6 +161,15 @@ impl<S: Store + Send + 'static> Shards<S> {
         self.slots.len()
     }
 
+    /// Remove the lists created openly that no login has touched for `idle_ms` at `now_ms`, in
+    /// every slot, one slot locked at a time ([`Relay::lapse`]): what a deployment that takes
+    /// creations with no token runs at start and on a schedule.
+    pub fn lapse(&self, idle_ms: u64, now_ms: u64) -> Lapsed {
+        self.slots.iter().fold(Lapsed::default(), |lapsed, slot| {
+            lapsed.and(held(slot).lapse(idle_ms, now_ms))
+        })
+    }
+
     /// The slot that holds `list`.
     fn slot(&self, list: &str) -> &Mutex<Relay<S>> {
         &self.slots[slot_of(list, self.slots.len())]
@@ -222,11 +231,30 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
             }
             Ok(Asked::Login(checked)) => {
                 let audience = self.authority.audience();
-                let admitted = held(self.slot(&checked.login().list))
-                    .admit_login(checked.login(), |key| checked.signed_by(key, audience));
+                let admitted = held(self.slot(&checked.login().list)).admit_login(
+                    checked.login(),
+                    |key| checked.signed_by(key, audience),
+                    now_ms,
+                );
                 match admitted {
                     Err(refused) => refused,
                     Ok(()) => held(doorway).redeem(&checked, &self.authority, now_ms),
+                }
+            }
+            // The nonce and the relay's creations of the hour are spent under the doorway's lock,
+            // and the list made under its slot's alone; the token is the doorway's again.
+            Ok(Asked::Create(checked)) => {
+                let spent = held(doorway).spend_create(&checked, now_ms);
+                let created = spent.and_then(|()| {
+                    held(self.slot(&checked.login().list)).take_create(
+                        &checked,
+                        self.authority.audience(),
+                        now_ms,
+                    )
+                });
+                match created {
+                    Err(refused) => refused,
+                    Ok(()) => held(doorway).token(checked.login(), &self.authority, now_ms),
                 }
             }
             // The nonce is spent under the doorway's lock, and the invitation judged and the key

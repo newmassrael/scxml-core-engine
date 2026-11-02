@@ -85,6 +85,12 @@ impl Allowances {
             .or_insert((capacity, now_ms));
         spend(bucket, capacity, wanted, refill, now_ms)
     }
+
+    /// Forget the allowance of every device of `list`: a list that lapsed, whose devices start
+    /// again as new ones when it is created again.
+    pub(crate) fn forget(&mut self, list: &str) {
+        self.spent.retain(|(held, _), _| held != list);
+    }
 }
 
 /// Spend `wanted` units of the token bucket `bucket` (what it holds, and the time in ms it was
@@ -206,6 +212,22 @@ mod tests {
         assert!(
             allowances.take("work", 1, 1, 0, &limits).is_ok(),
             "another list"
+        );
+    }
+
+    #[test]
+    fn the_devices_of_a_list_forgotten_start_with_their_burst_and_others_keep_theirs() {
+        let mut allowances = Allowances::default();
+        let limits = limits();
+        for _ in 0..4 {
+            allowances.take("home", 1, 1, 0, &limits).unwrap();
+            allowances.take("work", 1, 1, 0, &limits).unwrap();
+        }
+        allowances.forget("home");
+        assert!(allowances.take("home", 1, 1, 0, &limits).is_ok());
+        assert!(
+            allowances.take("work", 1, 1, 0, &limits).is_err(),
+            "another list's allowance is kept"
         );
     }
 

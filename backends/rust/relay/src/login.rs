@@ -28,8 +28,19 @@
 //! minute; per node of a list, logins an hour, charged when the signature held, so that a stranger
 //! spends no member's allowance. The tables forget a key a window after it last spent, and hold a
 //! bounded number of keys ([`crate::limits`]). What a connection may ask besides is refused:
-//! `create` (ADR 0080 section 3) as a request this relay does not offer (`invalid`), and every
-//! request of a session as `unauthorized`.
+//! `create` by a doorway given no [`CreationPolicy`] as a request this relay does not offer
+//! (`invalid`), and every request of a session as `unauthorized`.
+//!
+//! **A creation (ADR 0080 section 3).** A doorway given a [`CreationPolicy`] (`[creation] policy =
+//! "open"`) says, in a challenge for a list the relay does not hold, the work a creation of it
+//! takes. The device answers with `create`: a login whose entries are the log from its genesis to
+//! its node's grant, and a counter whose work against the challenge's nonce and the genesis holds.
+//! The doorway checks the challenge, the work and that the list's name certifies the genesis's
+//! first administrator key (`sce_rust_trust::creation`), holds a source to so many creations a
+//! minute and the relay to so many an hour, and spends the nonce; the list's side checks the
+//! entries and the login as for a login, keeps the list's mark and then its entries
+//! (`Relay::take_create`), and the device is issued its token. A list so created lapses when no
+//! login touches it for long enough ([`crate::Relay::lapse`]); its devices create it again.
 //!
 //! **A join (ADR 0080 section 4).** A device that is not in the log yet asks a challenge for the
 //! node an administrator's invitation names, and joins against it with the invitation, its identity
@@ -48,14 +59,16 @@
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
+use sce_rust_trust::creation;
 use sce_rust_trust::invitation::{Proof, Ticket};
+use sce_rust_trust::membership::Entry;
 use sce_rust_trust::{encoding, PublicKey, Trust};
 use serde_json::Value;
 
 use crate::client::{CourierError, LinkError};
 use crate::driver::Exchange;
 use crate::limits::Windows;
-use crate::protocol::{Code, Join, Login, Request, Response};
+use crate::protocol::{Code, Create, Join, Login, Request, Response};
 use crate::token::{equal, hmac_sha256, Authority};
 
 /// How long a challenge holds, by the relay's clock.
@@ -106,6 +119,34 @@ impl Default for LoginPolicy {
             joins_outstanding_per_list: 32,
             used_nonces: 100_000,
             sources: 65_536,
+        }
+    }
+}
+
+/// What a relay that takes a creation from a connection with no token holds it to (ADR 0080
+/// sections 3 and 5): the work it asks, so many creations a minute from a source, and so many an
+/// hour of the whole relay. The defaults are the decision's difficulty, about a million hashes, and
+/// allowances a household that creates a list now and then never meets.
+///
+/// A relay that takes such creations runs the lapse of the lists created so
+/// ([`crate::Relay::lapse`], [`crate::Shards::lapse`]), without which a stranger could use up its
+/// lists for good: `sce-relay` refuses an `open` policy with no lapse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CreationPolicy {
+    /// How many zero bits the work of a creation begins with (`sce_rust_trust::creation`).
+    pub work_bits: u32,
+    /// Creations a source makes, each minute.
+    pub creations_per_minute: u32,
+    /// Creations the relay takes, each hour, from every source together.
+    pub creations_per_hour: u32,
+}
+
+impl Default for CreationPolicy {
+    fn default() -> Self {
+        Self {
+            work_bits: 20,
+            creations_per_minute: 4,
+            creations_per_hour: 60,
         }
     }
 }
@@ -195,9 +236,15 @@ pub(crate) fn not_offered(request: &str) -> Response {
 
 /// What an anonymous connection asked, once the doorway let it through.
 pub(crate) enum Asked {
-    Challenge { list: String, node: u64 },
+    Challenge {
+        list: String,
+        node: u64,
+    },
     Login(Checked),
     Join(CheckedJoin),
+    /// A creation whose challenge is the relay's, whose work holds and whose name certifies its
+    /// genesis; the entries and the login are checked by the list's side (`Relay::take_create`).
+    Create(Checked),
 }
 
 /// A join whose challenge is the relay's, for the invitation's list and node, has not expired and
@@ -259,6 +306,11 @@ pub struct Doorway {
     logins: Windows<Option<IpAddr>>,
     nodes: Windows<(String, u64)>,
     joins: Windows<Option<IpAddr>>,
+    /// What a creation is held to, when the relay takes one from a connection with no token.
+    creation: Option<CreationPolicy>,
+    creations: Windows<Option<IpAddr>>,
+    /// The creations of the whole relay, under one key.
+    relay_creations: Windows<()>,
 }
 
 impl Doorway {
@@ -283,11 +335,28 @@ impl Doorway {
             logins: Windows::new(policy.sources),
             nodes: Windows::new(policy.sources),
             joins: Windows::new(policy.sources),
+            creation: None,
+            creations: Windows::new(policy.sources),
+            relay_creations: Windows::new(1),
         }
+    }
+
+    /// This doorway takes a creation from a connection with no token under `policy` (ADR 0080
+    /// section 3, `[creation] policy = "open"`): a challenge for a list the relay does not hold says
+    /// the work a creation of it takes. A doorway takes none until it is given a policy, and a list
+    /// is then created with a token of the authority alone.
+    pub fn with_creation(mut self, policy: CreationPolicy) -> Self {
+        self.creation = Some(policy);
+        self
     }
 
     pub fn policy(&self) -> &LoginPolicy {
         &self.policy
+    }
+
+    /// What a creation is held to, when this doorway takes one.
+    pub fn creation(&self) -> Option<&CreationPolicy> {
+        self.creation.as_ref()
     }
 
     /// Whether a connection that presents no token the relay takes is taken from `source` at
@@ -319,16 +388,18 @@ impl Doorway {
                 format!("a request is at most {max_request_bytes} bytes"),
             ));
         }
+        let no_creation = || {
+            Response::refused(
+                Code::Invalid,
+                "this relay does not offer `create`: a list is created with a token of its \
+                 authority",
+            )
+        };
         let request = Request::from_json(text).map_err(|reason| {
-            let reason = match op_of(text).as_deref() {
-                Some("create") => {
-                    "this relay does not offer `create`: a list is created with a token of its \
-                     authority"
-                        .to_string()
-                }
-                _ => reason,
-            };
-            Response::refused(Code::Invalid, reason)
+            match (op_of(text).as_deref(), &self.creation) {
+                (Some("create"), None) => no_creation(),
+                _ => Response::refused(Code::Invalid, reason),
+            }
         })?;
         let source = source_of(source);
         let limited = |retry_after_ms| {
@@ -366,12 +437,66 @@ impl Doorway {
                 )?;
                 Ok(Asked::Join(CheckedJoin { join, nonce }))
             }
+            Request::Create(create) => {
+                let creation = self.creation.ok_or_else(no_creation)?;
+                self.creations
+                    .take(source, creation.creations_per_minute, MINUTE_MS, now_ms)
+                    .map_err(limited)?;
+                self.check_creation(*create, creation.work_bits, now_ms)
+                    .map(Asked::Create)
+            }
             _ => Err(Response::refused(
                 Code::Unauthorized,
-                "a connection with no token the relay takes asks for a challenge, logs in or \
-                 joins, and nothing else",
+                "a connection with no token the relay takes asks for a challenge, logs in, joins \
+                 or creates, and nothing else",
             )),
         }
+    }
+
+    /// A creation whose challenge this relay made for its list and node, that has not expired and
+    /// was not used, whose first entry is the list's genesis, whose work against the challenge and
+    /// that genesis begins with `bits` zero bits, and whose name certifies the genesis's first
+    /// administrator key (`sce_rust_trust::creation`). The entries after the genesis and the login
+    /// are the list's side's to judge.
+    fn check_creation(
+        &mut self,
+        create: Create,
+        bits: u32,
+        now_ms: u64,
+    ) -> Result<Checked, Response> {
+        let Create { login, work } = create;
+        let genesis = login
+            .entries
+            .first()
+            .and_then(|text| Entry::from_json(text))
+            .filter(|entry| entry.list == login.list)
+            .ok_or_else(|| {
+                Response::refused(
+                    Code::Invalid,
+                    "a creation's first entry is the genesis of the list it creates",
+                )
+            })?;
+        let administrator = creation::first_administrator(&genesis).ok_or_else(|| {
+            Response::refused(
+                Code::Invalid,
+                "a creation's first entry is the genesis of the list it creates",
+            )
+        })?;
+        let checked = self.check(login, now_ms)?;
+        if !creation::work_holds(&checked.nonce, &genesis.hash(), work, bits) {
+            return Err(Response::refused(
+                Code::Unauthorized,
+                format!("the work does not begin with the {bits} zero bits this relay asks"),
+            ));
+        }
+        if !creation::certifies(&checked.login.list, &administrator) {
+            return Err(Response::refused(
+                Code::Forbidden,
+                "a list created with no token is named by the key its genesis names first \
+                 (n1.<salt>.<digest>), and this name is not that",
+            ));
+        }
+        Ok(checked)
     }
 
     /// The challenge for the device of `node` of `list` at the relay named `audience`, which holds
@@ -397,7 +522,12 @@ impl Doorway {
             nonce: encoding::encode(&nonce),
             expires_at_ms,
             held,
-            work: None,
+            // A list the relay does not hold is one a device may create, when the relay takes a
+            // creation with no token: the challenge says what work it takes.
+            work: self
+                .creation
+                .filter(|_| !held)
+                .map(|creation| creation.work_bits),
         }
     }
 
@@ -540,6 +670,37 @@ impl Doorway {
             );
         }
         self.use_nonce(checked.nonce, login.expires_at_ms);
+        self.token(login, authority, now_ms)
+    }
+
+    /// The nonce of a creation that holds its challenge, its work and its name is used from now
+    /// on, and the relay spends one of its creations of the hour, before the list's side judges the
+    /// entries and the login: a creation refused there asks for another challenge and does its work
+    /// again.
+    pub(crate) fn spend_create(&mut self, checked: &Checked, now_ms: u64) -> Result<(), Response> {
+        let Some(creation) = self.creation else {
+            return Err(Response::refused(
+                Code::Invalid,
+                "this relay does not offer `create`",
+            ));
+        };
+        self.nonce_free(&checked.nonce, now_ms)?;
+        if let Err(retry_after_ms) =
+            self.relay_creations
+                .take((), creation.creations_per_hour, HOUR_MS, now_ms)
+        {
+            return Err(Response::refused(
+                Code::RateLimited { retry_after_ms },
+                "the relay has taken as many creations as it takes this hour",
+            ));
+        }
+        self.use_nonce(checked.nonce, checked.login.expires_at_ms);
+        Ok(())
+    }
+
+    /// The token of the device `login` names, once the list's side admitted it: a login's, or a
+    /// creation's.
+    pub(crate) fn token(&self, login: &Login, authority: &Authority, now_ms: u64) -> Response {
         let expires_at_ms = now_ms.saturating_add(self.policy.token_seconds.saturating_mul(1000));
         Response::Token {
             token: authority.issue(&login.list, login.node, expires_at_ms),
@@ -580,6 +741,15 @@ enum Phase {
 /// The device's side of a login, with no link: it asks for a challenge for its person's node, signs
 /// the login against it with the audience the device was configured with, and ends with the token.
 /// It reads no clock and opens nothing, as a round does not.
+///
+/// **A list the relay does not hold is created.** A challenge that says the relay does not hold the
+/// list and names the work a creation takes (a relay that takes a creation from a connection with
+/// no token, ADR 0080 section 3) is answered with a creation instead of a login: the entries of the
+/// log from its genesis to the latest grant of the device's node, the work, and the login's
+/// signature. The relay keeps them and issues the token as for a login. A list that lapsed at the
+/// relay is so created again, with the same genesis and name, by whichever of its devices logs in
+/// first; that device's next round gives the relay the rest of what it holds ([`Self::created`]).
+/// A relay that holds no such list and takes no creation is logged in at, and refuses (`behind`).
 pub struct LoginMachine {
     trust: Trust,
     audience: String,
@@ -587,6 +757,8 @@ pub struct LoginMachine {
     /// The request put to the relay and not answered yet.
     asked: Option<Request>,
     outcome: Option<Result<Token, CourierError>>,
+    /// Whether the signed request was a creation.
+    creating: bool,
 }
 
 impl LoginMachine {
@@ -605,7 +777,16 @@ impl LoginMachine {
             phase: Phase::Challenge,
             asked: None,
             outcome,
+            creating: false,
         }
+    }
+
+    /// Whether the login created the list at the relay and came to a token: the relay held none of
+    /// it (a list that lapsed there, or one no device had given it yet) and now holds its log as far
+    /// as the device's grant, and nothing else. A host's next round starts reading the relay from
+    /// its start, and gives it everything it lacks (`CourierState::begin_again`).
+    pub fn created(&self) -> bool {
+        self.creating && matches!(self.outcome, Some(Ok(_)))
     }
 
     /// The request to put to the relay next, or the login's end. Asked again before it is
@@ -656,15 +837,23 @@ impl LoginMachine {
                     audience,
                     nonce,
                     expires_at_ms,
-                    ..
+                    held,
+                    work,
                 }),
-            ) => match self.login(&audience, &nonce, expires_at_ms) {
-                Ok(request) => {
-                    self.phase = Phase::Signed(request);
-                    return;
+            ) => {
+                let signed = match work.filter(|_| !held) {
+                    Some(bits) => self.create(&audience, &nonce, expires_at_ms, bits),
+                    None => self.login(&audience, &nonce, expires_at_ms),
+                };
+                match signed {
+                    Ok(request) => {
+                        self.creating = matches!(request, Request::Create(_));
+                        self.phase = Phase::Signed(request);
+                        return;
+                    }
+                    Err(error) => Err(error),
                 }
-                Err(error) => Err(error),
-            },
+            }
             (
                 Phase::Signed(_),
                 Ok(Response::Token {
@@ -678,6 +867,50 @@ impl LoginMachine {
             (_, Ok(other)) => Err(CourierError::Unexpected(format!("{other:?}"))),
         };
         self.outcome = Some(outcome);
+    }
+
+    /// The creation request for a challenge the relay named `audience` gave, for a list it does not
+    /// hold and whose creation takes work of `bits`: the login's request with the entries of the
+    /// log from its genesis to the latest grant of the device's node, and the work found against
+    /// the challenge's nonce and the genesis.
+    fn create(
+        &self,
+        audience: &str,
+        nonce: &str,
+        expires_at_ms: u64,
+        bits: u32,
+    ) -> Result<Request, CourierError> {
+        let Request::Login(mut login) = self.login(audience, nonce, expires_at_ms)? else {
+            return Err(CourierError::Unexpected(
+                "a login is the request a creation is made from".to_string(),
+            ));
+        };
+        let held = self.trust.entries();
+        let (Some(genesis), Some(grant)) = (held.first(), self.trust.latest_grant(login.node))
+        else {
+            return Err(CourierError::Unexpected(
+                "the relay holds no such list, and this device holds no log of it that grants its \
+                 node a role to create it with"
+                    .to_string(),
+            ));
+        };
+        let nonce_bytes = encoding::decode(nonce).ok_or_else(|| {
+            CourierError::Unexpected("the challenge's nonce is not in the URL alphabet".to_string())
+        })?;
+        let work = creation::find_work(&nonce_bytes, &genesis.hash(), bits).ok_or_else(|| {
+            CourierError::Unexpected(format!(
+                "the relay asks work of {bits} bits for a creation, and a device does no more than \
+                 {}",
+                creation::MOST_WORK_BITS
+            ))
+        })?;
+        let through = usize::try_from(grant.index).unwrap_or(usize::MAX);
+        login.entries = held
+            .iter()
+            .take(through.saturating_add(1))
+            .map(Entry::to_json)
+            .collect();
+        Ok(Request::Create(Box::new(Create { login, work })))
     }
 
     /// The login request for a challenge the relay named `audience` gave.
@@ -951,6 +1184,30 @@ mod tests {
         for session in [r#"{"v":1,"op":"heads"}"#, "not json", "{}"] {
             assert!(!is_anonymous(session), "{session}");
         }
+    }
+
+    #[test]
+    fn a_challenge_asks_work_for_a_list_the_relay_does_not_hold_when_it_takes_creations() {
+        let work_of = |doorway: &mut Doorway, held: bool| match doorway
+            .challenge("home", 1, held, "relay", 0)
+        {
+            Response::Challenge { work, .. } => work,
+            other => panic!("a challenge, and not {other:?}"),
+        };
+        let mut closed = Doorway::with_key(LoginPolicy::default(), [1; 32]);
+        assert_eq!(work_of(&mut closed, false), None);
+        let mut open =
+            Doorway::with_key(LoginPolicy::default(), [1; 32]).with_creation(CreationPolicy {
+                work_bits: 11,
+                ..CreationPolicy::default()
+            });
+        assert_eq!(work_of(&mut open, false), Some(11));
+        assert_eq!(
+            work_of(&mut open, true),
+            None,
+            "a list it holds is logged in to"
+        );
+        assert_eq!(CreationPolicy::default().work_bits, 20);
     }
 
     #[test]

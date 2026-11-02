@@ -13,11 +13,14 @@
 //! * [`protocol`] - the requests and responses, as JSON texts.
 //! * [`token`] - the login-bound token that names a device of one list, and nothing about a person.
 //! * [`login`] - a member's device logs in by proving the key its list's log gave its node, and the
-//!   relay issues its token: the relay's side ([`Doorway`]) and the device's ([`LoginMachine`]); and
-//!   a device an administrator invited leaves its key package under the invitation
-//!   ([`JoinMachine`]).
+//!   relay issues its token: the relay's side ([`Doorway`]) and the device's ([`LoginMachine`]); a
+//!   device an administrator invited leaves its key package under the invitation
+//!   ([`JoinMachine`]); and a relay that takes a creation with no token ([`CreationPolicy`]) is
+//!   given a list by the login of its device, under a name that certifies its genesis.
 //! * [`limits`] - the allowance of each device and the bounds on a request and a reply.
-//! * [`store`] - the append-only record a relay starts from, checked again as it is read.
+//! * [`store`] - the append-only record a relay starts from, checked again as it is read, and the
+//!   mark of each list created with no token, which lapses when no login touches it
+//!   ([`Relay::lapse`]).
 //! * [`client`] - a host's courier to a relay, the round it makes as a state machine that does no
 //!   I/O itself, the link it speaks over, and the sealer for a host that has no hub.
 //! * [`driver`] - the one loop that carries an exchange (a round, or the peer core's) over a link,
@@ -68,10 +71,11 @@ pub use driver::{drive, Driven, Exchange};
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
 pub use login::{
-    Doorway, JoinMachine, JoinStep, LoginMachine, LoginPolicy, LoginStep, Opened, Token,
+    CreationPolicy, Doorway, JoinMachine, JoinStep, LoginMachine, LoginPolicy, LoginStep, Opened,
+    Token,
 };
-pub use protocol::{Code, Join, Joined, Login, Record, Request, Response};
-pub use relay::Relay;
+pub use protocol::{Code, Create, Join, Joined, Login, Record, Request, Response};
+pub use relay::{Lapsed, Relay, TOUCH_STEP_MS};
 pub use sce_rust_relay_transport::{
     Notice, Notices, Signal, Transport, TransportError, Watch, NOTICES_KEPT,
 };

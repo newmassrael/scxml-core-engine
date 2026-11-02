@@ -154,8 +154,8 @@ PY
 
 mutation_case "A relay that cannot write a record down goes on taking records" <<'PY'
 edit("backends/rust/relay/src/relay.rs",
-     "            self.failed = Some(reason.clone());",
-     "            let _ = &reason;")
+     "        self.failed = Some(reason.clone());\n        reason\n",
+     "        let _ = &reason;\n        reason\n")
 PY
 
 mutation_case "A relay gives out entries past the end of its log" <<'PY'

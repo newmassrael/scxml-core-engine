@@ -137,6 +137,19 @@ pub enum Request {
     /// invitation (ADR 0080 section 4): asked on a connection that presents no token the relay
     /// takes, against a challenge for the invitation's list and node.
     Join(Box<Join>),
+    /// A device creates `list` at a relay that takes a creation from a connection with no token
+    /// (ADR 0080 section 3): a login whose entries are the log from its genesis to the node's
+    /// grant, and the counter of its work (`sce_rust_trust::creation`).
+    Create(Box<Create>),
+}
+
+/// What a device creates a list with (`Request::Create`): the login of section 2, whose entries
+/// begin with the list's genesis and reach the grant of the node that logs in, and the counter of
+/// the work the relay asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Create {
+    pub login: Login,
+    pub work: u64,
 }
 
 /// What a device joins with (`Request::Join`): the invitation, its proof, and its key package in
@@ -190,6 +203,55 @@ fn read_proof(value: &Value) -> Option<Proof> {
         nonce: encoding::decode(text("nonce")?)?,
         expires_at_ms: text("expires_at_ms")?.parse().ok()?,
         signature: encoding::decode(text("proof")?)?.try_into().ok()?,
+    })
+}
+
+/// A login as the request `op` writes it: a login's own, and a creation's, which adds its work.
+fn login_value(op: &str, login: &Login) -> Value {
+    let mut value = json!({
+        "op": op,
+        "list": login.list,
+        "node": login.node.to_string(),
+        "nonce": login.nonce,
+        "expires_at_ms": login.expires_at_ms.to_string(),
+        "signature": login.signature,
+    });
+    if !login.entries.is_empty() {
+        value["entries"] = json!(login.entries);
+    }
+    value
+}
+
+/// The login [`login_value`] wrote into `value`.
+fn read_login(value: &Value) -> Result<Login, String> {
+    let text_of = |name: &str| -> Result<String, String> {
+        value
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| format!("it has no `{name}` text"))
+    };
+    let number = |name: &str| -> Result<u64, String> {
+        text_of(name)?
+            .parse()
+            .map_err(|_| format!("`{name}` is not a number"))
+    };
+    Ok(Login {
+        list: text_of("list")?,
+        node: number("node")?,
+        nonce: text_of("nonce")?,
+        expires_at_ms: number("expires_at_ms")?,
+        signature: text_of("signature")?,
+        entries: match value.get("entries") {
+            None => Vec::new(),
+            Some(entries) => entries
+                .as_array()
+                .ok_or("`entries` is not a list")?
+                .iter()
+                .map(|entry| entry.as_str().map(str::to_string))
+                .collect::<Option<_>>()
+                .ok_or("an entry is not text")?,
+        },
     })
 }
 
@@ -253,18 +315,10 @@ impl Request {
             Request::Challenge { list, node } => {
                 json!({"op": "challenge", "list": list, "node": node.to_string()})
             }
-            Request::Login(login) => {
-                let mut value = json!({
-                    "op": "login",
-                    "list": login.list,
-                    "node": login.node.to_string(),
-                    "nonce": login.nonce,
-                    "expires_at_ms": login.expires_at_ms.to_string(),
-                    "signature": login.signature,
-                });
-                if !login.entries.is_empty() {
-                    value["entries"] = json!(login.entries);
-                }
+            Request::Login(login) => login_value("login", login),
+            Request::Create(create) => {
+                let mut value = login_value("create", &create.login);
+                value["work"] = json!(create.work.to_string());
                 value
             }
             Request::Join(join) => {
@@ -353,23 +407,17 @@ impl Request {
                 list: text_of("list")?,
                 node: number("node")?,
             }),
-            Some("login") => Ok(Request::Login(Login {
-                list: text_of("list")?,
-                node: number("node")?,
-                nonce: text_of("nonce")?,
-                expires_at_ms: number("expires_at_ms")?,
-                signature: text_of("signature")?,
-                entries: match value.get("entries") {
-                    None => Vec::new(),
-                    Some(entries) => entries
-                        .as_array()
-                        .ok_or("`entries` is not a list")?
-                        .iter()
-                        .map(|entry| entry.as_str().map(str::to_string))
-                        .collect::<Option<_>>()
-                        .ok_or("an entry is not text")?,
-                },
-            })),
+            Some("login") => Ok(Request::Login(read_login(&value)?)),
+            Some("create") => {
+                let login = read_login(&value)?;
+                if login.entries.is_empty() {
+                    return Err("a creation gives the list's entries from its genesis".to_string());
+                }
+                Ok(Request::Create(Box::new(Create {
+                    login,
+                    work: number("work")?,
+                })))
+            }
             Some("join") => Ok(Request::Join(Box::new(Join {
                 invitation: value
                     .get("invitation")
@@ -749,8 +797,48 @@ mod tests {
                 proof: proof(),
                 key_package: None,
             })),
+            Request::Create(Box::new(Create {
+                login: Login {
+                    list: "n1.AQID.BBBB".to_string(),
+                    node: 1,
+                    nonce: "AAAA".to_string(),
+                    expires_at_ms: 60_000,
+                    signature: "BBBB".to_string(),
+                    entries: vec!["{\"x\":1}".to_string(), "{\"x\":2}".to_string()],
+                },
+                work: u64::MAX,
+            })),
         ] {
             assert_eq!(Request::from_json(&request.to_json()), Ok(request));
+        }
+    }
+
+    /// The creation of ADR 0080 section 3, as a relay in another language reads it: a login's
+    /// members, the counter of the work as text, and the entries, which a creation cannot leave
+    /// out.
+    #[test]
+    fn a_create_is_the_text_the_decision_gives() {
+        let text = r#"{"v":1,"op":"create","list":"n1.AQID.BBBB","node":"1","nonce":"A","expires_at_ms":"1","work":"77","entries":["e"],"signature":"B"}"#;
+        assert_eq!(
+            Request::from_json(text),
+            Ok(Request::Create(Box::new(Create {
+                login: Login {
+                    list: "n1.AQID.BBBB".to_string(),
+                    node: 1,
+                    nonce: "A".to_string(),
+                    expires_at_ms: 1,
+                    signature: "B".to_string(),
+                    entries: vec!["e".to_string()],
+                },
+                work: 77,
+            })))
+        );
+        for wrong in [
+            r#"{"v":1,"op":"create","list":"l","node":"1","nonce":"A","expires_at_ms":"1","work":"77","signature":"B"}"#,
+            r#"{"v":1,"op":"create","list":"l","node":"1","nonce":"A","expires_at_ms":"1","work":77,"entries":["e"],"signature":"B"}"#,
+            r#"{"v":1,"op":"create","list":"l","node":"1","nonce":"A","expires_at_ms":"1","entries":["e"],"signature":"B"}"#,
+        ] {
+            assert!(Request::from_json(wrong).is_err(), "{wrong}");
         }
     }
 
