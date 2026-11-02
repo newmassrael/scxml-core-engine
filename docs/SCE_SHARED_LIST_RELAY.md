@@ -135,7 +135,9 @@ the same `keep` that `Keep` uses); a round is request texts out and response tex
 order, the refusals, whether the machine is to be built again, whether it stalled, and what the group's
 device did with what was read; the device's state is saved and restored as one text. It reads no clock
 and starts no thread, so the C ABI every application lane links is a thin layer over it
-(`two_devices_hold_one_list_through_a_relay_with_a_core_each`).
+(`two_devices_hold_one_list_through_a_relay_with_a_core_each`). That ABI is `sce-rust-peer-capi`
+(`docs/SCE_SHARED_LIST_PEER_ABI.md`): the same texts through a hand-written header, and a recorded
+scenario of two devices and this relay that C, C++, Python, Go, Kotlin and Swift replay with no relay.
 
 **A replay writes nothing twice.** An application that keeps its own log of commands as its original
 builds its machine again from it, and the machine sends its writes and notes again, as it made them.

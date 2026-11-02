@@ -74,9 +74,10 @@ the MLS commit to the log by hash** and of the **Welcome to the log by the confi
    `verify_checkpoint`, `verify_settlement`, `admit_floor`, `seal_*`): what a host does with an operation.
 3. `backends/rust/trust/src/secrecy.rs`, `identity.rs`, `backup.rs`, `audit.rs`.
 4. `backends/rust/relay/src/relay.rs`, `token.rs`, `store.rs`, `client.rs` (the courier).
-5. `backends/rust/mls/src/lib.rs`, `host.rs`; `backends/rust/mls-capi/src/lib.rs` (the only `unsafe`).
+5. `backends/rust/mls/src/lib.rs`, `host.rs`; `backends/rust/mls-capi/src/lib.rs` and, since
+   2026-11-02, the peer core's `backends/rust/peer-capi/src/lib.rs` (the C ABIs, the only `unsafe`).
 
-About 7,000 lines of Rust outside tests. `#![forbid(unsafe_code)]` holds everywhere but the C ABI.
+About 7,000 lines of Rust outside tests. `#![forbid(unsafe_code)]` holds everywhere but the C ABIs.
 
 ## 5. The properties and how they are evidenced
 
