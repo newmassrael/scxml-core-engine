@@ -40,7 +40,10 @@ reviewer learns one set of rules:
   (`SCE_PEER_ERR_GRANTED`, `_INVITATION`, `_NOT_JOINED`) that only those functions give, and the
   administrator's acts on a node the core invited, which only they make: a lane of version 5 that
   calls none of them sees nothing change, and the number stays 5. The sealed state is the core's
-  version 5, which holds the invitations (section 6);
+  version 5, which holds the invitations (section 6). The creation of a list with no token and its
+  lapse (ADR 0080 section 3, section 13) move no number either: `sce_peer_certified_name` is a
+  function added alone, and `sce_peer_login` creates a list only at a relay whose challenge asks
+  work, which no relay asked before, with an outcome of a login's shape;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -119,6 +122,7 @@ log is written (section 7).
 | `sce_peer_open(list)` | `Peer::open` | the core of the device of whoever makes the list; null on failure |
 | `sce_peer_invited(list, genesis)` | `Peer::invited` | the core of a device invited with the hash (32 bytes) of the list's genesis entry; null on failure |
 | `sce_peer_free(peer)` | | frees a core; null is ignored |
+| `sce_peer_certified_name(administrator, salt, salt_len, out)` | `Peer::certified_name`, `Peer::draw_certified_name` | the name of a list to open at a relay that takes a creation with no token, which certifies the administrator's key a 32-byte seed makes, under the host's salt of 1 to 32 bytes or 16 the library draws when `salt_len` is 0 (section 13); `SCE_PEER_ERR_BAD_ARGUMENT` for a salt longer |
 | `sce_peer_set_identity(peer, node, seed)` | `Peer::set_identity` | the device's person: their node and the key a 32-byte seed makes |
 | `sce_peer_set_administrator(peer, seed)` | `Peer::set_administrator` | the administrator's key the device holds, from a 32-byte seed |
 | `sce_peer_open_list(peer, profile, genesis)` | `Peer::open_list` | opens a new list (section 7); `genesis` is set to the hash (32 bytes) a person is invited with |
@@ -132,7 +136,7 @@ log is written (section 7).
 | `sce_peer_start(peer, kind)` | `Peer::start` | begins a round: `SCE_PEER_ROUND_SYNC`, `_RESYNC` or `_REREAD` |
 | `sce_peer_publish_checkpoint(peer, before, digest)` | `Peer::publish` of a checkpoint | begins the exchange that gives the relay the person's checkpoint up to `before` |
 | `sce_peer_publish_key_package(peer)` | `Peer::publish_key_package` | begins the exchange that leaves a key package of the group's device with the relay |
-| `sce_peer_login(peer, audience)` | `Peer::login` | begins the exchange that logs the device in at the relay named `audience` (the name it was configured with), whose outcome holds the token (section 5); `SCE_PEER_ERR_NO_PERSON` with no person |
+| `sce_peer_login(peer, audience)` | `Peer::login` | begins the exchange that logs the device in at the relay named `audience` (the name it was configured with), whose outcome holds the token (section 5); at a relay that takes a creation with no token, the login of a list the relay does not hold creates it (section 13); `SCE_PEER_ERR_NO_PERSON` with no person |
 | `sce_peer_invite(peer, relay, audience, node, now_ms, valid_ms, out)` | `Peer::invite` | an administrator's invitation of the device of `node`, which the log never granted, at the relay of address `relay` and name `audience`, from `now_ms` for `valid_ms` (at most a day): `out` is the text for a QR code (section 12) |
 | `sce_peer_invite_under(peer, relay, audience, node, now_ms, valid_ms, secret, out)` | `Peer::invite_under` | the same under a 32-byte secret the host gives: one it drew, or a recording's fixed one |
 | `sce_peer_invitation_read(invitation, len, out)` | `Ticket::from_text` | what the invitation's text says, as one JSON text: `relay`, `audience`, `list`, `node`, `genesis`, `expires_at_ms`; no secret |
@@ -673,3 +677,46 @@ compared a fingerprint.
    shows the same digits since each reads them from the core. For the list `home`, node 2, `P_s` of
    32 bytes each `0x11` and the identity key of 32 bytes each `0x22`, the digits are
    `2074 5706 5351 1674 5217` (`a_fingerprint_is_the_digits_the_documentation_gives`).
+
+## 13. A list created with no token, and its lapse (ADR 0080 section 3)
+
+A relay whose creation policy is `open` takes the first entries of a list from a device on a
+connection with no token, for some work, under a name that certifies the list's genesis; a list so
+created lapses when no login touches it for the relay's days, and its devices create it again. The
+core does both through the login, so a lane adds one call.
+
+1. **The name.** `sce_peer_certified_name(administrator, salt, salt_len, out)` gives
+   `n1.<salt>.<digest>`: the salt in the URL alphabet, and the first 16 bytes, in the URL alphabet,
+   of SHA-256 of the parts `sce-relay/list-name/1`, the salt in the URL alphabet and the public key
+   the 32-byte `administrator` seed makes in the URL alphabet, in the trust layer's framing. The salt
+   is the host's (1 to 32 bytes; one administrator's two lists take two), or 16 bytes the library
+   draws when `salt_len` is 0. The host makes the core with this name (`sce_peer_open`), gives it the
+   same seed (`sce_peer_set_administrator`) and its person, and opens the list (`sce_peer_open_list`)
+   as for any list. A relay takes no creation of the name with a genesis whose first administrator
+   key is another, so no one takes a name another device made, before the list lapses or after.
+2. **The creation.** `sce_peer_login(peer, audience)` asks a challenge as it does; a relay that does
+   not hold the list and takes a creation says so (`"held": false`) and names the work (`"work":
+   bits`, 20 by default). The core then sends, in place of the login,
+   `{"op":"create","list","node","nonce","expires_at_ms","work","entries","signature"}`: the login's
+   members and signature, the entries of its log from the genesis to its person's latest grant, and
+   the first counter, from 0, such that SHA-256 of the parts `sce-relay/work/1`, the nonce in the URL
+   alphabet, the genesis's hash in the URL alphabet and the counter in decimal begins with that many
+   zero bits. The core does no more than 24 bits whatever a relay asks. The relay checks the
+   challenge, the work, the name, its bounds and the entries and signature as for a login, keeps the
+   list and issues the token: the outcome is a login's (`"token"`). At a relay that takes no
+   creation, the login of a list it does not hold is refused `behind`, as before.
+3. **What the next round gives back.** The relay holds the log as far as the grant, and nothing
+   more, and its `heads` say since when its history of the list runs (`"since"`); a device whose
+   courier last read another `since` reads the relay from its start, so every device's next round,
+   the one that created the list again and the others, gives the relay what it lacks of what the
+   device holds: the rest of the log, every device's operations it holds, its checkpoints and the
+   proof of a conflict. The courier's state holds `since` once it has read one, in the sealed state
+   with the rest; a list created with a token has none, and its state's text is the one it was.
+4. **What is not given back.** The group's commits and Welcomes, and a key package left under an
+   invitation, are the relay's alone once they were read: a device whose group had not read a commit
+   before the list lapsed is admitted to the group again, and a device that had joined under an
+   invitation not yet acted on joins again under a new one.
+
+The recorded scenario keeps creation closed (alice's device gives the list's first entries with a
+token of the authority); the creation, its lapse and its creation again through the ABI are
+`a_list_created_with_no_token_lapses_and_a_device_that_holds_it_creates_it_again`.

@@ -178,6 +178,20 @@ The unit is hardened: a user made for the service (`DynamicUser=`), the one dire
 (`StateDirectory=`), its keys as credentials, no privilege but binding port 443, a read-only system, no
 other user's files, a system-call filter, and `MemoryMax=640M` for a server of 1 GB.
 
+**The configuration's keys.** Every key is optional but where the table says otherwise; a section or
+a key the relay does not read is refused by name, with its line.
+
+| Section | Keys (default) |
+|---|---|
+| `[listen]` | `plain`, `tls` (addresses with ports; one of them at least), `trusted_proxies` (none) |
+| `[tls]` | `certificate_chain`, `private_key` (both, or neither; with `[listen] tls`) |
+| `[store]` | `directory` (required), `slots` (1) |
+| `[authority]` | `key_file` (required) |
+| `[connections]` | `max` (512), `handshake_seconds` (10), `idle_seconds` (300), `shutdown_grace_seconds` (10), `anonymous_requests` (8), `anonymous_idle_seconds` (30) |
+| `[limits]` | `burst`, `refill_per_second`, `write_cost`, `max_request_bytes`, `max_feed`, `max_range`, `max_records_per_list`, `max_lists`, `max_group_message_bytes`, `max_key_packages_per_node` (section 9) |
+| `[login]` | `enabled` (true), `token_seconds` (3600), `connections_per_minute`, `challenges_per_minute`, `logins_per_minute` (30 each), `logins_per_node_per_hour` (60), `joins_per_minute` (30), `joins_outstanding_per_list` (32) (section 6) |
+| `[creation]` | `policy` (`"closed"`), `lapse_days` (90), `work_bits` (20), `creations_per_minute` (4), `creations_per_hour` (60) (section 6) |
+
 ## 6. Tokens: who issues a device's token
 
 A device presents a token naming one list and its node in that list (`docs/SCE_SHARED_LIST_RELAY.md`
@@ -224,8 +238,45 @@ proxy's. What logs in, from where and when, is learned by the relay as it learns
 connection; it logs counts, never a key, a token or a nonce. A member taken off is issued no new
 token; one it holds still connects until it expires, and every request is judged by the log.
 
-What the relay does not do yet (ADR 0080 step 4): create a list for a device with no token of the
-authority. Creation is `closed`: a list is created with a token of the authority, as below.
+**Who creates a list: `[creation] policy`.** The first entry of a list the relay does not hold is
+taken under the deployment's creation policy (ADR 0080 section 3):
+
+```toml
+[creation]
+policy = "closed"               # "closed" (the default) or "open"
+lapse_days = 90                 # a list created openly that no login touched this long is removed
+work_bits = 20                  # "open": the proof of work a creation takes, 1 to 24
+creations_per_minute = 4        # "open": per source
+creations_per_hour = 60         # "open": of the whole relay
+```
+
+- **`closed`** (the default, and the recommendation for any deployment with a service of any kind): a
+  list is created by a device that presents a token of the authority for its name, which the
+  deployment's service or an operator issues (below). A token for a name the relay does not hold is
+  the creation ticket; nothing else is configured.
+- **`open`**, for an application with no service at all: any device may create a list on a connection
+  with no token. The relay's challenge for a list it does not hold names the work (`work_bits`), and
+  the device's login sends the list's first entries with a counter that meets it, about a million
+  hashes at 20 bits, a second or less on a phone. The list's name must be `n1.<salt>.<digest>`, the
+  digest of the key the list's genesis names first (`sce_peer_certified_name`), so that no one takes a
+  name another device made. A source makes `creations_per_minute`, the relay takes
+  `creations_per_hour`, and `[limits] max_lists` bounds the lists as for any list. A list created so
+  **lapses**: one no login touched for `lapse_days` (and an hour, the step a login's touch is written
+  in) is removed from the store, whole, and a device that still holds it creates it again on its next
+  login with the same name, and gives it back what it holds. `open` is refused at start without
+  `[login] enabled = true` and with `lapse_days = 0`: a list created openly that never lapsed would be
+  one a stranger keeps for good.
+
+The relay removes the lists that lapsed as it starts (`event=lapsed removed=N kept=M`) and every hour
+after (a line only when it removed one). A list created with a token never lapses, whatever the
+policy; `lapse_days = 0` turns lapse off where nothing is created openly. The residual of `open` is a
+stranger who spends the work to make lists up to `max_lists`, each held until it lapses: keep
+`max_lists` at what the server holds (section 9), and `creations_per_hour` low. What the relay learns
+of a creation is the list's name, its node and the source's prefix, as of any login; it logs counts.
+
+A device's side needs nothing of the operator: the host names the list (`sce_peer_certified_name`),
+opens it (`sce_peer_open_list`) and logs in (`sce_peer_login`), which creates it at a relay whose
+policy is `open` (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 13).
 
 **Whoever holds the authority's key issues tokens the relay takes.** In a deployment with a sign-in
 service of its own, that is the service: it authenticates the person by its own means (an identity
@@ -251,10 +302,11 @@ knows a device by its node in one list.
   what the log lets its node read and spend that node's allowance; what is kept is decided by the
   members' signatures and the log, which no token changes.
 
-An application with no service of its own has its members' devices log in (above): a token of the
-authority is then needed only for the list's first entries and a device being invited, until ADR
-0080's steps 3 and 4. A deployment whose service issues every token may turn login off (`[login]
-enabled = false`).
+An application with no service of its own has its members' devices log in and its administrators
+invite (above), and either gives each list's first entries with a token of the authority (`closed`,
+an operator's act once a list) or runs the relay `open`, where no token of the authority is needed
+at all. A deployment whose service issues every token may turn login off (`[login] enabled = false`),
+and keeps creation `closed`.
 
 ## 7. Firewall
 
@@ -286,6 +338,15 @@ was never started). Devices see the restart as a connection lost and dial again 
 nothing a device sent is lost, since a device keeps what it signed and gives the relay what its heads
 show it lacks. Keep the old binary until the new one has run.
 
+**A store from before lapse** (a relay built before 2026-11-03) holds no list's mark: every list in
+it was created with a token of the authority, and none of them ever lapses. Nothing is converted, and
+the new relay reads it as it is; `check` names the `creation` policy and `lapse_days` it would run
+with. Turning `open` on later changes nothing for those lists. A relay started with `open` and then
+stopped and downgraded to a build from before lapse would read each list created openly as one
+created with a token (it does not read the marks) and keep it for good: do not downgrade past it, or
+remove the lists marked `.open` first. **The configuration** gains `[creation]` (section 6), every key
+of it optional; a file of before reads as `closed` with lapse of 90 days, which lapses nothing.
+
 ## 9. Memory on a server of 1 GB
 
 The relay keeps every record of every list it holds in memory and verifies them all again when it
@@ -304,7 +365,10 @@ lists and keeps the ones it holds.
 
 The store is a directory of append-only files: `slot-<n>/` for each slot, and in it one file for each
 list, named by the hexadecimal of the list's name, a line for each record. Every line is a record the
-relay verified, and the relay verifies each again when it starts.
+relay verified, and the relay verifies each again when it starts. A list created with no token has a
+second file of the same name with the extension `.open`, one line that says when the list was created
+and when a login last touched it; it is replaced whole, never appended to. A list that lapses loses
+both files, the only thing the relay ever deletes.
 
 - **Backup.** A copy taken while the relay runs is a store: each file is a prefix of the list's
   records, and a last line cut off by the copy is dropped when it is read. No list's records depend on
@@ -328,9 +392,13 @@ relay verified, and the relay verifies each again when it starts.
 - **One relay per store.** Two relays must never run on one store directory at once; under systemd one
   unit is one process.
 - **Slots.** The number of slots is fixed when a store begins. To change it, stop the relay, move each
-  list's file into the directory of the slot its name belongs to for the new number
-  (`sce_rust_relay::slot_of`), set `[store] slots`, and `check`: a relay whose store is laid out for
-  another number refuses to start and names the file.
+  list's files (its `.jsonl`, and its `.open` when it has one) into the directory of the slot its name
+  belongs to for the new number (`sce_rust_relay::slot_of`), set `[store] slots`, and `check`: a relay
+  whose store is laid out for another number refuses to start and names the file, a mark included.
+- **A restored copy and lapse.** A copy restored holds the marks as they were when it was taken: a
+  list that lapsed after the copy comes back and lapses again at the next sweep, and one whose marks
+  say an older login lapses sooner than it would have. Its devices create it again on their next
+  login in either case.
 
 ## 11. Health
 
@@ -377,8 +445,13 @@ probe has lost its store. A token for any other list is used only to read that l
 | 2 | none | the command line: no token and no key, both, no time, or an address that is not `ws://` or `wss://` |
 
 A probe's write spends its node's allowance like a device's (a write and a read each run); a probe every
-minute is far inside the defaults. The probe list is one of the relay's lists (`max_lists`). A probe
-presents a token and does not log in (a probe that logs in is ADR 0080's step 5, not built).
+minute is far inside the defaults. The probe list is one of the relay's lists (`max_lists`); it is
+created with a token, and never lapses. A probe presents a token and does not log in. A probe that
+logged in was considered with ADR 0080's step 5 and not built: the probe list's administrator key is
+public by design, so a login to it is one anyone could take over by bringing a grant of its own, and
+a sound one needs a list of its own under keys derived from the authority's, given to the relay with
+a token first (ADR 0080, "Status of the plan"). To watch that login works, a monitor logs a member's
+device in (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 5).
 
 The relay does not use systemd's watchdog: the answer of a request is the liveness worth checking, and a
 ping from a thread of the process says nothing of it.
@@ -386,10 +459,10 @@ ping from a thread of the process says nothing of it.
 ## 12. Open decisions for the owner
 
 - **Tokens for an application with no service of its own** (decided: ADR 0080, accepted
-  2026-11-02). A member's device logs in and the relay issues its token (section 6), built
-  2026-11-02. An administrator's signed invitation under which a device not yet in the log leaves its
-  key package, and a list's creation under `[creation] policy` (`closed` by default, `open` with proof
-  of work and lapse), are the ADR's steps 3 and 4, not built yet.
+  2026-11-02, built 2026-11-02 and 2026-11-03). A member's device logs in and the relay issues its
+  token, an administrator invites a device by a signed invitation under which it leaves its key
+  package, and a list is created under `[creation] policy` (`closed` by default, `open` with proof of
+  work and lapse) (section 6). A probe that logs in is not built (section 11).
 - **A private authority on a phone** waits on the ABI call that names one (section 4, option 2).
 - **Reloading a renewed certificate** without a restart is not built: a restart takes seconds and the
   devices dial again.

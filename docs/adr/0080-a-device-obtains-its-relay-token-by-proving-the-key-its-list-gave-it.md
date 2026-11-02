@@ -1,7 +1,7 @@
 # ADR 0080 — A device obtains its relay token by proving the key its list gave it, and the relay issues it
 
 - Status: Accepted (2026-11-02), as proposed and with the proposed answers to its open questions (see the end).
-  Being built in its order of work: steps 1 to 3 landed.
+  Built in its order of work: steps 1 to 5 landed; the probe that logs in was not built (see the status).
 - Date: 2026-11-02
 - Related:
   - ADR 0034 (a shared list is held by its members, and the hub only relays), sections 8 and 9 and its threat
@@ -318,6 +318,71 @@ open:
 - **The recorded scenario** invites bob's device by the text, makes it from the text, joins, shows one
   fingerprint on both devices and grants the key the proof names.
 - **Not built in this step:** lapse and open creation (step 4), a probe that logs in (step 5).
+
+**Steps 4 and 5 landed (2026-11-03).** What was built, and where the build chose what the decision
+left open:
+
+- **Lapse** (`Store::marks`, `mark`, `remove`; `Relay::lapse`, `Shards::lapse`). A list created
+  openly has a mark beside its records, its creation and its last login's instant: for `FileStore`
+  a file of one line with the list's hexadecimal and the extension `open`, written whole beside it
+  and renamed over it. The mark is written before the list's first record and removed after its
+  records, so that a crash leaves a mark with no list, which the relay removes as it starts, and
+  never a list created openly with no mark, which would never lapse. A login (and a creation) touches
+  the list; the mark is written again at most once an hour (`TOUCH_STEP_MS`), and a list lapses once
+  `lapse_days` and that hour have passed since its last login, so that the instant a mark holds never
+  makes a list lapse early, after a restart too. A list lapsed is removed whole: its open file closed
+  and deleted, then its mark, each deletion written into the directory, then what the relay holds of
+  it and its devices' allowances. A removal the store refuses stops the relay as a record it could
+  not write does (`unavailable`), and a store read again holds the list whole or not at all. The
+  slot's directory check counts marks as it counts lists. `sce-relay serve` sweeps at start and
+  every hour, and logs how many lists were removed and are kept, never which; `[creation]
+  lapse_days` (90; 0 turns lapse off, which `open` is refused with).
+- **Open creation** (`CreationPolicy`, `Doorway::with_creation`, `Request::Create`,
+  `Relay::take_create`). `create` is the login's text with `work`, the counter in decimal, and its
+  `entries` run from the genesis to the latest grant of the node, so that any member that holds the
+  log creates the list again, not only the device that opened it. The work's parts are framed as the
+  trust layer frames every part: the nonce and the genesis's hash in the URL alphabet, the counter in
+  decimal. The decision's text named no difficulty: the build asks 20 bits (about a million hashes,
+  under a second on a phone), `[creation] work_bits` from 1 to 24, and a device does no more than 24
+  whatever a relay asks. A name is `n1.<salt>.<digest>`, the salt (1 to 32 bytes) and the 16 bytes of
+  the digest in the URL alphabet, the digest's parts the domain, the salt and the first administrator
+  key in the URL alphabet (`sce_rust_trust::creation`). The doorway checks the challenge, the work
+  and the name, and holds a source to `creations_per_minute` (4) and the relay to
+  `creations_per_hour` (60), spent before the list's side judges the entries and the signature; the
+  list's side checks `max_lists`, keeps the mark and then the entries. Refusals: `unauthorized` (the
+  work, as a proof that does not hold), `forbidden` (a name that does not certify the genesis, a node
+  the entries do not grant), `too_large`, `rate_limited`. A creation of a list the relay holds by
+  then (two devices that create a lapsed list at once) is a login. `sce-relay` refuses `open` without
+  login and without lapse at configuration time.
+- **Giving back what a device holds.** A list created again holds the log as far as the creating
+  device's grant, and the other devices hold cursors into the history before. The relay's `heads`
+  therefore say `since`, the instant the list's history at the relay began, and a courier whose
+  state last read another reads the relay from its start and gives the proof of conflicts again
+  (`CourierState`); its round then gives the relay the rest of the log, every device's operations it
+  holds and its checkpoints, as every round gives what heads show the relay lacks. Without it a
+  device's old cursor would pass over a write made since the list was created again. What only the
+  relay held is not given back: the group's commits and Welcomes, and a key package left under an
+  invitation.
+- **The core and the ABI.** The creation is folded into the login, as section 7's table wrote it:
+  `Peer::login` and `sce_peer_login` send `create` when the challenge says the relay does not hold the
+  list and names work, and the outcome is a login's. The name is the host's to choose before it makes
+  the core: `Peer::certified_name` (the host's salt), `Peer::draw_certified_name`, and
+  `sce_peer_certified_name(administrator, salt, salt_len, out)`, from the administrator's seed, a
+  function added alone; the ABI stays 5, since a login creates a list only where a relay asks work,
+  which none asked before. The Kotlin binding gains `PeerCore.certifiedName`. The recorded scenario
+  keeps alice on the closed path; the creation, the lapse and the creation again run through the ABI
+  in a test of their own.
+- **Step 5: the runbook** (`docs/SCE_RELAY_DEPLOY.md`) describes login, invitations, the creation
+  policies, lapse, every configuration key, and the upgrade of a store from before lapse.
+- **Not built: a probe that logs in.** As suggested (the probe list's genesis granting node 1 a key
+  derived from the authority key) it is not sound: a genesis grants no one, so the grant is an entry
+  after it, and the probe list's administrator key is public by design (anyone may make it), so any
+  connection with no token could log in bringing a grant of node 1 to a key of its own and take the
+  node. A sound one needs a second list whose administrator and member key are both derived from the
+  authority key, a way to give a relay that list under `closed` (a token of the authority, on a
+  connection of its own before the login's), and a key file for a monitor that holds no authority
+  key: two connections in one report, a new file and a new command. It is left for a step of its own;
+  a probe presents a token, as before.
 
 ## The owner's answers (2026-11-02)
 

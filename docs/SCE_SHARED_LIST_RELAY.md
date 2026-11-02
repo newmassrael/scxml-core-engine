@@ -112,6 +112,34 @@ arrived. The relay cannot make a proof for a key package of its own, since it ho
 secret; an administrator's device admits only a key a proof under its own `P_s` names. The device's
 side is `JoinMachine`.
 
+**A device creates a list with no token, and such a list lapses (ADR 0080 section 3).** Who gives a
+relay the first entry of a list it does not hold is the deployment's creation policy. Under
+`closed` (the default, and what a relay given no `CreationPolicy` does) it is a session whose token
+the authority issued for the name, as above. Under `open` (`Doorway::with_creation`, `[creation]
+policy = "open"` of `sce-relay`) it is also any device on a connection with no token: a challenge
+for a list the relay does not hold says `held: false` and `work`, the bits a creation takes (20 by
+default), and the device sends `create`, a login whose `entries` run from the list's genesis to its
+node's latest grant, with `work`, a counter such that SHA-256 of the parts `sce-relay/work/1`, the
+nonce in the URL alphabet, the genesis's hash in the URL alphabet and the counter in decimal (the
+trust layer's framing) begins with that many zero bits (`sce_rust_trust::creation`). The list's name
+must certify the genesis: `n1.<salt>.<digest>`, the salt and the first 16 bytes of SHA-256 of
+`sce-relay/list-name/1`, the salt and the genesis's first administrator key, each in the URL
+alphabet, so that no one without that key takes a name another device made. The doorway checks the
+challenge, the work and the name, holds a source to `creations_per_minute` (4) and the relay to
+`creations_per_hour` (60), and spends the nonce; the list's side checks `max_lists`, the entries as
+`append` would, and the login's signature by the key the entries grant the node, keeps the list's
+mark and then its entries, and the device is issued its token. Refusals: `unauthorized` (the
+challenge, the work, the signature), `forbidden` (a name that does not certify the genesis, a node
+the entries do not grant), `too_large` (`max_lists`), `rate_limited`, and `invalid` from a relay
+that takes no creation. A creation of a list the relay holds by then is a login. A list created so
+**lapses**: no login has touched it for the relay's days (90 by default, and an hour's step a touch
+is written at most once in, `TOUCH_STEP_MS`), and it is removed from the store whole
+(`Relay::lapse`, `Shards::lapse`); `sce-relay` sweeps at start and every hour, and takes no `open`
+policy without it. A list created with a token never lapses. A device that still holds a list that
+lapsed creates it again on its next login, with the same genesis and name, and the relay's `heads`
+say since when its history of the list runs (`since`, the instant of its creation), so that every
+device's courier reads it again from its start and gives it back what it holds (section 6).
+
 ## 3. Requests
 
 A request and its response are JSON texts with a version, every 64-bit number written as text. A
@@ -126,15 +154,16 @@ in process, a host's own through the peer core's C ABI, or the deployment transp
 | `checkpoint` | a checkpoint, as above |
 | `feed cursor limit` | the records after the first `cursor`, in arrival order, bounded by the relay |
 | `operations node from to` | a range of one device's chain |
-| `heads` | the head of each chain the relay holds in full, the log's length and the number of records |
+| `heads` | the head of each chain the relay holds in full, the log's length and the number of records, and for a list created with no token `since`, the instant its history at the relay began |
 | `challenge list node` | a challenge to log in against (section 2): the relay's audience, a nonce, its expiry, whether the relay holds the list; asked on any connection |
 | `login list node nonce expires_at_ms signature entries?` | the token of the device of `node`, when its login holds (section 2); asked on any connection |
 | `join invitation nonce expires_at_ms key key_package? proof` | `accepted`, when the invitation and the proof hold, and the key package kept with them (section 2); asked on any connection |
+| `create list node nonce expires_at_ms work entries signature` | the token of the device of `node`, when the relay takes a creation with no token and the work, the name, the entries and the signature hold (section 2); asked on any connection |
 
-On a connection that presents no token the relay takes, `challenge`, `login` and `join` are answered
-and every other request is refused `unauthorized`; `create` (ADR 0080 section 3) is refused `invalid`
-with a reason that names it, as by a relay that does not offer it, and a relay that offers no login
-refuses `challenge`, `login` and `join` `invalid` the same way.
+On a connection that presents no token the relay takes, `challenge`, `login`, `join` and `create`
+are answered and every other request is refused `unauthorized`; a relay that takes no creation
+refuses `create` `invalid` with a reason that names it, and a relay that offers no login refuses
+`challenge`, `login`, `join` and `create` `invalid` the same way.
 
 A refusal says why: `unauthorized`, `forbidden`, `rate_limited` (with when to ask again),
 `too_large`, `invalid`, `behind` (it names an entry of the log the relay has not been given yet: send
@@ -154,7 +183,9 @@ names no address) so many anonymous connections, challenges, logins and joins a 
 default), per node of a list so many logins an hour (60), charged only once the signature held, so that a
 stranger spends no member's allowance, per list so many joins waiting for an administrator (32); a few
 requests (8) and a short idle time (30 s) on one
-connection. Each table forgets a key a window after it last spent, and holds a bounded number of
+connection. A relay that takes a creation with no token holds a source to so many creations a minute
+(4) and itself to so many an hour (60), asks work of each (20 bits), and lets a list so created
+lapse (section 2). Each table forgets a key a window after it last spent, and holds a bounded number of
 keys. A source behind a proxy is the address its `X-Forwarded-For` names, only on a connection from
 a proxy the server is told to trust (`Server::trusting`).
 
@@ -173,9 +204,16 @@ durably before its first record is acknowledged, and a store keeps at most `OPEN
 open, so that a relay of many lists does not run out of descriptors (an append that failed for that
 reason would stop the relay taking anything).
 
-The relay keeps its records in memory and replays them at start; it never forgets one. A settlement
-lets the members' machines forget tombstones, and does not let the relay forget operations (that is a
-compaction, which is not built).
+The relay keeps its records in memory and replays them at start. It forgets a list only when the
+list lapses (section 2): a list created with no token has a mark of its own beside its records, a
+file of one line with the same hexadecimal and the extension `open`, which says when it was created
+and when a login last touched it; it is written whole to a file beside it and renamed over it, before
+the list's first record, and removed after the list's records, each removal written into the directory
+durably. A crash between the two leaves a mark of a list the store holds no record of, which the relay
+removes as it starts, and never a list created so with no mark, which would never lapse. A store
+read again with a removal half done holds the list whole or not at all. Otherwise the relay never
+forgets a record: a settlement lets the members' machines forget tombstones, and does not let the
+relay forget operations (that is a compaction, which is not built).
 
 ## 6. What a host does: the courier
 
@@ -212,7 +250,9 @@ put to the relay, is given the answer, and comes to the `Round` and the errors a
 in the same requests and the same order; a `Courier` is that machine driven over a synchronous `Link`
 by the one driver every exchange is run by (section 9).
 What a courier keeps between rounds (`CourierState`: the cursor, the roster told, the operations parked
-for want of a key, the proof of a conflict given) changes only where a step of a round was completed,
+for want of a key, the proof of a conflict given, and the instant the relay's history of a list
+created with no token began, `since`, whose change in the relay's heads makes the round read the
+relay from its start and give the proof again) changes only where a step of a round was completed,
 and what a round took in and did not hand over, because the link failed, the answer never came or the
 host abandoned it, is handed over first by the next round; the state is one text for a host's storage.
 `Publication` builds and checks the requests that give the relay a key package, a commit, a Welcome or
@@ -316,10 +356,11 @@ Not built, and not claimed:
   the library or the ones a deployment names (section 9), not the device's store: an authority a user
   or an enterprise installed on the device is not believed, and a root the system distrusts after the
   library was built is distrusted only by a new build of it.
-- **Creation of a list by a device with no token of the authority.** A member logs in and the relay
-  issues its token, and a device an administrator invited leaves its key package under the
-  invitation (section 2, ADR 0080 steps 1 to 3). Open creation and the lapse of a list are not built
-  (ADR 0080 step 4): today a list is created with a token of the authority.
+- **The group's messages of a list that lapsed.** A list created with no token lapses and its
+  devices create it again, giving the relay back the log, the operations, the checkpoints and the
+  proof of conflicts they hold (section 2). The group's commits and Welcomes, and a key package left
+  under an invitation, are not given back: a device that holds none of them keeps none, and one that
+  had not read a commit before the list lapsed is admitted to the group again.
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
 
