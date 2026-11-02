@@ -225,6 +225,22 @@ when it is called production.
   every host that saw both. What this rests on is the relay's word on how far a chain goes, which is ADR 0034's limit
   for a relay that withholds. Not done here: handing a rebuilt machine the other devices' operations from the core
   alone; a resync round from the relay tells it the list.
+- **Step 4** landed 2026-11-02. `sce-rust-peer-capi` (`include/sce_peer.h`, ABI version 1, documented in
+  `docs/SCE_SHARED_LIST_PEER_ABI.md`) gives `Peer` to a lane function for function, with the MLS ABI's rules: the
+  two constructors return a handle or NULL and `free`, `abi_version`, `last_error` and `buf_free` return what the
+  MLS ABI's do, as there; every other function returns `int32_t`. "Nothing waits" is an empty buffer with status 0.
+  The recorded scenario (`tests/fixtures/two_devices_and_a_relay.json`) is two devices and the in-process relay:
+  writes and a supersede taken, an unsigned event, another content under a signed stamp refused, a transport failing
+  mid-round, a save and a restore that waits for its own chain, a replayed write held, a resync. A fresh run is held
+  equal to it, and it replays with no relay from Rust, C, C++, Python, Go, Kotlin (JNA) and Swift (a module map).
+  The CI lane that builds the Kotlin replays now starts when one of them alone changes. Two departures from section
+  4: the scenario has no removal, and the group key is not in it. A removal is an administrator's operation and
+  those are not yet on `Peer` (below), and the group key draws randomness, so the MLS ABI keeps its own scenario.
+- Not on `Peer` yet, so not on the ABI: the administrator's operations (drafting and signing the genesis, a grant
+  and a removal, creating the group, adding and removing a member, and the commit and Welcome they publish) are
+  reached only through `Peer::trust()` and `Peer::group_mut()`, and a lane learns that its device waits for its own
+  chain only from a refusal's reason. A lane can therefore join a list and write to it, but cannot open one or admit a
+  device. They are added to `Peer` and to the ABI before an application links it.
 - Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
   again before `restore`; section 6 (step 7) seals them.
 
