@@ -638,3 +638,29 @@ Landing: the commit that adds this section.
   largest frame. They counted each `<sce:embed>` as 256 bytes, so they were above the frame for a small body and below
   it for a large one: `codec_nested_parent` is 3296, not 2710. A buffer sized from the old constant could refuse a frame
   of the language with `SCE_FORGE_CODEC_BUFFER_OVERFLOW`; regenerate and size from the new one.
+
+## A CBOR string states its bound only where the protocol does, and a codec Inline does not hold names its profile (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A CBOR map's `string` or `bytes` entry with no `sce:max-size` has an owned mirror, as a bounded one does. The map
+  holds it as `Text<'a, { usize::MAX }>` or `Bytes<'a, { usize::MAX }>`, where it was a bare `&'a str` or `&'a [u8]`:
+  `.into_inner()` gives the `str` or slice. The mirror `{Codec}Owned<S>` holds it in what `S` answers for its tag, and
+  `Inline` answers for none, so store it at `Heap` or at a deployment that gives the entry a capacity in its `codecs:`
+  block. A deployment that gives none is refused, naming the entry.
+- A deployment's `codecs:` block now sizes a CBOR entry, by the entry's id. A capacity on an exact-length byte string
+  (`sce:length`) is refused, since a form stores no variable length of it.
+- C11: `sce_forge_cbor_read_text` and `sce_forge_cbor_read_bytes` take the bound and the capacity,
+  `(cursor, max_size, capacity, dst, len)`, where they took one size. A string past the bound is
+  `SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE` and one inside it and past the capacity `SCE_FORGE_CODEC_CAPACITY_EXCEEDED`; pass
+  `SIZE_MAX` for no bound. A generated C11 CBOR codec with an entry of neither a bound nor a capacity is refused, as
+  before, and one given a capacity holds the entry in an array of it.
+- A codec that `Inline` does not hold, because it or a codec it holds has a list, a byte string or a text with no bound,
+  has no default profile, on every target:
+  - `try_into_owned()` is not generated for it; call `try_into_owned_in::<S>()` with the profile.
+  - `{Codec}Owned` and `{Codec}OwnedVariant` take the profile as an argument with no default: `{Codec}Owned<Heap>`,
+    `{Codec}Owned<Narrow>`. The CBOR mirror's struct likewise.
+  - With no allocator the default profile is `Inline`, and these named it there whether or not they were used: a codec
+    with a list of no bound, from the previous two sections, did not compile in a `no_std` build. Every codec `Inline`
+    holds keeps its default.
+

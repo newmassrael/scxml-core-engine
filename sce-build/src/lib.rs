@@ -3797,9 +3797,10 @@ pub struct BroadcastLogElementFacts {
     /// shape whose decoded form can hold a view into the buffer it was read from.
     pub cbor_text_or_bytes_entry: bool,
     /// A string or byte-string entry of the CBOR map states neither `sce:max-size`
-    /// nor `sce:length` ([`forge::cbor_codec::has_unbounded_text_or_bytes`]): no
-    /// container of a declared capacity holds it, so the Rust form of the map has
-    /// no owned mirror to copy a decoded value into. Read together with
+    /// nor `sce:length` and has no capacity
+    /// ([`forge::cbor_codec::has_unbounded_text_or_bytes`]): no container of a
+    /// fixed size holds it, so `Inline`, which a Rust log's read copies a decoded
+    /// value into, does not answer for it. Read together with
     /// [`Self::cbor_text_or_bytes_entry`]. A document set never reaches a log with
     /// such an element, since a slot is sized from the element's largest encoded
     /// size and `broadcast-log/element-size-unbounded` refuses one that has none;
@@ -3880,10 +3881,11 @@ impl BroadcastLogElementFacts {
             // (`codec_cbor.rs.jinja2`), and a log's `read` hands back that form,
             // built by `try_into_owned_in::<Inline>()` from the decode that
             // borrowed its stack buffer. So the map is held, as the other
-            // languages' are. What has no mirror is a map with an entry that
-            // states no bound, for there is no capacity to declare a container
-            // at; a document set refuses such an element for its size before a
-            // render, and a render given its numbers by hand refuses it here.
+            // languages' are. What `Inline` does not hold is an entry that
+            // states no bound and has no capacity (docs/adr/0077 §7), so the
+            // log's read has no form to build; a document set refuses such an
+            // element for its size before a render, and a render given its
+            // numbers by hand refuses it here.
             Language::Rust => self.cbor_text_or_bytes_entry && self.cbor_entry_unbounded,
             // Every value a Python decode returns owns what it holds, so a CBOR
             // text or byte-string entry is held and never refused. The log gives
@@ -5621,6 +5623,30 @@ fn compute_codec_recursive_max_bytes(
     })
 }
 
+/// Whether the Rust tree's `Inline` holds the codec `cm` and every codec it
+/// holds, read through the same file-graph resolver as
+/// [`codec_is_borrowed_recursive`] (`CodecModel::inline_holds_with`). A body
+/// whose import does not resolve is answered as one `Inline` does not hold,
+/// so no item that would name it there is written.
+fn codec_inline_holds_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    cm.inline_holds_with(|alias| {
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
+            Some(codec_inline_holds_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
+    })
+}
+
 /// Whether a codec's generated Rust struct holds any borrowed (`&'a`)
 /// reference and therefore needs a `<'a>` lifetime parameter.
 ///
@@ -5644,9 +5670,9 @@ fn compute_codec_recursive_max_bytes(
 /// strings and byte strings as entries. What this answers for one is whether it
 /// has an owned mirror, `{Codec}Owned`, which is what a container that stores the
 /// element names in place of the view
-/// ([`forge::cbor_codec::rust_owned_mirror`]: a map that borrows and bounds every
-/// string and byte string). A map with an unbounded one has a view and no mirror,
-/// and is answered `false` as it was.
+/// ([`forge::cbor_codec::rust_owned_mirror`]: a map that borrows a string or a
+/// byte string, bounded or not, since the mirror holds each in its profile's
+/// container for the entry's tag, docs/adr/0077 §7).
 fn codec_is_borrowed_recursive(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
@@ -6212,6 +6238,17 @@ fn validate_and_enrich_imports(
                     &parsed.imports,
                     &inner_base,
                     &mut borrow_visited,
+                );
+                // docs/adr/0077 §7: whether the tree's `Inline` holds the
+                // import, which decides whether the parent's default profile
+                // holds the parent on the heap-free tier.
+                let mut inline_visited: HashSet<PathBuf> = HashSet::new();
+                inline_visited.insert(source.path.clone());
+                ctx.codec_inline_holds = codec_inline_holds_recursive(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut inline_visited,
                 );
                 // ADR 0049: whether the import's view carries a lifetime,
                 // which a bounded list gives it whatever its entries are.

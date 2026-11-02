@@ -29,10 +29,13 @@
 //! * The owned form is re-encoded exactly as the view is, through the codec's
 //!   source interface: it implements `{Name}Source`, `as_borrowed` reads through it,
 //!   and `encode` is `encode_source`.
-//! * A map with one string or byte string that states no bound has no mirror, and
-//!   neither has a map of scalars, which borrows nothing: one predicate
-//!   (`cbor_codec::rust_owned_mirror`) says it for the codec, the answer a
-//!   container is given for the element, and the fact a log is judged by.
+//! * A map with a string or byte string that states no bound has a mirror as
+//!   every other map does, the entry held at `{ usize::MAX }` in what the profile
+//!   answers for its tag, which `Inline` does not answer for (docs/adr/0077 §7);
+//!   a map of scalars borrows nothing and has none: one predicate
+//!   (`cbor_codec::rust_owned_mirror`) says it for the codec and the answer a
+//!   container is given for the element, and another
+//!   (`cbor_codec::has_unbounded_text_or_bytes`) the fact a log is judged by.
 //! * With `generate --owned-origin` the mirror gains `try_into_owned_in_origin`, as
 //!   every other generated owned form does: a string is built by the profile's
 //!   `OriginStorage::str_from::<Tag>` and a byte string by `bytes_from::<Tag>`, each
@@ -144,13 +147,12 @@ fn assert_holds(code: &str, needles: &[&str]) {
 
 #[test]
 fn one_predicate_says_which_map_has_a_mirror() {
-    // The map the mirror is generated for, and the three that have none: one with a
-    // string that states no bound, one whose only entry is a byte string with no
-    // bound, and one that borrows nothing.
+    // Every map that borrows has a mirror, a string that states no bound among
+    // them, and the map that borrows nothing has none.
     for (entries, mirror, unbounded) in [
         (BOUNDED, true, false),
-        (ONE_UNBOUNDED, false, true),
-        (ONLY_UNBOUNDED, false, true),
+        (ONE_UNBOUNDED, true, true),
+        (ONLY_UNBOUNDED, true, true),
         (SCALARS, false, false),
     ] {
         let m = codec(&document(entries));
@@ -204,15 +206,24 @@ fn the_view_holds_each_entry_within_its_bound_and_made_through_the_one_door() {
 }
 
 #[test]
-fn an_entry_with_no_bound_keeps_its_bare_type() {
+fn an_entry_with_no_bound_is_held_at_no_bound_in_one_shape() {
     let code = generated(&document(ONE_UNBOUNDED));
     assert_holds(
         &code,
         &[
             "pub note: ::sce_forge_runtime::codec::Text<'a, 8>,",
-            "pub free: &'a str,",
-            "free = Some(cbor::read_text(&mut c, None)?);",
+            "pub free: ::sce_forge_runtime::codec::Text<'a, { usize::MAX }>,",
+            "free = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_text(&mut c, None)?).ok_or(CodecError::CborOutOfRange)?);",
+            // The mirror holds it in what the profile answers for its tag, and
+            // `Inline` answers only for the entry that states its bound.
+            "    pub free: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<ProbeCborFreeField>>::Str, { usize::MAX }>,",
+            "impl ::sce_forge_runtime::codec::HoldsStr<ProbeCborNoteField> for ::sce_forge_runtime::codec::Inline {",
+            "// `Inline` does not answer for `free`",
         ],
+    );
+    assert!(
+        !code.contains("HoldsStr<ProbeCborFreeField> for ::sce_forge_runtime::codec::Inline"),
+        "{code}"
     );
 }
 
@@ -264,18 +275,34 @@ fn the_owned_form_is_written_through_the_source_interface_as_the_view_is() {
 }
 
 #[test]
-fn a_map_with_no_bound_on_one_entry_or_no_borrow_has_no_mirror() {
-    for entries in [ONE_UNBOUNDED, ONLY_UNBOUNDED, SCALARS] {
+fn a_map_that_borrows_nothing_has_no_mirror() {
+    let code = generated(&document(SCALARS));
+    assert!(!code.contains("ProbeCborOwned"), "{code}");
+    assert!(!code.contains("try_into_owned"), "{code}");
+    assert!(!code.contains("transcode_in"), "{code}");
+    // What every map has is still there: the source interface.
+    assert_holds(&code, &["pub trait ProbeCborSource {"]);
+}
+
+#[test]
+fn a_map_with_an_entry_of_no_bound_has_a_mirror_at_the_profiles_that_hold_it() {
+    for entries in [ONE_UNBOUNDED, ONLY_UNBOUNDED] {
         let code = generated(&document(entries));
-        assert!(!code.contains("ProbeCborOwned"), "{entries}\n{code}");
-        assert!(!code.contains("try_into_owned"), "{entries}\n{code}");
-        assert!(!code.contains("transcode_in"), "{entries}\n{code}");
-        // What every map has is still there: the view and the source interface.
-        assert_holds(&code, &["pub trait ProbeCborSource {"]);
+        assert_holds(
+            &code,
+            &[
+                "pub struct ProbeCbor<'a> {",
+                "pub fn try_into_owned_in<S: ProbeCborFrom<'a>>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+                // The default profile of the heap-free tier is `Inline`, which
+                // does not hold the map, so no item names the map there.
+                "// No projection at the build's default profile",
+            ],
+        );
+        assert!(
+            !code.contains("pub fn try_into_owned(self)"),
+            "{entries}\n{code}"
+        );
     }
-    // The map that borrows and has no mirror keeps its view as it was.
-    let code = generated(&document(ONLY_UNBOUNDED));
-    assert_holds(&code, &["pub struct ProbeCbor<'a> {"]);
 }
 
 #[test]

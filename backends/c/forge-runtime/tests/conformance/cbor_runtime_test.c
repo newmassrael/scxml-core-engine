@@ -108,9 +108,13 @@ static void what_the_codec_cannot_read_is_refused(void) {
     CHECK(sce_forge_cbor_read_bytes_exact(&c, 16, dst) == SCE_FORGE_CODEC_CBOR_WRONG_LENGTH,
           "two bytes where sixteen are declared");
     c = sce_forge_cursor_init(long_text, sizeof long_text);
-    CHECK(sce_forge_cbor_read_text(&c, 1, txt, &len) == SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE, "a text past its bound");
+    CHECK(sce_forge_cbor_read_text(&c, 1, sizeof txt, txt, &len) == SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE,
+          "a text past its bound");
+    c = sce_forge_cursor_init(long_text, sizeof long_text);
+    CHECK(sce_forge_cbor_read_text(&c, SIZE_MAX, 1, txt, &len) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a text inside its bound and past its capacity");
     c = sce_forge_cursor_init(not_utf8, sizeof not_utf8);
-    CHECK(sce_forge_cbor_read_text(&c, sizeof txt, txt, &len) == SCE_FORGE_CODEC_INVALID_UTF8,
+    CHECK(sce_forge_cbor_read_text(&c, sizeof txt, sizeof txt, txt, &len) == SCE_FORGE_CODEC_INVALID_UTF8,
           "a text that is not UTF-8");
 }
 

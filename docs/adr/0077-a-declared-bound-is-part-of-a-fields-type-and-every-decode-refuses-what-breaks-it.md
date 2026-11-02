@@ -404,9 +404,23 @@ are one value held two ways. So:
   `<sce:embed>` in a codec's largest frame, whatever the body held, so `MAX_ENCODED_BYTES` and C11's `_MAX_BYTES` were
   a guess: 2710 for a codec whose largest frame is 3296, a buffer sized from it too small for a frame of the language.
   The body's size is the imported codec's, added as a list's entries and a variant's arms are.
-- **Content-line and CBOR text with no bound are the next landing.** A content-line codec stores its strings in a
-  container of their bound on every Rust profile, with no storage profile to grow one, and a CBOR map has an owned
-  mirror only where every string has a bound. Both move onto the storage profile first.
+- **A CBOR map's text and byte string with no bound, as landed.** A map has an owned mirror wherever it holds a text
+  or a byte string, bounded or not, each held in what the profile answers for its tag; a string with no bound is
+  `Text<'a, { usize::MAX }>`, and the bare `&str` and `&[u8]` are gone here too. An entry takes a capacity from the
+  deployment, as a positional field does. C11 refuses a past-capacity string apart from a past-bound one:
+  `sce_forge_cbor_read_text` and `sce_forge_cbor_read_bytes` take the bound, `SIZE_MAX` where the protocol states
+  none, and the capacity, and answer `CBOR_OUT_OF_RANGE` past the first and `CAPACITY_EXCEEDED` past the second.
+- **A codec `Inline` does not hold has no default profile.** On the heap-free tier the default profile is `Inline`,
+  and a signature or a struct's default argument that names `{Codec}Owned` at it is checked there whether or not it
+  is called: the first landing for lists left every codec with a list of no bound failing to compile with no
+  allocator, through `try_into_owned()`, and no test built one there. `CodecModel::inline_holds_with` answers whether
+  `Inline` holds a codec and every codec it holds, read through the imports as whether a codec borrows is; where it
+  does not, `try_into_owned()` is not written and `{Codec}Owned<S>` has no default argument, so the codec is named at
+  a profile on every target. A bound written as `where DefaultStorage: {Codec}From<'a>` does not do it: a predicate
+  naming no type parameter is checked where it is written. A no-allocator build of every kind of field with no bound
+  holds this.
+- **Content-line text with no bound is the next landing.** A content-line codec stores its strings in a container of
+  their bound on every Rust profile, with no storage profile to grow one, so it moves onto the storage profile first.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

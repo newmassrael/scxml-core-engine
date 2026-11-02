@@ -5968,6 +5968,242 @@ fn what_cannot_hold_a_byte_string_with_no_bound_refuses_it() {
     }
 }
 
+/// A CBOR map whose text states no bound (docs/adr/0077 §7).
+const OPEN_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_open_map" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="note" sce:type="string" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The deployment of the documents with no bound: two entries of each list, four
+/// bytes of the payload and eight of the map's text.
+fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
+    let capacities = [
+        (
+            "codec_open_chain".to_string(),
+            [("extensions".to_string(), 2)].into(),
+        ),
+        (
+            "codec_open_list".to_string(),
+            [("frags".to_string(), 2)].into(),
+        ),
+        (
+            "codec_open_bytes".to_string(),
+            [("payload".to_string(), 4)].into(),
+        ),
+        (
+            "codec_open_map".to_string(),
+            [("note".to_string(), 8)].into(),
+        ),
+    ]
+    .into();
+    sce_build::forge::deployment::RustDeployment {
+        name: "Narrow".to_string(),
+        capacities,
+        gates: Default::default(),
+        source: "deploy.yaml".to_string(),
+    }
+}
+
+/// A map's text the protocol states no bound of has none: the decoded map holds
+/// it as `Text<'a, { usize::MAX }>`, the owned mirror holds what the frame holds
+/// on a growing profile, and a deployment holds it at the capacity it gives and
+/// refuses past it with `CapacityExceeded` (docs/adr/0077 §7).
+#[test]
+fn a_cbor_text_with_no_bound_reads_what_its_frame_holds() {
+    const HARNESS: &str = r#"// Injected by a_cbor_text_with_no_bound_reads_what_its_frame_holds.
+#[cfg(test)]
+mod tests {
+    use crate::codec_open_map::{CodecOpenMap, CodecOpenMapOwned};
+    use crate::narrow::Narrow;
+    use ::sce_forge_runtime::codec::{CodecError, Heap, SceCursor};
+
+    // `{1: "nnn..."}` with a text of `len` bytes, its length in the shortest
+    // head that holds it; 300 is past the 256 a default once held a string with
+    // no bound to.
+    fn frame(len: usize) -> Vec<u8> {
+        let mut frame = vec![0xa1, 0x01];
+        match len {
+            0..=23 => frame.push(0x60 | len as u8),
+            24..=255 => frame.extend_from_slice(&[0x78, len as u8]),
+            _ => frame.extend_from_slice(&[0x79, (len >> 8) as u8, len as u8]),
+        }
+        frame.extend(std::iter::repeat_n(b'n', len));
+        frame
+    }
+
+    #[test]
+    fn the_map_and_a_growing_profile_hold_every_byte() {
+        let frame = frame(300);
+        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame)).expect("map");
+        assert_eq!(map.note.len(), 300);
+        let held: CodecOpenMapOwned<Heap> = map.try_into_owned_in().expect("held");
+        assert_eq!(held.note.as_text().len(), 300);
+        assert_eq!(held.encode_to_vec(), frame);
+    }
+
+    #[test]
+    fn a_deployment_holds_its_capacity_and_refuses_past_it() {
+        let frame8 = frame(8);
+        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame8)).expect("eight");
+        let held: CodecOpenMapOwned<Narrow> = map.try_into_owned_in().expect("held");
+        assert_eq!(held.note.as_text().len(), 8);
+        let frame9 = frame(9);
+        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame9)).expect("nine");
+        assert_eq!(
+            map.try_into_owned_in::<Narrow>().err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+}
+"#;
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_map.scxml");
+    std::fs::write(&path, OPEN_MAP).expect("write");
+    let mut files = generate_files_for_codec_set_with(
+        dir.path(),
+        &["codec_open_map.scxml"],
+        Language::Rust,
+        golden_options(Language::Rust),
+    )
+    .expect("a map with a text of no bound generates");
+    let mut deployment = narrow_deployment();
+    deployment
+        .capacities
+        .retain(|codec, _| codec == "codec_open_map");
+    let output = sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &deployment,
+        &golden_options(Language::Rust),
+    )
+    .expect("the deployment generates");
+    files.extend(output.files);
+    files.push(("open_map.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "open_map", "test", RustcProfile::Alloc)
+        .expect("a CBOR text with no bound reads what its frame holds");
+}
+
+/// What cannot hold a map's text the protocol states no bound of says so,
+/// naming the entry (docs/adr/0077 §7): C11 with no capacity for it, and a
+/// deployment that gives it none. C11 given a capacity holds the text in an
+/// array of it, and refuses a text past the capacity apart from one past the
+/// bound.
+#[test]
+fn what_cannot_hold_a_cbor_text_with_no_bound_refuses_it() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_map.scxml");
+    std::fs::write(&path, OPEN_MAP).expect("write");
+    let compile = |language: Language, opts: sce_build::ForgeCompileOptions| {
+        sce_build::compile_forge_with_imports(
+            OPEN_MAP,
+            sce_build::DocumentLabel::symmetric("codec_open_map"),
+            language,
+            dir.path(),
+            &opts,
+        )
+    };
+    let refused = compile(Language::C11, golden_options(Language::C11))
+        .err()
+        .expect("C11 refuses a text it holds no number of");
+    assert!(refused.to_string().contains("'note'"), "{refused}");
+    assert!(refused.to_string().contains("no capacity"), "{refused}");
+    let mut held = golden_options(Language::C11);
+    held.codec_capacities = [(
+        "codec_open_map".to_string(),
+        [("note".to_string(), 8)].into(),
+    )]
+    .into();
+    let header = compile(Language::C11, held).expect("C11 holds a capacity it is given");
+    let header = &header.files[0].1;
+    assert!(header.contains("char note[8];"), "{header}");
+    assert!(
+        header.contains("sce_forge_cbor_read_text(&c, SIZE_MAX, 8, v->note, &v->note_len);"),
+        "{header}"
+    );
+
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: "Bare".to_string(),
+        source: "deploy.yaml".to_string(),
+        ..Default::default()
+    };
+    match sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &deployment,
+        &golden_options(Language::Rust),
+    ) {
+        Err(sce_build::forge::deployment::RustDeploymentError::Refused(e)) => {
+            assert!(e.to_string().contains("'codec_open_map.note'"), "{e}");
+            assert!(e.to_string().contains("needs a capacity"), "{e}");
+        }
+        Err(other) => panic!("a deployment with no capacity for an open text: {other}"),
+        Ok(_) => panic!("a deployment with no capacity for an open text is refused"),
+    }
+}
+
+/// What has no bound compiles on the heap-free tier (docs/adr/0077 §7): with no
+/// allocator the default profile is `Inline`, which holds no such field, so the
+/// default profile's `try_into_owned` is written only for a codec `Inline`
+/// holds, and every other item compiles; the lent form borrows a byte string at
+/// `Inline`, and a deployment stores each field at its capacity.
+#[test]
+fn what_has_no_bound_compiles_on_the_heap_free_tier() {
+    const PROBE: &str = r#"// Injected by what_has_no_bound_compiles_on_the_heap_free_tier.
+use crate::codec_open_bytes::{CodecOpenBytes, CodecOpenBytesIn};
+use crate::codec_open_chain::CodecOpenChainIn;
+use crate::codec_open_list::CodecOpenListIn;
+use crate::codec_open_map::{CodecOpenMap, CodecOpenMapOwned};
+use crate::narrow::Narrow;
+use ::sce_forge_runtime::codec::SceCursor;
+
+/// How many bytes and entries each form held of `frame`.
+pub fn probe(frame: &[u8]) -> usize {
+    let lent = CodecOpenBytes::decode(&mut SceCursor::new(frame)).map_or(0, |v| v.payload.len());
+    let held = CodecOpenBytesIn::<Narrow>::decode(&mut SceCursor::new(frame))
+        .map_or(0, |v| v.payload.as_bytes().len());
+    let chain = CodecOpenChainIn::<Narrow>::decode(&mut SceCursor::new(frame))
+        .map_or(0, |v| v.extensions.len());
+    let list = CodecOpenListIn::<Narrow>::decode(&mut SceCursor::new(frame))
+        .map_or(0, |v| v.frags.len());
+    let map = CodecOpenMap::decode(&mut SceCursor::new(frame))
+        .ok()
+        .and_then(|v| v.try_into_owned_in::<Narrow>().ok())
+        .map_or(0, |v: CodecOpenMapOwned<Narrow>| v.note.as_text().len());
+    lent + held + chain + list + map
+}
+"#;
+    use sce_build::generator::Language;
+    let (dir, lists) = open_lists();
+    std::fs::write(dir.path().join("codec_open_bytes.scxml"), OPEN_BYTES).expect("write");
+    std::fs::write(dir.path().join("codec_open_map.scxml"), OPEN_MAP).expect("write");
+    let set: Vec<&str> = lists
+        .iter()
+        .copied()
+        .chain(["codec_open_bytes.scxml", "codec_open_map.scxml"])
+        .collect();
+    let mut opts = golden_options(Language::Rust);
+    opts.views = true;
+    let mut files = generate_files_for_codec_set_with(dir.path(), &set, Language::Rust, opts)
+        .expect("the documents with no bound generate");
+    let paths: Vec<std::path::PathBuf> = set.iter().map(|d| dir.path().join(d)).collect();
+    let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+    let output = sce_build::compile_rust_deployment(
+        &refs,
+        &narrow_deployment(),
+        &golden_options(Language::Rust),
+    )
+    .expect("the deployment generates");
+    files.extend(output.files);
+    files.push(("open_probe.rs".to_string(), PROBE.to_string()));
+    rustc_run_generated_set(files, "open_no_alloc", "build", RustcProfile::NoAlloc)
+        .expect("what has no bound compiles with no allocator");
+}
+
 /// A field's place in the document is its place on the wire, whichever element
 /// declares it. Read a `<data>` before every `<sce:flags>`, and a codec that
 /// mixes them decodes its header from the frame's second byte with no error.

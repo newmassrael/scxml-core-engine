@@ -2088,6 +2088,7 @@ fn parse_cbor_entry(
         sce_type: field_type,
         length,
         max_size,
+        capacity: None,
     })
 }
 

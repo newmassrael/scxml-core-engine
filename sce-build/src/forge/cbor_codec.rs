@@ -60,12 +60,12 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if lang == Language::C11 {
         if let Some(e) = m.cbor_entries.iter().find(|e| {
             matches!(e.present_type(), SceType::String | SceType::Bytes)
-                && e.max_size.is_none()
-                && e.length.is_none()
+                && e.storage_bytes().is_none()
         }) {
             return Some(format!(
-                "codec '{}': CBOR entry '{}' declares neither sce:max-size nor sce:length, \
-                 and C11 holds a string in a fixed array the size of its bound",
+                "codec '{}': CBOR entry '{}' declares neither sce:max-size nor sce:length \
+                 and the deployment gives it no capacity, and C11 holds a string in a fixed \
+                 array of its capacity",
                 m.name, e.id
             ));
         }
@@ -130,19 +130,18 @@ fn int_max(ty: &SceType) -> Option<u64> {
     })
 }
 
-/// Whether a string or byte-string entry of the CBOR codec `m` states neither
-/// `sce:max-size` nor `sce:length`: an entry no container of a declared capacity
-/// can hold.
+/// Whether a string or byte-string entry of the CBOR codec `m` has neither a
+/// bound nor a capacity: the protocol states no `sce:max-size` or `sce:length`
+/// of it and the deployment gives it none, so no container of a fixed size holds
+/// it (docs/adr/0077 §7).
 ///
-/// The one place that says it for the Rust owned mirror. The mirror
-/// ([`rust_owned_mirror`]), the answer a queue, a bounded collection or a
-/// broadcast log is given for whether the element has one, and the broadcast-log
-/// fact [`crate::BroadcastLogElementFacts::cbor_entry_unbounded`] are all read
-/// from it, so the type they name exists exactly when it is generated.
+/// What a backend that stores in fixed containers reads to refuse the codec,
+/// and what the broadcast-log fact
+/// [`crate::BroadcastLogElementFacts::cbor_entry_unbounded`] is read from: a
+/// log's Rust slot holds its element at `Inline`.
 pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
     m.cbor_entries.iter().any(|e| {
-        matches!(e.present_type(), SceType::String | SceType::Bytes)
-            && e.length.or(e.max_size).is_none()
+        matches!(e.present_type(), SceType::String | SceType::Bytes) && e.storage_bytes().is_none()
     })
 }
 
@@ -150,15 +149,14 @@ pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
 /// `{Name}Owned<S>` (SCE_FORGE.md §4.6.1): it decodes a string or a byte string to
 /// a view of the buffer, so the map borrows, and a mirror is what a consumer that
 /// keeps a decoded value past its buffer copies it into. The mirror holds each
-/// such entry in a container of the entry's declared capacity (`Str<N>`,
-/// `Bytes<N>`), so it exists only when every one of them has a capacity to declare
-/// ([`has_unbounded_text_or_bytes`]); a map of scalars borrows nothing and is its
+/// such entry in the profile's container for its tag, so a map whose entry has
+/// no bound has one as every other map does, and `Inline` alone does not answer
+/// for that entry (docs/adr/0077 §7). A map of scalars borrows nothing and is its
 /// own owned form.
 pub fn rust_owned_mirror(m: &CodecModel) -> bool {
-    !has_unbounded_text_or_bytes(m)
-        && m.cbor_entries
-            .iter()
-            .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes))
+    m.cbor_entries
+        .iter()
+        .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes))
 }
 
 /// The storage-profile parameter of the Rust owned mirror: the generic parameter
@@ -174,21 +172,24 @@ pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 /// The bounds a string or byte string entry's value is held to by its Rust type
 /// (docs/adr/0065 §6 R1, docs/adr/0077 §3), as the const arguments of `Bytes`
 /// or `Text` after the lifetime: `sce:max-size` for a string or byte string
-/// that states one, and `sce:length` as both the most and the fewest for an
-/// exact byte string. `None` for an entry with no bound, which keeps a bare
-/// `&str` or `&[u8]`, and for any other entry.
+/// that states one, `{ usize::MAX }` for one that states none, so every string
+/// has one shape as a positional field's does (§7), and `sce:length` as both
+/// the most and the fewest for an exact byte string. `None` for any other entry.
 pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
     match kind(e) {
-        "text" | "bytes" => e.max_size.map(|max| max.to_string()),
+        "text" | "bytes" => Some(
+            e.max_size
+                .map_or_else(|| "{ usize::MAX }".to_string(), |max| max.to_string()),
+        ),
         "bytes_exact" => e.length.map(|n| format!("{n}, {n}")),
         _ => None,
     }
 }
 
 /// The Rust type of the present value of `e` borrowed for `lifetime`: a `Text`
-/// or `Bytes` of its bounds where it has them ([`rust_bound_args`]), a bare
-/// `&str` or `&[u8]` where it has none, and any other entry as the language
-/// names it. The one spelling the decoded map and its source interface share.
+/// or `Bytes` of its bounds ([`rust_bound_args`]), and any other entry as the
+/// language names it. The one spelling the decoded map and its source interface
+/// share.
 pub(crate) fn rust_view_value_type(l: &LangCtx, e: &CborEntry, lifetime: &str) -> String {
     let text = matches!(e.present_type(), SceType::String);
     match (e.present_type(), rust_bound_args(e)) {
@@ -196,23 +197,13 @@ pub(crate) fn rust_view_value_type(l: &LangCtx, e: &CborEntry, lifetime: &str) -
             "{RUST_RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
             if text { "Text" } else { "Bytes" }
         ),
-        (SceType::String | SceType::Bytes, None) => {
-            let lifetime = if lifetime == "'_" {
-                String::new()
-            } else {
-                format!("{lifetime} ")
-            };
-            format!("&{lifetime}{}", if text { "str" } else { "[u8]" })
-        }
         (other, _) => l.type_name(other).into_owned(),
     }
 }
 
 /// The type the Rust owned mirror holds the present value of `e` as: a string in
-/// the profile's text container and a byte string in its byte container, each at
-/// the entry's declared capacity, and any other entry as the view holds it. Only
-/// asked of a codec that has a mirror, whose every string and byte string has a
-/// capacity ([`rust_owned_mirror`]).
+/// the profile's text container and a byte string in its byte container, each
+/// the profile's for the entry's tag, and any other entry as the view holds it.
 ///
 /// The container is held inside a `Bounded` of the entry's bounds, as a
 /// positional codec's is (docs/adr/0077 §3), so the mirror's source read lends
@@ -226,14 +217,14 @@ pub(crate) fn rust_owned_value_type(l: &LangCtx, m: &CodecModel, e: &CborEntry) 
     let tag = rust_storage_tag(&m.name, &e.id);
     let container =
         format!("<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::Holds{kind}<{tag}>>::{kind}");
-    let bounds = rust_bound_args(e)
-        .expect("a codec with an owned mirror bounds every string and byte string entry");
+    let bounds = rust_bound_args(e).expect("a string or byte string entry has bounds");
     format!("{RUST_RUNTIME_CODEC}::Bounded<{container}, {bounds}>")
 }
 
 /// The string and byte string entries of the map `m` as the storage macro takes
 /// them ([`rust_storage_field`]): each one a profile answers for, held by
-/// `Inline` at [`rust_owned_capacity`]. A map with no owned mirror
+/// `Inline` at what a storing form holds of it ([`CborEntry::storage_bytes`]),
+/// and by no `Inline` impl where that is nothing. A map with no owned mirror
 /// ([`rust_owned_mirror`]) declares none.
 pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
     if !rust_owned_mirror(m) {
@@ -247,22 +238,9 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
                 SceType::Bytes => "Bytes",
                 _ => return None,
             };
-            Some(rust_storage_field(
-                &m.name,
-                &e.id,
-                kind,
-                Some(rust_owned_capacity(e)),
-            ))
+            Some(rust_storage_field(&m.name, &e.id, kind, e.storage_bytes()))
         })
         .collect()
-}
-
-/// The capacity `Inline` holds the string or byte string `e` at: the exact
-/// length of a byte string, or the `sce:max-size` of any other.
-fn rust_owned_capacity(e: &CborEntry) -> u32 {
-    e.length
-        .or(e.max_size)
-        .expect("a codec with an owned mirror bounds every string and byte string entry")
 }
 
 /// The expression that builds the present value of `e` for the Rust owned mirror
@@ -491,9 +469,12 @@ fn render_c(
         l.type_name(e.present_type()).into_owned()
     })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
-    // A required text or byte string is a fixed array the size of its bound
-    // beside its length (the bound is present: `refusal` saw to it), an
-    // exact-length one an array of that length alone. An entry that may be
+    // A required text or byte string is a fixed array of its capacity beside
+    // its length (the capacity is the deployment's or the bound, and present:
+    // `refusal` saw to it), an exact-length one an array of that length alone.
+    // A read refuses a length past the bound as a frame of no protocol and one
+    // past the capacity as one this node cannot hold (docs/adr/0077 §7), so the
+    // bound is written apart, `SIZE_MAX` where the protocol states none. An entry that may be
     // absent is the struct `sce/forge/optional.h` declares for its element
     // (docs/adr/0055, section 5), the one a statechart's variable of the same
     // type is held in: its value is the member `value`, a text the buffer of
@@ -504,8 +485,12 @@ fn render_c(
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let name = entry["name"].as_str().unwrap_or_default().to_string();
-            let capacity = e.length.or(e.max_size);
+            let capacity = e.storage_bytes();
             entry["capacity"] = capacity.into();
+            entry["bound"] = e
+                .max_size
+                .map_or_else(|| "SIZE_MAX".to_string(), |max| format!("{max}U"))
+                .into();
             let optional = !e.is_required();
             let value = if optional {
                 let held = l.c11_codec_optional(e.present_type(), capacity);
@@ -733,10 +718,19 @@ fn rust_context(
     if mirror {
         let storage = rust_storage_trait(&m.name);
         insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &[]);
+        // The mirror defaults to the build's profile only where `Inline`, that
+        // profile on the heap-free tier, holds the map: a struct's default is
+        // checked against its bound (docs/adr/0077 §7).
+        let default_holds = crate::forge::generator::codec_inline_holds(m, imports);
+        ctx.insert("default_profile_holds".into(), default_holds.into());
+        let default = if default_holds {
+            format!(" = {RUST_RUNTIME_CODEC}::DefaultStorage")
+        } else {
+            String::new()
+        };
         ctx.insert(
             "owned_generics_decl".into(),
-            format!("<{RUST_STORAGE_PARAM}: {storage} = {RUST_RUNTIME_CODEC}::DefaultStorage>")
-                .into(),
+            format!("<{RUST_STORAGE_PARAM}: {storage}{default}>").into(),
         );
         ctx.insert(
             "owned_generics_impl".into(),

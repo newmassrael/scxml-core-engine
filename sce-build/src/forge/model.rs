@@ -3199,12 +3199,35 @@ pub struct CborEntry {
     /// length is refused on decode and on encode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<u32>,
-    /// `sce:max-size`: the most bytes a `string` or `bytes` entry holds.
+    /// `sce:max-size`: the most bytes a `string` or `bytes` entry holds, as
+    /// the protocol states it; `None` where it states none (docs/adr/0077 §7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+    /// The bytes a form that stores this entry holds, as the deployment gives
+    /// them (docs/adr/0077 §7); `None` where it gives none, and a storing form
+    /// holds the entry's bound. Never written by the parser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<u32>,
 }
 
 impl CborEntry {
+    /// Whether a form that stores this entry has a length to size: a string or
+    /// a byte string of no exact length.
+    pub fn takes_capacity(&self) -> bool {
+        matches!(self.present_type(), SceType::String | SceType::Bytes) && self.length.is_none()
+    }
+
+    /// How many bytes a form that stores this string or byte string holds: the
+    /// capacity the deployment gives it, or its exact length, or its bound;
+    /// `None` for one with none of them, which no fixed container holds
+    /// (docs/adr/0077 §7), and for an entry that is no string or byte string.
+    pub fn storage_bytes(&self) -> Option<u32> {
+        if !matches!(self.present_type(), SceType::String | SceType::Bytes) {
+            return None;
+        }
+        self.capacity.or(self.length).or(self.max_size)
+    }
+
     /// Whether a decode of a map without this entry's key is refused: the entry
     /// is of a bare type (docs/adr/0055, section 8). An `optional<T>` entry may
     /// be absent, in every language.
@@ -3344,6 +3367,14 @@ impl ContentLineModel {
 pub type CodecCapacities =
     std::collections::BTreeMap<String, std::collections::BTreeMap<String, u32>>;
 
+/// Where a codec holds what a capacity sizes: a positional field or a CBOR map
+/// entry, by its index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeldAt {
+    Field(usize),
+    Entry(usize),
+}
+
 impl CodecModel {
     /// Take from `capacities` what the deployment says of this codec's fields
     /// (docs/adr/0077 §7). A capacity is refused where it names no field of the
@@ -3355,7 +3386,10 @@ impl CodecModel {
         capacities: &CodecCapacities,
     ) -> Result<(), crate::forge::error::ForgeError> {
         for (at, capacity) in self.capacities_held(capacities)? {
-            self.fields[at].capacity = Some(capacity);
+            match at {
+                HeldAt::Field(at) => self.fields[at].capacity = Some(capacity),
+                HeldAt::Entry(at) => self.cbor_entries[at].capacity = Some(capacity),
+            }
         }
         Ok(())
     }
@@ -3372,13 +3406,13 @@ impl CodecModel {
         self.capacities_held(capacities).map(drop)
     }
 
-    /// Each field `capacities` gives this codec a capacity of, by its index
-    /// here, with the capacity; or the refusal of the first one no form can
-    /// hold.
+    /// Each field or CBOR entry `capacities` gives this codec a capacity of, by
+    /// where it is held here, with the capacity; or the refusal of the first one
+    /// no form can hold.
     fn capacities_held(
         &self,
         capacities: &CodecCapacities,
-    ) -> Result<Vec<(usize, u32)>, crate::forge::error::ForgeError> {
+    ) -> Result<Vec<(HeldAt, u32)>, crate::forge::error::ForgeError> {
         let Some(declared) = capacities.get(&self.name) else {
             return Ok(Vec::new());
         };
@@ -3390,13 +3424,32 @@ impl CodecModel {
             }
             .into()
         };
-        let mut taken: Vec<(usize, u32)> = Vec::with_capacity(declared.len());
+        let mut taken: Vec<(HeldAt, u32)> = Vec::with_capacity(declared.len());
         for (id, capacity) in declared {
-            let Some(at) = self.fields.iter().position(|f| &f.id == id) else {
-                return Err(invalid(id, "the codec has no such field".to_string()));
+            // Where the field is held, whether a form stores a variable length
+            // of it, and the most the language lets a frame say of it.
+            let (at, varies, bound) = if self.encoding == CodecEncoding::Cbor {
+                let Some(at) = self.cbor_entries.iter().position(|e| &e.id == id) else {
+                    return Err(invalid(id, "the codec has no such entry".to_string()));
+                };
+                let entry = &self.cbor_entries[at];
+                (
+                    HeldAt::Entry(at),
+                    entry.takes_capacity(),
+                    entry.max_size.map(u64::from),
+                )
+            } else {
+                let Some(at) = self.fields.iter().position(|f| &f.id == id) else {
+                    return Err(invalid(id, "the codec has no such field".to_string()));
+                };
+                let field = &self.fields[at];
+                (
+                    HeldAt::Field(at),
+                    field.takes_capacity(),
+                    field.length_bound(&self.fields).and_then(|b| b.max),
+                )
             };
-            let field = &self.fields[at];
-            if !field.takes_capacity() {
+            if !varies {
                 return Err(invalid(
                     id,
                     "a form stores no variable length of this field".to_string(),
@@ -3405,7 +3458,6 @@ impl CodecModel {
             if *capacity == 0 {
                 return Err(invalid(id, "a capacity holds at least one".to_string()));
             }
-            let bound = field.length_bound(&self.fields).and_then(|b| b.max);
             if let Some(bound) = bound.filter(|bound| u64::from(*capacity) > *bound) {
                 return Err(invalid(
                     id,
@@ -3617,6 +3669,42 @@ impl CodecModel {
                     .as_deref()
                     .is_some_and(&mut body_borrowed)
         })
+    }
+
+    /// Whether a profile that holds every field in a container of the size the
+    /// tree states, the Rust tree's `Inline`, holds this codec (docs/adr/0077
+    /// §7): each list, byte string and text of it and of every codec it holds
+    /// has a bound or a capacity. `body_holds` answers the same of the codec an
+    /// alias imports. A codec this is false of is held only by a profile whose
+    /// containers grow or by a deployment that gives such a field a capacity,
+    /// so no item of the generated tree names it at `Inline`, the default
+    /// profile of the heap-free tier.
+    pub(crate) fn inline_holds_with(&self, mut body_holds: impl FnMut(&str) -> bool) -> bool {
+        let own = if self.encoding == CodecEncoding::Cbor {
+            self.cbor_entries.iter().all(|e| {
+                !matches!(e.present_type(), SceType::String | SceType::Bytes)
+                    || e.storage_bytes().is_some()
+            })
+        } else {
+            self.fields
+                .iter()
+                .all(|f| !f.takes_capacity() || f.storage_held(&self.fields).is_some())
+        };
+        if !own {
+            return false;
+        }
+        let arms = self
+            .variant
+            .iter()
+            .flat_map(|v| v.arms.iter().chain(v.default_arm.iter()))
+            .map(|arm| arm.body_alias.as_str());
+        let bodies = self.fields.iter().filter_map(|f| {
+            f.embed_body_alias
+                .as_deref()
+                .or(f.repeat_body_alias.as_deref())
+                .or(f.tlv_chain_body_alias.as_deref())
+        });
+        arms.chain(bodies).all(&mut body_holds)
     }
 
     /// Whether this codec's generated Rust view (`{Codec}View`, ADR 0049)

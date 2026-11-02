@@ -13,9 +13,9 @@
 {% if e.kind == "bool" %}
             s = sce_forge_cbor_read_bool(&c, &v->{{ e.value_ref }});
 {% elif e.kind == "text" %}
-            s = sce_forge_cbor_read_text(&c, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }});
+            s = sce_forge_cbor_read_text(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }});
 {% elif e.kind == "bytes" %}
-            s = sce_forge_cbor_read_bytes(&c, {{ e.capacity }}, v->{{ e.data_ref }}, &v->{{ e.len_ref }});
+            s = sce_forge_cbor_read_bytes(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &v->{{ e.len_ref }});
 {% elif e.kind == "bytes_exact" %}
             s = sce_forge_cbor_read_bytes_exact(&c, {{ e.capacity }}, v->{{ e.data_ref }});
             v->{{ e.len_ref }} = {{ e.capacity }};

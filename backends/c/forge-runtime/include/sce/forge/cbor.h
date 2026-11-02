@@ -212,10 +212,13 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_payload(sce_forge_cur
     return SCE_FORGE_CODEC_OK;
 }
 
-/* Read a UTF-8 text string of at most `max_size` bytes into `dst` (which
- * holds `max_size`), its length into `*len`. */
-static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor_t *c, size_t max_size, char *dst,
-                                                                size_t *len) {
+/* Read a UTF-8 text string into `dst`, which holds `capacity` bytes, its length
+ * into `*len`. A text longer than `max_size`, the bound the protocol states
+ * (`SIZE_MAX` where it states none), is no frame of the language; one inside
+ * it and longer than `capacity` is one this node cannot hold (docs/adr/0077
+ * section 7). */
+static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor_t *c, size_t max_size, size_t capacity,
+                                                                char *dst, size_t *len) {
     uint64_t n = 0;
     sce_forge_codec_status_t s = sce_forge_cbor_expect(c, SCE_FORGE_CBOR_MAJOR_TEXT, &n);
     if (s != SCE_FORGE_CODEC_OK) {
@@ -223,6 +226,9 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor
     }
     if (n > (uint64_t)max_size) {
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+    }
+    if (n > (uint64_t)capacity) {
+        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     }
     s = sce_forge_cbor_read_payload(c, n, (uint8_t *)dst);
     if (s != SCE_FORGE_CODEC_OK) {
@@ -235,10 +241,12 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
-/* Read a byte string of at most `max_size` bytes into `dst` (which holds
- * `max_size`), its length into `*len`. */
-static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes(sce_forge_cursor_t *c, size_t max_size, uint8_t *dst,
-                                                                 size_t *len) {
+/* Read a byte string into `dst`, which holds `capacity` bytes, its length into
+ * `*len`: one longer than `max_size` (`SIZE_MAX` for no bound) is no frame of
+ * the language, and one inside it and longer than `capacity` is one this node
+ * cannot hold, as for a text. */
+static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes(sce_forge_cursor_t *c, size_t max_size,
+                                                                 size_t capacity, uint8_t *dst, size_t *len) {
     uint64_t n = 0;
     sce_forge_codec_status_t s = sce_forge_cbor_expect(c, SCE_FORGE_CBOR_MAJOR_BYTES, &n);
     if (s != SCE_FORGE_CODEC_OK) {
@@ -246,6 +254,9 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes(sce_forge_curso
     }
     if (n > (uint64_t)max_size) {
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+    }
+    if (n > (uint64_t)capacity) {
+        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     }
     s = sce_forge_cbor_read_payload(c, n, dst);
     if (s != SCE_FORGE_CODEC_OK) {

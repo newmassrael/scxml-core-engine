@@ -73,14 +73,10 @@ fn owned_read(_input: &Input<'_>, e: &CborEntry, acc: &str) -> String {
 /// written where `totality` names one, and only there.
 fn write_value(input: &Input<'_>, totality: &Totality, e: &CborEntry) -> Vec<String> {
     let mut out = Vec::new();
-    // A string or byte string with bounds is held within them by its type
-    // (docs/adr/0077 §3), so there is nothing to check; the value written is
-    // the `str` or slice it holds.
-    let held = if cbor_codec::rust_bound_args(e).is_some() {
-        "v.into_inner()"
-    } else {
-        "v"
-    };
+    // A string or byte string is held within its bounds by its type
+    // (docs/adr/0077 §3, `{ usize::MAX }` where it has none, §7), so there is
+    // nothing to check; the value written is the `str` or slice it holds.
+    let held = "v.into_inner()";
     match cbor_codec::kind(e) {
         "bool" => out.push("cbor::write_bool(w, v)?;".to_string()),
         "text" => out.push(format!("cbor::write_text(w, {held})?;")),

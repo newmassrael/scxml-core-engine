@@ -231,9 +231,11 @@ pub struct {{ struct_name }}In{{ owned_generics_impl }} {
 #[allow(dead_code)]
 pub type {{ struct_name }}{{ struct_lifetime }} = {{ struct_name }}In<{{ runtime_codec }}::Lent<'a>>;
 
-/// The value at a profile that holds its bytes and text.
+/// The value at a profile that holds its bytes and text{% if not default_profile_holds %}, named
+/// with the profile: the build's default on the heap-free tier is `Inline`, which
+/// holds no field whose protocol states no bound (docs/adr/0077 §7){% endif %}.
 #[allow(dead_code)]
-pub type {{ struct_name }}Owned<S = {{ runtime_codec }}::DefaultStorage> = {{ struct_name }}In<S>;
+pub type {{ struct_name }}Owned<S{% if default_profile_holds %} = {{ runtime_codec }}::DefaultStorage{% endif %}> = {{ struct_name }}In<S>;
 
 impl{{ owned_generics_impl }} Default for {{ struct_name }}In{{ owned_generics_args }} {
     fn default() -> Self {
@@ -282,7 +284,7 @@ pub enum {{ struct_name }}VariantIn{{ variant_owned_generics_impl }} {
 pub type {{ struct_name }}Variant{{ variant_lifetime }} = {{ struct_name }}VariantIn{% if variant_lifetime %}<{{ runtime_codec }}::Lent<'a>>{% endif %};
 
 #[allow(dead_code)]
-pub type {{ struct_name }}OwnedVariant{% if variant_owned_generics_args %}<S = {{ runtime_codec }}::DefaultStorage>{% endif %} = {{ struct_name }}VariantIn{{ variant_owned_generics_args }};
+pub type {{ struct_name }}OwnedVariant{% if variant_owned_generics_args %}<S{% if default_profile_holds %} = {{ runtime_codec }}::DefaultStorage{% endif %}>{% endif %} = {{ struct_name }}VariantIn{{ variant_owned_generics_args }};
 
 {% set in_ns = namespace(default_arm=none) %}
 {% for arm in variant.arms %}{% if arm.is_default %}{% set in_ns.default_arm = arm %}{% endif %}{% endfor %}
@@ -872,7 +874,7 @@ impl {{ struct_name }}Variant {
 {% endif %}
         })
     }
-{% if variant_owned_generics_args %}
+{% if variant_owned_generics_args and default_profile_holds %}
 
     /// The same projection at the build's default storage profile.
     pub fn try_into_owned(self) -> Result<{{ struct_name }}OwnedVariant, CodecError> {
@@ -964,12 +966,19 @@ impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ st
 {% endif %}
         })
     }
+{% if default_profile_holds %}
 
     /// The same projection at the build's default storage profile — growable
     /// where an allocator exists, inline on the heap-free tier.
     pub fn try_into_owned(self) -> Result<{{ struct_name }}Owned, CodecError> {
         self.{{ owned_in_fn }}()
     }
+{% else %}
+
+    // No projection at the build's default profile: on the heap-free tier
+    // that is `Inline`, which holds no field whose protocol states no bound
+    // (docs/adr/0077 §7). Name the profile, `{{ owned_in_fn }}::<S>()`.
+{% endif %}
 }
 
 #[allow(dead_code)]

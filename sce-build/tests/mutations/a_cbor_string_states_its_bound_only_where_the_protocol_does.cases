@@ -1,0 +1,64 @@
+# Mutation cases for "a CBOR string states its bound only where the protocol does".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cbor_string_states_its_bound_only_where_the_protocol_does.cases`.
+#
+# A CBOR map's text with no `sce:max-size` has none (docs/adr/0077 §7): the map
+# has an owned mirror that holds it where the profile does, a deployment gives
+# the entry a capacity, C11 refuses a text past the capacity apart from one past
+# the bound, and a codec `Inline` does not hold names no default profile, since
+# that profile is `Inline` with no allocator. A defect here is a map that cannot
+# be kept past its buffer, a capacity that sizes nothing, a node's refusal
+# reported as a malformed frame, or a tree that does not compile with no
+# allocator.
+#
+# The oracles are `sce-build/tests/forge_conformance.rs` (a text of 300 bytes on
+# a growing profile and at a deployment of eight, the refusals of what cannot
+# hold it, and a no-allocator build of every field with no bound) and
+# `sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs`
+# (the bound and the capacity of each C11 read).
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance --test a_c11_codec_holds_what_may_be_absent_in_the_optional_type
+mutation_targets sce-build/src/forge/cbor_codec.rs sce-build/src/forge/model.rs sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs
+
+# A map with a text of no bound and no mirror cannot be kept past its buffer.
+# Killed by `a_cbor_text_with_no_bound_reads_what_its_frame_holds` (the harness
+# names `CodecOpenMapOwned`).
+mutation_case "a map whose text has no bound has no mirror" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''pub fn rust_owned_mirror(m: &CodecModel) -> bool {
+    m.cbor_entries''',
+     r'''pub fn rust_owned_mirror(m: &CodecModel) -> bool {
+    !has_unbounded_text_or_bytes(m) && m.cbor_entries''')
+PY
+
+# A capacity the deployment gives an entry that sizes nothing leaves C11 with no
+# array for it. Killed by `what_cannot_hold_a_cbor_text_with_no_bound_refuses_it`
+# (`char note[8];`).
+mutation_case "a CBOR entry's capacity is dropped" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''                HeldAt::Entry(at) => self.cbor_entries[at].capacity = Some(capacity),''',
+     r'''                HeldAt::Entry(_) => {}''')
+PY
+
+# A C11 read handed its capacity as its bound reports a node's refusal as a
+# malformed frame. Killed by
+# `a_c11_codec_holds_what_may_be_absent_in_the_optional_type` (`64U, 64`).
+mutation_case "a C11 read takes no bound apart from its capacity" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''                .map_or_else(|| "SIZE_MAX".to_string(), |max| format!("{max}U"))''',
+     r'''                .map_or_else(|| "SIZE_MAX".to_string(), |_| "SIZE_MAX".to_string())''')
+PY
+
+# A codec `Inline` does not hold given the default profile names `Inline` with
+# no allocator, and the tree does not compile there. Killed by
+# `what_has_no_bound_compiles_on_the_heap_free_tier`.
+mutation_case "every codec has a default profile" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            codec_inline_holds(m, imports).into(),''',
+     r'''            true.into(),''')
+PY

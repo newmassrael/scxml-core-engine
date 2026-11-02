@@ -351,6 +351,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_is_borrowed: bool,
 
+    /// docs/adr/0077 §7: `true` when the Rust tree's `Inline` holds the
+    /// imported codec and every codec it holds, each list, byte string and
+    /// text of them having a bound or a capacity
+    /// (`CodecModel::inline_holds_with`). A parent reads it to know whether
+    /// the default profile of the heap-free tier holds the parent. `false` for
+    /// non-codec imports and codec imports whose model failed to parse during
+    /// enrichment.
+    #[serde(skip)]
+    pub codec_inline_holds: bool,
+
     /// ADR 0049: `true` when the imported codec's Rust view (`{Codec}View`)
     /// carries a `<'a>` lifetime — [`Self::codec_is_borrowed`] plus any bounded
     /// list, which a view holds as a span of the wire bytes. A parent that
@@ -1239,6 +1249,7 @@ fn resolve_single_import(
         codec_empty_arm_tags: Vec::new(),
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
+        codec_inline_holds: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
@@ -6824,6 +6835,21 @@ fn render_condition(
 /// the import file graph already ran in `validate_and_enrich_imports`
 /// (`codec_is_borrowed_recursive`). Mirrors how `render_codec` reads
 /// each import's `codec_max_bytes` instead of re-deriving the recursion.
+/// Whether the Rust tree's `Inline` holds `m` and every codec it holds
+/// (`CodecModel::inline_holds_with`, docs/adr/0077 §7), the codecs it imports
+/// answered by their import's [`ImportContext::codec_inline_holds`]. Where it
+/// does not, `Inline` is not a profile of `m` and the default profile of the
+/// heap-free tier is `Inline`, so no item names `m` at the default profile:
+/// a caller names the profile it stores at.
+pub(crate) fn codec_inline_holds(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    m.inline_holds_with(|alias| {
+        imports
+            .iter()
+            .find(|i| i.alias == alias)
+            .is_some_and(|i| i.codec_inline_holds)
+    })
+}
+
 fn import_codec_borrowed(imports: &[ImportContext], alias: &str) -> bool {
     imports
         .iter()
@@ -11640,6 +11666,10 @@ fn render_codec(
             })
             .collect();
         insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &children);
+        ctx.insert(
+            "default_profile_holds".into(),
+            codec_inline_holds(m, imports).into(),
+        );
         let storage_decl =
             format!("<{STORAGE_PARAM}: {storage_trait} = {RUNTIME_CODEC}::DefaultStorage>");
         let storage_impl = format!("<{STORAGE_PARAM}: {storage_trait}>");
@@ -41242,6 +41272,7 @@ mod tests {
             codec_empty_arm_tags: Vec::new(),
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
+            codec_inline_holds: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
@@ -42131,6 +42162,7 @@ mod tests {
                 codec_empty_arm_tags: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
+                codec_inline_holds: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
@@ -42188,6 +42220,7 @@ mod tests {
                 codec_empty_arm_tags: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
+                codec_inline_holds: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,

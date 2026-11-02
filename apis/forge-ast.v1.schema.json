@@ -1122,6 +1122,15 @@
     "CborEntry": {
       "description": "One entry of a CBOR codec's map (SCE_FORGE.md §4.6).",
       "properties": {
+        "capacity": {
+          "description": "The bytes a form that stores this entry holds, as the deployment gives them (docs/adr/0077 §7); `None` where it gives none, and a storing form holds the entry's bound. Never written by the parser.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "id": {
           "type": "string"
         },
@@ -1141,7 +1150,7 @@
           ]
         },
         "max_size": {
-          "description": "`sce:max-size`: the most bytes a `string` or `bytes` entry holds.",
+          "description": "`sce:max-size`: the most bytes a `string` or `bytes` entry holds, as the protocol states it; `None` where it states none (docs/adr/0077 §7).",
           "format": "uint32",
           "minimum": 0.0,
           "type": [

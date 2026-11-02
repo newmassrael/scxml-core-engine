@@ -2343,6 +2343,7 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             sce_type,
             length: None,
             max_size: None,
+            capacity: None,
         };
         let mut rest = lw[5..].iter();
         while let Some(word) = rest.next() {
