@@ -511,7 +511,7 @@ mod said_inputs {
     };
     use super::codecs::codec_zenoh_open_body::{CodecZenohOpenBody, CodecZenohOpenBodyParts};
     use super::codecs::codec_zenoh_wireexpr::{CodecZenohWireexpr, CodecZenohWireexprParts};
-    use sce_forge_runtime::codec::{Bounded, CodecError, VecSink};
+    use sce_forge_runtime::codec::{Bounded, Lawful, VecSink};
 
     fn wireexpr(suffix: Option<&str>) -> CodecZenohWireexprParts<'_> {
         CodecZenohWireexprParts {
@@ -584,25 +584,29 @@ mod said_inputs {
         );
     }
 
+    // The chain hands every entry the flag `T` as its start, so an entry that
+    // says the input otherwise has no chain to be in (docs/adr/0065 §6 R8): the
+    // refusal is the list's constructor's, and the frame's `T` is the start,
+    // whatever the carrier the value presents holds.
     #[test]
-    fn an_entry_that_says_its_input_otherwise_than_its_chain_is_refused_before_a_byte() {
+    fn an_entry_that_says_its_input_otherwise_than_its_chain_has_no_chain() {
         let entries = [CodecChainPrevEntryParts {
             header: 0x01,
             after_marker: CodecChainPrevEntryAfterMarker::NotAfterMarker { short_value: 5 },
             tag: Some(9),
         }];
-        let carrier = |head| CodecChainPrevCarrierParts {
-            head,
-            entries: (&entries).into(),
+        let list = |start| Lawful::new(start, (&entries).into());
+        assert!(
+            list(false).is_none(),
+            "an entry that says T set has no chain whose start is clear"
+        );
+        let carrier = CodecChainPrevCarrierParts {
+            head: 0x00,
+            entries: list(true).expect("the entry says the start"),
         };
         let mut bytes = Vec::new();
-        assert_eq!(
-            CodecChainPrevCarrier::encode_source(&carrier(0x00), &mut VecSink::new(&mut bytes)),
-            Err(CodecError::PresentIfMismatch)
-        );
-        assert!(bytes.is_empty(), "a refusal leaves the sink untouched");
-        CodecChainPrevCarrier::encode_source(&carrier(0x01), &mut VecSink::new(&mut bytes))
-            .expect("the entry says the input the chain hands it");
+        CodecChainPrevCarrier::encode_source(&carrier, &mut VecSink::new(&mut bytes))
+            .expect("the entry before says nothing the chain refuses");
         assert_eq!(bytes, [0x01, 0x01, 5, 9]);
     }
 }

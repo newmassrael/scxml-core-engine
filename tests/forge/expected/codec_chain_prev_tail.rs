@@ -53,7 +53,7 @@ impl<'f, S: CodecChainPrevTailStorage> CodecChainPrevTailFrom<'f> for S {}
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecChainPrevTailIn<S: CodecChainPrevTailStorage> {
     pub head: u8,
-    pub entries: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainPrevTailEntriesField>>::List<CodecChainPrevEntry>, 4>,
+    pub entries: CodecChainPrevTailEntriesList<S>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -142,7 +142,7 @@ impl<S: CodecChainPrevTailStorage> CodecChainPrevTailIn<S> {
             cursor.advance(1)?;
             _v
         };
-        _out.entries.refill(|_vec| {
+        _out.entries.refill_from((head & 0x1) != 0, |_vec| {
             let mut _prev_entries_after_marker: u8 = 0;
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
@@ -218,22 +218,25 @@ impl<S: CodecChainPrevTailStorage> CodecChainPrevTailIn<S> {
     }
 }
 
-/// Flags of `CodecChainPrevTail` a parent sets in place of the ones a value presents:
-/// the end flag of a chain whose entries are `CodecChainPrevTail`, which the chain
-/// derives from where an entry stands.
-#[doc(hidden)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CodecChainPrevTailOverrides {
-    /// The `T` flag of `head`, when a parent sets it.
-    pub head_t: Option<bool>,
-}
-
+/// The law the entries of `entries` follow in the inputs they say, which
+/// the list holds them to (docs/adr/0065 §6 R8).
 #[allow(dead_code)]
-impl CodecChainPrevTailOverrides {
-    /// Sets `T` of `head` and nothing else.
-    #[allow(clippy::needless_update)]
-    pub fn head_t(value: bool) -> Self {
-        Self { head_t: Some(value), ..Self::default() }
+pub type CodecChainPrevTailEntriesLaw = ::sce_forge_runtime::codec::Uniform<CodecChainPrevTailEntriesTagged>;
+
+/// The list `entries` at the storage profile `S`, held to its law
+/// (docs/adr/0065 §6 R8).
+#[allow(dead_code)]
+pub type CodecChainPrevTailEntriesList<S> = ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainPrevTailEntriesField>>::List<CodecChainPrevEntry>, 4>, CodecChainPrevTailEntriesLaw>;
+
+/// The input `tagged` each entry of `entries` says, which the list hands
+/// every entry as `head.T` and holds to its law (docs/adr/0065 §6 R8).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainPrevTailEntriesTagged;
+
+impl<E: super::codec_chain_prev_entry::CodecChainPrevEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecChainPrevTailEntriesTagged {
+    fn says(entry: &E) -> bool {
+        CodecChainPrevEntry::input_tagged(entry)
     }
 }
 
@@ -245,14 +248,14 @@ pub trait CodecChainPrevTailSource {
     /// The `head` field.
     fn head(&self) -> u8;
     /// The `entries` field.
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>;
+    fn entries(&self) -> ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>, CodecChainPrevTailEntriesLaw>;
 }
 
 impl<T: CodecChainPrevTailSource + ?Sized> CodecChainPrevTailSource for &T {
     fn head(&self) -> u8 {
         (**self).head()
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
+    fn entries(&self) -> ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>, CodecChainPrevTailEntriesLaw> {
         (**self).entries()
     }
 }
@@ -266,15 +269,15 @@ pub struct CodecChainPrevTailParts<'a> {
     /// The `head` field.
     pub head: u8,
     /// The `entries` field.
-    pub entries: ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>,
+    pub entries: ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts], 4>, CodecChainPrevTailEntriesLaw>,
 }
 
 impl<'a> CodecChainPrevTailSource for CodecChainPrevTailParts<'a> {
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
-        self.entries.iter()
+    fn entries(&self) -> ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>, CodecChainPrevTailEntriesLaw> {
+        self.entries.walk()
     }
 }
 
@@ -282,8 +285,8 @@ impl<S: CodecChainPrevTailStorage> CodecChainPrevTailSource for CodecChainPrevTa
     fn head(&self) -> u8 {
         self.head
     }
-    fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4> {
-        self.entries.list_iter()
+    fn entries(&self) -> ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone, 4>, CodecChainPrevTailEntriesLaw> {
+        self.entries.list_walk()
     }
 }
 
@@ -301,24 +304,10 @@ impl<'a> CodecChainPrevTail<'a> {
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
     pub fn write_source<S: CodecChainPrevTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::write_source_in(src, w, &CodecChainPrevTailOverrides::default())
-    }
-
-    /// [`Self::write_source`] with the flags a parent sets in place of the
-    /// ones `src` presents.
-    #[doc(hidden)]
-    pub fn write_source_in<S: CodecChainPrevTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainPrevTailOverrides) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let _k_entries: usize = src.entries().len();
-        let mut _c_head: u8 = src.head();
-        if let Some(_o) = over.head_t {
-            _c_head = (_c_head & !0x1) | u8::from(_o);
-        }
-        {
-            let _h: bool = (_c_head & 0x1) != 0;
-            if src.entries().any(|_e| CodecChainPrevEntry::input_tagged(&_e) != _h) {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        }
+        let _n_d_head_t_0: usize = usize::from(src.entries().start());
+        let _v_head_t: u8 = _n_d_head_t_0 as u8;
+        let _c_head: u8 = (src.head() & !0x1) | _v_head_t;
         {
             let mut _prev: bool = false;
             for _e in src.entries() {
@@ -423,7 +412,7 @@ impl<'a> CodecChainPrevTail<'a> {
     pub fn try_into_owned_in<S: CodecChainPrevTailFrom<'a>>(self) -> Result<CodecChainPrevTailOwned<S>, CodecError> {
         Ok(CodecChainPrevTailOwned {
             head: self.head,
-            entries: ::sce_forge_runtime::codec::try_collect_bounded(self.entries, Ok)?,
+            entries: ::sce_forge_runtime::codec::try_collect_lawful(self.entries, Ok)?,
         })
     }
 
@@ -463,7 +452,7 @@ impl<S: CodecChainPrevTailStorage> CodecChainPrevTailOwned<S> {
     /// and is not to be read.
     pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainPrevTail<'o>) -> Result<(), CodecError> {
         _out.head = self.head;
-        _out.entries.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.entries.inner(), |_e| Ok(_e.clone())))?;
+        _out.entries.refill_from(self.entries.start(), |_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.entries.inner(), |_e| Ok(_e.clone())))?;
         Ok(())
     }
 

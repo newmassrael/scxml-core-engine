@@ -46,13 +46,24 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 /// entry and the list after it (`NonEmptyListView`), since a view needs a
 /// default and a `ListView` of one entry or more has none; a gated one is an
 /// `Option` of a `ListView`, whose default is the absent list.
-pub(super) fn list_type(walk: &str, inputs: usize, field: &CodecField) -> String {
+pub(super) fn list_type(
+    walk: &str,
+    inputs: usize,
+    field: &CodecField,
+    // The list's law where its entries say an input it hands them
+    // (`rust_source::law_type`; docs/adr/0065 §6 R8).
+    law: Option<&str>,
+) -> String {
     let bounds = crate::forge::codec_totality::list_bound_args(field);
     let gated = field.present_if.is_some();
     let list = if !gated && crate::forge::codec_totality::list_least(field) > 0 {
         format!("Bounded<{RUNTIME_CODEC}::NonEmptyListView<'a, {walk}, {inputs}>, {bounds}>")
     } else {
         format!("Bounded<ListView<'a, {walk}, {inputs}>, {bounds}>")
+    };
+    let list = match law {
+        Some(law) => format!("{RUNTIME_CODEC}::Lawful<{list}, {law}>"),
+        None => list,
     };
     if gated {
         format!("Option<{list}>")
@@ -119,6 +130,9 @@ pub(super) struct ViewList<'a> {
     /// joined (see [`EmbedThreadArgs`]).
     pub inputs: &'a [ThreadInput],
     pub decode_arg: &'a str,
+    /// The start the list is held to its law from (`rust_law_start`;
+    /// docs/adr/0065 §6 R8), `None` for a list with no law.
+    pub law_start: Option<&'a str>,
 }
 
 impl ViewList<'_> {
@@ -159,7 +173,15 @@ impl ViewList<'_> {
         } else {
             list
         };
-        format!("Bounded::new({list}).ok_or(CodecError::TooManyElements)?")
+        let bounded = format!("Bounded::new({list}).ok_or(CodecError::TooManyElements)?");
+        // Each entry the scan read was read under the start, so the list follows
+        // its law and this refusal is never reached either (docs/adr/0065 §6 R8).
+        match self.law_start {
+            Some(start) => format!(
+                "{RUNTIME_CODEC}::Lawful::new({start}, {bounded}).ok_or(CodecError::PresentIfMismatch)?"
+            ),
+            None => bounded,
+        }
     }
 
     /// The field's value, from `build`, as the field holds it.
@@ -406,28 +428,43 @@ pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
 /// returns a `Result`.
 ///
 /// The list is a `Bounded` in the builder, filled where it sits through its
-/// `refill`, which checks the count the walk leaves (docs/adr/0065 §6 R7).
-pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
+/// `refill`, which checks the count the walk leaves (docs/adr/0065 §6 R7). One
+/// held to its law (`lawful`) is filled from the start of the view's
+/// (docs/adr/0065 §6 R8).
+pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool, lawful: bool) -> String {
     let fill = |indent: &str, walk: &str| fill_list(indent, walk, entry);
+    let refill = |source: &str| refill_from(source, lawful);
     if gated {
         let body = fill("                    ", "_l");
         format!(
             "match &self.{id} {{\n            \
-                 Some(_l) => _out.{id}.insert(Default::default()).refill(|_vec| {{\n                    \
+                 Some(_l) => _out.{id}.insert(Default::default()).{}|_vec| {{\n                    \
                      {body}\n                    \
                      Ok(())\n                \
                  }})?,\n            \
                  None => _out.{id} = None,\n        \
-             }}"
+             }}",
+            refill("_l")
         )
     } else {
         let body = fill("            ", &format!("self.{id}"));
         format!(
-            "_out.{id}.refill(|_vec| {{\n            \
+            "_out.{id}.{}|_vec| {{\n            \
                  {body}\n            \
                  Ok(())\n        \
-             }})?;"
+             }})?;",
+            refill(&format!("self.{id}"))
         )
+    }
+}
+
+/// The call that fills a builder's list from the view's list `source`: `refill(`,
+/// or `refill_from(<its start>, ` for a list held to its law (docs/adr/0065 §6 R8).
+fn refill_from(source: &str, lawful: bool) -> String {
+    if lawful {
+        format!("refill_from({source}.start(), ")
+    } else {
+        "refill(".to_string()
     }
 }
 
@@ -453,13 +490,15 @@ pub(super) fn into_builder_member(
     src: &str,
     dest: &str,
     entry: &str,
+    lawful: bool,
 ) -> String {
     if field.is_repeat() || field.is_tlv_chain() {
         format!(
-            "{dest}.refill(|_vec| {{\n                    \
+            "{dest}.{}|_vec| {{\n                    \
                  {}\n                    \
                  Ok(())\n                \
              }})?;",
+            refill_from(src, lawful),
             fill_list("                    ", src, entry)
         )
     } else if field.is_embed() {

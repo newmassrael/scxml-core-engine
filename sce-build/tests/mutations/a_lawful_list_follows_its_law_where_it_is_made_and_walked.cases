@@ -1,0 +1,40 @@
+# Mutation cases for "a lawful list follows its law where it is made and walked".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_lawful_list_follows_its_law_where_it_is_made_and_walked.cases`.
+#
+# `Lawful<L, A>` holds a list whose entries say their inputs by the automaton
+# `A` (docs/adr/0065 §6 R8): its constructor runs the automaton once, a decode's
+# fill runs it again, and a walk runs it as it reads, panicking where a source's
+# entries say otherwise than when the list was made.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib law::
+mutation_targets backends/rust/forge-runtime/src/law.rs
+mutation_oracles backends/rust/forge-runtime/src/law.rs
+
+mutation_case "the law of a bound flag admits any entry" <<'PY'
+edit("backends/rust/forge-runtime/src/law.rs",
+     r'''        (S::says(entry) == state).then_some(state)''',
+     r'''        Some(state)''')
+PY
+
+mutation_case "the law of the entry before forgets the kind of the entry" <<'PY'
+edit("backends/rust/forge-runtime/src/law.rs",
+     r'''        (S::says(entry) == state).then(|| K::matches(entry))''',
+     r'''        (S::says(entry) == state).then_some(false)''')
+PY
+
+mutation_case "a fill keeps entries that break the law" <<'PY'
+edit("backends/rust/forge-runtime/src/law.rs",
+     r'''            if self.list.follows(start) {''',
+     r'''            if self.list.follows(start) || start == start {''')
+PY
+
+mutation_case "a walk reads an entry that breaks the law" <<'PY'
+edit("backends/rust/forge-runtime/src/law.rs",
+     r'''            None => law_broken(),''',
+     r'''            None => {}''')
+PY

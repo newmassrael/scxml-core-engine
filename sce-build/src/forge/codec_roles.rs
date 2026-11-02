@@ -200,6 +200,16 @@ pub enum InputSource {
     /// and a value in any other arm has no bit the input could change, so nothing
     /// is left for the codec to be handed. `arms` is as above.
     SomeArms { arms: BTreeMap<String, String> },
+    /// The one list the codec hands the input on to, every entry of which says
+    /// it (docs/adr/0065 §6 R8): the list's start is the input, empty or not.
+    /// The list `list` holds entries of the codec imported as `alias`, whose
+    /// input `input` is bound; a gated list says nothing while it is absent.
+    List {
+        list: String,
+        alias: String,
+        input: String,
+        partly: bool,
+    },
 }
 
 impl InputSource {
@@ -208,7 +218,9 @@ impl InputSource {
     pub fn is_partial(&self) -> bool {
         matches!(
             self,
-            InputSource::SomeArms { .. } | InputSource::Forward { partly: true, .. }
+            InputSource::SomeArms { .. }
+                | InputSource::Forward { partly: true, .. }
+                | InputSource::List { partly: true, .. }
         )
     }
 }
@@ -792,6 +804,11 @@ pub struct CodecRoles {
     /// The inputs of held codecs that a codec says while the parent hands it a
     /// value from elsewhere: each a relation the encode holds a source to.
     pub input_checks: Vec<InputCheck>,
+    /// The inputs the entries of a list say while the parent hands every entry
+    /// one value, which the list holds as its law (docs/adr/0065 §6 R8): the
+    /// value is the list's start, and nothing is left for the encode to hold.
+    /// Each names the list by its site.
+    pub list_laws: Vec<InputCheck>,
     /// The elements one gate decides, which a value presents together
     /// (docs/adr/0065 §6 R4b).
     pub groups: Vec<GateGroup>,
@@ -925,6 +942,7 @@ impl CodecRoles {
                 InputSource::Group => format!("side-of(group {name})"),
                 InputSource::EveryArm { .. } => "input-of(every arm)".to_string(),
                 InputSource::SomeArms { .. } => "input-of(the arms that read it)".to_string(),
+                InputSource::List { list, input, .. } => format!("start-of({list}.{input})"),
             };
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
         }
@@ -1193,10 +1211,17 @@ pub fn classify_with(
 
     // A flag of this codec bound to an input that the codec of a body or an
     // arm says is derived from it, as a parent tag is. A list hands its one
-    // bound value to every entry, and is checked instead, as is a body that says
-    // it in some of its values only: the flag is the value's where it says nothing.
+    // bound value to every entry, which the list holds as its law and its start
+    // says (docs/adr/0065 §6 R8). A body that says it in some of its values only
+    // is checked instead, as are the entries of a list that say it in some of
+    // theirs and a chain whose memberships an arm refines: the flag is the
+    // value's where it says nothing.
     let held = held_codecs(model, inputs);
+    let members = memberships(model, inputs);
+    let lawful =
+        |field: &str, partly: bool| !partly && !members.keys().any(|(chain, _)| chain == field);
     let mut input_checks: Vec<InputCheck> = Vec::new();
+    let mut list_laws: Vec<InputCheck> = Vec::new();
     for held_codec in &held {
         for bind in &held_codec.binds {
             let FlagBindSource::Carrier { carrier, flag } = &bind.source else {
@@ -1211,29 +1236,34 @@ pub fn classify_with(
                     input: bind.input.clone(),
                     site: site.clone(),
                 };
-                match site {
-                    BindSite::Embed { .. } | BindSite::Arm
-                        if !held_codec.says_partly(&bind.input) =>
-                    {
-                        derive(
-                            ElementId::Flag {
-                                field: carrier.clone(),
-                                flag: flag.clone(),
-                            },
-                            Derivation::BoundInput {
-                                binders: vec![binder],
-                            },
-                        )
-                    }
-                    BindSite::Embed { .. } | BindSite::Arm | BindSite::List { .. } => input_checks
-                        .push(InputCheck {
-                            binder,
-                            against: InputValue::Carrier {
-                                carrier: carrier.clone(),
-                                flag: flag.clone(),
-                            },
-                        }),
+                let against = InputValue::Carrier {
+                    carrier: carrier.clone(),
+                    flag: flag.clone(),
+                };
+                let partly = held_codec.says_partly(&bind.input);
+                let derived = match site {
+                    BindSite::Embed { .. } | BindSite::Arm => !partly,
+                    BindSite::List { field } => lawful(field, partly),
+                };
+                if !derived {
+                    input_checks.push(InputCheck { binder, against });
+                    continue;
                 }
+                if matches!(site, BindSite::List { .. }) {
+                    list_laws.push(InputCheck {
+                        binder: binder.clone(),
+                        against,
+                    });
+                }
+                derive(
+                    ElementId::Flag {
+                        field: carrier.clone(),
+                        flag: flag.clone(),
+                    },
+                    Derivation::BoundInput {
+                        binders: vec![binder],
+                    },
+                )
             }
         }
     }
@@ -1271,6 +1301,9 @@ pub fn classify_with(
         };
         by.retain(|d| match d {
             Derivation::BoundInput { binders } => {
+                // A list held to the flag has no law of its own: its entries are
+                // checked against the flag the other declaration gives it.
+                list_laws.retain(|law| !binders.contains(&law.binder));
                 input_checks.extend(binders.iter().map(|binder| InputCheck {
                     binder: binder.clone(),
                     against: InputValue::Carrier {
@@ -1306,10 +1339,10 @@ pub fn classify_with(
         checks,
         inputs: BTreeMap::new(),
         input_checks: Vec::new(),
+        list_laws: Vec::new(),
         groups: Vec::new(),
         unresolved,
     };
-    let members = memberships(model, inputs);
     roles.groups = gate_groups(model, &roles, &derived_whole, &members);
     // The flags of a disjunction that decides a group are derived from the arm
     // the value holds (docs/adr/0065 §6 R4c).
@@ -1329,10 +1362,11 @@ pub fn classify_with(
             }
         }
     }
-    let inputs_said = said_inputs(model, &held, &derived_whole, &roles.groups);
+    let inputs_said = said_inputs(model, &held, &derived_whole, &roles.groups, &lawful);
     for held_codec in &held {
         // An input of this codec handed on: checked where the value says it
-        // otherwise than the body it is handed to.
+        // otherwise than the body it is handed to. A list that says it holds it
+        // as its law (docs/adr/0065 §6 R8).
         for bind in &held_codec.binds {
             let FlagBindSource::Input { name } = &bind.source else {
                 continue;
@@ -1349,17 +1383,23 @@ pub fn classify_with(
                         Some(InputSource::EveryArm { .. } | InputSource::SomeArms { .. }),
                         BindSite::Arm,
                     ) => true,
+                    (Some(InputSource::List { list, .. }), BindSite::List { field }) => {
+                        list == field
+                    }
                     _ => false,
                 };
-                if !derived_from_it {
-                    input_checks.push(InputCheck {
-                        binder: Binder {
-                            alias: held_codec.alias.clone(),
-                            input: bind.input.clone(),
-                            site: site.clone(),
-                        },
-                        against: InputValue::Input { name: name.clone() },
-                    });
+                let check = InputCheck {
+                    binder: Binder {
+                        alias: held_codec.alias.clone(),
+                        input: bind.input.clone(),
+                        site: site.clone(),
+                    },
+                    against: InputValue::Input { name: name.clone() },
+                };
+                match site {
+                    BindSite::List { .. } if derived_from_it => list_laws.push(check),
+                    _ if derived_from_it => {}
+                    _ => input_checks.push(check),
                 }
             }
         }
@@ -1395,6 +1435,7 @@ pub fn classify_with(
 
     roles.inputs = inputs_said;
     roles.input_checks = input_checks;
+    roles.list_laws = list_laws;
     roles
 }
 
@@ -1982,14 +2023,16 @@ fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCod
 /// The flag-inputs of `model` its value says (docs/adr/0065 §6 R4a): those
 /// exactly one thing says, a presented field gated on the input alone, the
 /// group of the fields it decides (§6 R4b), the one body, always there, it is
-/// handed on to, whose codec says it, or the variant, every arm of which it is
-/// handed on to and whose codec says it (§6 R4d). A length or a count gated
-/// with its content is derived whole and says nothing.
+/// handed on to, whose codec says it, the variant, every arm of which it is
+/// handed on to and whose codec says it (§6 R4d), or the one list it is handed
+/// on to, whose law holds it (§6 R8; `lawful` says which list can). A length or
+/// a count gated with its content is derived whole and says nothing.
 fn said_inputs(
     model: &CodecModel,
     held: &[HeldCodec],
     derived_whole: &BTreeSet<String>,
     groups: &[GateGroup],
+    lawful: &dyn Fn(&str, bool) -> bool,
 ) -> BTreeMap<String, InputSource> {
     let mut said = BTreeMap::new();
     for input in model.flag_inputs.iter().filter(|i| i.width == 1) {
@@ -2052,6 +2095,17 @@ fn said_inputs(
                         alias: h.alias.clone(),
                         input: bind.input.clone(),
                         partly: h.says_partly(&bind.input),
+                    })
+                }
+                [BindSite::List { field }] if lawful(field, h.says_partly(&bind.input)) => {
+                    Some(InputSource::List {
+                        list: field.clone(),
+                        alias: h.alias.clone(),
+                        input: bind.input.clone(),
+                        partly: model
+                            .fields
+                            .iter()
+                            .any(|f| &f.id == field && f.present_if.is_some()),
                     })
                 }
                 _ => None,
@@ -2140,6 +2194,7 @@ fn flat<'a>(model: &CodecModel, ids: impl Iterator<Item = &'a str>) -> CodecRole
         checks: Vec::new(),
         inputs: BTreeMap::new(),
         input_checks: Vec::new(),
+        list_laws: Vec::new(),
         groups: Vec::new(),
         unresolved: Vec::new(),
     }

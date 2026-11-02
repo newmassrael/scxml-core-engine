@@ -23,7 +23,7 @@
 use super::*;
 use crate::forge::codec_roles::{
     self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, GroupArm,
-    InputSource, InputValue, Role,
+    InputCheck, InputSource, InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
 use std::collections::BTreeSet;
@@ -448,6 +448,100 @@ pub(crate) fn key_type(codec: &str, chain: &str, key: u64) -> String {
         "{codec}{}Key",
         pascal_words(&format!("{chain}_{}", member_word(key)))
     )
+}
+
+/// The inputs the entries of the list `field` say by the list's law
+/// (docs/adr/0065 §6 R8), in the order its law type holds them.
+pub(crate) fn list_laws<'r>(roles: &'r CodecRoles, field: &str) -> Vec<&'r InputCheck> {
+    roles
+        .list_laws
+        .iter()
+        .filter(|law| matches!(&law.binder.site, BindSite::List { field: f } if f == field))
+        .collect()
+}
+
+/// The type that reads the input `input` off an entry of the list `list` of
+/// the codec `codec` (docs/adr/0065 §6 R8): the codec, the list and the input.
+pub(crate) fn says_type(codec: &str, list: &str, input: &str) -> String {
+    format!("{codec}{}", pascal_words(&format!("{list}_{input}")))
+}
+
+/// The name of the law the list `field` of the codec `codec` holds its entries
+/// to, or `None` where they say no input it hands them (docs/adr/0065 §6 R8):
+/// `{Codec}{List}Law`, which the codec defines as [`law_definition`] says. Every
+/// form names the law by it.
+pub(crate) fn law_type(roles: &CodecRoles, codec: &str, field: &str) -> Option<String> {
+    law_definition(roles, codec, field).map(|_| format!("{codec}{}Law", pascal_words(field)))
+}
+
+/// What the law of the list `field` of the codec `codec` is, or `None` where it
+/// has none: one automaton for each input, several run together as a tuple.
+pub(crate) fn law_definition(roles: &CodecRoles, codec: &str, field: &str) -> Option<String> {
+    let laws: Vec<String> = list_laws(roles, field)
+        .iter()
+        .map(|law| {
+            let says = says_type(codec, field, &law.binder.input);
+            match &law.against {
+                InputValue::PreviousEntry { id } => format!(
+                    "{RUNTIME_CODEC}::AfterKey<{says}, {}>",
+                    key_type(codec, field, *id)
+                ),
+                InputValue::Carrier { .. } | InputValue::Input { .. } => {
+                    format!("{RUNTIME_CODEC}::Uniform<{says}>")
+                }
+            }
+        })
+        .collect();
+    match laws.as_slice() {
+        [] => None,
+        [law] => Some(law.clone()),
+        laws => Some(format!("({})", laws.join(", "))),
+    }
+}
+
+/// `list`, the type a form holds the list `field` of the codec `codec` in,
+/// held to the list's law where it has one (docs/adr/0065 §6 R8).
+pub(crate) fn lawful_list(roles: &CodecRoles, codec: &str, field: &str, list: String) -> String {
+    match law_type(roles, codec, field) {
+        Some(law) => format!("{RUNTIME_CODEC}::Lawful<{list}, {law}>"),
+        None => list,
+    }
+}
+
+/// The value of the input `input` that the list `field`, held to its law as the
+/// expression `list`, starts from (docs/adr/0065 §6 R8).
+pub(crate) fn law_start(roles: &CodecRoles, field: &str, input: &str, list: &str) -> String {
+    let laws = list_laws(roles, field);
+    let at = laws
+        .iter()
+        .position(|law| law.binder.input == input)
+        .expect("the list holds the input by its law");
+    if laws.len() == 1 {
+        format!("{list}.start()")
+    } else {
+        format!("{list}.start().{at}")
+    }
+}
+
+/// The start a decode gives the list `field`, from `value`, the expression
+/// for each input the list hands its entries (docs/adr/0065 §6 R8): `()` for
+/// an input a chain supplies from the entry before, whose start is fixed.
+pub(crate) fn law_start_of(
+    roles: &CodecRoles,
+    field: &str,
+    value: impl Fn(&InputCheck) -> String,
+) -> String {
+    let starts: Vec<String> = list_laws(roles, field)
+        .iter()
+        .map(|law| match law.against {
+            InputValue::PreviousEntry { .. } => "()".to_string(),
+            _ => value(law),
+        })
+        .collect();
+    match starts.as_slice() {
+        [start] => start.clone(),
+        starts => format!("({},)", starts.join(", ")),
+    }
 }
 
 /// The name an arm holds two lists of one count under (docs/adr/0065 §6 R5): the
@@ -964,7 +1058,126 @@ impl<'a> Plan<'a> {
                     said.join(" ")
                 )
             }
+            InputSource::List {
+                list,
+                input,
+                partly,
+                ..
+            } => {
+                let field = self
+                    .m()
+                    .fields
+                    .iter()
+                    .find(|f| &f.id == list)
+                    .expect("an input is said by a list of the codec");
+                let read = format!("{}::{}({value})", self.trait_name, self.accessor(field));
+                if *partly {
+                    format!(
+                        "{read}.map(|_l| {})",
+                        law_start(&self.roles, list, input, "_l")
+                    )
+                } else {
+                    law_start(&self.roles, list, input, &read)
+                }
+            }
         }
+    }
+
+    /// Whether the list `field` is held to the law of its entries' inputs
+    /// (docs/adr/0065 §6 R8).
+    fn lawful(&self, field: &CodecField) -> bool {
+        !list_laws(&self.roles, &field.id).is_empty()
+    }
+
+    /// The call a source makes on the list `field` it holds for the walk it
+    /// returns: `walk()` for a list held to its law, which keeps the law, and
+    /// `iter()` for any other; their `list_` forms on a profile's list (`owned`).
+    fn walk_of(&self, field: &CodecField, owned: bool) -> &'static str {
+        match (self.lawful(field), owned) {
+            (true, true) => "list_walk()",
+            (true, false) => "walk()",
+            (false, true) => "list_iter()",
+            (false, false) => "iter()",
+        }
+    }
+
+    /// The law of each list held to one, by its name, and the types that read
+    /// each input the entries of the list say off an entry (docs/adr/0065 §6
+    /// R8): one for each list and input, over every form of the entry, through
+    /// its source.
+    fn law_definitions(&self) -> String {
+        let mut out = String::new();
+        let mut named: BTreeSet<&str> = BTreeSet::new();
+        for law in &self.roles.list_laws {
+            let BindSite::List { field } = &law.binder.site else {
+                continue;
+            };
+            if !named.insert(field) {
+                continue;
+            }
+            let (Some(name), Some(definition)) = (
+                law_type(&self.roles, self.name(), field),
+                law_definition(&self.roles, self.name(), field),
+            ) else {
+                continue;
+            };
+            out.push_str(&format!(
+                "/// The law the entries of `{field}` follow in the inputs they say, which\n\
+                 /// the list holds them to (docs/adr/0065 §6 R8).\n\
+                 #[allow(dead_code)]\n\
+                 pub type {name} = {definition};\n\n"
+            ));
+            let list = self
+                .m()
+                .fields
+                .iter()
+                .find(|f| &f.id == field)
+                .expect("a list law names a list of the codec");
+            out.push_str(
+                &super::rust_lawful_list_definition(
+                    &self.roles,
+                    self.m(),
+                    list,
+                    self.input.imports,
+                    self.l(),
+                )
+                .expect("the owned form resolved the list's entry")
+                .expect("a list with a law has a type at a profile"),
+            );
+        }
+        for law in &self.roles.list_laws {
+            let BindSite::List { field } = &law.binder.site else {
+                continue;
+            };
+            let child = self
+                .child_of(&law.binder.alias)
+                .expect("`check` found the codec a list holds");
+            let says = says_type(self.name(), field, &law.binder.input);
+            let given = match &law.against {
+                InputValue::Carrier { carrier, flag } => format!("`{carrier}.{flag}`"),
+                InputValue::Input { name } => format!("the input `{name}`"),
+                InputValue::PreviousEntry { id } => {
+                    format!("whether the entry before has the identifier 0x{id:X}")
+                }
+            };
+            out.push_str(&format!(
+                "/// The input `{input}` each entry of `{field}` says, which the list hands\n\
+                 /// every entry as {given} and holds to its law (docs/adr/0065 §6 R8).\n\
+                 #[allow(dead_code)]\n\
+                 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
+                 pub struct {says};\n\n\
+                 impl<E: {trait_path} + ?Sized> {RUNTIME_CODEC}::Says<E> for {says} {{\n\
+                 \x20   fn says(entry: &E) -> bool {{\n\
+                 \x20       {child}::input_{snake}(entry)\n\
+                 \x20   }}\n\
+                 }}\n\n",
+                input = law.binder.input,
+                trait_path = child.trait_path,
+                child = child.type_name,
+                snake = filters::to_snake_case(law.binder.input.clone()),
+            ));
+        }
+        out
     }
 
     /// The pattern that binds `_b` to the body of `arm` in the value of the
@@ -1010,6 +1223,14 @@ impl<'a> Plan<'a> {
                     "the input the arm it holds says, and `None` from an arm that does not read \
                      it"
                     .to_string()
+                }
+                InputSource::List { list, partly, .. } => {
+                    let start = format!("the start of `{list}`, which every entry of it says");
+                    if *partly {
+                        format!("{start}, and `None` while the list is absent")
+                    } else {
+                        start
+                    }
                 }
             };
             let answer = if self.roles.says_input_partly(&input.name) {
@@ -2062,12 +2283,13 @@ impl<'a> Plan<'a> {
             };
         }
         if field.is_repeat() || field.is_tlv_chain() {
+            let lawful = self.lawful(field);
             return match form {
-                Some(Form::Builder) if codec_totality::list_least(field) == 0 => {
+                Some(Form::Builder) if codec_totality::list_least(field) == 0 && !lawful => {
                     format!("{storage}::BoundedIter::from({r})")
                 }
-                Some(Form::Owned) => format!("{r}.list_iter()"),
-                _ => format!("{r}.iter()"),
+                Some(Form::Owned) => format!("{r}.{}", self.walk_of(field, true)),
+                _ => format!("{r}.{}", self.walk_of(field, false)),
             };
         }
         match (form, &field.sce_type) {
@@ -2406,10 +2628,17 @@ impl<'a> Plan<'a> {
             return if field.is_embed() {
                 format!("&impl {}", child.trait_path)
             } else {
-                format!(
-                    "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
-                    child.trait_path,
-                    codec_totality::list_bound_args(field)
+                // Held to its law where its entries say an input it hands them
+                // (docs/adr/0065 §6 R8).
+                lawful_list(
+                    &self.roles,
+                    self.name(),
+                    &field.id,
+                    format!(
+                        "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
+                        child.trait_path,
+                        codec_totality::list_bound_args(field)
+                    ),
                 )
             };
         }
@@ -2692,10 +2921,15 @@ impl<'a> Plan<'a> {
             return if field.is_embed() {
                 format!("&'a {}", child.parts_type)
             } else {
-                format!(
-                    "{RUNTIME_CODEC}::Bounded<&'a [{}], {}>",
-                    child.parts_type,
-                    codec_totality::list_bound_args(field)
+                lawful_list(
+                    &self.roles,
+                    self.name(),
+                    &field.id,
+                    format!(
+                        "{RUNTIME_CODEC}::Bounded<&'a [{}], {}>",
+                        child.parts_type,
+                        codec_totality::list_bound_args(field)
+                    ),
                 )
             };
         }
@@ -2816,10 +3050,11 @@ impl<'a> Plan<'a> {
             }
             let accessor = self.accessor(field);
             let read = if self.child(field).is_some() && !field.is_embed() {
+                let walk = self.walk_of(field, false);
                 if field.present_if.is_some() {
-                    format!("self.{accessor}.as_ref().map(|_l| _l.iter())")
+                    format!("self.{accessor}.as_ref().map(|_l| _l.{walk})")
                 } else {
-                    format!("self.{accessor}.iter()")
+                    format!("self.{accessor}.{walk}")
                 }
             } else {
                 format!("self.{accessor}")
@@ -2862,6 +3097,7 @@ impl<'a> Plan<'a> {
 
     fn text(&self) -> String {
         let mut out = String::new();
+        out.push_str(&self.law_definitions());
         out.push_str(&self.group_definitions());
         out.push_str(&self.body_enum_definition());
         out.push_str(&self.overrides_definition());
@@ -3004,7 +3240,11 @@ impl<'a> Plan<'a> {
                 // proves; the view and the owned form hold a `Bounded`, the owned
                 // one around its profile's list, read as a slice. A builder's
                 // list of one entry or more is a `Bounded` too (R7).
-                let builder_holds_bounded = codec_totality::list_least(field) > 0;
+                // A list held to its law is walked through it (docs/adr/0065 §6 R8).
+                let builder_holds_bounded =
+                    codec_totality::list_least(field) > 0 || self.lawful(field);
+                let owned = self.walk_of(field, true);
+                let walk = self.walk_of(field, false);
                 match (form, gated) {
                     (Form::Builder, true) if !builder_holds_bounded => {
                         format!("self.{accessor}.as_ref().map({storage}::BoundedIter::from)")
@@ -3013,11 +3253,11 @@ impl<'a> Plan<'a> {
                         format!("{storage}::BoundedIter::from(&self.{accessor})")
                     }
                     (Form::Owned, true) => {
-                        format!("self.{accessor}.as_ref().map(|_l| _l.list_iter())")
+                        format!("self.{accessor}.as_ref().map(|_l| _l.{owned})")
                     }
-                    (Form::Owned, false) => format!("self.{accessor}.list_iter()"),
-                    (_, true) => format!("self.{accessor}.as_ref().map(|_l| _l.iter())"),
-                    (_, false) => format!("self.{accessor}.iter()"),
+                    (Form::Owned, false) => format!("self.{accessor}.{owned}"),
+                    (_, true) => format!("self.{accessor}.as_ref().map(|_l| _l.{walk})"),
+                    (_, false) => format!("self.{accessor}.{walk}"),
                 }
             } else if form == Form::Owned
                 && matches!(field.sce_type, SceType::Bytes | SceType::String)
@@ -3789,8 +4029,38 @@ impl<'a> Plan<'a> {
                         ));
                     }
                 }
-                BindSite::List { .. } => {
-                    unreachable!("a list's bound flag is checked, not derived")
+                // A list hands every entry the flag, which its law holds them to:
+                // the flag is the list's start, empty or not (docs/adr/0065 §6 R8).
+                BindSite::List { field } => {
+                    let list = self
+                        .m()
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == field)
+                        .expect("a bind site is a field of the codec");
+                    let read = self.read_src(list);
+                    let start = |l: &str| {
+                        format!(
+                            "usize::from({})",
+                            law_start(&self.roles, field, &binder.input, l)
+                        )
+                    };
+                    if list.present_if.is_some() {
+                        lines.push(format!(
+                            "let {number}: usize = {read}.map_or(0, |_l| {});",
+                            start("_l")
+                        ));
+                        measures.push(Measure {
+                            number,
+                            present: Some(format!("{read}.is_some()")),
+                        });
+                    } else {
+                        lines.push(format!("let {number}: usize = {};", start(&read)));
+                        measures.push(Measure {
+                            number,
+                            present: None,
+                        });
+                    }
                 }
             }
         }
@@ -4143,7 +4413,14 @@ impl<'a> Plan<'a> {
                         // written.
                         Some(member) => {
                             let count = self.count_local(field);
-                            body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
+                            // A list held to its law is walked through it, which
+                            // holds each entry to the law again (docs/adr/0065 §6 R8).
+                            let walk = if law_type(&self.roles, self.name(), &field.id).is_some() {
+                                format!("{value}.into_iter()")
+                            } else {
+                                value.clone()
+                            };
+                            body.push(format!("for (_i, _e) in {walk}.enumerate() {{"));
                             body.push(format!(
                             "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count})){pass};",
                             child.type_name, child.overrides_path

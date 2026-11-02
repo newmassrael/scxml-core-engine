@@ -535,6 +535,15 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   and the consumer's `query` and `request` with them. Rust first; the other backends take the law when they take the
   source interface (ADR 0058 §6), as they take R7's bounds.
 
+  *R8a landed 2026-11-02.* The runtime holds `Lawful<L, A>` over a `Bounded` list, with `Uniform<S>` and
+  `AfterKey<S, K>` as its automata and a tuple of them for a list with several. `codec_roles` records a list's laws
+  (`list_laws`) where it recorded checks, and a bound flag is a `BoundInput` derivation whose site is the list. A parent's
+  own input handed on to such a list is `InputSource::List`, partial where the list is gated. Three cases keep the check:
+  entries that say the input in some of their values only, a chain whose memberships a group holds (R6, whose `Chain`
+  does not yet hold a law), and a flag a declaration of another kind also derives. The four documents above lost their
+  declaration. A parent no longer overrides the flag, so `{Codec}Overrides` lost its field. Each walk of a lawful list
+  runs the automaton again and panics where an entry says otherwise, as `BoundedIter` does for its count.
+
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.
 

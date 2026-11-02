@@ -351,8 +351,10 @@ impl<L: Default + Follows<A>, A: Law> Default for Lawful<L, A> {
 }
 
 impl<L: Entries, A: Law, const MAX: usize, const MIN: usize> Lawful<Bounded<L, MAX, MIN>, A> {
-    /// The entries in order, with their count and the start they follow from.
-    pub fn iter(&self) -> Lawful<BoundedIter<L::Iter<'_>, MAX, MIN>, A> {
+    /// The entries in order, with their count and the start they follow from:
+    /// what a codec's source returns, and walks through the law. The entries
+    /// alone are the list's own `iter`, reached through [`Deref`].
+    pub fn walk(&self) -> Lawful<BoundedIter<L::Iter<'_>, MAX, MIN>, A> {
         Lawful {
             start: self.start,
             list: self.list.iter(),
@@ -363,8 +365,9 @@ impl<L: Entries, A: Law, const MAX: usize, const MIN: usize> Lawful<Bounded<L, M
 
 impl<L, A: Law, const MAX: usize, const MIN: usize> Lawful<Bounded<L, MAX, MIN>, A> {
     /// The entries of a storage profile's owned list, read through its slice,
-    /// with their count and the start they follow from.
-    pub fn list_iter<T>(&self) -> Lawful<BoundedIter<core::slice::Iter<'_, T>, MAX, MIN>, A>
+    /// with their count and the start they follow from: [`Self::walk`] for a
+    /// profile's list. Its entries alone are the list's own `list_iter`.
+    pub fn list_walk<T>(&self) -> Lawful<BoundedIter<core::slice::Iter<'_, T>, MAX, MIN>, A>
     where
         L: SceList<T> + Entries,
     {
@@ -587,7 +590,7 @@ mod tests {
         let all = [e(true, 1), e(true, 2)];
         let list = Bounded::<&[Entry], 4>::new(&all[..]).expect("within the bound");
         let lawful = Lawful::<_, Every>::new(true, list).expect("every entry says the start");
-        let walk = lawful.iter();
+        let walk = lawful.walk();
         assert!(walk.start());
         assert_eq!(walk.len(), 2);
         let read: heapless::Vec<Entry, 4> = walk.into_iter().copied().collect();
@@ -601,7 +604,7 @@ mod tests {
         let list = Bounded::<&[Entry], 4>::new(&all[..]).expect("within the bound");
         let lawful = Lawful::<_, Every>::new(true, list).expect("every entry says the start");
         // A source whose entries read otherwise the second time.
-        for _ in lawful.iter().map(|entry| e(!entry.wide, entry.id)) {}
+        for _ in lawful.walk().map(|entry| e(!entry.wide, entry.id)) {}
     }
 
     #[test]

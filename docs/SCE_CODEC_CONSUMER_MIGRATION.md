@@ -325,6 +325,31 @@ Landing: the commit that adds this section.
   and a disagreement is `PresentIfMismatch`. A broadcast log's `publish` still takes such an input.
 - The other backends do not change.
 
+## A list whose entries say the flag it hands them holds it as its start (ADR 0065 §6 R8a)
+
+Landing: the commit that adds this section.
+
+- In Rust, a list or a chain whose entries say a flag input that the parent binds to one of its own flags, or hands on
+  from its own input, is held as `Lawful<list, law>`: the list together with its start, the value it hands every
+  entry. Each form holds it that way: the value, `Parts`, the view and the walk the source trait returns. The codec
+  names the law `{Codec}{List}Law` and the value's list at a profile `{Codec}{List}List<S>`.
+- Make one with `Lawful::new(start, list)`, which returns `None` where an entry says the input otherwise than `start`.
+  Read the start with `.start()`. Everything the list did before is reached through it as before (`len`, `iter`,
+  `inner`). A source of your own returns `list.walk()` (`list_walk()` on a profile's list), which keeps the start and
+  holds each entry to the law as it is walked; a walk whose entries say otherwise panics, as a walk whose count
+  changes does.
+- The parent's flag is written from the start, whatever the carrier the value presents holds in its bit. An empty list
+  still has a start. While a gated list is absent, the carrier keeps the bit the value presents.
+- A codec that hands its own input on to such a list says the input by the start. Its `encode`, `measure` and
+  `encode_source` no longer take the input, and `{Codec}::input_{i}(src)` returns it, as `Option<bool>` where the list
+  is gated. `decode` still takes it.
+- A parent no longer sets that flag of the codec in place of the value's, so the codec has no `{Codec}Overrides` field
+  for it.
+- A codec whose only refusal was that bind is now total, and its `sce:encode-may-fail` is untrue and refused. Run the
+  check of the introduction and drop what it reports. A list whose entries also take an input from the entry before
+  keeps its declaration until R8b.
+- The other backends do not change.
+
 ## A deployment says what its storing forms hold (ADR 0077 §7)
 
 Landing: the commit that adds this section.

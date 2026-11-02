@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7317770ec1283ca290af8bec72c8ce9016c9ca2036acfb8719dfd7159e505458
+// source-hash: 20f7951a137d2fd79d6868cf433a30cfae94bedb331bb916358e3448e5bd2f2d
 // SCE-MAP: observer_coolant.scxml:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")

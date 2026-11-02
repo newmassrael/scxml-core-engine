@@ -3290,7 +3290,7 @@ fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="chain_flag_refusal">
+       sce:kind="codec" sce:default-endian="big" name="chain_flag_refusal">
   <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
     <sce:flag-bind input="wide" source="head.W"/>
   </sce:import>
@@ -17306,29 +17306,36 @@ mod tests {
     const NARROW_ENTRIES: [Shape; 2] = [(0x83, Some(0x11), None), (0x05, Some(0x22), None)];
     const WIDE_ENTRIES: [Shape; 2] = [(0x83, None, Some(0x1234)), (0x05, None, Some(0xABCD))];
 
+    // The list holds the flag it hands every entry as its start, and the encode
+    // writes the flag from it (docs/adr/0065 section 6, R8), so no encode here
+    // can refuse.
     #[test]
     fn a_clear_bit_of_the_parent_carrier_gives_every_entry_the_short_layout() {
         let v = carrier(&NARROW);
         assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),NARROW.to_vec());
+        assert!(!v.entries.start());
+        assert_eq!(v.encode_to_vec(), NARROW.to_vec());
     }
 
     #[test]
     fn a_set_bit_of_the_parent_carrier_gives_every_entry_the_wide_layout() {
         let v = carrier(&WIDE);
         assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),WIDE.to_vec());
+        assert!(v.entries.start());
+        assert_eq!(v.encode_to_vec(), WIDE.to_vec());
     }
 
     #[test]
     fn the_flag_a_parent_is_given_reaches_every_entry_of_a_gated_chain() {
         let v = forward(&FWD_NARROW, 0);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(0).expect("encode"),FWD_NARROW.to_vec());
+        assert_eq!(CodecChainFlagForward::input_wide(&v), Some(false));
+        assert_eq!(v.encode_to_vec(), FWD_NARROW.to_vec());
 
         let v = forward(&WIDE, 1);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(1).expect("encode"),WIDE.to_vec());
+        assert_eq!(CodecChainFlagForward::input_wide(&v), Some(true));
+        assert_eq!(v.encode_to_vec(), WIDE.to_vec());
     }
 
     #[test]
@@ -17346,7 +17353,9 @@ mod tests {
     fn a_gated_chain_without_its_gate_holds_no_entries() {
         let v = forward(&FWD_ABSENT, 1);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec(1).expect("encode"),FWD_ABSENT.to_vec());
+        // Nothing says the input while the chain is absent.
+        assert_eq!(CodecChainFlagForward::input_wide(&v), None);
+        assert_eq!(v.encode_to_vec(), FWD_ABSENT.to_vec());
     }
 
     fn repeat(frame: &[u8]) -> CodecRepeatFlagCarrier<'_> {
@@ -17361,29 +17370,41 @@ mod tests {
     fn a_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
         let v = repeat(&REP_NARROW);
         assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),REP_NARROW.to_vec());
+        assert_eq!(v.encode_to_vec(), REP_NARROW.to_vec());
 
         let v = repeat(&REP_WIDE);
         assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),REP_WIDE.to_vec());
+        assert_eq!(v.encode_to_vec(), REP_WIDE.to_vec());
+    }
+
+    #[test]
+    fn an_empty_repeat_keeps_the_flag_it_hands_no_element() {
+        // W set and no element: the frame states the flag before the list, and
+        // the list's start holds it, so the value writes it back.
+        let frame = [0x01u8, 0x00];
+        let v = repeat(&frame);
+        assert!(v.entries.is_empty());
+        assert!(v.entries.start());
+        assert_eq!(v.encode_to_vec(), frame.to_vec());
     }
 
     #[test]
     fn a_gated_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
         let v = gated(&GATED_NARROW);
         assert_eq!(shapes(v.entries.as_ref().expect("list")), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),GATED_NARROW.to_vec());
+        assert_eq!(v.encode_to_vec(), GATED_NARROW.to_vec());
 
         let v = gated(&GATED_WIDE);
         assert_eq!(shapes(v.entries.as_ref().expect("list")), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec().expect("encode"),GATED_WIDE.to_vec());
+        assert_eq!(v.encode_to_vec(), GATED_WIDE.to_vec());
     }
 
     #[test]
     fn a_gated_repeat_without_its_gate_holds_no_elements() {
+        // The flag is the value's while the list is absent.
         let v = gated(&GATED_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec().expect("encode"),GATED_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec(), GATED_ABSENT.to_vec());
     }
 }
 "#;
