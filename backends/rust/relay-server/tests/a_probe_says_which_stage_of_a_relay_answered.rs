@@ -389,9 +389,10 @@ fn the_program_prints_one_line_and_exits_with_the_status_of_its_outcome() {
     let key = scratch.secret("authority.key", &authority.to_key_text());
     let key = key.to_str().unwrap();
     let running = start(MemoryStore::new(), &authority, Limits::default(), None);
+    let base = running.base.as_str();
 
     // From the authority's key: its own list, kept once.
-    let first = sce_relay_probe(&[&running.base, "--key", key]);
+    let first = sce_relay_probe(&[base, "--key", key]);
     assert_eq!(first.status.code(), Some(0), "{}", text(&first.stderr));
     let line = line_of(&first);
     assert!(
@@ -400,14 +401,14 @@ fn the_program_prints_one_line_and_exits_with_the_status_of_its_outcome() {
         "{line}"
     );
     assert!(line.contains(" total_ms="), "{line}");
-    let again = sce_relay_probe(&[&running.base, "--key", key]);
+    let again = sce_relay_probe(&[base, "--key", key]);
     assert_eq!(again.status.code(), Some(0), "{}", text(&again.stderr));
     assert!(line_of(&again).contains(" list=held "));
 
     // From a token in a file: refused, and never printed.
     let stranger = own_token(&Authority::new([1; 32], AUDIENCE), now_ms());
     let file = scratch.secret("stranger.token", &format!("{stranger}\n"));
-    let refused = sce_relay_probe(&[&running.base, "--token-file", file.to_str().unwrap()]);
+    let refused = sce_relay_probe(&[base, "--token-file", file.to_str().unwrap()]);
     assert_eq!(refused.status.code(), Some(77), "{}", text(&refused.stderr));
     let line = line_of(&refused);
     assert!(
@@ -419,12 +420,13 @@ fn the_program_prints_one_line_and_exits_with_the_status_of_its_outcome() {
 
     // A token file others may read is refused before anything is dialled.
     fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
-    let exposed = sce_relay_probe(&[&running.base, "--token-file", file.to_str().unwrap()]);
+    let exposed = sce_relay_probe(&[base, "--token-file", file.to_str().unwrap()]);
     assert_eq!(exposed.status.code(), Some(78), "{}", text(&exposed.stderr));
     assert!(exposed.stdout.is_empty());
 
     // Nobody at the address.
-    let unreachable = sce_relay_probe(&[&nothing_listens(), "--key", key]);
+    let nobody = nothing_listens();
+    let unreachable = sce_relay_probe(&[nobody.as_str(), "--key", key]);
     assert_eq!(unreachable.status.code(), Some(69));
     assert!(line_of(&unreachable).starts_with("outcome=unreachable "));
 }
@@ -444,8 +446,9 @@ fn the_program_reaches_a_relay_under_a_private_authority_only_when_told_to_belie
         Limits::default(),
         Some((certificate, private)),
     );
+    let base = running.base.as_str();
 
-    let believed = sce_relay_probe(&[&running.base, "--key", key, "--ca", ca.to_str().unwrap()]);
+    let believed = sce_relay_probe(&[base, "--key", key, "--ca", ca.to_str().unwrap()]);
     assert_eq!(
         believed.status.code(),
         Some(0),
@@ -454,14 +457,14 @@ fn the_program_reaches_a_relay_under_a_private_authority_only_when_told_to_belie
     );
     assert!(line_of(&believed).contains(" tls_ms="));
 
-    let public = sce_relay_probe(&[&running.base, "--key", key]);
+    let public = sce_relay_probe(&[base, "--key", key]);
     assert_eq!(public.status.code(), Some(79), "{}", text(&public.stderr));
     assert!(line_of(&public).starts_with("outcome=tls_refused "));
 
     let not_a_certificate = scratch.path("empty.pem");
     fs::write(&not_a_certificate, "").unwrap();
     let unusable = sce_relay_probe(&[
-        &running.base,
+        base,
         "--key",
         key,
         "--ca",
