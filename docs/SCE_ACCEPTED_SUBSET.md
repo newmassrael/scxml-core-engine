@@ -6679,7 +6679,11 @@ settles it as `StaticScenarioTest.kt` does, so in
 hub is Kotlin, the oracles that read the network judge the mix, and a Kotlin copy
 is held to putting the traffic of a Rust one on the network, line for line. That
 test needs a JVM and `./gradlew :sce-kotlin-world:installDist`; with neither it
-skips unless `SCE_REQUIRE_TOOLS` is set.
+skips unless `SCE_REQUIRE_TOOLS` is set. The same server hosts the standard shared
+record list as the copy on a device that holds the list through the peer core of
+ADR 0079: the core runs beside the machine through its C ABI, and a round's every
+exchange with the relay is one more line of the protocol, which the world carries
+over its own network (`a_shared_list_is_held_through_the_core_on_every_device.rs`).
 
 A step is read after the macrostep its event started has run to quiescence, and
 the first step, which may send none, after the machine has started and settled.

@@ -283,6 +283,34 @@ when it is called production.
   The operating system's trust store is not read, for the reasons `docs/SCE_SHARED_LIST_RELAY.md` section 9
   gives. Not done: a lane's replay of a run over a link (the Rust tests hold it through the ABI); a call of the
   ABI that names a private authority; and a relay that pushes, which protocol version 1 does not.
+- **Step 6** landed 2026-11-02. The world runs the core on every device of a list
+  (`a_shared_list_is_held_through_the_core_on_every_device`): three devices, each a copy of the standard
+  record list and its core, and the reference relay with its own allowance, nothing composed by hand. Alice's
+  device and carol's are Rust, their cores `Peer` in the test's process, driven by the world through the texts a
+  host that carries them itself gives (`poll_request`, `respond`, `fail`), which is what a core that does no I/O
+  allows. Bob's is Kotlin: his machine and his core run in the JVM of the world's step server, the core reached
+  through the C ABI, and each round is the library's own driver, `sce_peer_run`, over `sce_peer_link_host`,
+  whose every exchange the step server hands to the world as one more line of the step protocol (`peer_*`,
+  `sce_rust_world::external`), so the Kotlin side writes no protocol and reads no outcome. The step server
+  that hosted the to-do list hosts the record list and the device beside it; no second mechanism drives the
+  JVM. The binding is a library of its own, `backends/kotlin/peer` (`:sce-kotlin-peer`), written against
+  ABI 3, which the Kotlin replay now declares nothing beside and an application's Kotlin lane links as the
+  world does. Between each device and the relay is a path on the world's clock, drawn from the seed: delays
+  spread wide enough to bring one device's request to the relay after another's sent later, requests lost as
+  a connection that breaks and responses lost or late as a deadline that passes, and a device whose job's time
+  ends with a request on its way, which for bob is the run's cancellation raised and `SCE_PEER_ERR_CANCELLED`,
+  while the relay still takes what reached it. Held by their properties: the copies agree on the list that was
+  written and no core signs a send twice, through loss, delay and reordering, a suspension and a deadline;
+  the allowance refuses rounds for the rate and the devices still agree; a relay that withholds a row leaves
+  two devices without it and refuses them nothing, a sync does not read back what the feed's cursor passed,
+  and a resync does; a write the relay made up is refused by the core of every device it is given to, once
+  each, and reaches no copy; a list keyed by its group admits bob and carol from their key packages, bob
+  joining and then applying the commit that admits carol, and the relay holds none of what they write in the
+  clear. With no JVM the same tests run with bob's device Rust, unless `SCE_REQUIRE_TOOLS` is set. Not done:
+  a deadline of `sce_peer_run` itself in the world (a run's `within_ms` is real time, so the world's deadline
+  is the transport's, which ends a run with the same outcome and status `SCE_PEER_OK`); a device's sealed state
+  and its restore in the world; a withholding seen by a device through its members' checkpoints, which the
+  ABI does not report; a second relay to route around one that withholds; and a relay that pushes.
 - **Step 7** landed 2026-11-02. What a device keeps is one sealed state: its person's key, the administrator's
   key it holds, the keys of its epochs, the group's device (its MLS state, and the commits, Welcomes and key
   packages it waits to use, which a member made again had lost), the log, the trust's text, the courier's state
