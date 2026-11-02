@@ -633,7 +633,7 @@ mod tests {
         store.mark("../x", &openly(5, 6)).unwrap();
         let mut again = FileStore::open(&dir).unwrap();
         let mut marks = again.marks().unwrap();
-        marks.sort();
+        marks.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
             marks,
             vec![
