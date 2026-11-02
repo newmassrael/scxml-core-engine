@@ -236,6 +236,9 @@ a C++ concept, a Go and Kotlin interface, a Python protocol, and in C a table of
 with lists presented by a begin/next pair. Until then those backends keep their current encode, and the matrix holds
 their bytes equal.
 
+*Amended by ADR 0081 (2026-11-03).* Each backend takes the interface as a printer of one encode plan, computed once
+per codec from the roles and the totality. The idioms above are kept as the printers' spelling.
+
 ## Consequences
 
 - A no-alloc consumer sends from what it holds: the stack an encode needs is the entries it presents, not the declared

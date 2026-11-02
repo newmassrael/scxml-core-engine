@@ -628,7 +628,8 @@ The mutation round for step 1 kills five mutants:
 2. R1. Then R2, R3, R4 and R5, each one step, each removing the declarations it makes untrue.
 3. R7, then R6, then R8a and R8b.
 4. The other five backends, as each takes the source interface (ADR 0058 §6), with the same signatures in their
-   idiom: a total encode returns its bytes, and a `may-fail` one returns the backend's failure.
+   idiom: a total encode returns its bytes, and a `may-fail` one returns the backend's failure. *Amended by ADR 0081
+   (2026-11-03):* the refinements of §6 reach each backend through the encode plan, which names them, and its printer.
 
 ## Questions left open
 
