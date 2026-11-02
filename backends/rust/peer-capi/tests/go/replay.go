@@ -32,21 +32,22 @@ type device struct {
 }
 
 type step struct {
-	Device  int    `json:"device"`
-	Op      string `json:"op"`
-	Text    string `json:"text"`
-	Count   uint64 `json:"count"`
-	Event   string `json:"event"`
-	Data    string `json:"data"`
-	Kept    string `json:"kept"`
-	Reason  string `json:"reason"`
-	Kind    string `json:"kind"`
-	Profile string `json:"profile"`
-	Genesis string `json:"genesis"`
-	Node    uint64 `json:"node"`
-	Role    uint32 `json:"role"`
-	Key     string `json:"key"`
-	State   string `json:"state"`
+	Device   int    `json:"device"`
+	Op       string `json:"op"`
+	Text     string `json:"text"`
+	Count    uint64 `json:"count"`
+	Event    string `json:"event"`
+	Data     string `json:"data"`
+	Kept     string `json:"kept"`
+	Reason   string `json:"reason"`
+	Kind     string `json:"kind"`
+	Profile  string `json:"profile"`
+	Genesis  string `json:"genesis"`
+	Node     uint64 `json:"node"`
+	Role     uint32 `json:"role"`
+	Key      string `json:"key"`
+	State    string `json:"state"`
+	Audience string `json:"audience"`
 }
 
 type scenario struct {
@@ -272,6 +273,10 @@ func main() {
 			expect(reason, s.Reason, "the reason of the refusal")
 		case "start":
 			check(C.sce_peer_start(peer, kindOf(s.Kind)), "start")
+		case "login":
+			audience := cstring(s.Audience)
+			check(C.sce_peer_login(peer, audience), "login")
+			free(audience)
 		case "request":
 			check(C.sce_peer_poll_request(peer, &out), "poll_request")
 			request, ok := taken(out)

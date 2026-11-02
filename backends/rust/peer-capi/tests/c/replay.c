@@ -23,6 +23,7 @@
  *                                   genesis), and the state taken back for its node under the key
  *   outbound <d> <event> <data> <taken|held|not_signed|refused|waiting> <reason>
  *   start <d> <sync|resync|reread>
+ *   login <d> <audience>    a login at the relay of that name begins
  *   request <d> <text>      the core asks this
  *   respond <d> <text>      the relay answered this
  *   fail <d> <reason>       the transport failed
@@ -346,6 +347,10 @@ int main(int argc, char **argv) {
             free(data);
         } else if (strcmp(op, "start") == 0) {
             check(sce_peer_start(peer, kind_of(need())), "start");
+        } else if (strcmp(op, "login") == 0) {
+            char *audience = text_of(need());
+            check(sce_peer_login(peer, audience), "login");
+            free(audience);
         } else if (strcmp(op, "request") == 0) {
             char *want = text_of(need());
             check(sce_peer_poll_request(peer, &out), "poll_request");

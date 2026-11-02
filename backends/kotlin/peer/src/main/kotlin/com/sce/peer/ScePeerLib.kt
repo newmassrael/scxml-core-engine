@@ -21,7 +21,7 @@ import com.sun.jna.ptr.LongByReference
 /** The numbers of `include/sce_peer.h`, by the names it gives them without `SCE_PEER_`. */
 object ScePeerAbi {
     /** `SCE_PEER_ABI_VERSION`: the ABI this binding declares. */
-    const val VERSION = 4
+    const val VERSION = 5
 
     const val OK = 0
     const val ERR_NOTHING_ASKED = 1
@@ -138,6 +138,7 @@ interface ScePeerLib : Library {
     fun sce_peer_standing(peer: Pointer, out: Buf): Int
     fun sce_peer_outbound(peer: Pointer, event: String, data: String, kept: IntByReference, reason: Buf): Int
     fun sce_peer_start(peer: Pointer, kind: Int): Int
+    fun sce_peer_login(peer: Pointer, audience: String): Int
     fun sce_peer_publish_checkpoint(peer: Pointer, before: Long, digest: Int): Int
     fun sce_peer_publish_key_package(peer: Pointer): Int
     fun sce_peer_poll_request(peer: Pointer, out: Buf): Int
@@ -155,12 +156,13 @@ interface ScePeerLib : Library {
         key: ByteArray,
         kept: LongByReference?,
     ): Int
-    fun sce_peer_link_wss(base: String, token: String): Pointer?
-    fun sce_peer_link_wss_believing(base: String, token: String, authorities: ByteArray, len: NativeLong, roots: Int): Pointer?
+    fun sce_peer_link_wss(base: String, token: String?): Pointer?
+    fun sce_peer_link_wss_believing(base: String, token: String?, authorities: ByteArray, len: NativeLong, roots: Int): Pointer?
     fun sce_peer_link_host(exchange: ExchangeFn, release: ReleaseFn?, context: Pointer?): Pointer?
     fun sce_peer_link_free(link: Pointer)
     fun sce_peer_link_network_changed(link: Pointer): Int
     fun sce_peer_link_take_notices(link: Pointer, out: Buf): Int
+    fun sce_peer_link_set_token(link: Pointer, token: String?): Int
     fun sce_peer_reply(reply: Pointer, text: ByteArray, len: NativeLong): Int
     fun sce_peer_cancel_new(): Pointer?
     fun sce_peer_cancel_raise(cancel: Pointer): Int

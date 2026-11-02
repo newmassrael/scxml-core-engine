@@ -4,6 +4,8 @@
 // through the C ABI. What is asked: that a link is made and freed, and the boundary refuses what it
 // is not given; that a round runs over the relay's WebSocket binding against a relay in this process,
 // carries a write from one device to another, and the link tells its host it connected; that a
+// device handed no token logs in over a link made with none and runs its rounds with the token;
+// that a
 // `wss://` link refuses a relay's certificate no public authority issued and the outcome says why,
 // and one made believing a deployment's own authority, given as a file's bytes in PEM or in DER,
 // alone or with the public authorities, reaches the relay;
@@ -23,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use sce_peer_capi::*;
 use sce_rust_relay::serve::{serve, serve_tls};
-use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
+use sce_rust_relay::{Authority, Doorway, Limits, LoginPolicy, MemoryStore, Relay};
 use serde_json::Value;
 
 const ALICE_SEED: [u8; 32] = [1; 32];
@@ -332,6 +334,83 @@ fn a_round_runs_over_the_websocket_binding_to_a_relay_in_this_process() {
         assert_eq!(refused["code"], "unauthorized", "{refused}");
 
         sce_peer_link_free(stranger);
+        sce_peer_link_free(bob_link);
+        sce_peer_link_free(alice_link);
+        sce_peer_free(bob);
+        sce_peer_free(alice);
+    }
+}
+
+/// A device handed no token logs in through the ABI (ADR 0080): over a link made with none, a round
+/// is the relay's refusal of the token, which is when a host logs in; the login over the same link
+/// comes to a token, and the link given it carries the device's rounds.
+#[test]
+fn a_device_logs_in_over_a_link_with_no_token_and_runs_its_rounds_with_the_token() {
+    let authority = Authority::new([4; 32], "the-relay");
+    let relay = Arc::new(Mutex::new(
+        Relay::open(MemoryStore::new(), authority.clone(), Limits::default())
+            .unwrap()
+            .with_login(Doorway::with_key(LoginPolicy::default(), [5; 32])),
+    ));
+    let now = Arc::new(AtomicU64::new(0));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = {
+        let now = now.clone();
+        Arc::new(move || now.fetch_add(1000, Ordering::SeqCst))
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let base = std::ffi::CString::new(format!("ws://{}", listener.local_addr().unwrap())).unwrap();
+    runtime.spawn(serve(listener, relay, clock, 64 * 1024));
+    let alice_token = std::ffi::CString::new(authority.issue("home", ALICE, u64::MAX)).unwrap();
+
+    // SAFETY: each call below passes live handles and NUL-terminated texts, or null for no token.
+    unsafe {
+        // The list is created with a token of the relay's authority.
+        let (alice, genesis) = alice();
+        let alice_link = sce_peer_link_wss(base.as_ptr(), alice_token.as_ptr());
+        let given = round_over(alice, alice_link, 30_000);
+        assert_eq!(given["outcome"], "ended", "{given}");
+
+        let bob = bob(genesis);
+        let bob_link = sce_peer_link_wss(base.as_ptr(), std::ptr::null());
+        assert!(!bob_link.is_null(), "{}", last_error());
+        let refused = round_over(bob, bob_link, 30_000);
+        assert_eq!(refused["failure"], "relay", "{refused}");
+        assert_eq!(refused["code"], "unauthorized", "{refused}");
+
+        assert_eq!(sce_peer_login(bob, c"the-relay".as_ptr()), SCE_PEER_OK);
+        assert_eq!(
+            sce_peer_run(bob, bob_link, 30_000, std::ptr::null()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let logged_in = outcome_of(bob);
+        assert_eq!(logged_in["outcome"], "ended", "{logged_in}");
+        let token = logged_in["token"]["token"]
+            .as_str()
+            .expect("the outcome holds the token");
+        assert_eq!(
+            authority.verify(token, 0).map(|session| session.node),
+            Ok(BOB),
+            "a token of the relay's authority for bob's node"
+        );
+        let token = std::ffi::CString::new(token).unwrap();
+        assert_eq!(
+            sce_peer_link_set_token(bob_link, token.as_ptr()),
+            SCE_PEER_OK
+        );
+        let told = round_over(bob, bob_link, 30_000);
+        assert_eq!(told["outcome"], "ended", "{told}");
+        assert_eq!(writes_in(&told), 0, "alice wrote nothing: {told}");
+        assert!(told.get("token").is_none(), "a round earns no token");
+
         sce_peer_link_free(bob_link);
         sce_peer_link_free(alice_link);
         sce_peer_free(bob);

@@ -22,7 +22,9 @@
 //! exchange to its end on the calling thread, a background worker's, by a deadline and until a
 //! cancellation another thread raises ([`ScePeerCancel`]); the host tells the link when the network
 //! changed ([`sce_peer_link_network_changed`]), from any thread. The loop is the relay's one driver,
-//! so framing, authentication and reconnection are written once, in Rust.
+//! so framing, authentication and reconnection are written once, in Rust. A device that has no
+//! token logs in with its person's key ([`sce_peer_login`], ADR 0080) over a link made with none,
+//! and gives the link the token the outcome holds ([`sce_peer_link_set_token`]).
 //!
 //! Every function that does something returns 0 for success and a nonzero status otherwise, and
 //! says why in [`sce_peer_last_error`] (per thread). Buffers the library returns ([`ScePeerBuf`])
@@ -62,8 +64,12 @@ use serde_json::{json, Value};
 /// Version 4: a send the device may not sign yet is kept and not refused
 /// (`SCE_PEER_KEPT_WAITING` from [`sce_peer_outbound`], an answer a lane of version 3 does not
 /// know), the outcome holds `taken` and `dropped` and the standing `waiting`, and the sealed state
-/// is the core's version 4, which holds what waits.
-pub const SCE_PEER_ABI_VERSION: u32 = 4;
+/// is the core's version 4, which holds what waits. Version 5: a device logs in (ADR 0080,
+/// [`sce_peer_login`]) and the outcome of a login holds `token`; a link made with a null or empty
+/// token dials a connection that presents none, where version 4 presented the empty text as a token
+/// the relay refused, a changed meaning of an input; and a link is given the token a login earned
+/// ([`sce_peer_link_set_token`]).
+pub const SCE_PEER_ABI_VERSION: u32 = 5;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -253,6 +259,19 @@ unsafe fn text<'a>(ptr: *const c_char) -> Result<&'a str, i32> {
         .map_err(|_| fail(SCE_PEER_ERR_BAD_TEXT, "a string is not UTF-8"))
 }
 
+/// A token the caller gives, null for none: a link with none dials a connection that presents no
+/// token, which a device logs in on.
+///
+/// # Safety
+/// `ptr` is null or points at a NUL-terminated string.
+unsafe fn token_or_none<'a>(ptr: *const c_char) -> Result<&'a str, i32> {
+    if ptr.is_null() {
+        return Ok("");
+    }
+    // SAFETY: not null, and NUL-terminated by the caller's promise.
+    unsafe { text(ptr) }
+}
+
 /// The object a handle names.
 ///
 /// # Safety
@@ -341,7 +360,7 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
             let rounds: Vec<&Round> = std::iter::once(&outcome.round)
                 .chain(outcome.reread.as_ref())
                 .collect();
-            json!({
+            let mut value = json!({
                 "outcome": "ended",
                 "events": outcome
                     .events()
@@ -375,7 +394,15 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
                 "reread": outcome.reread.is_some(),
                 "steps": outcome.steps.iter().map(group_step).collect::<Vec<_>>(),
                 "owed": outcome.owed,
-            })
+            });
+            // A login's outcome alone holds a token: the member is not written for a round.
+            if let Some(token) = &outcome.token {
+                value["token"] = json!({
+                    "token": token.token,
+                    "expires_at_ms": token.expires_at_ms.to_string(),
+                });
+            }
+            value
         }
         Err(CourierError::Link(reason)) => {
             json!({"outcome": "failed", "failure": "link", "reason": reason})
@@ -745,6 +772,24 @@ pub unsafe extern "C" fn sce_peer_start(peer: *mut ScePeer, kind: i32) -> i32 {
             }
         };
         held.peer.start(kind).map_err(from_error)
+    })
+}
+
+/// Begin the exchange that logs the device in at the relay named `audience` (NUL-terminated): the
+/// name the device was configured with, shipped with the relay's address or carried in an
+/// invitation, never the one the relay says ([`Peer::login`], ADR 0080). Its requests are taken and
+/// answered as a round's, over a link that presents no token or one that expired, and its outcome
+/// holds `token`, which the host gives the link ([`sce_peer_link_set_token`]).
+/// `SCE_PEER_ERR_NO_PERSON` when the core has no person to log in as.
+///
+/// # Safety
+/// `peer` is a live handle; `audience` is a NUL-terminated string.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_login(peer: *mut ScePeer, audience: *const c_char) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, audience) = unsafe { (handle(peer)?, text(audience)?) };
+        held.peer.login(audience).map_err(from_error)
     })
 }
 
@@ -1133,12 +1178,13 @@ fn notice_value(notice: &Notice) -> Value {
 }
 
 /// A link to the relay at `base` (`ws://host:port` or `wss://host:port`, NUL-terminated) over its
-/// WebSocket binding, presenting `token` (NUL-terminated), the token the device's login earned. It
-/// dials on the first run and again whenever it must. Null when it fails: an address that is not a
-/// WebSocket's.
+/// WebSocket binding, presenting `token` (NUL-terminated), the token the device's login earned, or
+/// none when `token` is null or empty: a link that dials the connection a device logs in on
+/// ([`sce_peer_login`]), and is then given its token ([`sce_peer_link_set_token`]). It dials on the
+/// first run and again whenever it must. Null when it fails: an address that is not a WebSocket's.
 ///
 /// # Safety
-/// `base` and `token` are NUL-terminated strings.
+/// `base` is a NUL-terminated string; `token` is null or one.
 #[no_mangle]
 pub unsafe extern "C" fn sce_peer_link_wss(
     base: *const c_char,
@@ -1146,7 +1192,7 @@ pub unsafe extern "C" fn sce_peer_link_wss(
 ) -> *mut ScePeerLink {
     made(|| {
         // SAFETY: the promises in the function's contract.
-        let (base, token) = unsafe { (text(base)?, text(token)?) };
+        let (base, token) = unsafe { (text(base)?, token_or_none(token)?) };
         let link = WssLink::new(base, token).map_err(|error| {
             fail(
                 SCE_PEER_ERR_BAD_ARGUMENT,
@@ -1165,10 +1211,11 @@ pub unsafe extern "C" fn sce_peer_link_wss(
 /// authorities too, for a deployment whose relays are under either, or move from the one to the
 /// other ([`Roots`]). The bytes are read here and not kept. Null when it fails: an address that is
 /// not a WebSocket's, bytes that hold no certificate, a certificate that is not one, a `roots` that
-/// is neither.
+/// is neither. A null or empty `token` is none, as for [`sce_peer_link_wss`].
 ///
 /// # Safety
-/// `base` and `token` are NUL-terminated strings; `authorities` points at `len` readable bytes.
+/// `base` is a NUL-terminated string; `token` is null or one; `authorities` points at `len`
+/// readable bytes.
 #[no_mangle]
 pub unsafe extern "C" fn sce_peer_link_wss_believing(
     base: *const c_char,
@@ -1179,7 +1226,8 @@ pub unsafe extern "C" fn sce_peer_link_wss_believing(
 ) -> *mut ScePeerLink {
     made(|| {
         // SAFETY: the promises in the function's contract.
-        let (base, token, given) = unsafe { (text(base)?, text(token)?, bytes(authorities, len)?) };
+        let (base, token, given) =
+            unsafe { (text(base)?, token_or_none(token)?, bytes(authorities, len)?) };
         let believed = tls::authorities(given).map_err(|error| {
             fail(
                 SCE_PEER_ERR_BAD_ARGUMENT,
@@ -1293,6 +1341,36 @@ pub unsafe extern "C" fn sce_peer_link_take_notices(
             unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
         }
         Ok(())
+    })
+}
+
+/// The token the link presents from its next dial on (NUL-terminated; null or empty for none): the
+/// one a login earned ([`sce_peer_login`], the outcome's `token`). A connection open now that was
+/// dialled with another is given up, and the next run dials again. `SCE_PEER_ERR_BAD_ARGUMENT` for
+/// a link whose transport the host carries itself ([`sce_peer_link_host`]), whose credentials are
+/// the host's to present.
+///
+/// # Safety
+/// `link` is a live handle no run uses meanwhile; `token` is null or a NUL-terminated string.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_set_token(
+    link: *mut ScePeerLink,
+    token: *const c_char,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (link, token) = unsafe { (shared(link.cast_const())?, token_or_none(token)?) };
+        // SAFETY: this thread is the one that uses the link's transport now.
+        let transport = unsafe { &mut **link.transport.get() };
+        if transport.set_token(token) {
+            Ok(())
+        } else {
+            Err(fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                "a host's transport presents its own credentials, and carries no token of the \
+                 library's",
+            ))
+        }
     })
 }
 

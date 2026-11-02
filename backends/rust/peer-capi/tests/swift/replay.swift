@@ -286,6 +286,8 @@ final class Replayer {
                 expect(taken(out), reason, "the reason of the refusal")
             case "start":
                 check(sce_peer_start(peer, kind(need())), "start")
+            case "login":
+                check(sce_peer_login(peer, text()), "login")
             case "request":
                 let want = text()
                 check(sce_peer_poll_request(peer, &out), "poll_request")

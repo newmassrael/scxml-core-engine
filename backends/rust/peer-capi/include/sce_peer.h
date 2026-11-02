@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 4u
+#define SCE_PEER_ABI_VERSION 5u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
@@ -146,6 +146,11 @@ int32_t sce_peer_respond(ScePeer *peer, const char *response);
 int32_t sce_peer_fail(ScePeer *peer, const char *reason);
 int32_t sce_peer_take_outcome(ScePeer *peer, ScePeerBuf *out);
 
+/* A login at the relay named audience (the name the device was configured with, never the one the
+ * relay says): an exchange as a round is, over a link that presents no token or one that expired,
+ * whose outcome holds "token", which the lane gives the link with sce_peer_link_set_token. */
+int32_t sce_peer_login(ScePeer *peer, const char *audience);
+
 /* The event that says an instant is settled, as the JSON pair [name, payload]; empty when it is not. */
 int32_t sce_peer_floor_event(ScePeer *peer, int64_t before, uint32_t digest, ScePeerBuf *out);
 
@@ -177,7 +182,9 @@ int32_t sce_peer_restore_sealed(ScePeer *peer, uint64_t node, const uint8_t *sta
  * run's cancellation and tell the link the network changed.
  *
  * A link is the relay's WebSocket binding (base "ws://host:port" or "wss://host:port", and the token
- * the device's login earned), believing the public certificate authorities, or, made with
+ * the device's login earned, or NULL or "" for none: a link a device logs in over, given its token
+ * afterwards with sce_peer_link_set_token, which gives up a connection dialled with another and is
+ * refused for a host's own transport), believing the public certificate authorities, or, made with
  * sce_peer_link_wss_believing, the authorities in the len bytes at authorities (one or more
  * certificates in PEM, or one in DER, as a file of the application holds them), alone
  * (SCE_PEER_ROOTS_ONLY) or with the public ones (SCE_PEER_ROOTS_AND_PUBLIC); or a transport the host
@@ -203,6 +210,7 @@ ScePeerLink *sce_peer_link_host(ScePeerExchangeFn exchange, ScePeerReleaseFn rel
 void sce_peer_link_free(ScePeerLink *link);
 int32_t sce_peer_link_network_changed(const ScePeerLink *link);
 int32_t sce_peer_link_take_notices(ScePeerLink *link, ScePeerBuf *out);
+int32_t sce_peer_link_set_token(ScePeerLink *link, const char *token);
 int32_t sce_peer_reply(ScePeerReply *reply, const uint8_t *text, size_t len);
 
 ScePeerCancel *sce_peer_cancel_new(void);

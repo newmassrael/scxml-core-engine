@@ -16,7 +16,11 @@
 // given again, says it waits for its own chain, keeps a new write until the chain is read back and
 // then signs it, and gives a write it holds as held; another content under a stamp a device signed
 // is refused; a round that loses its transport ends, and the next goes on; and a device taken off is
-// refused by the relay, so that what it writes afterwards reaches no one.
+// refused by the relay, so that what it writes afterwards reaches no one. Bob's device is handed no
+// token: it logs in at the relay with his person's key (ADR 0080), over a connection that presents
+// none, and the relay issues the token his rounds then present; once taken off, his device is
+// refused a token. Alice's device, which gives the relay the list's first entries, presents a token
+// of the relay's authority, as a relay whose creation of lists is closed takes it.
 //
 // The core does no I/O, so a lane replays the scenario with no relay: it makes the same calls,
 // compares each request, outcome, standing, genesis and sealed state the core gives with the
@@ -36,9 +40,10 @@
 
 use std::ffi::{CStr, CString};
 use std::path::Path;
+use std::sync::Mutex;
 
 use sce_peer_capi::*;
-use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
+use sce_rust_relay::{Authority, Doorway, Hub, Limits, LoginPolicy, MemoryStore, Relay};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::Identity;
 use serde_json::{json, Value};
@@ -75,6 +80,13 @@ const ADMINISTRATOR: [u8; 32] = [9; 32];
 /// The data key bob's state is sealed under: fixed here, so that the recording holds the same
 /// sealed bytes at every run. A host draws one for each save (`sce_peer_save_sealed`).
 const DATA_KEY: [u8; 32] = [7; 32];
+
+/// The relay's name, which a device is configured with and logs in for.
+const AUDIENCE: &str = "the-relay";
+
+/// The key the relay's challenges are made under: fixed here, so that the recording holds the same
+/// nonces at every run. A relay draws one at start (`Doorway::new`).
+const CHALLENGE_KEY: [u8; 32] = [5; 32];
 
 /// The genesis a list with one administrator, a quorum of one and a hub that is not trusted has:
 /// what alice's core is to write when it opens the list, made here by hand.
@@ -292,6 +304,16 @@ impl Core {
         check(unsafe { sce_peer_start(self.0, kind) }, "start");
     }
 
+    /// Begin the login at the relay named `audience`.
+    fn login(&mut self, audience: &str) {
+        let audience = text(audience);
+        // SAFETY: a live handle, and a NUL-terminated text.
+        check(
+            unsafe { sce_peer_login(self.0, audience.as_ptr()) },
+            "login",
+        );
+    }
+
     fn poll(&mut self) -> Option<String> {
         let mut out = empty();
         // SAFETY: a live handle, and a place valid for a write.
@@ -380,29 +402,46 @@ impl Drop for Core {
 
 /// The devices' cores run against the relay, each call and each text recorded as a step.
 struct Recording {
-    relay: Relay<MemoryStore>,
-    authority: Authority,
+    /// The relay, offering login, reached as a transport reaches it ([`Hub::answer`]).
+    relay: Mutex<Relay<MemoryStore>>,
     /// The relay's clock, in milliseconds: a second further at each request, so that no device
     /// spends its allowance however long the scenario.
     now: u64,
     devices: Value,
     cores: Vec<Option<Core>>,
+    /// The token each device's transport presents, none for a device that has not logged in.
+    tokens: Vec<Option<String>>,
     steps: Vec<Value>,
+}
+
+/// The relay's authority, whose tokens the relay takes and issues.
+fn authority() -> Authority {
+    Authority::new([3; 32], AUDIENCE)
 }
 
 impl Recording {
     fn new() -> Self {
-        let authority = Authority::new([3; 32], "the-relay");
         let devices = devices();
         let cores = devices.as_array().unwrap().iter().map(|_| None).collect();
+        let tokens = devices.as_array().unwrap().iter().map(|_| None).collect();
+        let relay = Relay::open(MemoryStore::new(), authority(), Limits::default())
+            .unwrap()
+            .with_login(Doorway::with_key(LoginPolicy::default(), CHALLENGE_KEY));
         Self {
-            relay: Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
-            authority,
+            relay: Mutex::new(relay),
             now: 0,
             devices,
             cores,
+            tokens,
             steps: Vec::new(),
         }
+    }
+
+    /// The device's transport presents a token of the relay's authority, as an operator issues it:
+    /// what gives a relay whose creation of lists is closed a list's first entries.
+    fn hand_token(&mut self, device: usize) {
+        let node = self.devices[device]["node"].as_u64().unwrap();
+        self.tokens[device] = Some(authority().issue(LIST, node, u64::MAX));
     }
 
     fn core(&mut self, device: usize) -> &mut Core {
@@ -480,15 +519,32 @@ impl Recording {
         Some(request)
     }
 
-    /// `request` carried to the relay, as `device`'s transport carries it, and the answer back.
+    /// `request` carried to the relay, as `device`'s transport carries it with the token it
+    /// presents, or none, and the answer back.
     fn carry(&mut self, device: usize, request: &str) {
-        let node = self.devices[device]["node"].as_u64().unwrap();
-        let token = self.authority.issue(LIST, node, u64::MAX);
         self.now += 1000;
-        let response = self.relay.handle(&token, request, self.now);
+        let response = self
+            .relay
+            .answer(self.tokens[device].as_deref(), None, request, self.now);
         self.core(device).respond(&response);
         self.steps
             .push(json!({"device": device, "op": "respond", "text": response}));
+    }
+
+    /// `device` logs in at the relay, every request carried and every answer back; its transport
+    /// presents the token the outcome holds from then on, when it holds one.
+    fn login(&mut self, device: usize) -> Value {
+        self.core(device).login(AUDIENCE);
+        self.steps
+            .push(json!({"device": device, "op": "login", "audience": AUDIENCE}));
+        while let Some(request) = self.ask(device) {
+            self.carry(device, &request);
+        }
+        let outcome = self.outcome(device);
+        if let Some(token) = outcome["token"]["token"].as_str() {
+            self.tokens[device] = Some(token.to_string());
+        }
+        outcome
     }
 
     fn fail(&mut self, device: usize, reason: &str) {
@@ -523,7 +579,7 @@ impl Recording {
 
     fn into_scenario(self) -> Value {
         json!({
-            "version": 4,
+            "version": 5,
             "list": LIST,
             "devices": self.devices,
             "steps": self.steps,
@@ -565,8 +621,10 @@ fn record() -> Value {
     // Alice's device opens the list as its administrator: the genesis is the one a list with her
     // administrator's key, a quorum of one and a hub that is not trusted has, which is what bob is
     // invited with, and her person is its first member, with the highest role. She grants bob
-    // writing, and her round gives the relay the genesis and the two grants.
+    // writing, and her round gives the relay the genesis and the two grants, presenting a token of
+    // the relay's authority: a list is created with one.
     run.make(AT_ALICE);
+    run.hand_token(AT_ALICE);
     assert_eq!(
         run.open(AT_ALICE, "untrusted"),
         hex(&genesis().hash()),
@@ -600,6 +658,19 @@ fn record() -> Value {
         "the same write waits once"
     );
     assert_eq!(run.standing(AT_BOB)["waiting"], 1);
+    // Bob's device was handed no token: it logs in with his person's key, and the relay, which holds
+    // the grant alice gave it, issues a token for an hour, which his rounds present from then on.
+    let logged_in = run.login(AT_BOB);
+    assert_eq!(logged_in["outcome"], "ended", "{logged_in}");
+    assert!(
+        logged_in["token"]["token"].is_string(),
+        "the outcome holds the token: {logged_in}"
+    );
+    assert_eq!(
+        logged_in["events"].as_array().map(Vec::len),
+        Some(0),
+        "a login tells the machine nothing: {logged_in}"
+    );
     let joined = run.round(AT_BOB, "sync");
     assert_eq!(refused(&joined), 0, "{joined}");
     assert_eq!(joined["pushed"], 1, "the write that waited: {joined}");
@@ -720,6 +791,10 @@ fn record() -> Value {
     let off = run.standing(AT_BOB);
     assert_eq!(off["role"], 0, "{off}");
     assert_eq!(members(&off), vec!["1"], "{off}");
+    // Logging in again is refused: the latest grant of his node at the relay gives him no role.
+    let refused_login = run.login(AT_BOB);
+    assert_eq!(refused_login["outcome"], "failed", "{refused_login}");
+    assert_eq!(refused_login["code"], "forbidden", "{refused_login}");
     let after = run.round(AT_ALICE, "sync");
     assert_eq!(named(&after, WRITE), 0, "{after}");
     assert_eq!(refused(&after), 0, "{after}");
@@ -782,6 +857,7 @@ fn replay(scenario: &Value) -> usize {
                 "step {at}"
             ),
             "start" => core.start(&field("kind")),
+            "login" => core.login(&field("audience")),
             "request" => assert_eq!(core.poll(), Some(field("text")), "step {at}"),
             "respond" => core.respond(&field("text")),
             "fail" => core.fail(&field("reason")),

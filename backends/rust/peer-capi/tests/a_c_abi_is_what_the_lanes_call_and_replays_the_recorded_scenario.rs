@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sce_peer_capi::*;
-use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
+use sce_rust_relay::{Authority, Doorway, Limits, LoginPolicy, MemoryStore, Relay};
 use sce_rust_trust::{encoding, Identity};
 use serde_json::{json, Value};
 
@@ -250,6 +250,102 @@ fn a_send_the_core_cannot_sign_yet_is_kept_and_says_why() {
             1,
             "the refused one is kept nowhere"
         );
+        sce_peer_free(peer);
+    }
+}
+
+/// A login through the ABI (ADR 0080): a core with no person is refused before anything is asked;
+/// a login asks for a challenge for the device's node, signs nothing for a relay that names itself
+/// otherwise than the device was configured for, and says in its outcome what the relay refused; a
+/// link takes a token, and a host's own transport, whose credentials are the host's, takes none.
+#[test]
+fn a_login_through_the_abi_asks_for_a_challenge_and_says_what_came_of_it() {
+    let mut relay = Relay::open(
+        MemoryStore::new(),
+        Authority::new([3; 32], "the-relay"),
+        Limits::default(),
+    )
+    .unwrap()
+    .with_login(Doorway::with_key(LoginPolicy::default(), [5; 32]));
+    // SAFETY: each call below passes live handles, NUL-terminated texts, or null where refused.
+    unsafe {
+        let peer = sce_peer_open(c"home".as_ptr());
+        assert_eq!(
+            sce_peer_login(peer, c"the-relay".as_ptr()),
+            SCE_PEER_ERR_NO_PERSON
+        );
+        assert_eq!(
+            sce_peer_set_identity(peer, 1, [1u8; 32].as_ptr()),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_login(peer, std::ptr::null()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+
+        // Configured for another relay: the challenge is answered by this one, and nothing signed.
+        assert_eq!(sce_peer_login(peer, c"another-relay".as_ptr()), SCE_PEER_OK);
+        let challenge = text_of(peer, sce_peer_poll_request).expect("a challenge is asked");
+        let asked: Value = serde_json::from_str(&challenge).unwrap();
+        assert_eq!(asked["op"], "challenge", "{asked}");
+        assert_eq!(asked["list"], "home");
+        assert_eq!(asked["node"], "1");
+        let answer = CString::new(relay.anonymous(None, &challenge, 1_000)).unwrap();
+        assert_eq!(sce_peer_respond(peer, answer.as_ptr()), SCE_PEER_OK);
+        assert_eq!(text_of(peer, sce_peer_poll_request), None);
+        let stopped: Value =
+            serde_json::from_str(&text_of(peer, sce_peer_take_outcome).unwrap()).unwrap();
+        assert_eq!(stopped["failure"], "unexpected", "{stopped}");
+        assert!(stopped.get("token").is_none(), "{stopped}");
+
+        // Configured for this relay: the login is signed and carried, and the relay, which holds
+        // no log of the list, refuses it; the outcome says so in the relay's word.
+        assert_eq!(sce_peer_login(peer, c"the-relay".as_ptr()), SCE_PEER_OK);
+        for _ in 0..2 {
+            let request = text_of(peer, sce_peer_poll_request).expect("the login asks");
+            let answer = CString::new(relay.anonymous(None, &request, 2_000)).unwrap();
+            assert_eq!(sce_peer_respond(peer, answer.as_ptr()), SCE_PEER_OK);
+        }
+        assert_eq!(
+            text_of(peer, sce_peer_poll_request),
+            None,
+            "the login is over"
+        );
+        let refused: Value =
+            serde_json::from_str(&text_of(peer, sce_peer_take_outcome).unwrap()).unwrap();
+        assert_eq!(refused["failure"], "relay", "{refused}");
+        assert_eq!(refused["code"], "behind", "{refused}");
+
+        // A link takes a token, and gives one up for none; a host's own transport takes none.
+        let link = sce_peer_link_wss(c"ws://127.0.0.1:1".as_ptr(), std::ptr::null());
+        assert!(!link.is_null(), "a link with no token: {}", last_error());
+        assert_eq!(
+            sce_peer_link_set_token(link, c"a-token".as_ptr()),
+            SCE_PEER_OK
+        );
+        assert_eq!(sce_peer_link_set_token(link, std::ptr::null()), SCE_PEER_OK);
+        assert_eq!(
+            sce_peer_link_set_token(std::ptr::null_mut(), c"a-token".as_ptr()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        unsafe extern "C" fn never(
+            _: *mut std::ffi::c_void,
+            _: *const u8,
+            _: usize,
+            _: u64,
+            _: *mut ScePeerReply,
+        ) -> i32 {
+            SCE_PEER_TRANSPORT_LINK
+        }
+        let host = sce_peer_link_host(Some(never), None, std::ptr::null_mut());
+        assert_eq!(
+            sce_peer_link_set_token(host, c"a-token".as_ptr()),
+            SCE_PEER_ERR_BAD_ARGUMENT
+        );
+        assert!(last_error().contains("host"), "{}", last_error());
+
+        sce_peer_link_free(host);
+        sce_peer_link_free(link);
         sce_peer_free(peer);
     }
 }
@@ -1053,6 +1149,7 @@ fn script_of(scenario: &Value) -> String {
                 text("reason")
             ),
             "start" => format!("start {device} {}", word("kind")),
+            "login" => format!("login {device} {}", text("audience")),
             "request" | "respond" | "outcome" | "standing" => {
                 format!("{op} {device} {}", text("text"))
             }

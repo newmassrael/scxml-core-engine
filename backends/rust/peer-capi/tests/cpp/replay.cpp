@@ -310,6 +310,8 @@ int main(int argc, char **argv) {
             expect_text(taken(out), reason, "the reason of the refusal");
         } else if (op == "start") {
             check(sce_peer_start(peer, kind_of(tokens.need())), "start");
+        } else if (op == "login") {
+            check(sce_peer_login(peer, tokens.text().c_str()), "login");
         } else if (op == "request") {
             const std::string want = tokens.text();
             check(sce_peer_poll_request(peer, &out), "poll_request");

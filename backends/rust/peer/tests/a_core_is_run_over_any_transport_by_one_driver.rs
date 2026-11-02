@@ -15,10 +15,12 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use sce_rust_peer::{
-    drive, CourierError, Driven, Kept, Outcome, Peer, Profile, RoundKind, Signal, Transport,
-    TransportError,
+    drive, CourierError, Driven, Kept, Outcome, Peer, PeerError, Profile, RoundKind, Signal,
+    Transport, TransportError,
 };
-use sce_rust_relay::{Authority, DirectLink, Limits, MemoryStore, Notice, Relay};
+use sce_rust_relay::{
+    Authority, Code, DirectLink, Doorway, Limits, LoginPolicy, MemoryStore, Notice, Relay,
+};
 use sce_rust_trust::membership::{Body, Entry, Log};
 use sce_rust_trust::Identity;
 use serde_json::json;
@@ -464,4 +466,78 @@ fn a_round_whose_transport_waits_ends_when_cancelled_and_when_its_deadline_passe
     );
     assert!(taken(&carried).is_empty());
     assert_eq!(alice.take_outcome(), None);
+}
+
+/// A device logs in through its core (ADR 0080): over a transport that presents no token, the core
+/// asks for a challenge and logs in with its person's key, the outcome holds the token, and the
+/// transport given it carries the device's rounds. A round with no token is the relay's refusal of
+/// the token, which is when a host logs in; a relay that names itself otherwise than the device was
+/// configured for is signed nothing.
+#[test]
+fn a_core_logs_in_over_a_transport_with_no_token_and_runs_its_rounds_with_the_token() {
+    let relay: Shared = Arc::new(Mutex::new(
+        Relay::open(MemoryStore::new(), authority(), Limits::default())
+            .unwrap()
+            .with_login(Doorway::with_key(LoginPolicy::default(), [6; 32])),
+    ));
+    let none = Signal::new();
+    // The list is created with a token of the authority, as a relay whose creation is closed takes.
+    let mut alice = alice();
+    let mut operator = direct(&relay, ALICE);
+    alice.start(RoundKind::Sync).unwrap();
+    drive(&mut alice, &mut operator, None, &none);
+    assert!(matches!(alice.take_outcome(), Some(Ok(_))));
+
+    assert_eq!(
+        Peer::invited(LIST, genesis().hash()).login("the-relay"),
+        Err(PeerError::NoPerson),
+        "a device with no person logs in as no one"
+    );
+    let mut bob = invited(BOB);
+    assert_eq!(bob.login("the-relay"), Ok(()));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    let mut link = DirectLink::new(relay.clone(), String::new(), clock);
+    // The login begun above is abandoned by the round, which the relay refuses for want of a token.
+    bob.start(RoundKind::Sync).unwrap();
+    drive(&mut bob, &mut link, None, &none);
+    match bob.take_outcome() {
+        Some(Err(CourierError::Relay {
+            code: Code::Unauthorized,
+            ..
+        })) => {}
+        other => panic!("the relay's refusal of the token, and not {other:?}"),
+    }
+
+    bob.login("another-relay").unwrap();
+    drive(&mut bob, &mut link, None, &none);
+    match bob.take_outcome() {
+        Some(Err(CourierError::Unexpected(why))) => assert!(why.contains("another-relay"), "{why}"),
+        other => panic!("a device configured for another relay stops, and not {other:?}"),
+    }
+
+    bob.login("the-relay").unwrap();
+    assert_eq!(drive(&mut bob, &mut link, None, &none), Driven::Ended);
+    let logged_in: Outcome = bob.take_outcome().unwrap().unwrap();
+    assert!(
+        logged_in.events().is_empty(),
+        "a login tells the machine nothing"
+    );
+    let token = logged_in.token.expect("a login's outcome holds its token");
+    assert_eq!(
+        token.expires_at_ms, 3_600_000,
+        "an hour by the relay's clock"
+    );
+    assert_eq!(
+        authority()
+            .verify(&token.token, 0)
+            .map(|session| session.node),
+        Ok(BOB)
+    );
+
+    assert!(link.set_token(&token.token));
+    bob.start(RoundKind::Sync).unwrap();
+    drive(&mut bob, &mut link, None, &none);
+    let read = bob.take_outcome().unwrap().unwrap();
+    assert_eq!(read.token, None, "a round earns no token");
+    assert!(!read.events().is_empty(), "the roster: {read:?}");
 }

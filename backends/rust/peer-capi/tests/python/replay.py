@@ -14,7 +14,7 @@ import ctypes
 import json
 import sys
 
-ABI_VERSION = 4
+ABI_VERSION = 5
 OK = 0
 KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3, "waiting": 4}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}
@@ -49,6 +49,7 @@ def load(path):
             [vp, cp, cp, ctypes.POINTER(ctypes.c_int32), bufp],
         ),
         "sce_peer_start": (ctypes.c_int32, [vp, ctypes.c_int32]),
+        "sce_peer_login": (ctypes.c_int32, [vp, cp]),
         "sce_peer_poll_request": (ctypes.c_int32, [vp, bufp]),
         "sce_peer_respond": (ctypes.c_int32, [vp, cp]),
         "sce_peer_fail": (ctypes.c_int32, [vp, cp]),
@@ -185,6 +186,8 @@ def main():
             expect(taken(out), step["reason"], "the reason of the refusal")
         elif op == "start":
             check(lib.sce_peer_start(peer, KINDS[step["kind"]]), "start")
+        elif op == "login":
+            check(lib.sce_peer_login(peer, step["audience"].encode()), "login")
         elif op == "request":
             check(lib.sce_peer_poll_request(peer, ctypes.byref(out)), "poll_request")
             request = taken(out)

@@ -134,6 +134,14 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
     /** Begins a round of `kind` (`ScePeerAbi.ROUND_*`). */
     fun start(kind: Int) = lib.check(lib.sce_peer_start(pointer, kind), "start")
 
+    /**
+     * Begins a login at the relay named [audience] (`sce_peer_login`): the name the device was
+     * configured with, never the one the relay says. It is run as a round is, over a link that
+     * presents no token or one that expired, and its outcome holds `token`, which the host gives the
+     * link ([PeerLink.setToken]). `ERR_NO_PERSON` when the core has no person.
+     */
+    fun login(audience: String) = lib.check(lib.sce_peer_login(pointer, audience), "login")
+
     fun publishCheckpoint(before: Long, digest: Int) = lib.check(lib.sce_peer_publish_checkpoint(pointer, before, digest), "publish_checkpoint")
 
     fun publishKeyPackage() = lib.check(lib.sce_peer_publish_key_package(pointer), "publish_key_package")
@@ -232,19 +240,23 @@ fun interface HostTransport {
  */
 class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("unused") private val exchange: ExchangeFn?) : Handle(lib, handle, lib::sce_peer_link_free) {
     companion object {
-        /** The relay's WebSocket binding at [base], presenting [token] (`sce_peer_link_wss`). */
-        fun wss(lib: ScePeerLib, base: String, token: String): PeerLink {
+        /**
+         * The relay's WebSocket binding at [base], presenting [token] (`sce_peer_link_wss`), or none
+         * when it is `null`: a link a device logs in over ([PeerCore.login]) and is then given its
+         * token ([setToken]).
+         */
+        fun wss(lib: ScePeerLib, base: String, token: String? = null): PeerLink {
             val handle = lib.sce_peer_link_wss(base, token) ?: throw ScePeerException(ScePeerAbi.ERR_BAD_ARGUMENT, "link_wss: ${lib.sce_peer_last_error()}")
             return PeerLink(lib, handle, null)
         }
 
         /**
-         * The relay's WebSocket binding at [base], presenting [token], believing the certificate
+         * The relay's WebSocket binding at [base], presenting [token] (none when `null`), believing the certificate
          * authorities in [authorities] for a `wss://` relay (`sce_peer_link_wss_believing`): the
          * bytes of a file the application ships (an Android raw resource read whole), one or more
          * certificates in PEM or one in DER; with [alsoPublic], the public authorities too.
          */
-        fun wssBelieving(lib: ScePeerLib, base: String, token: String, authorities: ByteArray, alsoPublic: Boolean = false): PeerLink {
+        fun wssBelieving(lib: ScePeerLib, base: String, token: String?, authorities: ByteArray, alsoPublic: Boolean = false): PeerLink {
             val roots = if (alsoPublic) ScePeerAbi.ROOTS_AND_PUBLIC else ScePeerAbi.ROOTS_ONLY
             val handle =
                 lib.sce_peer_link_wss_believing(base, token, authorities, NativeLong(authorities.size.toLong()), roots)
@@ -286,6 +298,13 @@ class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("
 
     /** The device's network changed; any thread, at any time. */
     fun networkChanged() = lib.check(lib.sce_peer_link_network_changed(pointer), "link_network_changed")
+
+    /**
+     * The token the link presents from its next dial on, `null` for none (`sce_peer_link_set_token`):
+     * the one a login's outcome holds. Not while a run uses the link; `ERR_BAD_ARGUMENT` for a link
+     * whose transport the host carries itself, whose credentials are the host's.
+     */
+    fun setToken(token: String?) = lib.check(lib.sce_peer_link_set_token(pointer, token), "link_set_token")
 
     /** What became of the connection and what the relay pushed, as one JSON array; `null` when nothing. */
     fun takeNotices(): String? {

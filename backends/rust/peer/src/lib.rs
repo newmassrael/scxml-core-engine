@@ -28,6 +28,10 @@
 //!   [`Peer::remove_member`]) write the entries of the membership log and make the group's change
 //!   that goes with them in one call; the entries go to the relay with the next round, and the
 //!   commit and the Welcome a change of the group makes are given to it after that round;
+//! - a device logs in at a relay with its person's key ([`Peer::login`], ADR 0080): the same
+//!   exchange over the same transport, made on a connection that presents no token, or one that
+//!   expired, whose outcome holds the token the relay issued ([`Outcome::token`]); the host gives the
+//!   token to its transport, which carries it, and the core holds none;
 //! - what the device stands at in the list (its person's role, the members, whether it waits for its
 //!   own chain, what the relay is still owed) is [`Peer::standing`];
 //! - what the device keeps between runs, its secrets with the rest, is one state sealed under a key
@@ -59,12 +63,14 @@ pub use sce_rust_trust::backup::{BackupError, DataKey};
 // What runs the core over a transport: the one driver, the exchange it carries, how it ended, and
 // the transport's contract with what it is given.
 pub use sce_rust_relay::{drive, Driven, Exchange, Signal, Transport, TransportError};
-pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind};
+pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind, Token};
 pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRITER};
 
 use sce_rust_mls::host::Issued;
 use sce_rust_relay::client::{floor_event, keep};
-use sce_rust_relay::{CourierState, LinkError, Request, Response, RoundMachine, Step};
+use sce_rust_relay::{
+    CourierState, LinkError, LoginMachine, LoginStep, Request, Response, RoundMachine, Step,
+};
 use sce_rust_trust::backup::{self, Contents};
 use sce_rust_trust::membership::{Body, Entry};
 use sce_rust_trust::{Identity, PublicKey, Trust};
@@ -111,9 +117,23 @@ pub struct Outcome {
     /// once the exchange ended. They are given after each round, in order, and kept until the relay
     /// takes them; one it did not take is among the refusals, with why.
     pub owed: usize,
+    /// The token a login earned ([`Peer::login`]), and when it expires by the relay's clock; `None`
+    /// for every other exchange.
+    pub token: Option<Token>,
 }
 
 impl Outcome {
+    /// What a login that came to `token` came to: a round that told the machine nothing.
+    fn of_login(token: Token, owed: usize) -> Self {
+        Self {
+            round: Round::default(),
+            reread: None,
+            steps: Vec::new(),
+            owed,
+            token: Some(token),
+        }
+    }
+
     /// Every event for the machine, in order.
     pub fn events(&self) -> Vec<(String, String)> {
         self.rounds()
@@ -359,6 +379,9 @@ pub struct Peer {
     /// The commits and Welcomes the administrator's acts made that the relay has not taken, in the
     /// order they were made.
     owed: Vec<Publication>,
+    /// A login under way ([`Self::login`]): an exchange of its own, which keeps nothing of the
+    /// relay's client and runs instead of a round.
+    login: Option<LoginMachine>,
 }
 
 /// An exchange with the relay under way.
@@ -432,6 +455,7 @@ impl Peer {
             group: None,
             administrator: None,
             owed: Vec::new(),
+            login: None,
         }
     }
 
@@ -686,6 +710,30 @@ impl Peer {
         })
     }
 
+    /// Begin the exchange that logs the device in at the relay named `audience` (ADR 0080 section
+    /// 2): a challenge for its person's node, and the login, signed with the person's key for that
+    /// audience and bringing the entry of the node's latest grant the core holds, in case the relay
+    /// was not given it. `audience` is the name the device was configured with, shipped with the
+    /// relay's address or carried in an invitation, and not the one the relay says: a relay that
+    /// names itself otherwise is signed nothing, and the outcome says so. The exchange is carried
+    /// as a round is, on a connection that presents no token or one that expired, and its outcome
+    /// holds the token ([`Outcome::token`]), which the host gives its transport
+    /// ([`Transport::set_token`]). The core holds no token, and logs in again only when its host
+    /// asks: when a round's outcome is the relay's `unauthorized`, or before the token's time is
+    /// out. A login begun while a round runs abandons the round, which loses nothing, as beginning
+    /// any exchange does.
+    pub fn login(&mut self, audience: &str) -> Result<(), PeerError> {
+        self.ready()?;
+        if self.trust.person().is_none() {
+            return Err(PeerError::NoPerson);
+        }
+        if let Some(running) = self.running.take() {
+            self.state = (*running).into_state();
+        }
+        self.login = Some(LoginMachine::start(self.trust.clone(), audience));
+        Ok(())
+    }
+
     /// Begin the exchange that gives the relay `publication`.
     pub fn publish(&mut self, publication: &Publication) -> Result<(), PeerError> {
         self.begin(Purpose::Publish, |state, trust| {
@@ -891,6 +939,7 @@ impl Peer {
             self.group = group;
         }
         self.running = None;
+        self.login = None;
         self.outcome = None;
         self.state = saved.courier;
         self.owed = saved.owed;
@@ -972,6 +1021,7 @@ impl Peer {
         if let Some(running) = self.running.take() {
             self.state = (*running).into_state();
         }
+        self.login = None;
         let state = std::mem::take(&mut self.state);
         self.running = Some(Box::new(Running {
             machine: make(state, self.trust.clone()),
@@ -981,6 +1031,13 @@ impl Peer {
     }
 
     fn give_answer(&mut self, answer: Result<Response, LinkError>) -> Result<(), PeerError> {
+        if let Some(login) = self.login.as_mut() {
+            if !login.is_asking() {
+                return Err(PeerError::NothingAsked);
+            }
+            login.respond(answer);
+            return Ok(());
+        }
         let running = self.running.as_mut().ok_or(PeerError::NothingAsked)?;
         if !running.machine.is_asking() {
             return Err(PeerError::NothingAsked);
@@ -1023,6 +1080,7 @@ impl Peer {
                     reread: None,
                     steps,
                     owed: 0,
+                    token: None,
                 }
             }
             (Purpose::Follow { first, mut steps }, Ok(again)) => {
@@ -1034,6 +1092,7 @@ impl Peer {
                     reread: Some(again),
                     steps,
                     owed: 0,
+                    token: None,
                 }
             }
             // A failure of the second read is left to the next round, as the group's device leaves
@@ -1044,6 +1103,7 @@ impl Peer {
                 reread: None,
                 steps,
                 owed: 0,
+                token: None,
             },
             (Purpose::Deliver { outcome }, Ok(_)) => {
                 self.owed.remove(0);
@@ -1065,6 +1125,7 @@ impl Peer {
                     reread: None,
                     steps: Vec::new(),
                     owed: self.owed.len(),
+                    token: None,
                 }));
                 return;
             }
@@ -1105,6 +1166,17 @@ impl Peer {
 /// it) is one exchange to the driver, whose outcome is taken with [`Peer::take_outcome`].
 impl Exchange for Peer {
     fn request(&mut self) -> Option<Request> {
+        if let Some(login) = self.login.as_mut() {
+            return match login.poll() {
+                LoginStep::Request(request) => Some(request),
+                LoginStep::Done(result) => {
+                    self.login = None;
+                    let owed = self.owed.len();
+                    self.outcome = Some(result.map(|token| Outcome::of_login(token, owed)));
+                    None
+                }
+            };
+        }
         loop {
             let running = self.running.as_mut()?;
             match running.machine.poll() {
