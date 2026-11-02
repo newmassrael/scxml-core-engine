@@ -49,12 +49,12 @@ PY
 
 mutation_case "a bound flag keeps the bit the value presents" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                    Derivation::BoundInput { binders } => {
-                        self.derive_bound_input(id, binders, lines, &mut derived)
-                    }''',
-     r'''                    Derivation::BoundInput { binders } => {
-                        let _ = (Self::derive_bound_input, binders);
-                    }''')
+     r'''                Derivation::BoundInput { binders } => {
+                    self.derive_bound_input(id, binders, lines, &mut derived)
+                }''',
+     r'''                Derivation::BoundInput { binders } => {
+                    let _ = (Self::derive_bound_input, binders);
+                }''')
 PY
 
 # That an entry is held to the flag its chain hands it is a case of

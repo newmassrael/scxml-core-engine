@@ -18,7 +18,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance
-mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/codec_totality.rs sce-build/src/forge/deployment.rs
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/deployment.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 # A Rust chain with no depth walked to a count anyway stops at that count and
@@ -33,9 +33,15 @@ PY
 # A Rust list with no bound held at a number refuses a list past it. Killed by
 # `a_list_with_no_bound_reads_what_its_frame_holds` (twenty entries).
 mutation_case "a Rust list with no bound is held at sixteen" <<'PY'
-edit("sce-build/src/forge/codec_totality.rs",
-     r'''        None => "{ usize::MAX }".to_string(),''',
-     r'''        None => "16".to_string(),''')
+edit("sce-build/src/forge/generator.rs",
+     r'''pub(crate) fn rust_bound_most(most: Option<u64>) -> String {
+    match most {
+        Some(most) => most.to_string(),
+        None => "{ usize::MAX }".to_string(),''',
+     r'''pub(crate) fn rust_bound_most(most: Option<u64>) -> String {
+    match most {
+        Some(most) => most.to_string(),
+        None => "16".to_string(),''')
 PY
 
 # A Rust tree with no views judges a frame past a capacity by a form that holds
@@ -56,11 +62,11 @@ edit("sce-build/src/forge/generator.rs",
      r'''        let _ = c11_refuse_a_field_it_cannot_hold;''')
 PY
 
-# A deployment holds every field inline, so a field with no bound needs a capacity
-# from it. Killed by `what_cannot_hold_a_list_with_no_bound_refuses_it` (`needs a
-# capacity`).
+# An inline deployment holds every field in an array, so a field with no bound
+# needs a capacity from it. Killed by
+# `what_cannot_hold_a_list_with_no_bound_refuses_it` (`needs a capacity`).
 mutation_case "a deployment takes a field it holds no number of" <<'PY'
 edit("sce-build/src/forge/deployment.rs",
-     r'''        if let Some(unheld) = fields.iter().find(|f| f["capacity"].is_null()) {''',
-     r'''        if let Some(unheld) = fields.iter().find(|_| false) {''')
+     r'''            .then(|| fields.iter().find(|f| f["capacity"].is_null()))''',
+     r'''            .then(|| fields.iter().find(|_| false))''')
 PY
