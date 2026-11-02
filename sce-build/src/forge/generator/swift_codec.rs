@@ -118,11 +118,14 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     if f.is_vle() {
         return what("a variable-length integer");
     }
-    if f.is_variable_length() || f.length_field.is_some() {
-        return what("a variable-length field");
-    }
     if f.dma_burst_align.is_some() {
         return what("a DMA alignment");
+    }
+    if matches!(f.bit_size, BitSize::Tail | BitSize::LengthRef) {
+        return variable_field_unlowered(m, f);
+    }
+    if f.is_variable_length() || f.length_field.is_some() {
+        return what("a variable-length field");
     }
     // A field of bits inside one byte has no byte order: it is the byte's own bits.
     if f.bit_offset.is_some() {
@@ -144,6 +147,69 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
         )),
         _ => what("a bit size that is not fixed"),
     }
+}
+
+/// Whether `f` is the one field of `m` that runs to the end of the frame or for the length an
+/// earlier field states: the bytes the frame carries after its fixed part.
+fn is_variable(f: &CodecField) -> bool {
+    matches!(f.bit_size, BitSize::Tail | BitSize::LengthRef)
+}
+
+/// What of the variable-length field `f` of `m` (a `tail` or a `length-ref`) the Swift codec does
+/// not lower yet; `None` for one it does.
+///
+/// It is lowered where it is the last of the frame and a `bytes` field: the fixed fields come
+/// before it, in front of the byte it begins at, and the bytes it holds are an array. A `length-ref`
+/// takes its count from an unsigned integer field of the codec, plus the `length-arith` the
+/// document names. Each shape past that (a string, a field after it, a second one, a length held
+/// in the flag of a carrier or in a signed field) is named.
+fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
+    let what = |text: &str| Some(format!("field '{}': {text}", f.id));
+    if !matches!(f.sce_type, SceType::Bytes) {
+        return what(&format!(
+            "a `{}` field of variable length",
+            f.sce_type.as_attr()
+        ));
+    }
+    if m.fields.iter().filter(|g| is_variable(g)).count() > 1 {
+        return what("a second field of variable length in the frame");
+    }
+    let fixed = m.fields.iter().filter(|g| !std::ptr::eq(*g, f));
+    for g in fixed {
+        let end =
+            integer(&g.sce_type).map_or(g.byte_offset, |(_, width)| g.byte_offset + width / 8);
+        if g.byte_offset >= f.byte_offset || end > f.byte_offset {
+            return what(&format!(
+                "the field '{}' that follows or overlaps it in the frame",
+                g.id
+            ));
+        }
+    }
+    if matches!(f.bit_size, BitSize::LengthRef) {
+        let Some(name) = f.length_field.as_deref() else {
+            return what("a length-ref with no length field");
+        };
+        if dotted_length_field(name).is_some() {
+            return what("a length held in a flag of a carrier");
+        }
+        let unsigned = m.fields.iter().find(|g| g.id == name).map(|g| {
+            matches!(
+                g.sce_type,
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+            )
+        });
+        if unsigned != Some(true) {
+            return what(&format!(
+                "a length held in `{name}`, which is not an unsigned integer"
+            ));
+        }
+    }
+    None
+}
+
+/// The variable-length field of `m`, which [`unlowered`] has found nothing to refuse in.
+fn variable_field(m: &CodecModel) -> Option<&CodecField> {
+    m.fields.iter().find(|f| is_variable(f))
 }
 
 /// Where the bits of a field that names a `sce:bit-offset` lie in its byte: the shift that brings
@@ -217,6 +283,28 @@ pub(super) fn render(
         .fields
         .iter()
         .map(|f| {
+            // The bytes after the fixed part of the frame: they begin where the document says,
+            // and the fixed part is the frame up to there.
+            if is_variable(f) {
+                frame_length = frame_length.max(f.byte_offset);
+                let kind = match f.bit_size {
+                    BitSize::Tail => "tail",
+                    _ => "length_ref",
+                };
+                return serde_json::json!({
+                    "id": f.id,
+                    "swift_type": "[UInt8]",
+                    "offset": f.byte_offset,
+                    "default": "[]",
+                    "flags": Vec::<serde_json::Value>::new(),
+                    "bits": serde_json::Value::Null,
+                    "variable": {
+                        "kind": kind,
+                        "length_field": f.length_field.clone().unwrap_or_default(),
+                        "arith": f.length_arith.unwrap_or(0),
+                    },
+                });
+            }
             let (swift_type, width) =
                 integer(&f.sce_type).expect("a field this renderer is given is an integer");
             frame_length = frame_length.max(f.byte_offset + width / 8);
@@ -252,5 +340,8 @@ pub(super) fn render(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), fields.into());
     ctx.insert("frame_length".into(), frame_length.into());
+    // Whether a field runs on past the fixed part of the frame: a decode then builds the value
+    // field by field, as the length of that field is read from another.
+    ctx.insert("has_variable".into(), variable_field(m).is_some().into());
     l.render(env, "codec", ctx)
 }

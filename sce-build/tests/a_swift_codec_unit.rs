@@ -252,6 +252,83 @@ fn a_frame_is_written_in_one_write_so_a_bounded_sink_holds_all_of_it_or_none() {
 }
 
 #[test]
+fn a_tail_is_the_bytes_to_the_end_of_the_frame() {
+    let code = swift_of("tests/forge/resources/codec_tail.scxml").expect("a tail is written");
+    assert!(code.contains("public var payload: [UInt8] = []"), "{code}");
+    assert!(
+        code.contains("public static let frameLength = 2"),
+        "the fixed part is the bytes before the tail: {code}"
+    );
+    assert!(code.contains("let sceEnd = cursor.remaining"), "{code}");
+    assert!(
+        code.contains("frame.payload = Array(try cursor.peekSlice(sceEnd).dropFirst(2))"),
+        "{code}"
+    );
+    assert!(
+        code.contains("frame += self.payload"),
+        "the encode appends the bytes after the fixed part: {code}"
+    );
+}
+
+#[test]
+fn a_length_ref_takes_its_count_from_an_unsigned_field_and_its_arithmetic() {
+    let code = swift_of("tests/forge/resources/codec_length_ref_uint16_be.scxml")
+        .expect("a length-ref is written");
+    assert!(
+        code.contains("let sceEnd = 2 &+ Int(clamping: frame.payload_len)"),
+        "{code}"
+    );
+    assert!(
+        code.contains("guard sceEnd >= 2 else { throw .needMoreBytes }"),
+        "a count that ends before the field begins is not a frame: {code}"
+    );
+    let arith = swift_of("tests/forge/resources/codec_scout_zid_body.scxml")
+        .expect("a length-ref with arithmetic is written");
+    assert!(
+        arith.contains("Int(clamping: frame.zid_len_m1) &+ (1)"),
+        "{arith}"
+    );
+}
+
+#[test]
+fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
+    for (field, what) in [
+        (
+            r#"<sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+               <sce:field id="name" sce:type="string" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
+            "a `string` field of variable length",
+        ),
+        (
+            // A tail must be the last field (validated), so the second one is a tail that
+            // follows a length-ref.
+            r#"<sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+               <sce:field id="a" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>
+               <sce:field id="b" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
+            "a second field of variable length",
+        ),
+        (
+            r#"<sce:field id="n" sce:type="int8" sce:byte="0" sce:bit-size="8"/>
+               <sce:field id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
+            "which is not an unsigned integer",
+        ),
+    ] {
+        let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));
+        assert!(
+            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
+            "{field}: {refusal}"
+        );
+    }
+    for (document, what) in [
+        ("codec_fixed_after_lengthref", "follows or overlaps it"),
+        ("codec_length_ref_dotted_basic", "a flag of a carrier"),
+    ] {
+        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
+            .expect_err(&format!("{document} is not lowered"));
+        assert!(refusal.contains(what), "{document}: {refusal}");
+    }
+}
+
+#[test]
 fn a_codec_with_no_field_is_a_frame_of_no_bytes() {
     let code = swift_of("tests/forge/resources/codec_zenoh_keep_alive.scxml")
         .expect("a codec with no field is written");

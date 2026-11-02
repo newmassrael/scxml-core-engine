@@ -990,6 +990,60 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_tail
+
+@Test func codecTailMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_tail")
+    #expect(!cases.isEmpty, "codec_tail: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_tail case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecTail(
+            msgId: try oracleInteger(decoded.member("msgId"), as: UInt8.self),
+            status: try oracleInteger(decoded.member("status"), as: UInt8.self),
+            payload: try oracleBytes(decoded.member("payload"))
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_tail case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecTail.decode(&cursor)
+        #expect(roundTripped == value, "codec_tail case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_tail case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_length_ref
+
+@Test func codecLengthRefMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_length_ref")
+    #expect(!cases.isEmpty, "codec_length_ref: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_length_ref case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecLengthRef(
+            msgId: try oracleInteger(decoded.member("msgId"), as: UInt8.self),
+            len: try oracleInteger(decoded.member("len"), as: UInt8.self),
+            payload: try oracleBytes(decoded.member("payload"))
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_length_ref case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecLengthRef.decode(&cursor)
+        #expect(roundTripped == value, "codec_length_ref case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_length_ref case \(index) decode consumed the frame and nothing else")
+    }
+}
+
 // MARK: - codec: codec_zenoh_close
 
 @Test func codecZenohCloseMatchesReference() throws {
@@ -4542,6 +4596,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "weekday_from_days")
     }}
 
+// MARK: - codec: codec_origin_leaf
+
+@Test func codecOriginLeafMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecOriginLeaf.frameLength
+}
+
 // MARK: - codec: codec_origin_scalar
 
 @Test func codecOriginScalarMatchesReference() throws {
@@ -4556,6 +4618,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTaggedEntry.frameLength
+}
+
+// MARK: - codec: codec_ext_attachment
+
+@Test func codecExtAttachmentMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecExtAttachment.frameLength
 }
 
 // MARK: - codec: codec_flags_basic
@@ -4588,6 +4658,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatElem.frameLength
+}
+
+// MARK: - codec: codec_scout_zid_body
+
+@Test func codecScoutZidBodyMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecScoutZidBody.frameLength
+}
+
+// MARK: - codec: codec_tlv_entry
+
+@Test func codecTlvEntryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecTlvEntry.frameLength
 }
 
 // MARK: - codec: codec_variant_session_close
