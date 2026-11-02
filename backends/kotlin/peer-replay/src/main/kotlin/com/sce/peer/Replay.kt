@@ -164,9 +164,19 @@ fun main(args: Array<String>) {
             steps++
             continue
         }
-        if (op == "make") {
+        if (op == "make" || op == "make_invited") {
             val device = devices[at]
-            val core = bare(at)
+            val core = if (op == "make") {
+                bare(at)
+            } else {
+                // The device started from the text of its invitation alone.
+                peers[at]?.let { lib.sce_peer_free(it) }
+                val invitation = step.getValue("invitation").jsonPrimitive.content.toByteArray(Charsets.UTF_8)
+                val made = lib.sce_peer_invited_by(invitation, NativeLong(invitation.size.toLong()))
+                    ?: die("the core is not made from the invitation")
+                peers[at] = made
+                made
+            }
             val node = device.getValue("node").jsonPrimitive.long
             val seed = unhex(device.getValue("seed").jsonPrimitive.content)
             check(lib.sce_peer_set_identity(core, node, seed), "set_identity")
@@ -234,6 +244,32 @@ fun main(args: Array<String>) {
                 expect(hex(state), text("state"), "the sealed state")
                 wrapped[at] = wrapper.wrap(key)
                 key.fill(0)
+            }
+            "invite" -> {
+                val node = step.getValue("node").jsonPrimitive.long
+                val nowMs = step.getValue("now_ms").jsonPrimitive.long
+                val validMs = step.getValue("valid_ms").jsonPrimitive.long
+                val secret = unhex(text("secret"))
+                check(
+                    lib.sce_peer_invite_under(peer, text("relay"), text("audience"), node, nowMs, validMs, secret, out),
+                    "invite_under",
+                )
+                expect(taken(out), text("text"), "the invitation")
+            }
+            "invitation" -> {
+                val invitation = text("invitation").toByteArray(Charsets.UTF_8)
+                check(lib.sce_peer_invitation_read(invitation, NativeLong(invitation.size.toLong()), out), "invitation_read")
+                expect(taken(out), text("text"), "what the invitation says")
+            }
+            "join" -> {
+                val invitation = text("invitation").toByteArray(Charsets.UTF_8)
+                check(lib.sce_peer_join(peer, invitation, NativeLong(invitation.size.toLong()), out), "join")
+                expect(taken(out), text("fingerprint"), "the fingerprint")
+            }
+            "joined" -> {
+                val node = step.getValue("node").jsonPrimitive.long
+                check(lib.sce_peer_joined(peer, node, out), "joined")
+                expect(taken(out), text("text"), "the devices that joined")
             }
             else -> die("a step the replay does not know: $op")
         }

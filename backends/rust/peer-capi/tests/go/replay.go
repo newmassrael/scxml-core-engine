@@ -48,6 +48,24 @@ type step struct {
 	Key      string `json:"key"`
 	State    string `json:"state"`
 	Audience string `json:"audience"`
+	// An invitation's steps: the administrator's invitation, what it says, the core made from it,
+	// the join under it and the devices that joined.
+	Relay       string `json:"relay"`
+	NowMs       uint64 `json:"now_ms"`
+	ValidMs     uint64 `json:"valid_ms"`
+	Secret      string `json:"secret"`
+	Invitation  string `json:"invitation"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// given gives the core of d its person, and the administrator's key when it holds one.
+func given(peer *C.ScePeer, d device) {
+	seed := unhex(d.Seed)
+	check(C.sce_peer_set_identity(peer, C.uint64_t(d.Node), ptr(seed)), "set_identity")
+	if d.Administrator != nil {
+		administrator := unhex(*d.Administrator)
+		check(C.sce_peer_set_administrator(peer, ptr(administrator)), "set_administrator")
+	}
 }
 
 type scenario struct {
@@ -216,12 +234,22 @@ func main() {
 				C.sce_peer_free(peers[s.Device])
 			}
 			peers[s.Device] = bare(list, d)
-			seed := unhex(d.Seed)
-			check(C.sce_peer_set_identity(peers[s.Device], C.uint64_t(d.Node), ptr(seed)), "set_identity")
-			if d.Administrator != nil {
-				administrator := unhex(*d.Administrator)
-				check(C.sce_peer_set_administrator(peers[s.Device], ptr(administrator)), "set_administrator")
+			given(peers[s.Device], d)
+			steps++
+			continue
+		}
+		if s.Op == "make_invited" {
+			// The device started from the text of its invitation alone.
+			d := sc.Devices[s.Device]
+			if peers[s.Device] != nil {
+				C.sce_peer_free(peers[s.Device])
 			}
+			invitation := []byte(s.Invitation)
+			peers[s.Device] = C.sce_peer_invited_by(ptr(invitation), C.size_t(len(invitation)))
+			if peers[s.Device] == nil {
+				fail("the core is not made from the invitation")
+			}
+			given(peers[s.Device], d)
 			steps++
 			continue
 		}
@@ -312,6 +340,28 @@ func main() {
 				fail("the sealed state is empty")
 			}
 			expect(hex.EncodeToString(state), s.State, "the sealed state")
+		case "invite":
+			relay, audience := cstring(s.Relay), cstring(s.Audience)
+			secret := dataKey(s.Secret)
+			check(C.sce_peer_invite_under(peer, relay, audience, C.uint64_t(s.Node), C.uint64_t(s.NowMs), C.uint64_t(s.ValidMs), ptr(secret), &out), "invite_under")
+			free(relay)
+			free(audience)
+			invitation, _ := taken(out)
+			expect(invitation, s.Text, "the invitation")
+		case "invitation":
+			invitation := []byte(s.Invitation)
+			check(C.sce_peer_invitation_read(ptr(invitation), C.size_t(len(invitation)), &out), "invitation_read")
+			said, _ := taken(out)
+			expect(said, s.Text, "what the invitation says")
+		case "join":
+			invitation := []byte(s.Invitation)
+			check(C.sce_peer_join(peer, ptr(invitation), C.size_t(len(invitation)), &out), "join")
+			fingerprint, _ := taken(out)
+			expect(fingerprint, s.Fingerprint, "the fingerprint")
+		case "joined":
+			check(C.sce_peer_joined(peer, C.uint64_t(s.Node), &out), "joined")
+			joined, _ := taken(out)
+			expect(joined, s.Text, "the devices that joined")
 		default:
 			fail("a step the replay does not know: %s", s.Op)
 		}

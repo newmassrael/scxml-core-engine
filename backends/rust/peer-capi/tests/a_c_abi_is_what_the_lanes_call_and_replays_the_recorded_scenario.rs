@@ -158,6 +158,9 @@ fn the_header_declares_exactly_what_the_library_exports() {
         ("SCE_PEER_ERR_DRAWN_KEYS", SCE_PEER_ERR_DRAWN_KEYS),
         ("SCE_PEER_ERR_NOT_OPENED", SCE_PEER_ERR_NOT_OPENED),
         ("SCE_PEER_ERR_NO_RANDOMNESS", SCE_PEER_ERR_NO_RANDOMNESS),
+        ("SCE_PEER_ERR_GRANTED", SCE_PEER_ERR_GRANTED),
+        ("SCE_PEER_ERR_INVITATION", SCE_PEER_ERR_INVITATION),
+        ("SCE_PEER_ERR_NOT_JOINED", SCE_PEER_ERR_NOT_JOINED),
         ("SCE_PEER_ERR_NULL_ARGUMENT", SCE_PEER_ERR_NULL_ARGUMENT),
         ("SCE_PEER_ERR_BAD_TEXT", SCE_PEER_ERR_BAD_TEXT),
         ("SCE_PEER_ERR_PANIC", SCE_PEER_ERR_PANIC),
@@ -1150,6 +1153,28 @@ fn script_of(scenario: &Value) -> String {
             ),
             "start" => format!("start {device} {}", word("kind")),
             "login" => format!("login {device} {}", text("audience")),
+            "invite" => format!(
+                "invite {device} {} {} {} {} {} {} {}",
+                text("relay"),
+                text("audience"),
+                step["node"],
+                step["now_ms"],
+                step["valid_ms"],
+                word("secret"),
+                text("text")
+            ),
+            "invitation" => format!(
+                "invitation {device} {} {}",
+                text("invitation"),
+                text("text")
+            ),
+            "make_invited" => format!("make_invited {device} {}", text("invitation")),
+            "join" => format!(
+                "join {device} {} {}",
+                text("invitation"),
+                text("fingerprint")
+            ),
+            "joined" => format!("joined {device} {} {}", step["node"], text("text")),
             "request" | "respond" | "outcome" | "standing" => {
                 format!("{op} {device} {}", text("text"))
             }

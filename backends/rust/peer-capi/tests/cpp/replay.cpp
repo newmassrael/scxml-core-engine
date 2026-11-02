@@ -252,6 +252,21 @@ int main(int argc, char **argv) {
             steps++;
             continue;
         }
+        if (op == "make_invited") {
+            // The device started from the text of its invitation alone.
+            const std::string invitation = tokens.text();
+            device.peer.reset(
+                sce_peer_invited_by(reinterpret_cast<const uint8_t *>(invitation.data()), invitation.size()));
+            if (!device.peer) {
+                die("the core is not made from the invitation");
+            }
+            check(sce_peer_set_identity(device.peer.get(), device.node, device.seed.data()), "set_identity");
+            if (device.administrator) {
+                check(sce_peer_set_administrator(device.peer.get(), device.administrator->data()), "set_administrator");
+            }
+            steps++;
+            continue;
+        }
         if (op == "restore") {
             // The device started again: a core given nothing but the list and the genesis.
             const std::vector<uint8_t> key = data_key_of(tokens.need());
@@ -347,6 +362,36 @@ int main(int argc, char **argv) {
             const std::string got = hex_of(out.ptr, out.len);
             sce_peer_buf_free(out);
             expect_text(got, want, "the sealed state");
+        } else if (op == "invite") {
+            const std::string relay = tokens.text();
+            const std::string audience = tokens.text();
+            const uint64_t node = tokens.number();
+            const uint64_t now_ms = tokens.number();
+            const uint64_t valid_ms = tokens.number();
+            const std::vector<uint8_t> secret = data_key_of(tokens.need());
+            const std::string want = tokens.text();
+            check(sce_peer_invite_under(peer, relay.c_str(), audience.c_str(), node, now_ms, valid_ms, secret.data(),
+                                        &out),
+                  "invite_under");
+            expect_text(taken(out), want, "the invitation");
+        } else if (op == "invitation") {
+            const std::string invitation = tokens.text();
+            const std::string want = tokens.text();
+            check(
+                sce_peer_invitation_read(reinterpret_cast<const uint8_t *>(invitation.data()), invitation.size(), &out),
+                "invitation_read");
+            expect_text(taken(out), want, "what the invitation says");
+        } else if (op == "join") {
+            const std::string invitation = tokens.text();
+            const std::string want = tokens.text();
+            check(sce_peer_join(peer, reinterpret_cast<const uint8_t *>(invitation.data()), invitation.size(), &out),
+                  "join");
+            expect_text(taken(out), want, "the fingerprint");
+        } else if (op == "joined") {
+            const uint64_t node = tokens.number();
+            const std::string want = tokens.text();
+            check(sce_peer_joined(peer, node, &out), "joined");
+            expect_text(taken(out), want, "the devices that joined");
         } else {
             die("a step the replay does not know");
         }

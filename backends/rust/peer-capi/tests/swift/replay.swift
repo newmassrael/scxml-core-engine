@@ -246,6 +246,23 @@ final class Replayer {
                 steps += 1
                 continue
             }
+            if op == "make_invited" {
+                // The device started from the text of its invitation alone.
+                let invitation = Array(text().utf8)
+                if let old = peers[device] {
+                    sce_peer_free(old)
+                }
+                guard let core = sce_peer_invited_by(invitation, invitation.count) else {
+                    die("the core is not made from the invitation")
+                }
+                peers[device] = core
+                check(sce_peer_set_identity(core, nodes[device], seeds[device]), "set_identity")
+                if let administrator = administrators[device] {
+                    check(sce_peer_set_administrator(core, administrator), "set_administrator")
+                }
+                steps += 1
+                continue
+            }
             guard let peer = peers[device] else {
                 die("the device's core is not made")
             }
@@ -319,6 +336,33 @@ final class Replayer {
                     die("the sealed state is empty")
                 }
                 expect(hex(state), want, "the sealed state")
+            case "invite":
+                let relay = text()
+                let audience = text()
+                let node = number()
+                let nowMs = number()
+                let validMs = number()
+                let secret = dataKey()
+                let want = text()
+                check(
+                    sce_peer_invite_under(peer, relay, audience, node, nowMs, validMs, secret, &out),
+                    "invite_under")
+                expect(taken(out), want, "the invitation")
+            case "invitation":
+                let invitation = Array(text().utf8)
+                let want = text()
+                check(sce_peer_invitation_read(invitation, invitation.count, &out), "invitation_read")
+                expect(taken(out), want, "what the invitation says")
+            case "join":
+                let invitation = Array(text().utf8)
+                let want = text()
+                check(sce_peer_join(peer, invitation, invitation.count, &out), "join")
+                expect(taken(out), want, "the fingerprint")
+            case "joined":
+                let node = number()
+                let want = text()
+                check(sce_peer_joined(peer, node, &out), "joined")
+                expect(taken(out), want, "the devices that joined")
             default:
                 die("a step the replay does not know: \(op)")
             }

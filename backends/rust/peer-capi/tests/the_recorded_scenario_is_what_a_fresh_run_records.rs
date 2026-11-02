@@ -3,7 +3,11 @@
 // The recorded scenario every lane replays through the peer core's C ABI
 // (`tests/fixtures/two_devices_and_a_relay.json`). Two devices of one list run through the ABI
 // against the real relay in this process: alice's, which holds the administrator's key, opens the
-// list and grants bob writing, and bob's, invited with the hash of the genesis alice's core gave.
+// list, invites bob's device by the text of a QR code (ADR 0080 section 4) and grants writing to the
+// key his device proved when it joined under the invitation, the two devices showing one
+// fingerprint; and bob's, made from that text alone, which holds the list, the genesis alice's core
+// gave, his node and the relay's address. The invitation's secret is fixed here, as the data key and
+// the relay's challenge key are.
 // Every call each device's core is given and every text it gives back is recorded in order: the
 // administrator's acts and the genesis the opening gave, the machine's sends and what the core did
 // with each (taken, held, not signed, kept waiting and why, refused and why), each request the core
@@ -87,6 +91,18 @@ const AUDIENCE: &str = "the-relay";
 /// The key the relay's challenges are made under: fixed here, so that the recording holds the same
 /// nonces at every run. A relay draws one at start (`Doorway::new`).
 const CHALLENGE_KEY: [u8; 32] = [5; 32];
+
+/// The secret of alice's invitation of bob: fixed here, so that the recording holds the same text at
+/// every run. An administrator's device draws one for each invitation (`sce_peer_invite`).
+const INVITATION_SECRET: [u8; 32] = [6; 32];
+
+/// The relay's address the invitation carries; nothing dials it, since the recording carries the
+/// texts itself.
+const RELAY_ADDRESS: &str = "wss://relay.example";
+
+/// When alice's device makes the invitation by its host's clock, and how long it lives: a day.
+const INVITED_AT_MS: u64 = 0;
+const INVITATION_MS: u64 = 86_400_000;
 
 /// The genesis a list with one administrator, a quorum of one and a hub that is not trusted has:
 /// what alice's core is to write when it opens the list, made here by hand.
@@ -204,7 +220,21 @@ impl Core {
     /// The core of `device` (an entry of [`devices`]), made and given its person, and the
     /// administrator's key when it holds one.
     fn make(device: &Value) -> Self {
-        let core = Self::bare(device);
+        Self::bare(device).given(device)
+    }
+
+    /// The core of the device the invitation `invitation` invites, made from its text alone and
+    /// given the person of `device` (an entry of [`devices`]).
+    fn make_invited(device: &Value, invitation: &str) -> Self {
+        // SAFETY: the text for its length.
+        let peer = unsafe { sce_peer_invited_by(invitation.as_ptr(), invitation.len()) };
+        assert!(!peer.is_null(), "{}", last_error());
+        Core(peer).given(device)
+    }
+
+    /// This core given the person of `device`, and its administrator's key when it holds one.
+    fn given(self, device: &Value) -> Self {
+        let core = self;
         let seed = unhex(device["seed"].as_str().unwrap());
         let node = device["node"].as_u64().unwrap();
         // SAFETY: a live handle, and a seed of 32 bytes.
@@ -312,6 +342,75 @@ impl Core {
             unsafe { sce_peer_login(self.0, audience.as_ptr()) },
             "login",
         );
+    }
+
+    /// The administrator's invitation of the device of `node`, under `secret` (in hex), as the
+    /// text a QR code holds.
+    fn invite(
+        &mut self,
+        relay: &str,
+        audience: &str,
+        node: u64,
+        now_ms: u64,
+        valid_ms: u64,
+        secret: &str,
+    ) -> String {
+        let (relay, audience, secret) = (text(relay), text(audience), unhex(secret));
+        let mut out = empty();
+        // SAFETY: a live handle, NUL-terminated texts, 32 bytes of secret, a place valid for a write.
+        check(
+            unsafe {
+                sce_peer_invite_under(
+                    self.0,
+                    relay.as_ptr(),
+                    audience.as_ptr(),
+                    node,
+                    now_ms,
+                    valid_ms,
+                    secret.as_ptr(),
+                    &mut out,
+                )
+            },
+            "invite_under",
+        );
+        taken(out).expect("an invitation is a text")
+    }
+
+    /// What the invitation `invitation` says, as the ABI's JSON text.
+    fn invitation(invitation: &str) -> String {
+        let mut out = empty();
+        // SAFETY: the text for its length, a place valid for a write.
+        check(
+            unsafe { sce_peer_invitation_read(invitation.as_ptr(), invitation.len(), &mut out) },
+            "invitation_read",
+        );
+        taken(out).expect("what an invitation says is a text")
+    }
+
+    /// Begin the join under `invitation`, and the fingerprint the device shows.
+    fn join(&mut self, invitation: &str) -> String {
+        let mut fingerprint = empty();
+        // SAFETY: a live handle, the text for its length, a place valid for a write.
+        check(
+            unsafe {
+                sce_peer_join(
+                    self.0,
+                    invitation.as_ptr(),
+                    invitation.len(),
+                    &mut fingerprint,
+                )
+            },
+            "join",
+        );
+        taken(fingerprint).expect("a fingerprint is a text")
+    }
+
+    /// The devices that joined under this core's invitation of `node`, empty when none.
+    fn joined(&mut self, node: u64) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, a place valid for a write.
+        check(unsafe { sce_peer_joined(self.0, node, &mut out) }, "joined");
+        taken(out).unwrap_or_default()
     }
 
     fn poll(&mut self) -> Option<String> {
@@ -455,6 +554,69 @@ impl Recording {
         self.cores[device] = None;
         self.cores[device] = Some(Core::make(&self.devices[device]));
         self.steps.push(json!({"device": device, "op": "make"}));
+    }
+
+    /// The core of `device` made from the invitation's text alone (the device started from its QR
+    /// code), with its person.
+    fn make_invited(&mut self, device: usize, invitation: &str) {
+        self.cores[device] = None;
+        self.cores[device] = Some(Core::make_invited(&self.devices[device], invitation));
+        self.steps
+            .push(json!({"device": device, "op": "make_invited", "invitation": invitation}));
+    }
+
+    /// `device`'s invitation of the device of `node`, under the recording's fixed secret.
+    fn invite(&mut self, device: usize, node: u64) -> String {
+        let secret = hex(&INVITATION_SECRET);
+        let invitation = self.core(device).invite(
+            RELAY_ADDRESS,
+            AUDIENCE,
+            node,
+            INVITED_AT_MS,
+            INVITATION_MS,
+            &secret,
+        );
+        self.steps.push(
+            json!({"device": device, "op": "invite", "relay": RELAY_ADDRESS,
+                               "audience": AUDIENCE, "node": node, "now_ms": INVITED_AT_MS,
+                               "valid_ms": INVITATION_MS, "secret": secret,
+                               "text": invitation}),
+        );
+        invitation
+    }
+
+    /// What the invitation says, read by `device`'s host.
+    fn invitation(&mut self, device: usize, invitation: &str) -> Value {
+        let said = Core::invitation(invitation);
+        self.steps.push(json!({"device": device, "op": "invitation",
+                               "invitation": invitation, "text": said}));
+        serde_json::from_str(&said).expect("what an invitation says is JSON")
+    }
+
+    /// `device` joins under `invitation`, every request carried and every answer back; the
+    /// fingerprint it shows, and the outcome.
+    fn join(&mut self, device: usize, invitation: &str) -> (String, Value) {
+        let fingerprint = self.core(device).join(invitation);
+        self.steps.push(
+            json!({"device": device, "op": "join", "invitation": invitation,
+                               "fingerprint": fingerprint}),
+        );
+        while let Some(request) = self.ask(device) {
+            self.carry(device, &request);
+        }
+        (fingerprint, self.outcome(device))
+    }
+
+    /// What `device` shows of the devices that joined under its invitation of `node`.
+    fn joined(&mut self, device: usize, node: u64) -> Value {
+        let joined = self.core(device).joined(node);
+        self.steps
+            .push(json!({"device": device, "op": "joined", "node": node, "text": joined}));
+        if joined.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&joined).expect("the devices that joined are JSON")
+        }
     }
 
     fn open(&mut self, device: usize, profile: &str) -> String {
@@ -620,9 +782,9 @@ fn record() -> Value {
 
     // Alice's device opens the list as its administrator: the genesis is the one a list with her
     // administrator's key, a quorum of one and a hub that is not trusted has, which is what bob is
-    // invited with, and her person is its first member, with the highest role. She grants bob
-    // writing, and her round gives the relay the genesis and the two grants, presenting a token of
-    // the relay's authority: a list is created with one.
+    // invited with, and her person is its first member, with the highest role. She invites bob's
+    // device by the text of a QR code (ADR 0080 section 4), and her round gives the relay the
+    // genesis and her grant, presenting a token of the relay's authority: a list is created with one.
     run.make(AT_ALICE);
     run.hand_token(AT_ALICE);
     assert_eq!(
@@ -635,19 +797,25 @@ fn record() -> Value {
     assert_eq!(opened["role"], 3, "{opened}");
     assert_eq!(opened["awaits_own_chain"], false, "{opened}");
     assert_eq!(members(&opened), vec!["1"], "{opened}");
-    run.grant(AT_ALICE, BOB, 2, &person(BOB).public().to_bytes());
-    let granted = run.standing(AT_ALICE);
-    assert_eq!(members(&granted), vec!["1", "2"], "{granted}");
+    let invitation = run.invite(AT_ALICE, BOB);
     let given = run.round(AT_ALICE, "sync");
     assert_eq!(given["outcome"], "ended", "{given}");
     assert_eq!(refused(&given), 0, "{given}");
-    assert_eq!(given["pushed"], 3, "the genesis and two grants: {given}");
+    assert_eq!(given["pushed"], 2, "the genesis and her grant: {given}");
 
-    // Bob's device, invited with the hash of the genesis, is used offline before it has read the
-    // log: his machine writes a field, and sends the write again. His core cannot sign it yet and
-    // keeps it, once. His first round reads the log that lets him write, signs the write, and gives
-    // it the relay with the rest of what it lacks.
-    run.make(AT_BOB);
+    // Bob's device is made from the text alone: the list, the genesis, the relay and his node are
+    // in it. It is used offline before it has read the log: his machine writes a field, and sends
+    // the write again. His core cannot sign it yet and keeps it, once.
+    run.make_invited(AT_BOB, &invitation);
+    let said = run.invitation(AT_BOB, &invitation);
+    assert_eq!(said["node"], BOB.to_string(), "{said}");
+    assert_eq!(said["audience"], AUDIENCE, "{said}");
+    assert_eq!(said["relay"], RELAY_ADDRESS, "{said}");
+    assert_eq!(
+        said["genesis"],
+        sce_rust_trust::encoding::encode(&genesis().hash()),
+        "{said}"
+    );
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
         "waiting"
@@ -658,8 +826,42 @@ fn record() -> Value {
         "the same write waits once"
     );
     assert_eq!(run.standing(AT_BOB)["waiting"], 1);
+
+    // Bob's device joins under the invitation over a connection with no token, leaving his key with
+    // a proof made with the invitation's secret, and shows a fingerprint. Alice's next round reads
+    // the join, her device shows the same digits for the two of them to compare, and she grants
+    // the key the proof names; her round gives the relay the grant.
+    let (shown, left) = run.join(AT_BOB, &invitation);
+    assert_eq!(left["outcome"], "ended", "{left}");
+    assert_eq!(
+        left["events"],
+        json!([]),
+        "a join tells the machine nothing: {left}"
+    );
+    let read = run.round(AT_ALICE, "sync");
+    assert_eq!(refused(&read), 0, "{read}");
+    let devices = run.joined(AT_ALICE, BOB);
+    assert_eq!(
+        devices,
+        json!([{"key": person(BOB).public().to_text(), "fingerprint": shown}]),
+        "the fingerprint the same on both sides"
+    );
+    run.grant(AT_ALICE, BOB, 2, &person(BOB).public().to_bytes());
+    let granted = run.standing(AT_ALICE);
+    assert_eq!(members(&granted), vec!["1", "2"], "{granted}");
+    assert_eq!(
+        run.joined(AT_ALICE, BOB),
+        Value::Null,
+        "admitted: the invitation is done"
+    );
+    let given = run.round(AT_ALICE, "sync");
+    assert_eq!(refused(&given), 0, "{given}");
+    assert_eq!(given["pushed"], 1, "the grant: {given}");
+
     // Bob's device was handed no token: it logs in with his person's key, and the relay, which holds
     // the grant alice gave it, issues a token for an hour, which his rounds present from then on.
+    // His first round reads the log that lets him write, signs the write that waited, and gives it
+    // the relay with the rest of what it lacks.
     let logged_in = run.login(AT_BOB);
     assert_eq!(logged_in["outcome"], "ended", "{logged_in}");
     assert!(
@@ -826,6 +1028,11 @@ fn replay(scenario: &Value) -> usize {
             cores[device] = Some(Core::make(&devices[device]));
             continue;
         }
+        if step["op"] == "make_invited" {
+            cores[device] = None;
+            cores[device] = Some(Core::make_invited(&devices[device], &field("invitation")));
+            continue;
+        }
         if step["op"] == "restore" {
             // The device started again: a core given nothing but the list and the genesis.
             cores[device] = None;
@@ -863,6 +1070,29 @@ fn replay(scenario: &Value) -> usize {
             "fail" => core.fail(&field("reason")),
             "outcome" => assert_eq!(core.outcome(), field("text"), "step {at}"),
             "save" => assert_eq!(core.save(&field("key")), field("state"), "step {at}"),
+            "invite" => assert_eq!(
+                core.invite(
+                    &field("relay"),
+                    &field("audience"),
+                    number("node"),
+                    number("now_ms"),
+                    number("valid_ms"),
+                    &field("secret"),
+                ),
+                field("text"),
+                "step {at}"
+            ),
+            "invitation" => assert_eq!(
+                Core::invitation(&field("invitation")),
+                field("text"),
+                "step {at}"
+            ),
+            "join" => assert_eq!(
+                core.join(&field("invitation")),
+                field("fingerprint"),
+                "step {at}"
+            ),
+            "joined" => assert_eq!(core.joined(number("node")), field("text"), "step {at}"),
             other => panic!("step {at}: `{other}` is no step of the scenario"),
         }
     }

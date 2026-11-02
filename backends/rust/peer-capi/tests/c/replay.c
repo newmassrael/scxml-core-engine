@@ -28,6 +28,12 @@
  *   respond <d> <text>      the relay answered this
  *   fail <d> <reason>       the transport failed
  *   outcome <d> <text>      the core asks nothing more, and the exchange came to this
+ *   invite <d> <relay> <audience> <node> <now_ms> <valid_ms> <secret> <text>
+ *                           the administrator's invitation under the secret (hex), as recorded
+ *   invitation <d> <invitation> <text>   what the invitation says, as recorded
+ *   make_invited <d> <invitation>        the device's core made from the invitation, given its person
+ *   join <d> <invitation> <fingerprint>  a join under the invitation begins, showing the fingerprint
+ *   joined <d> <node> <text>             the devices that joined under the invitation of node
  */
 
 #include <stdint.h>
@@ -284,6 +290,22 @@ int main(int argc, char **argv) {
             steps++;
             continue;
         }
+        if (strcmp(op, "make_invited") == 0) {
+            /* The device started from the text of its invitation alone. */
+            char *invitation = text_of(need());
+            sce_peer_free(peers[d]);
+            peers[d] = sce_peer_invited_by((const uint8_t *)invitation, strlen(invitation));
+            if (peers[d] == NULL) {
+                die("the core is not made from the invitation");
+            }
+            check(sce_peer_set_identity(peers[d], nodes[d], seeds[d]), "set_identity");
+            if (administrators[d] != NULL) {
+                check(sce_peer_set_administrator(peers[d], administrators[d]), "set_administrator");
+            }
+            free(invitation);
+            steps++;
+            continue;
+        }
         if (strcmp(op, "restore") == 0) {
             /* The device started again: a core given nothing but the list and the genesis. */
             uint8_t *key = data_key_of(need());
@@ -388,6 +410,36 @@ int main(int argc, char **argv) {
             sce_peer_buf_free(out);
             expect_text(got, want, "the sealed state");
             free(key);
+        } else if (strcmp(op, "invite") == 0) {
+            char *relay = text_of(need());
+            char *audience = text_of(need());
+            uint64_t node = strtoull(need(), NULL, 10);
+            uint64_t now_ms = strtoull(need(), NULL, 10);
+            uint64_t valid_ms = strtoull(need(), NULL, 10);
+            uint8_t *secret = data_key_of(need());
+            char *want = text_of(need());
+            check(sce_peer_invite_under(peer, relay, audience, node, now_ms, valid_ms, secret, &out), "invite_under");
+            expect_text(taken(out), want, "the invitation");
+            free(relay);
+            free(audience);
+            free(secret);
+        } else if (strcmp(op, "invitation") == 0) {
+            char *invitation = text_of(need());
+            char *want = text_of(need());
+            check(sce_peer_invitation_read((const uint8_t *)invitation, strlen(invitation), &out), "invitation_read");
+            expect_text(taken(out), want, "what the invitation says");
+            free(invitation);
+        } else if (strcmp(op, "join") == 0) {
+            char *invitation = text_of(need());
+            char *want = text_of(need());
+            check(sce_peer_join(peer, (const uint8_t *)invitation, strlen(invitation), &out), "join");
+            expect_text(taken(out), want, "the fingerprint");
+            free(invitation);
+        } else if (strcmp(op, "joined") == 0) {
+            uint64_t node = strtoull(need(), NULL, 10);
+            char *want = text_of(need());
+            check(sce_peer_joined(peer, node, &out), "joined");
+            expect_text(taken(out), want, "the devices that joined");
         } else {
             die("a step the replay does not know");
         }

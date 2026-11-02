@@ -59,6 +59,14 @@ def load(path):
             ctypes.c_int32,
             [vp, ctypes.c_uint64, u8p, ctypes.c_size_t, u8p, ctypes.POINTER(ctypes.c_uint64)],
         ),
+        "sce_peer_invited_by": (vp, [u8p, ctypes.c_size_t]),
+        "sce_peer_invite_under": (
+            ctypes.c_int32,
+            [vp, cp, cp, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, u8p, bufp],
+        ),
+        "sce_peer_invitation_read": (ctypes.c_int32, [u8p, ctypes.c_size_t, bufp]),
+        "sce_peer_join": (ctypes.c_int32, [vp, u8p, ctypes.c_size_t, bufp]),
+        "sce_peer_joined": (ctypes.c_int32, [vp, ctypes.c_uint64, bufp]),
     }
     for name, (restype, argtypes) in sig.items():
         function = getattr(lib, name)
@@ -133,6 +141,26 @@ def main():
             if device.get("administrator") is not None:
                 check(
                     lib.sce_peer_set_administrator(core, raw(bytes.fromhex(device["administrator"]))),
+                    "set_administrator",
+                )
+            steps += 1
+            continue
+        if op == "make_invited":
+            # The device started from the text of its invitation alone.
+            device = devices[at]
+            if peers[at]:
+                lib.sce_peer_free(peers[at])
+            invitation = step["invitation"].encode()
+            peers[at] = lib.sce_peer_invited_by(raw(invitation), len(invitation))
+            if not peers[at]:
+                die("the core is not made from the invitation")
+            check(
+                lib.sce_peer_set_identity(peers[at], device["node"], raw(bytes.fromhex(device["seed"]))),
+                "set_identity",
+            )
+            if device.get("administrator") is not None:
+                check(
+                    lib.sce_peer_set_administrator(peers[at], raw(bytes.fromhex(device["administrator"]))),
                     "set_administrator",
                 )
             steps += 1
@@ -215,6 +243,35 @@ def main():
             if state is None:
                 die("the sealed state is empty")
             expect(state.hex(), step["state"], "the sealed state")
+        elif op == "invite":
+            check(
+                lib.sce_peer_invite_under(
+                    peer,
+                    step["relay"].encode(),
+                    step["audience"].encode(),
+                    step["node"],
+                    step["now_ms"],
+                    step["valid_ms"],
+                    raw(bytes.fromhex(step["secret"])),
+                    ctypes.byref(out),
+                ),
+                "invite_under",
+            )
+            expect(taken(out), step["text"], "the invitation")
+        elif op == "invitation":
+            invitation = step["invitation"].encode()
+            check(
+                lib.sce_peer_invitation_read(raw(invitation), len(invitation), ctypes.byref(out)),
+                "invitation_read",
+            )
+            expect(taken(out), step["text"], "what the invitation says")
+        elif op == "join":
+            invitation = step["invitation"].encode()
+            check(lib.sce_peer_join(peer, raw(invitation), len(invitation), ctypes.byref(out)), "join")
+            expect(taken(out), step["fingerprint"], "the fingerprint")
+        elif op == "joined":
+            check(lib.sce_peer_joined(peer, step["node"], ctypes.byref(out)), "joined")
+            expect(taken(out), step["text"], "the devices that joined")
         else:
             die(f"a step the replay does not know: {op}")
         steps += 1
