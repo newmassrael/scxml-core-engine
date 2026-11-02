@@ -13,6 +13,8 @@
 //! * [`identity`] - a person's key: it signs, and what it signed is checked by the public key.
 //! * [`login`] - the bytes a device signs to log in at a relay with the key its list's log gave its
 //!   node, under a domain no other signature here is made under.
+//! * [`creation`] - the name of a list created at a relay with no token, which certifies its
+//!   genesis's first administrator key, and the work such a creation costs.
 //! * [`invitation`] - an administrator's invitation of a device the log has not granted yet, the
 //!   proof the device joins with under the key the invitation's secret makes, the text a host shows
 //!   as a QR code, and the fingerprint two people compare before the device is admitted.
@@ -56,6 +58,7 @@ pub mod audit;
 pub mod backup;
 mod chain;
 pub mod checkpoint;
+pub mod creation;
 pub mod encoding;
 pub mod identity;
 pub mod invitation;
