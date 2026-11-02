@@ -266,7 +266,8 @@ decode. So:
   validity does not vary, and what differs between nodes is which valid frames each can store, reported as that. Which
   frames a node can process does differ, as it does for any node with finite memory.
 - **Eager lists take the storage profile.** Today an eager list is `heapless::Vec` on every profile, sized by §5. A list
-  decoded eagerly is a storing decision, so it becomes `S::List<T, CAP>`, and a heap profile gets a growable list.
+  decoded eagerly is a storing decision, so it takes its profile's list, and a heap profile gets a growable one. How it
+  is spelled is the last amendment of this section: one storing value type, with no number in the tree.
 - The original defect stays fixed: a value past what its storage holds is refused, never truncated or overrun.
 
 §6's laws stand for the bound. A new law joins them: **a frame inside the bound and past a form's capacity is refused
@@ -298,11 +299,12 @@ This lands in steps, each its own commit and guide section:
 1. The split with no change of behaviour: `CodecField` answers what a storing form holds apart from its bound, and
    every storing reader moves to it. The regeneration changes nothing, which is the proof.
 2. The deploy input and `CapacityExceeded` on the two backends that store, Rust and C11; the containers of the others
-   grow, so they have no such refusal. Then the parser admitting a field with no bound, with `on-overflow` leaving the
-   document, as a landing of its own. The parser opens after the laws of memory and of the walk are on main, and not
-   before: until they are, a bound is the only thing that holds them.
-3. Eager lists on the storage profile, and owned forms bound to growable profiles where a field has no capacity.
-4. The consumer moves each field by what the protocol says.
+   grow, so they have no such refusal. Then `on-overflow` leaving the document, as a landing of its own.
+3. One storing value type with capacity by field: the owned forms move onto field tags, then the eager form joins them.
+4. The parser admitting a field with no bound, after the laws of memory and of the walk and after step 3. Until the
+   former are on main a bound is the only thing that holds them, and until step 3 a field with neither a bound nor a
+   capacity has no eager storage to be read into.
+5. The consumer moves each field by what the protocol says.
 
 *Decided by the owner on 2026-11-02: a chain's `max-depth` and a list's `max-count` are the protocol's or they are
 nothing.* The upstream codec of the consumer's protocol reads an extension chain with `while has_ext` and no limit,
@@ -325,6 +327,36 @@ refusal, not as a malformed frame. So:
   extension breaks the protocol. No document in the tree uses it; one test does.
 - The width of a length field stays a bound of the language by §1. Upstream bounds a locator and an encoding schema to
   `u8` and a key suffix to `u16`, so those are 255, 255 and 65535 and not unbounded, whatever a capacity says.
+
+*Decided by the owner on 2026-11-02, on what the consumer measured: one storing value type, and no capacity in the
+tree.* The consumer's MCU crates and heap crates share a workspace, so Cargo's feature unification puts both in one
+build, and one generated tree serves both. A tree per deployment cannot exist there. A capacity written into the tree as
+a number, `S::List<T, CAP>`, states one deployment for the whole build. The consumer also decodes eagerly on its heap
+paths and then projects into owned storage, about 38 decodes and 59 projections, so the eager form and the owned form
+are one value held two ways. So:
+
+- **One storing value type.** `{Codec}In<S>` replaces the eager `{Codec}<'a>` and `{Codec}Owned<S>`. Both names stay as
+  aliases, `{Codec}<'a> = {Codec}In<Lent<'a>>` and `{Codec}Owned<S> = {Codec}In<S>`, so `{Codec}::decode` needs no
+  annotation. A decode, a `Source` impl and a move between profiles are each written once, generic in `S`.
+- **`Lent<'a, D = Inline>`** is the eager form's profile. Bytes and text borrow the frame, and lists are held as the
+  profile `D` holds them. A borrowed field needs no capacity, as §7 says of a form that stores nothing.
+- **Capacity is by field and outside the tree.** The tree generates a tag type for each variable field, and a profile
+  answers `HoldsList<Tag>`, `HoldsBytes<Tag>` or `HoldsStr<Tag>` with its container. `Heap` answers for every tag.
+  `Inline` is generated in the tree from the document's bound, for a field that has one, so `Inline` on a field with no
+  bound does not compile: that is "takes growable profiles only". A deployment is a type, generated into its own file
+  from the deploy input, and several coexist in one build. `CodecStorage` goes, since its `List<T, const N>` cannot be
+  reached from a tag without `generic_const_exprs`, and `OriginStorage` loses its `const N`.
+- **Each codec has a storage trait,** whose supertraits are its fields' `Holds*` and its children's storage traits. A
+  struct's `where` clause is not implied at a use site and a supertrait is, so every site says `S: {Codec}Storage`.
+- **The view stays its own type.** It was proposed as a profile of the one type, and that does not hold: a field that is
+  an associated type of `S` makes the type invariant in `S`, so `{Codec}In<Lent<'long>>` does not coerce to
+  `{Codec}In<Lent<'short>>` (measured on a prototype). ADR 0049 made the view covariant on purpose, since lending a view
+  to a shorter lifetime is what one is for. `Lent` pays this and the view does not. A function that takes a lent value
+  takes it at its own lifetime, which is how the generated code already spells it.
+- **A storing decode does not go through the view.** Materializing from a view would walk every list twice on the hot
+  path. It reads once, from the decode body it shares with the view, and only the path past a capacity reads the frame
+  a second time, as store after parse already says. So the view decides a frame's validity and is not what storing is
+  built on: the law stands that a form that stores refuses with `CapacityExceeded` only a frame the view accepts.
 
 ## Alternatives
 
