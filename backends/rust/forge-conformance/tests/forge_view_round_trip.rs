@@ -187,7 +187,10 @@ use codecs::codec_variant_dispatch::{CodecVariantDispatch, CodecVariantDispatchV
 use codecs::codec_variant_peek_basic::{CodecVariantPeekBasic, CodecVariantPeekBasicView};
 use codecs::codec_zenoh_request::{CodecZenohRequest, CodecZenohRequestView};
 use codecs::codec_zenoh_response::{CodecZenohResponse, CodecZenohResponseView};
-use sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
+use sce_forge_runtime::codec::{
+    CodecError, Copying, Heap, HoldsBytes, HoldsList, HoldsStr, InlineBytes, InlineStr, SceCursor,
+    VecSink,
+};
 
 /// A deterministic byte source: the same frames on every run and every host.
 struct Rng(u64);
@@ -217,6 +220,13 @@ fn as_eager(view_debug: String) -> String {
         .replace("View", "")
 }
 
+/// A value of a codec that takes a storage profile prints as its one storing
+/// type, `{Codec}In`, the eager decode's whole and a view's where it holds such
+/// a value: the name says nothing of what either read.
+fn without_in(debug: String) -> String {
+    debug.replace("In {", " {")
+}
+
 /// Decode `frame` both ways and say what they agreed on, or panic on the first
 /// thing they do not.
 macro_rules! agree {
@@ -229,8 +239,8 @@ macro_rules! agree {
         match (eager, view) {
             (Ok(eager), Ok(view)) => {
                 assert_eq!(
-                    as_eager(format!("{view:?}")),
-                    format!("{eager:?}"),
+                    without_in(as_eager(format!("{view:?}"))),
+                    without_in(format!("{eager:?}")),
                     "the view says another value for frame {frame:02x?}"
                 );
                 assert_eq!(
@@ -569,6 +579,189 @@ fn a_walk_rebuilds_the_value_a_chain_carries_from_one_entry_to_the_next() {
     assert_eq!(view.entries.iter().collect::<Vec<_>>(), walked);
     assert_eq!(view.entries.get(1), Some(decoded[1].clone()));
     assert_eq!(view.entries.get(2), None);
+}
+
+/// A profile below every bound the fixtures state: one entry of a list, two bytes
+/// of a string or a byte string. Nothing about it is declared by a deployment,
+/// so what it shows holds of any profile a program names.
+#[derive(Debug, Clone, PartialEq)]
+struct Scant;
+
+impl<Tag> HoldsList<Tag> for Scant {
+    type List<T>
+        = sce_forge_runtime::heapless::Vec<T, 1>
+    where
+        T: Default + core::fmt::Debug + Clone + PartialEq;
+}
+impl<Tag> HoldsStr<Tag> for Scant {
+    type Str = InlineStr<2>;
+}
+impl<Tag> HoldsBytes<Tag> for Scant {
+    type Bytes = InlineBytes<2>;
+}
+impl Copying for Scant {}
+
+/// A storing decode at the profile `$profile` against the view, over the seeded
+/// frames and every prefix of each: a frame the view refuses is refused with the
+/// same error, `CapacityExceeded` is said only of a frame that parses, and what
+/// the decode stores is what storing the eager value gives, so reading once and
+/// reading then copying are one reading (docs/adr/0077 §7). Returns how many
+/// frames stored and how many were past a capacity.
+macro_rules! stores_after_a_parse {
+    ($profile:ty, $eager:ty, $stored:ty, $view:ty, $pool:expr, $frames:expr, $max_len:expr) => {{
+        let pool: &[u8] = $pool;
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let (mut held, mut past) = (0usize, 0usize);
+        for _ in 0..$frames {
+            let len = rng.below($max_len + 1);
+            let frame: Vec<u8> = (0..len).map(|_| pool[rng.below(pool.len())]).collect();
+            for cut in 0..=frame.len() {
+                let frame = &frame[..cut];
+                let stored = <$stored>::decode(&mut SceCursor::new(frame));
+                let copied = <$eager>::decode(&mut SceCursor::new(frame))
+                    .and_then(|eager| eager.try_into_owned_in::<$profile>());
+                let view = <$view>::decode(&mut SceCursor::new(frame));
+                match (stored, view) {
+                    (Ok(stored), Ok(_)) => {
+                        held += 1;
+                        assert_eq!(
+                            copied.as_ref(),
+                            Ok(&stored),
+                            "two values for frame {frame:02x?}"
+                        );
+                    }
+                    (Err(CodecError::CapacityExceeded), Ok(_)) => {
+                        past += 1;
+                        assert_eq!(
+                            copied.as_ref().map(|_| ()),
+                            Err(&CodecError::CapacityExceeded),
+                            "a copy held what a decode could not, frame {frame:02x?}"
+                        );
+                    }
+                    (Err(stored), Err(view)) => {
+                        assert_eq!(stored, view, "another error for frame {frame:02x?}");
+                    }
+                    (stored, view) => panic!(
+                        "stored {:?} but view {:?} for frame {frame:02x?}",
+                        stored.map(|_| ()),
+                        view.map(|_| ())
+                    ),
+                }
+            }
+        }
+        (held, past)
+    }};
+}
+
+/// Every way a storing decode stops: a counted list, an until-EOF list, a chain,
+/// a chain threading a value, a chain refined by the kinds of its entries, an
+/// embedded body, and a body with no view of its own, whose judge is its own lent
+/// form.
+macro_rules! every_storing_shape {
+    ($profile:ty, $check:expr) => {{
+        use codecs::*;
+        let check = $check;
+        check(
+            "counted",
+            stores_after_a_parse!(
+                $profile,
+                CodecRepeatBasic,
+                codec_repeat_basic::CodecRepeatBasicOwned<$profile>,
+                CodecRepeatBasicView,
+                &[0, 1, 2, 3, 4, 5, 6, 7, 0xff],
+                1500,
+                14
+            ),
+        );
+        check(
+            "until EOF",
+            stores_after_a_parse!(
+                $profile,
+                CodecUntilEofBasic,
+                codec_until_eof_basic::CodecUntilEofBasicOwned<$profile>,
+                CodecUntilEofBasicView,
+                &[0, 1, 2, 3, 0xff],
+                1500,
+                14
+            ),
+        );
+        check(
+            "chain",
+            stores_after_a_parse!(
+                $profile,
+                CodecTlvChainBasic,
+                codec_tlv_chain_basic::CodecTlvChainBasicOwned<$profile>,
+                CodecTlvChainBasicView,
+                &[0, 1, 2, 3, 0x80, 0x81, 0x82, 0xff],
+                3000,
+                14
+            ),
+        );
+        check(
+            "chain that threads a value",
+            stores_after_a_parse!(
+                $profile,
+                CodecChainPrevCarrier,
+                codec_chain_prev_carrier::CodecChainPrevCarrierOwned<$profile>,
+                CodecChainPrevCarrierView,
+                &[0, 1, 2, 3, 4, 5, 0x12, 0x80, 0x81, 0x84, 0x85, 0xff],
+                3000,
+                14
+            ),
+        );
+        check(
+            "chain refined by the kinds of its entries",
+            stores_after_a_parse!(
+                $profile,
+                CodecChainHasTagged,
+                codec_chain_has_tagged::CodecChainHasTaggedOwned<$profile>,
+                CodecChainHasTaggedView,
+                &[0x00, 0x01, 0x07, 0x09, 0x80, 0x81, 0x87, 0x89, 0x05],
+                6000,
+                12
+            ),
+        );
+        check(
+            "embedded body",
+            stores_after_a_parse!(
+                $profile,
+                CodecEmbedBasic,
+                codec_embed_basic::CodecEmbedBasicOwned<$profile>,
+                CodecEmbedBasicView,
+                &[0, 1, 2, 3, b'a', b'b'],
+                1500,
+                10
+            ),
+        );
+        check(
+            "body with no view of its own",
+            stores_after_a_parse!(
+                $profile,
+                codec_zenoh_locator::CodecZenohLocator,
+                codec_zenoh_locator::CodecZenohLocatorOwned<$profile>,
+                codec_zenoh_locator::CodecZenohLocatorView,
+                &[0, 1, 2, 3, 4, b'a', b'b'],
+                1500,
+                8
+            ),
+        );
+    }};
+}
+
+#[test]
+fn a_profile_below_a_bound_refuses_only_a_frame_that_parses() {
+    every_storing_shape!(Scant, |shape: &str, (held, past): (usize, usize)| {
+        assert!(held > 0, "{shape}: no frame was stored");
+        assert!(past > 0, "{shape}: no frame was past the capacity");
+    });
+}
+
+#[test]
+fn a_growable_profile_stores_every_frame_a_view_reads() {
+    every_storing_shape!(Heap, |shape: &str, (held, past): (usize, usize)| {
+        assert!(held > 0, "{shape}: no frame was stored");
+        assert_eq!(past, 0, "{shape}: a growable profile ran out");
+    });
 }
 
 #[test]

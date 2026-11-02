@@ -210,13 +210,14 @@ where
 /// this one over a fresh list, so the bound semantics stay in one place.
 ///
 /// On `Err` the destination holds the entries projected so far.
-pub fn try_project_bounded_into<'s, L, T, U, const N: usize>(
-    out: &mut crate::heapless::Vec<U, N>,
+pub fn try_project_bounded_into<'s, L, T, O, U>(
+    out: &mut O,
     src: &'s L,
     mut f: impl FnMut(&'s T) -> Result<U, CodecError>,
 ) -> Result<(), CodecError>
 where
     L: crate::storage::SceList<T>,
+    O: crate::storage::SceList<U>,
     T: 's,
 {
     // `&'s T` (not a fresh higher-ranked `&T`) ties each element's borrow
@@ -225,8 +226,7 @@ where
     // cannot express "return type borrows the closure argument".
     out.clear();
     for item in src.as_slice() {
-        out.push(f(item)?)
-            .map_err(|_| CodecError::CapacityExceeded)?;
+        out.try_push(f(item)?)?;
     }
     Ok(())
 }

@@ -16,12 +16,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-// RFC §synth-5-B B2/B3: bounded inline list storage for repeat / tlv-chain
-// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
-// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
-// available (no `alloc` gate) so list-bearing codecs compile on the
-// pure no_std no-alloc MCU tier.
-use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 
@@ -29,15 +23,59 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
+/// The field `extensions` of `CodecZenohExtEnvelope`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohExtEnvelope<'a> {
+pub struct CodecZenohExtEnvelopeExtensionsField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 8> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecZenohExtEnvelopeIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecZenohExtEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohExtEnvelopeStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecZenohExtEnvelopeStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecZenohExtEnvelopeFrom<'f>: CodecZenohExtEnvelopeStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryFrom<'f> {}
+
+impl<'f, S: CodecZenohExtEnvelopeStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryFrom<'f>> CodecZenohExtEnvelopeFrom<'f> for S {}
+
+// `CodecZenohExtEnvelopeIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecZenohExtEnvelope<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecZenohExtEnvelopeOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohExtEnvelopeIn<S: CodecZenohExtEnvelopeStorage> {
     pub header_flags: u8,
-    pub extensions: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecZenohExtEntry<'a>, 8>, 8, 1>,
+    pub extensions: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 8, 1>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecZenohExtEnvelope<'a> = CodecZenohExtEnvelopeIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecZenohExtEnvelopeOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohExtEnvelopeIn<S>;
+
+impl<S: CodecZenohExtEnvelopeStorage> Default for CodecZenohExtEnvelopeIn<S> {
+    fn default() -> Self {
+        Self {
+            header_flags: Default::default(),
+            extensions: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohExtEnvelope<'a> {
+impl<S: CodecZenohExtEnvelopeStorage> CodecZenohExtEnvelopeIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -53,7 +91,7 @@ impl<'a> CodecZenohExtEnvelope<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecZenohExtEnvelopeFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -69,7 +107,24 @@ impl<'a> CodecZenohExtEnvelope<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohExtEnvelopeFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecZenohExtEnvelope::store_into(&mut _frame, &mut CodecZenohExtEnvelope::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohExtEnvelopeFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -91,12 +146,12 @@ impl<'a> CodecZenohExtEnvelope<'a> {
         _out.extensions.refill(|_vec| {
             let mut _more = false;
             for _ in 0..8u32 {
-                let _entry = CodecZenohExtEntry::decode(cursor)?;
+                let _entry = CodecZenohExtEntryOwned::<S>::decode(cursor)?;
                 _more = _entry.z();
                 // The loop walks the chain's depth and `_vec` holds the capacity, so
                 // this push fails only where the deployment holds fewer entries than
                 // the frame says. An over-long chain is refused after the loop.
-                _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
+                ::sce_forge_runtime::codec::SceList::try_push(_vec, _entry)?;
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {
@@ -122,8 +177,8 @@ impl<'a> CodecZenohExtEnvelope<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecZenohExtEnvelope::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -179,15 +234,6 @@ pub struct CodecZenohExtEnvelopeParts<'a> {
 }
 
 impl<'a> CodecZenohExtEnvelopeSource for CodecZenohExtEnvelopeParts<'a> {
-    fn header_flags(&self) -> u8 {
-        self.header_flags
-    }
-    fn extensions(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 8, 1> {
-        self.extensions.iter()
-    }
-}
-
-impl<'a> CodecZenohExtEnvelopeSource for CodecZenohExtEnvelope<'a> {
     fn header_flags(&self) -> u8 {
         self.header_flags
     }
@@ -299,32 +345,6 @@ impl<'a> CodecZenohExtEnvelope<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
-/// The field `extensions` of `CodecZenohExtEnvelope`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecZenohExtEnvelopeExtensionsField;
-
-impl ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> for ::sce_forge_runtime::codec::Inline {
-    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 8> where T: ::core::fmt::Debug + Clone + PartialEq;
-}
-
-/// What `CodecZenohExtEnvelopeOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecZenohExtEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohExtEnvelopeStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohExtEnvelopeOwned<S: CodecZenohExtEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub header_flags: u8,
-    pub extensions: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 8, 1>,
-}
 
 #[allow(dead_code)]
 impl<'a> CodecZenohExtEnvelope<'a> {
@@ -340,7 +360,7 @@ impl<'a> CodecZenohExtEnvelope<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecZenohExtEnvelopeStorage>(self) -> Result<CodecZenohExtEnvelopeOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohExtEnvelopeFrom<'a>>(self) -> Result<CodecZenohExtEnvelopeOwned<S>, CodecError> {
         Ok(CodecZenohExtEnvelopeOwned {
             header_flags: self.header_flags,
             extensions: ::sce_forge_runtime::codec::try_collect_bounded(self.extensions, |_e| _e.try_into_owned_in::<S>())?,
@@ -395,32 +415,7 @@ impl<S: CodecZenohExtEnvelopeStorage> CodecZenohExtEnvelopeOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecZenohExtEnvelopeStorage>(&self) -> Result<CodecZenohExtEnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecZenohExtEnvelopeFrom<'x>>(&self) -> Result<CodecZenohExtEnvelopeOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohExtEnvelopeStorage> CodecZenohExtEnvelopeOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `try_as_borrowed` followed by
-    /// [`CodecZenohExtEnvelope::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohExtEnvelope::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohExtEnvelope::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

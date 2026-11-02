@@ -7041,6 +7041,41 @@ pub(crate) fn rust_borrowed_text_type(
     }
 }
 
+/// The statement that makes the decoded local of a `bytes` or `string` field
+/// `f` what the decode's profile holds it in, on Rust: a read and a view share
+/// everything up to this, and a view holds the frame's own bytes.
+fn rust_store_rebind(l: &LangCtx, f: &CodecField, m: &CodecModel) -> Option<String> {
+    if !matches!(l.lang, crate::generator::Language::Rust)
+        || f.is_repeat()
+        || f.is_tlv_chain()
+        || f.is_embed()
+    {
+        return None;
+    }
+    let kind = match f.sce_type {
+        SceType::String => "Str",
+        SceType::Bytes => "Bytes",
+        _ => return None,
+    };
+    let id = l.codec_field_id(&f.id);
+    let tag = rust_storage_tag(&m.name, &f.id);
+    let store = |value: &str| {
+        if crate::forge::codec_totality::byte_bound(f, &m.fields).is_some() {
+            format!("{value}.store::<{STORAGE_PARAM}, {tag}>()")
+        } else {
+            format!(
+                "<{STORAGE_PARAM} as {RUNTIME_CODEC}::Stores{kind}<'_, {tag}>>::store_{}({value})",
+                kind.to_lowercase()
+            )
+        }
+    };
+    Some(if f.present_if.is_some() {
+        format!("let {id} = {id}.map(|_v| {}).transpose()?;", store("_v"))
+    } else {
+        format!("let {id} = {}?;", store(&id))
+    })
+}
+
 /// The statement that makes the decoded local of `f` a `Bytes` or `Text` of its
 /// bounds, through `Bounded::new` (docs/adr/0077 §3), for a Rust field whose
 /// type holds them; `None` for any other field or backend. A gated field's
@@ -7224,9 +7259,11 @@ fn rust_owned_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
 }
 
 /// What the storage macro declares for a codec, into `ctx`: its tags in
-/// `fields`, and the trait a site names, which asks for those, for `children`
-/// (the storage trait of each codec it holds, a child under a build feature
-/// through a trait of its own), and for what the derives on the owned form need.
+/// `fields`, and the two traits a site names. `{Codec}Storage` asks for those
+/// tags, for what each codec in `children` asks (named by the path of its type,
+/// a child under a build feature through a trait of its own), and for what the
+/// derives on the value need. `{Codec}From<'f>` asks the same of a decode of a
+/// frame of the lifetime `'f`.
 pub(crate) fn insert_rust_storage(
     ctx: &mut serde_json::Map<String, serde_json::Value>,
     codec: &str,
@@ -7235,23 +7272,32 @@ pub(crate) fn insert_rust_storage(
 ) {
     let name = filters::to_pascal_case(codec.to_string());
     let mut bound = vec!["::core::fmt::Debug + Clone + PartialEq".to_string()];
-    bound.extend(fields.iter().map(|f| {
-        format!(
-            "{RUNTIME_CODEC}::Holds{}<{}>",
-            f["kind"].as_str().unwrap_or_default(),
-            f["tag"].as_str().unwrap_or_default()
-        )
-    }));
+    let mut from_bound = vec![format!("{name}Storage")];
+    for f in &fields {
+        let kind = f["kind"].as_str().unwrap_or_default();
+        let tag = f["tag"].as_str().unwrap_or_default();
+        bound.push(format!("{RUNTIME_CODEC}::Holds{kind}<{tag}>"));
+        if kind != "List" {
+            from_bound.push(format!("{RUNTIME_CODEC}::Stores{kind}<'f, {tag}>"));
+        }
+    }
     let mut gated = Vec::new();
     for (i, (child, cfg)) in children.iter().enumerate() {
+        let child_bound = format!("{child}Storage");
+        let child_from = format!("{child}From<'f>");
         match cfg {
-            None => bound.push(child.clone()),
+            None => {
+                bound.push(child_bound);
+                from_bound.push(child_from);
+            }
             Some(cfg) => {
                 let helper = format!("{name}GatedChild{i}");
                 bound.push(helper.clone());
+                from_bound.push(format!("{helper}From<'f>"));
                 gated.push(serde_json::json!({
                     "helper": helper,
-                    "bound": child,
+                    "bound": child_bound,
+                    "from_bound": child_from,
                     "cfg": cfg,
                     "cfg_off": cfg
                         .strip_prefix("#[cfg(")
@@ -7265,6 +7311,43 @@ pub(crate) fn insert_rust_storage(
     ctx.insert("storage_fields".into(), fields.into());
     ctx.insert("storage_gated".into(), gated.into());
     ctx.insert("storage_bound".into(), bound.join(" + ").into());
+    ctx.insert("storage_from_bound".into(), from_bound.join(" + ").into());
+}
+
+/// How the decode of a stored codec names the codec it holds as `alias`, whose
+/// type is `body_type`: on Rust, at the profile the decode has, where that codec
+/// takes one.
+fn stored_body(
+    lang: crate::generator::Language,
+    imports: &[ImportContext],
+    alias: &str,
+    body_type: &str,
+) -> String {
+    if matches!(lang, crate::generator::Language::Rust) && import_codec_borrowed(imports, alias) {
+        format!("{body_type}Owned::<{STORAGE_PARAM}>")
+    } else {
+        body_type.to_string()
+    }
+}
+
+/// The type a Rust list holds an entry of the codec `alias` as, in a decode at
+/// the profile it has.
+fn rust_held_entry(imports: &[ImportContext], alias: &str, body_type: &str) -> String {
+    if import_codec_borrowed(imports, alias) {
+        format!("{body_type}Owned<{STORAGE_PARAM}>")
+    } else {
+        body_type.to_string()
+    }
+}
+
+/// The eager form's list of the field `f` of `m`, entries `entry`: what `Lent`
+/// holds it in, with its bounds.
+fn rust_lent_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
+    format!(
+        "{RUNTIME_CODEC}::Bounded<<{RUNTIME_CODEC}::Lent<'a> as {RUNTIME_CODEC}::HoldsList<{}>>::List<{entry}>, {}>",
+        rust_storage_tag(&m.name, &f.id),
+        crate::forge::codec_totality::list_bound_args(f)
+    )
 }
 
 /// The variable fields of a positional codec, as [`rust_storage_field`] takes
@@ -7377,7 +7460,7 @@ fn rust_owned_field_keys(
         // A field whose type holds its bound (docs/adr/0077 §3) is held as a
         // `Bounded` around the container, as a list is since R2, so the owned
         // form's source read lends it with its bounds and checks nothing. A
-        // decoded value is inside them, and `Bounded::copied` carries them
+        // decoded value is inside them, and `Bounded::store` carries them
         // over; an origin profile builds its container its own way, and
         // `Bounded::from_built` checks the length it built once.
         match f.sce_type {
@@ -7399,10 +7482,10 @@ fn rust_owned_field_keys(
                 let ctor = match crate::forge::codec_totality::byte_bound_args(f, &m.fields) {
                     Some(bounds) => {
                         let ty = format!("{RUNTIME_CODEC}::Bounded<{container}, {bounds}>");
-                        let (copied, built) = if text {
-                            ("copied_text", "from_built_text")
+                        let built = if text {
+                            "from_built_text"
                         } else {
-                            ("copied", "from_built")
+                            "from_built"
                         };
                         let ctor = if origin {
                             let built = format!("{RUNTIME_CODEC}::Bounded::{built}");
@@ -7415,13 +7498,12 @@ fn rust_owned_field_keys(
                                 point_free: None,
                             }
                         } else {
-                            let path = format!("{RUNTIME_CODEC}::Bounded::{copied}");
+                            let tag = tag.clone();
                             Ctor {
-                                call: Box::new({
-                                    let path = path.clone();
-                                    move |v| format!("{path}({v})")
+                                call: Box::new(move |v| {
+                                    format!("{v}.store::<{STORAGE_PARAM}, {tag}>()")
                                 }),
-                                point_free: Some(path),
+                                point_free: None,
                             }
                         };
                         (ty, ctor)
@@ -7436,9 +7518,8 @@ fn rust_owned_field_keys(
                             }
                         } else {
                             let path = format!(
-                                "<{container} as {RUNTIME_CODEC}::{}>::{}",
-                                if text { "SceStr" } else { "SceByteBuf" },
-                                if text { "from_view" } else { "from_slice" }
+                                "<{STORAGE_PARAM} as {RUNTIME_CODEC}::Stores{kind}<'_, {tag}>>::store_{}",
+                                kind.to_lowercase()
                             );
                             Ctor {
                                 call: Box::new({
@@ -7542,8 +7623,8 @@ fn rust_group_storage(
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), ForgeError> {
     use crate::forge::codec_roles::GroupArm;
     use crate::forge::generator::rust_source::{
-        aligned_name, chain_arm_type, chain_optional_in, group_accessor, group_arm_name,
-        group_type, holds_chain, key_type, member_varies,
+        aligned_name, chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
+        key_type, member_varies,
     };
     let roles = crate::forge::codec_roles::classify(m, imports);
     if roles.groups.is_empty() {
@@ -7576,9 +7657,9 @@ fn rust_group_storage(
                 .as_object_mut()
                 .expect("a field's context is an object");
             for (key, ty_key) in [
-                ("repeat_decode_stmt", "rs_type"),
-                ("tlv_chain_decode_stmt", "rs_type"),
-                ("embed_decode_stmt", "rs_type"),
+                ("repeat_decode_stmt", "rs_owned_type"),
+                ("tlv_chain_decode_stmt", "rs_owned_type"),
+                ("embed_decode_stmt", "rs_owned_type"),
                 ("view_repeat_decode_stmt", "view_rs_type"),
                 ("view_tlv_chain_decode_stmt", "view_rs_type"),
                 ("view_embed_decode_stmt", "view_rs_type"),
@@ -7779,7 +7860,7 @@ fn rust_group_storage(
                 let place = if view {
                     format!("{RUNTIME_CODEC}::place_first_in::<_, {key}, {bound}>({list})")
                 } else {
-                    format!("{RUNTIME_CODEC}::place_first::<_, {key}, {bound}, {bound}>({list})")
+                    format!("{RUNTIME_CODEC}::place_first::<_, {key}, {bound}>({list})")
                 };
                 return format!(
                     "{}: match {place} {{ Ok(_p) => _p, Err(_) => unreachable!(\"the gate found an entry of the kind\") }}",
@@ -8060,10 +8141,11 @@ fn rust_group_storage(
                     if let Some((from, to)) = lifetime {
                         t = t.replace(from, to);
                     }
+                    // The arm's field says what the chain's list is, so the local
+                    // names no type (`clippy::type_complexity`).
                     if holds_chain(group, f) {
-                        let t = chain_arm_type(&struct_name, group, f, arm, &bounded_list(&t));
                         let value = chain_into(f, arm, &acc(f), &|list| fill(f, list));
-                        body.push_str(&format!("                let {local}: {t} = {value};\n"));
+                        body.push_str(&format!("                let {local} = {value};\n"));
                         continue;
                     }
                     // Each of two lists of one count is projected as a list is,
@@ -8131,7 +8213,7 @@ fn rust_group_storage(
                     crate::forge::codec_totality::child_alias(f).unwrap_or_default(),
                 );
                 format!(
-                    "{{ let mut _v = HeaplessVec::new(); {RUNTIME_CODEC}::try_project_bounded_into(&mut _v, {list}, |_e| {elem})?; _v }}"
+                    "{{ let mut _v = {RUNTIME_CODEC}::SceList::empty(); {RUNTIME_CODEC}::try_project_bounded_into(&mut _v, {list}, |_e| {elem})?; _v }}"
                 )
             },
         )?;
@@ -8154,7 +8236,7 @@ fn rust_group_storage(
                 // built where it sits from its view.
                 &|_, list| {
                     format!(
-                        "{{ let mut _v = HeaplessVec::new(); for _e in {RUNTIME_CODEC}::Entries::entries({list}) {{ _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() {{ _e.into_builder(_slot)?; }} }} _v }}"
+                        "{{ let mut _v = {RUNTIME_CODEC}::SceList::empty(); for _e in {RUNTIME_CODEC}::Entries::entries({list}) {{ {RUNTIME_CODEC}::SceList::try_push(&mut _v, Default::default())?; if let Some(_slot) = {RUNTIME_CODEC}::SceList::last_mut(&mut _v) {{ _e.into_builder(_slot)?; }} }} _v }}"
                     )
                 },
             )?;
@@ -8282,38 +8364,27 @@ fn rust_as_borrowed_field_into_stmt(
         }
         .expect("parser sets the body alias for every repeat / tlv-chain field");
         let elem = rust_as_borrowed_list_entry(imports, alias);
-        // A builder's list of one entry or more is a `Bounded` filled where it
-        // sits through its `refill` (docs/adr/0065 §6 R7); the owned list it is
-        // projected from holds as many entries.
-        // `dest` is the destination as a mutable reference, `receiver` the same
-        // destination as the receiver of a method call.
-        let least = crate::forge::codec_totality::list_least(f);
-        let project = |dest: &str, receiver: &str, list: &str| {
-            match least {
-            0 => format!("{RUNTIME_CODEC}::try_project_bounded_into({dest}, {list}, |_e| {elem})?"),
-            _ => format!(
+        // A list is a `Bounded`, filled where it sits through its `refill`
+        // (docs/adr/0065 §6 R7); the list it is projected from holds as many
+        // entries.
+        let project = |receiver: &str, list: &str| {
+            format!(
                 "{receiver}.refill(|_d| {RUNTIME_CODEC}::try_project_bounded_into(_d, {list}, |_e| {elem}))?"
-            ),
-        }
+            )
         };
         let stmt = if opt {
-            let inserted = format!("{out_ref}.insert(Default::default())");
             format!(
                 "match &{self_ref} {{\n            \
                      Some(_l) => {},\n            \
                      None => {out_ref} = None,\n        \
                  }}",
-                project(&inserted, &inserted, "_l.inner()")
-            )
-        } else {
-            format!(
-                "{};",
                 project(
-                    &format!("&mut {out_ref}"),
-                    &out_ref,
-                    &format!("{self_ref}.inner()")
+                    &format!("{out_ref}.insert(Default::default())"),
+                    "_l.inner()"
                 )
             )
+        } else {
+            format!("{};", project(&out_ref, &format!("{self_ref}.inner()")))
         };
         return Ok(stmt);
     }
@@ -8445,9 +8516,6 @@ struct CodecForms {
     views: bool,
     /// Always inline the functions that write (docs/adr/0061).
     inline_encode: bool,
-    /// Whether a deployment states what storing forms hold: a form past its
-    /// capacity then has a frame to judge after it stops (docs/adr/0077 §7).
-    capacities_deployed: bool,
 }
 
 fn render_codec(
@@ -8461,7 +8529,6 @@ fn render_codec(
         owned_origin,
         views,
         inline_encode,
-        capacities_deployed,
     } = forms;
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
@@ -8721,6 +8788,9 @@ fn render_codec(
             if let Some(rebind) = rust_bounded_rebind(&l, f, &m.fields) {
                 obj.insert("bounded_rebind".into(), rebind.into());
             }
+            if let Some(store) = rust_store_rebind(&l, f, m) {
+                obj.insert("store_rebind".into(), store.into());
+            }
             obj.insert(
                 "decode_expr".into(),
                 generate_decode_expr(f, m.default_endian, lang, &m.fields).into(),
@@ -8901,7 +8971,7 @@ fn render_codec(
                         // payload stays borrowed (`Body<'a>`) — only the
                         // thin view structs live inline.
                         crate::generator::Language::Rust => {
-                            format!("HeaplessVec<{body_type}{body_lt}, {max_count}>")
+                            rust_lent_list(m, f, &format!("{body_type}{body_lt}"))
                         }
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
                         // Kotlin: `MutableList<T>` mirrors the codec's
@@ -8971,11 +9041,9 @@ fn render_codec(
                         repeat_streaming_decode_stmt(RepeatDecode {
                             field: f,
                             fields: &m.fields,
-                            body_type: &body_type,
-                            body_lt,
+                            body_type: &stored_body(lang, imports, alias, &body_type),
                             body_decoder: &body_decoder,
                             decode_arg: &repeat_thread.decode_arg,
-                            max_count,
                             lang,
                         })
                         .into(),
@@ -8989,7 +9057,6 @@ fn render_codec(
                                 &codec_field_decode_local(&f.id, lang),
                                 &body_type,
                                 f.present_if.is_some(),
-                                crate::forge::codec_totality::list_least(f),
                             )
                             .into(),
                         );
@@ -9108,12 +9175,7 @@ fn render_codec(
                     // declared entry cap). A chain closed by an entry flag is
                     // one entry or more, so its list says so where the value
                     // is made (docs/adr/0065 §6 R7).
-                    let rust_list = match crate::forge::codec_totality::list_least(f) {
-                        0 => format!("HeaplessVec<{body_type}{body_lt}, {held}>"),
-                        least => format!(
-                            "{RUNTIME_CODEC}::Bounded<HeaplessVec<{body_type}{body_lt}, {held}>, {max_depth}, {least}>"
-                        ),
-                    };
+                    let rust_list = rust_lent_list(m, f, &format!("{body_type}{body_lt}"));
                     let wrapped = match (lang, gated) {
                         (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
                         (crate::generator::Language::Rust, false) => rust_list,
@@ -9170,8 +9232,7 @@ fn render_codec(
                         tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
                             field: f,
                             fields: &m.fields,
-                            body_type: &body_type,
-                            body_lt,
+                            body_type: &stored_body(lang, imports, alias, &body_type),
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
                             entry_binds: &entry_binds,
@@ -9182,7 +9243,7 @@ fn render_codec(
                     } else {
                         tlv_chain_streaming_decode_stmt(TlvChainDecode {
                             field: f,
-                            body_type: &body_type,
+                            body_type: &stored_body(lang, imports, alias, &body_type),
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
                             entry_binds: &entry_binds,
@@ -9194,8 +9255,14 @@ fn render_codec(
                     // A later field gated on `<chain>.has(…)` reads a boolean
                     // local that follows the chain (`with_chain_has_decls`);
                     // nothing is appended when no predicate asks.
-                    let decode_stmt =
-                        with_chain_has_decls(decode_stmt, f, &m.fields, &chain_masks, lang);
+                    let decode_stmt = with_chain_has_decls(
+                        decode_stmt,
+                        f,
+                        &m.fields,
+                        &chain_masks,
+                        lang,
+                        Some(&rust_held_entry(imports, alias, &body_type)),
+                    );
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     if emit_views {
                         obj.insert(
@@ -9204,7 +9271,6 @@ fn render_codec(
                                 &codec_field_decode_local(&f.id, lang),
                                 &body_type,
                                 gated,
-                                crate::forge::codec_totality::list_least(f),
                             )
                             .into(),
                         );
@@ -9247,7 +9313,7 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_tlv_chain_decode_stmt".into(),
-                            with_chain_has_decls(view_stmt, f, &m.fields, &chain_masks, lang)
+                            with_chain_has_decls(view_stmt, f, &m.fields, &chain_masks, lang, None)
                                 .into(),
                         );
                     }
@@ -9363,7 +9429,7 @@ fn render_codec(
                         "embed_decode_stmt".into(),
                         embed_streaming_decode_stmt(
                             f,
-                            &body_type,
+                            &stored_body(lang, imports, alias, &body_type),
                             &body_decoder,
                             &embed_thread.decode_arg,
                             &m.fields,
@@ -10588,6 +10654,10 @@ fn render_codec(
                         .into(),
                     );
                 }
+                obj.insert(
+                    "stored_body".into(),
+                    stored_body(lang, imports, &arm.body_alias, &body_type).into(),
+                );
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix when
                 // this arm's body codec is borrowed. The enum-variant
@@ -10775,6 +10845,10 @@ fn render_codec(
                         .into(),
                     );
                 }
+                obj.insert(
+                    "stored_body".into(),
+                    stored_body(lang, imports, &d.body_alias, &body_type).into(),
+                );
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix for the
                 // default arm's body (the `tag/body` struct-variant field
@@ -11320,9 +11394,27 @@ fn render_codec(
             "encode_may_fail".into(),
             crate::forge::codec_totality::may_fail(m, imports).into(),
         );
+        // A decode of a codec with a profile reads a frame of a lifetime of its
+        // own, which the profile says it can store.
         ctx.insert(
             "cursor_lifetime".into(),
-            if self_borrowed { "'a" } else { "'_" }.into(),
+            if self_borrowed { "'f" } else { "'_" }.into(),
+        );
+        ctx.insert(
+            "decode_generics".into(),
+            if self_borrowed { "<'f>" } else { "" }.into(),
+        );
+        ctx.insert(
+            "decode_where".into(),
+            if self_borrowed {
+                format!(
+                    " where {STORAGE_PARAM}: {}From<'f>",
+                    filters::to_pascal_case(m.name.clone())
+                )
+            } else {
+                String::new()
+            }
+            .into(),
         );
         ctx.insert(
             "variant_lifetime".into(),
@@ -11376,7 +11468,6 @@ fn render_codec(
         // generated with views has a `{Codec}View`, which is what lets a
         // parent name the view of a body without knowing which kind it is.
         ctx.insert("emit_views".into(), emit_views.into());
-        ctx.insert("capacities_deployed".into(), capacities_deployed.into());
         if emit_views {
             let view_borrowed = codec_self_view_borrowed(m, imports);
             ctx.insert("view_is_alias".into(), (!m.has_own_view()).into());
@@ -11433,7 +11524,7 @@ fn render_codec(
             .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
             .map(|i| {
                 (
-                    format!("super::{}::{}Storage", i.namespace, i.type_name),
+                    format!("super::{}::{}", i.namespace, i.type_name),
                     import_cfgs.get(&i.alias).cloned(),
                 )
             })
@@ -11446,12 +11537,28 @@ fn render_codec(
         ctx.insert("owned_generics_decl".into(), storage_decl.clone().into());
         ctx.insert("owned_generics_impl".into(), storage_impl.clone().into());
         ctx.insert("owned_generics_args".into(), storage_args.clone().into());
+        // A projection of a lent value takes any profile that can store what
+        // that value borrows.
+        let projection = format!(
+            "<{STORAGE_PARAM}: {}From<'a>>",
+            filters::to_pascal_case(m.name.clone())
+        );
+        ctx.insert("owned_in_generics".into(), projection.clone().into());
         ctx.insert("owned_in_fn".into(), OWNED_IN_FN.into());
         // The variant enum takes the parameter only when an arm body carries
         // it — a variant over fixed-width bodies owns nothing the profile
         // varies, and an unused parameter is a hard error (E0392). Same
         // exactness rule as the `<'a>` inference above.
         let variant_storage_generic = codec_variant_body_borrowed(m, imports);
+        ctx.insert(
+            "variant_owned_in_generics".into(),
+            if variant_storage_generic {
+                projection
+            } else {
+                String::new()
+            }
+            .into(),
+        );
         ctx.insert(
             "variant_owned_generics_decl".into(),
             if variant_storage_generic {
@@ -11501,7 +11608,14 @@ fn render_codec(
             }
             .into(),
         );
-        ctx.insert("codec_storage_path".into(), storage_trait.clone().into());
+        ctx.insert(
+            "codec_storage_path".into(),
+            format!(
+                "for<'x> {}From<'x>",
+                filters::to_pascal_case(m.name.clone())
+            )
+            .into(),
+        );
         // The origin-aware projection (`try_into_owned_in_origin`), rendered
         // only when the document asks for it. It takes a profile that is an
         // `OriginStorage` and the origin its decoded bytes came from; a
@@ -13149,17 +13263,12 @@ struct RepeatDecode<'a> {
     field: &'a CodecField,
     fields: &'a [CodecField],
     body_type: &'a str,
-    // Borrowed zero-copy: `"<'a>"` when the element codec is borrowed
-    // (Rust), applied to the `Vec<Body<'a>>` element type annotation;
-    // `""` otherwise. `Body::decode` call sites stay bare.
-    body_lt: &'a str,
     body_decoder: &'a str,
     /// What each element's `decode` is handed after the cursor: one argument
     /// per `<sce:flag-input>` the element codec declares, spelled for `lang`
     /// with a leading `, ` (see [`embed_flag_bind_thread_args`]); empty when it
     /// declares none. A repeated element sees the same flags a lone embed would.
     decode_arg: &'a str,
-    max_count: u32,
     lang: crate::generator::Language,
 }
 
@@ -13179,10 +13288,8 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         field,
         fields,
         body_type,
-        body_lt,
         body_decoder,
         decode_arg,
-        max_count,
         lang,
     } = ctx;
     // Per-language struct-field casing must match `codec_field_id` so
@@ -13214,10 +13321,8 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             pred,
             count_ref,
             body_type,
-            body_lt,
             body_decoder,
             decode_arg,
-            max_count,
             lang,
         });
     }
@@ -13241,27 +13346,24 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             // Built in the destination field, not moved into it afterwards;
             // see `RUST_DECODE_OUT`.
             format!(
-                "{{\n            \
-                     {guard}let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
-                     _vec.clear();\n            \
+                "{guard}{RUST_DECODE_OUT}.{id}.refill(|_vec| {{\n            \
                      for _ in 0..{len_field_snake} {{\n                \
-                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
-                     }}\n        \
-                 }}"
+                         {RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            \
+                     }}\n            \
+                     Ok(())\n        \
+                 }})?;"
             )
         }
         (Language::Rust, CountRef::UntilEof) => {
-            let room = repeat_room_guard(field, fields, "_vec.len()", lang, "                ");
+            let count = format!("{RUNTIME_CODEC}::Entries::entry_count(&*_vec)");
+            let room = repeat_room_guard(field, fields, &count, lang, "                ");
             format!(
-                "{{\n            \
-                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
-                     _vec.clear();\n            \
+                "{RUST_DECODE_OUT}.{id}.refill(|_vec| {{\n            \
                      while cursor.remaining() > 0 {{\n                \
-                         {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
-                     }}\n        \
-                 }}"
+                         {room}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            \
+                     }}\n            \
+                     Ok(())\n        \
+                 }})?;"
             )
         }
         // Cpp: each `body_type::decode(cursor)` returns
@@ -14563,13 +14665,9 @@ struct RepeatDecodeGated<'a> {
     pred: &'a PresentIfPredicate,
     count_ref: &'a CountRef,
     body_type: &'a str,
-    // Borrowed zero-copy: `"<'a>"` for a borrowed element codec (Rust),
-    // applied to the `Vec<Body<'a>>` element type annotation.
-    body_lt: &'a str,
     body_decoder: &'a str,
     // One argument per `<sce:flag-input>` of the element codec, leading `, `.
     decode_arg: &'a str,
-    max_count: u32,
     lang: crate::generator::Language,
 }
 
@@ -14614,10 +14712,8 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         pred,
         count_ref,
         body_type,
-        body_lt,
         body_decoder,
         decode_arg,
-        max_count,
         lang,
     } = ctx;
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -14649,25 +14745,28 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             format!(
                 "if {test} {{\n            \
                      let _n = {count_read};\n            \
-                     {guard}let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
-                     for _ in 0.._n {{\n                \
-                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
-                     }}\n        \
+                     {guard}{RUST_DECODE_OUT}.{id}.insert(Default::default()).refill(|_vec| {{\n                \
+                         for _ in 0.._n {{\n                    \
+                             {RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n                \
+                         }}\n                \
+                         Ok(())\n            \
+                     }})?;\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}"
             )
         }
         (Language::Rust, CountRef::UntilEof) => {
-            let room = repeat_room_guard(field, fields, "_vec.len()", lang, "                ");
+            let count = format!("{RUNTIME_CODEC}::Entries::entry_count(&*_vec)");
+            let room = repeat_room_guard(field, fields, &count, lang, "                    ");
             format!(
                 "if {test} {{\n            \
-                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
-                     while cursor.remaining() > 0 {{\n                \
-                         {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
-                     }}\n        \
+                     {RUST_DECODE_OUT}.{id}.insert(Default::default()).refill(|_vec| {{\n                \
+                         while cursor.remaining() > 0 {{\n                    \
+                             {room}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n                \
+                         }}\n                \
+                         Ok(())\n            \
+                     }})?;\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}"
@@ -15206,8 +15305,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::CapacityExceeded)?;\n            "
+                     {RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            "
                 ),
                 // The entry is bound to a local when the loop reads something
                 // off it: the flag that ends the chain, the identifier a
@@ -15222,7 +15320,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     }
                     lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
                     lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;"
+                        "{RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, _entry)?;"
                     ));
                     if acc.is_some() {
                         lines.push("if !_more { break; }".to_string());
@@ -15235,27 +15333,15 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // is later moved into it: a `heapless::Vec` moves by copying its
             // whole capacity, so every hop between the local and the returned
             // value would copy the declared maximum however few entries the
-            // wire held. See `RUST_DECODE_OUT`. A chain closed by an entry
-            // flag is a `Bounded` of one entry or more, filled where it sits
-            // through its `refill` (docs/adr/0065 §6 R7).
-            if entry_flag_acc.is_some() {
-                format!(
-                    "{RUST_DECODE_OUT}.{id}.refill(|_vec| {{\n            \
-                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                         }}{overflow_check}\n            \
-                         Ok(())\n        \
-                     }})?;"
-                )
-            } else {
-                format!(
-                    "{{\n            \
-                         let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
-                         _vec.clear();\n            \
-                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                         }}{overflow_check}\n        \
-                     }}"
-                )
-            }
+            // wire held. See `RUST_DECODE_OUT`. It is a `Bounded`, filled where
+            // it sits through its `refill` (docs/adr/0065 §6 R7).
+            format!(
+                "{RUST_DECODE_OUT}.{id}.refill(|_vec| {{\n            \
+                     {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                     }}{overflow_check}\n            \
+                     Ok(())\n        \
+                 }})?;"
+            )
         }
         // C11: same shape as repeat (fixed-array `T elems[max_depth]`
         // paired with `size_t elems_len`) but bounded by max_depth and
@@ -15635,9 +15721,6 @@ struct TlvChainDecodeGated<'a> {
     field: &'a CodecField,
     fields: &'a [CodecField],
     body_type: &'a str,
-    // Borrowed zero-copy: `"<'a>"` for a borrowed entry codec (Rust),
-    // applied to the `Vec<Entry<'a>>` element type annotation.
-    body_lt: &'a str,
     body_decoder: &'a str,
     /// See [`TlvChainDecode::decode_arg`].
     decode_arg: &'a str,
@@ -15673,7 +15756,6 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         field,
         fields,
         body_type,
-        body_lt,
         body_decoder,
         decode_arg,
         entry_binds,
@@ -15703,17 +15785,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // both a level deeper than the block they sit in, which reads as
             // if the guard were inside the loop. A chain closed by an entry
             // flag is filled inside its list's `refill`, one level deeper.
-            let (block, inner) = if entry_flag_acc.is_some() {
-                ("                ", "                    ")
-            } else {
-                ("            ", "                ")
-            };
+            let (block, inner) = ("                ", "                    ");
             let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), block);
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::CapacityExceeded)?;\n            "
+                     {RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, {body_type}::decode(cursor{decode_arg})?)?;\n            "
                 ),
                 (acc, _) => {
                     let mut lines =
@@ -15724,7 +15801,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     }
                     lines.extend(entry_binds.update_lines(field, "_entry", lang, inner));
                     lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;"
+                        "{RUST_CHAIN_PUSH_NOTE}{RUNTIME_CODEC}::SceList::try_push(_vec, _entry)?;"
                     ));
                     if acc.is_some() {
                         lines.push("if !_more { break; }".to_string());
@@ -15733,25 +15810,14 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 }
             };
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, block);
-            if entry_flag_acc.is_some() {
-                return format!(
-                    "if {test} {{\n            \
-                         {RUST_DECODE_OUT}.{id}.insert(Default::default()).refill(|_vec| {{\n                \
-                             {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                             }}{overflow_check}\n                \
-                             Ok(())\n            \
-                         }})?;\n        \
-                     }} else {{\n            \
-                         {RUST_DECODE_OUT}.{id} = None;\n        \
-                     }}"
-                );
-            }
             // Built in the destination field; see the ungated emit above.
             format!(
                 "if {test} {{\n            \
-                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_depth}>::new());\n            \
-                     {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                     }}{overflow_check}\n        \
+                     {RUST_DECODE_OUT}.{id}.insert(Default::default()).refill(|_vec| {{\n                \
+                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                         }}{overflow_check}\n                \
+                         Ok(())\n            \
+                     }})?;\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
                  }}"
@@ -19642,6 +19708,10 @@ fn chain_has_decl_lines(
     masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
     site: PresentIfSite,
+    // The entry type a Rust storing decode's chain holds, which it reads
+    // through the list's slice: its iterator is the profile's to name. A view's
+    // chain reads as a walk.
+    held_entry: Option<&str>,
 ) -> Vec<String> {
     use crate::generator::Language;
     let has = chain_has_local(&chain.id, value, lang);
@@ -19663,12 +19733,16 @@ fn chain_has_decl_lines(
             // in the destination (`RUST_DECODE_OUT`), not in a local.
             let list = format!("{RUST_DECODE_OUT}.{id}");
             let found = test("_e");
+            let walk = match held_entry {
+                Some(entry) => format!("list_iter::<{entry}>()"),
+                None => "iter()".to_string(),
+            };
             vec![if gated {
                 format!(
-                    "let {has} = {list}.as_ref().is_some_and(|_c| _c.iter().any(|_e| {found}));"
+                    "let {has} = {list}.as_ref().is_some_and(|_c| _c.{walk}.any(|_e| {found}));"
                 )
             } else {
-                format!("let {has} = {list}.iter().any(|_e| {found});")
+                format!("let {has} = {list}.{walk}.any(|_e| {found});")
             }]
         }
         Language::Cpp => {
@@ -19940,6 +20014,7 @@ fn present_if_chain_encode_prologue(
                 masks,
                 lang,
                 PresentIfSite::Encode,
+                None,
             ));
         }
     }
@@ -20116,11 +20191,14 @@ fn with_chain_has_decls(
     fields: &[CodecField],
     masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
+    held_entry: Option<&str>,
 ) -> String {
     let indent = chain_decode_indent(lang);
     let mut stmt = decode_stmt;
     for value in chain_has_values(fields, &chain.id) {
-        for line in chain_has_decl_lines(chain, value, masks, lang, PresentIfSite::Decode) {
+        for line in
+            chain_has_decl_lines(chain, value, masks, lang, PresentIfSite::Decode, held_entry)
+        {
             stmt.push('\n');
             stmt.push_str(indent);
             stmt.push_str(&line);
@@ -22229,7 +22307,6 @@ pub fn generate_rust_with_imports_and_externs(
                 // (docs/adr/0077 §7).
                 views: options.views || !options.codec_capacities.is_empty(),
                 inline_encode: options.inline_encode,
-                capacities_deployed: !options.codec_capacities.is_empty(),
             },
         )?,
         ForgeDocument::Validator(m) => {

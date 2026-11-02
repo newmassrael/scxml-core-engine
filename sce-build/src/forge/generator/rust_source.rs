@@ -2949,16 +2949,18 @@ impl<'a> Plan<'a> {
         )
     }
 
-    /// Every form of the codec that says what it holds: the builder, its view,
-    /// and its owned form. They are three representations of one value, and the
-    /// one `encode_source` writes them all.
+    /// Every form of the codec that says what it holds: the value and its view.
+    /// A codec that has a storage profile holds its value at any of them, which
+    /// one impl answers for, the eager form among them; any other holds it
+    /// plainly. The one `encode_source` writes them all.
     fn impls(&self) -> String {
-        let mut out = self.impl_for(Form::Builder);
+        let mut out = self.impl_for(if self.input.owned {
+            Form::Owned
+        } else {
+            Form::Builder
+        });
         if self.input.view_lifetime.is_some() {
             out.push_str(&self.impl_for(Form::View));
-        }
-        if self.input.owned {
-            out.push_str(&self.impl_for(Form::Owned));
         }
         out
     }

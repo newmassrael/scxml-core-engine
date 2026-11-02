@@ -1647,7 +1647,7 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
                 "pub struct EventRecordOwned<S: EventRecordStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
                 field,
                 held,
-                "pub fn try_into_owned_in<S: EventRecordStorage>(self) -> Result<EventRecordOwned<S>, CodecError> {",
+                "pub fn try_into_owned_in<S: EventRecordFrom<'a>>(self) -> Result<EventRecordOwned<S>, CodecError> {",
             ],
         );
     }

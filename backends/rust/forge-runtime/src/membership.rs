@@ -30,6 +30,7 @@
 use core::marker::PhantomData;
 
 use crate::bounded::{BoundedIter, Entries};
+use crate::storage::HeldList;
 
 /// A kind of entry: which entries of a chain a gate names. Generated, one for
 /// each identifier a gate looks for, over every form of the chain's entry.
@@ -61,16 +62,9 @@ impl<T, K: Key<T>> OfKind<K> for &[T] {
     }
 }
 
-impl<T, const N: usize, K: Key<T>> OfKind<K> for heapless::Vec<T, N> {
+impl<L: HeldList, K: Key<L::Entry>> OfKind<K> for L {
     fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
-        self.iter().map(|e| K::matches(e))
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<T, K: Key<T>> OfKind<K> for alloc::vec::Vec<T> {
-    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
-        self.iter().map(|e| K::matches(e))
+        self.as_slice().iter().map(|e| K::matches(e))
     }
 }
 
@@ -536,14 +530,14 @@ impl<I: Iterator> ExactSizeIterator for Slots<I> {}
 /// place of the first entry of the kind, the entry taken out where it stood;
 /// `Err` gives the chain back when it holds no entry of the kind, or when the
 /// others are past the bound.
-pub fn place_first<T, K: Key<T>, const N: usize, const MAX: usize>(
-    mut list: heapless::Vec<T, N>,
-) -> Result<Placed<heapless::Vec<T, N>, K, MAX>, heapless::Vec<T, N>> {
-    let Some(place) = list.iter().position(|e| K::matches(e)) else {
+pub fn place_first<L: HeldList, K: Key<L::Entry>, const MAX: usize>(
+    mut list: L,
+) -> Result<Placed<L, K, MAX>, L> {
+    let Some(place) = list.as_slice().iter().position(|e| K::matches(e)) else {
         return Err(list);
     };
-    list.remove(place);
-    if list.len() >= MAX {
+    list.remove_at(place);
+    if list.as_slice().len() >= MAX {
         return Err(list);
     }
     Ok(Placed {
@@ -751,11 +745,21 @@ mod tests {
     #[test]
     fn a_decoded_chain_is_placed_at_its_first_entry_of_the_kind() {
         let list = heapless::Vec::<u8, 4>::from_slice(&[1, 2, 3, 4]).expect("four");
-        let placed = place_first::<u8, Even, 4, 4>(list).expect("an even entry");
+        let placed = place_first::<_, Even, 4>(list).expect("an even entry");
         assert_eq!(placed.place(), 1);
         assert_eq!(placed.rest().as_slice(), &[1u8, 3, 4][..]);
         let odd = heapless::Vec::<u8, 4>::from_slice(&[1, 3]).expect("two");
-        assert!(place_first::<u8, Even, 4, 4>(odd).is_err());
+        assert!(place_first::<_, Even, 4>(odd).is_err());
+    }
+
+    /// The list a growable profile holds is placed as the inline one is.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_list_on_the_heap_is_placed_as_an_inline_one_is() {
+        let placed = place_first::<_, Even, 4>(alloc::vec![1u8, 2, 3, 4]).expect("an even entry");
+        assert_eq!(placed.place(), 1);
+        assert_eq!(placed.rest().as_slice(), &[1u8, 3, 4][..]);
+        assert!(place_first::<_, Even, 4>(alloc::vec![1u8, 3]).is_err());
     }
 
     #[test]

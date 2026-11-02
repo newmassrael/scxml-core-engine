@@ -1,0 +1,45 @@
+# Mutation cases for "a chain is placed over the list of any profile".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_is_placed_over_the_list_of_any_profile.cases`.
+#
+# `place_first` and `OfKind` take any list a profile holds (docs/adr/0065 §6 R6,
+# docs/adr/0077 §7). The first case leaves the named entry among the others, the
+# second has a list asked of its kinds say none, and the third counts the named
+# entry out of the bound.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --features alloc --lib
+mutation_targets backends/rust/forge-runtime/src/membership.rs
+mutation_oracles backends/rust/forge-runtime/src/membership.rs
+
+mutation_case "a chain's named entry stays among the others" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''    list.remove_at(place);
+    if list.as_slice().len() >= MAX {''',
+     r'''    if list.as_slice().len() >= MAX {''')
+PY
+
+mutation_case "a list says none of its entries is of the kind" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''impl<L: HeldList, K: Key<L::Entry>> OfKind<K> for L {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.as_slice().iter().map(|e| K::matches(e))
+    }
+}''',
+     r'''impl<L: HeldList, K: Key<L::Entry>> OfKind<K> for L {
+    fn kinds(&self) -> impl Iterator<Item = bool> + '_ {
+        self.as_slice().iter().map(|_| false)
+    }
+}''')
+PY
+
+mutation_case "the named entry is not counted against the chain's bound" <<'PY'
+edit("backends/rust/forge-runtime/src/membership.rs",
+     r'''    list.remove_at(place);
+    if list.as_slice().len() >= MAX {''',
+     r'''    list.remove_at(place);
+    if list.as_slice().len() > MAX {''')
+PY

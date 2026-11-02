@@ -60,7 +60,10 @@ fn body() -> CodecNestedBody<'static> {
         locator: Bounded::new("xy").expect("within the locator's bound"),
     })
     .unwrap();
-    CodecNestedBody { n: 2, locs }
+    CodecNestedBody {
+        n: 2,
+        locs: locs.into(),
+    }
 }
 
 /// A borrowed parent referencing `body()` all three ways.
@@ -72,7 +75,7 @@ fn parent() -> CodecNestedParent<'static> {
         m: 1,      // count of body_list, kept in sync with its length
         required_body: body(),
         optional_body: Some(body()),
-        body_list,
+        body_list: body_list.into(),
     }
 }
 

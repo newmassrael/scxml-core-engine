@@ -22,8 +22,11 @@
     through the type's one door (`bounded_rebind`, docs/adr/0077 §3). The
     guard above refused a length past the bound before the slice was taken,
     so the door refuses with the same error. The streaming reads below
-    rebind it the same way. #}
-{% macro decode_field(field) %}
+    rebind it the same way.
+
+    A view holds the frame's own bytes. A stored value then takes what its
+    profile holds them in (`store_rebind`, docs/adr/0077 §7). #}
+{% macro decode_field(field, view_decode) %}
 {% if field.bound_guard is defined %}
         {{ field.bound_guard }}
 {% endif %}
@@ -39,8 +42,12 @@
 
         {{ field.bounded_rebind }}
 {%- endif %}
+{%- if field.store_rebind is defined and not view_decode %}
+
+        {{ field.store_rebind }}
+{%- endif %}
 {% endmacro %}
-{% set decode_variant_enum = struct_name ~ ('ViewVariant' if view_decode else 'Variant') %}
+{% set decode_variant_enum = struct_name ~ ('ViewVariant' if view_decode else ('VariantIn' if emit_owned else 'Variant')) %}
 {% if has_parent_flags %}
         // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
@@ -92,6 +99,9 @@
 {% if field.bounded_rebind is defined %}
         {{ field.bounded_rebind }}
 {% endif %}
+{% if field.store_rebind is defined and not view_decode %}
+        {{ field.store_rebind }}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% if variant.has_peek_byte %}
@@ -103,7 +113,7 @@
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice({{ min_bytes }})?;
 {% for field in fields %}
-{{ decode_field(field) }}
+{{ decode_field(field, view_decode) }}
 {% endfor %}
         cursor.advance({{ min_bytes }})?;
 {% endif %}
@@ -123,7 +133,7 @@
 {% for arm in variant.arms %}{% if arm.rust_cfg %}{% set gated_ns.gated = true %}{% endif %}{% endfor %}
         match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-{% set arm_body = arm.view_body_type if view_decode else arm.body_type %}
+{% set arm_body = arm.view_body_type if view_decode else arm.stored_body %}
 {# docs/adr/0072: a build without the arm's feature has no such arm, and its
    decode refuses the arm's tag: the tag is one the document names, so it is
    not the catch-all's, and reading the frame as another arm's body would
@@ -146,7 +156,7 @@
 {% endif %}
 {% endfor %}
 {% if variant.default_arm %}
-{% set default_body = variant.default_arm.view_body_type if view_decode else variant.default_arm.body_type %}
+{% set default_body = variant.default_arm.view_body_type if view_decode else variant.default_arm.stored_body %}
 {# docs/adr/0065 §6 R3: the arms above take every tag the document names, a
    build that leaves an arm out refusing its tag, and the tag was read from its
    bits, so what reaches here is a tag the default arm may hold. #}
@@ -202,6 +212,9 @@
 {% if field.bounded_rebind is defined %}
         {{ field.bounded_rebind }}
 {% endif %}
+{% if field.store_rebind is defined and not view_decode %}
+        {{ field.store_rebind }}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for field in fields %}
@@ -230,7 +243,7 @@
 {% endif %}
         let raw = cursor.peek_slice(_frame_len)?;
 {% for field in fields %}
-{{ decode_field(field) }}
+{{ decode_field(field, view_decode) }}
 {% endfor %}
         let value = Self {
 {% for field in fields %}
@@ -249,7 +262,7 @@
 {% for field in fields %}
 {% if field.is_variable and field.bit_size_kind == "length-ref" %}
         {
-            let _end = {{ field.byte_off }}usize + value.{{ field.id }}.len();
+            let _end = {{ field.byte_off }}usize + value.{{ field.id }}.{{ "as_text" if field.is_string else "as_bytes" }}().len();
             if _end > _consumed { _consumed = _end; }
         }
 {% endif %}
@@ -263,7 +276,7 @@
 {% else %}
         let raw = cursor.peek_slice({{ min_bytes }})?;
 {% for field in fields %}
-{{ decode_field(field) }}
+{{ decode_field(field, view_decode) }}
 {% endfor %}
         let value = Self {
 {% for field in fields %}

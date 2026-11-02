@@ -890,7 +890,7 @@ mod tests {
     };
     use ::sce_forge_runtime::codec::SceCursor;
 
-    fn roundtrip(frame: &[u8]) -> Ls {
+    fn roundtrip(frame: &[u8]) -> Ls<'_> {
         let mut cursor = SceCursor::new(frame);
         let view = Ls::decode(&mut cursor).expect("decode linkstate frame");
         assert_eq!(
@@ -2689,9 +2689,12 @@ fn forge_views_are_not_rendered_unless_asked_for() {
         let with = render(&views_options());
         assert!(with.contains("View"), "{name}: no view with the option");
         // Additive: every line of the plain output is still there, in order,
-        // so the eager type and its decode are what they were.
+        // so the eager type and its decode are what they were. The one line it
+        // changes says what judges a frame past a capacity: the view where there
+        // is one, since it holds no entry, and the lent form where there is none
+        // (docs/adr/0077 §7).
         let mut lines = with.lines();
-        for line in plain.lines() {
+        for line in plain.lines().filter(|l| !l.contains("(&mut _frame")) {
             assert!(
                 lines.any(|l| l == line),
                 "{name}: the option changed a line of the plain output: {line:?}"
@@ -2906,8 +2909,8 @@ mod tests {
     use crate::codec_origin_choice::{CodecOriginChoice, CodecOriginChoiceOwnedVariant};
     use crate::codec_origin_envelope::CodecOriginEnvelope;
     use ::sce_forge_runtime::codec::{
-        subrange_of, CodecError, GrowStr, HoldsBytes, HoldsList, HoldsStr, OriginStorage,
-        SceByteBuf, SceCursor, SceStr,
+        subrange_of, CodecError, Copying, Fewest, GrowStr, HoldsBytes, HoldsList, HoldsStr,
+        OriginStorage, SceByteBuf, SceCursor, SceStr,
     };
     use std::sync::Arc;
 
@@ -2930,11 +2933,16 @@ mod tests {
             &self.frame[self.range.clone()]
         }
     }
+    impl Fewest for Shared {
+        fn fewest<const MIN: usize>() -> Self {
+            Self { frame: Arc::new(vec![0; MIN]), range: 0..MIN }
+        }
+    }
 
     #[derive(Debug, Clone, PartialEq)]
     struct Sharing;
     impl<Tag> HoldsList<Tag> for Sharing {
-        type List<T> = Vec<T> where T: core::fmt::Debug + Clone + PartialEq;
+        type List<T> = Vec<T> where T: Default + core::fmt::Debug + Clone + PartialEq;
     }
     impl<Tag> HoldsStr<Tag> for Sharing {
         type Str = GrowStr;
@@ -2942,6 +2950,7 @@ mod tests {
     impl<Tag> HoldsBytes<Tag> for Sharing {
         type Bytes = Shared;
     }
+    impl Copying for Sharing {}
     impl OriginStorage for Sharing {
         type Origin = Arc<Vec<u8>>;
         fn bytes_from<Tag>(
@@ -12943,8 +12952,8 @@ fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
     // β leaf encode is sink-based with no extra positional args —
     // active arm from enum discriminant.
     assert!(
-        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S)"),
-        "β leaf encode must be sink-based with (&self, w: &mut S) signature\n{leaf_rust}"
+        leaf_rust.contains("pub fn encode<K: SceSink>(&self, w: &mut K)"),
+        "β leaf encode must be sink-based with (&self, w: &mut K) signature\n{leaf_rust}"
     );
     // β leaf dispatches by matching the `tag` parameter directly.
     assert!(
@@ -16947,11 +16956,11 @@ mod tests {
     const GATED_WIDE: [u8; 8] = [@GATED_WIDE@];
     const GATED_ABSENT: [u8; 1] = [@GATED_ABSENT@];
 
-    fn carrier(frame: &[u8]) -> CodecChainFlagCarrier {
+    fn carrier(frame: &[u8]) -> CodecChainFlagCarrier<'_> {
         CodecChainFlagCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
-    fn forward(frame: &[u8], wide: u8) -> CodecChainFlagForward {
+    fn forward(frame: &[u8], wide: u8) -> CodecChainFlagForward<'_> {
         CodecChainFlagForward::decode(&mut SceCursor::new(frame), wide).expect("decode")
     }
 
@@ -17023,11 +17032,11 @@ mod tests {
         assert_eq!(v.encode_to_vec(1).expect("encode"),FWD_ABSENT.to_vec());
     }
 
-    fn repeat(frame: &[u8]) -> CodecRepeatFlagCarrier {
+    fn repeat(frame: &[u8]) -> CodecRepeatFlagCarrier<'_> {
         CodecRepeatFlagCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
-    fn gated(frame: &[u8]) -> CodecRepeatFlagGated {
+    fn gated(frame: &[u8]) -> CodecRepeatFlagGated<'_> {
         CodecRepeatFlagGated::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
@@ -17925,11 +17934,11 @@ mod tests {
             .collect()
     }
 
-    fn carrier(frame: &[u8]) -> CodecChainPrevCarrier {
+    fn carrier(frame: &[u8]) -> CodecChainPrevCarrier<'_> {
         CodecChainPrevCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
-    fn gated(frame: &[u8]) -> CodecChainPrevGated {
+    fn gated(frame: &[u8]) -> CodecChainPrevGated<'_> {
         CodecChainPrevGated::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
@@ -18024,11 +18033,11 @@ mod tests {
         assert_eq!(v.encode_to_vec().expect("encode"),G_ABSENT.to_vec());
     }
 
-    fn tail(frame: &[u8]) -> CodecChainPrevTail {
+    fn tail(frame: &[u8]) -> CodecChainPrevTail<'_> {
         CodecChainPrevTail::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
-    fn tail_gated(frame: &[u8]) -> CodecChainPrevTailGated {
+    fn tail_gated(frame: &[u8]) -> CodecChainPrevTailGated<'_> {
         CodecChainPrevTailGated::decode(&mut SceCursor::new(frame)).expect("decode")
     }
 
@@ -21281,7 +21290,7 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
     // The encode reads the input off the value: `suffix` is its one gated
     // field (docs/adr/0065 §6 R4a).
     assert!(
-        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error>"),
+        leaf_rust.contains("pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error>"),
         "leaf encode must take no input, and be total\n{leaf_rust}"
     );
     assert!(
@@ -22251,7 +22260,7 @@ fn axis1_inversion_multi_flag_input_order() {
     // The arm that reads the three inputs says them, so the encode is handed none
     // (docs/adr/0065 §6 R4e); the decode, above, still is.
     assert!(
-        dispatcher_body.contains("pub fn encode<S: SceSink>(&self, w: &mut S) ->"),
+        dispatcher_body.contains("pub fn encode<K: SceSink>(&self, w: &mut K) ->"),
         "dispatcher encode takes no input the arm says; got:\n{dispatcher_body}"
     );
     for input in ["n", "m", "p"] {

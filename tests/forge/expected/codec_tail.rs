@@ -21,16 +21,60 @@ use sce_forge_runtime::codec::VecSink;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `payload` of `CodecTail`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecTail<'a> {
+pub struct CodecTailPayloadField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
+}
+
+/// What `CodecTailIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecTailStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField>> CodecTailStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecTailStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecTailFrom<'f>: CodecTailStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecTailPayloadField> {}
+
+impl<'f, S: CodecTailStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecTailPayloadField>> CodecTailFrom<'f> for S {}
+
+// `CodecTailIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecTail<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecTailOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecTailIn<S: CodecTailStorage> {
     pub msg_id: u8,
     pub status: u8,
-    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 32>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField>>::Bytes, 32>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecTail<'a> = CodecTailIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecTailOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecTailIn<S>;
+
+impl<S: CodecTailStorage> Default for CodecTailIn<S> {
+    fn default() -> Self {
+        Self {
+            msg_id: Default::default(),
+            status: Default::default(),
+            payload: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecTail<'a> {
+impl<S: CodecTailStorage> CodecTailIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -46,7 +90,22 @@ impl<'a> CodecTail<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecTailFrom<'f> {
+        // Judged as [`Self::decode_into`] judges a frame past a capacity
+        // (docs/adr/0077 §7).
+        let mut _frame = *cursor;
+        match Self::stored(cursor) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecTail::stored(&mut _frame)?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode`], which stops where a field is past its
+    /// capacity.
+    fn stored<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecTailFrom<'f> {
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -69,6 +128,7 @@ impl<'a> CodecTail<'a> {
         }
         let payload = &raw[2..];
         let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
+        let payload = payload.store::<S, CodecTailPayloadField>()?;
         let value = Self {
             msg_id,
             status,
@@ -82,7 +142,7 @@ impl<'a> CodecTail<'a> {
     /// embeds or dispatches to this one decodes it where it will live (see
     /// `decode_into` on a codec that holds a bounded list). This body has no
     /// list of its own to build in place, so it decodes and stores.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecTailFrom<'f> {
         *_out = Self::decode(cursor)?;
         Ok(())
     }
@@ -98,8 +158,8 @@ impl<'a> CodecTail<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecTail::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -162,18 +222,6 @@ pub struct CodecTailParts<'a> {
 }
 
 impl<'a> CodecTailSource for CodecTailParts<'a> {
-    fn msg_id(&self) -> u8 {
-        self.msg_id
-    }
-    fn status(&self) -> u8 {
-        self.status
-    }
-    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
-        self.payload
-    }
-}
-
-impl<'a> CodecTailSource for CodecTail<'a> {
     fn msg_id(&self) -> u8 {
         self.msg_id
     }
@@ -289,32 +337,6 @@ impl<'a> CodecTail<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-/// The field `payload` of `CodecTail`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecTailPayloadField;
-
-impl ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
-}
-
-/// What `CodecTailOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecTailStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField> {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField>> CodecTailStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecTailOwned<S: CodecTailStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub msg_id: u8,
-    pub status: u8,
-    pub payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecTailPayloadField>>::Bytes, 32>,
-}
 
 #[allow(dead_code)]
 impl<'a> CodecTail<'a> {
@@ -330,11 +352,11 @@ impl<'a> CodecTail<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecTailStorage>(self) -> Result<CodecTailOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecTailFrom<'a>>(self) -> Result<CodecTailOwned<S>, CodecError> {
         Ok(CodecTailOwned {
             msg_id: self.msg_id,
             status: self.status,
-            payload: ::sce_forge_runtime::codec::Bounded::copied(self.payload)?,
+            payload: self.payload.store::<S, CodecTailPayloadField>()?,
         })
     }
 
@@ -383,32 +405,7 @@ impl<S: CodecTailStorage> CodecTailOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecTailStorage>(&self) -> Result<CodecTailOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecTailFrom<'x>>(&self) -> Result<CodecTailOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecTailStorage> CodecTailOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecTail::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecTail::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTail::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

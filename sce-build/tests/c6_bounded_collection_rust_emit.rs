@@ -641,16 +641,15 @@ fn composite_element_is_stored_as_the_inline_owned_mirror() {
     );
 }
 
-/// An element whose list holds *fixed-width* bodies is not borrowed, so no
-/// owned mirror is emitted for it and the element is stored directly.
+/// An element whose list holds *fixed-width* bodies takes a storage profile all
+/// the same: what holds a list is a deployment's to say whatever the entries are
+/// (docs/adr/0077 §7), so the codec's owned form exists and the collection names
+/// it at the profile that does not allocate.
 ///
-/// This is the case a field-list guess gets wrong: a `<sce:repeat>` field
-/// carries a `bytes` sentinel (its real type is the body codec), so reading
-/// the element's field types would classify this as borrowed and name a mirror
-/// that is never emitted. The storage decision reads the same predicate the
-/// codec emit uses instead.
+/// The storage decision reads the predicate the codec emit uses, so the two
+/// cannot disagree about whether that form exists.
 #[test]
-fn list_of_fixed_width_bodies_is_stored_directly() {
+fn list_of_fixed_width_bodies_is_stored_as_its_owned_form() {
     let code = compile_triple(
         &fixed_body_doc("route_body"),
         &list_element_doc("route_entry", "route_body"),
@@ -658,13 +657,12 @@ fn list_of_fixed_width_bodies_is_stored_directly() {
     );
     assert_parses("fixed-body list BC", &code);
     assert!(
-        code.contains("use super::route_entry::RouteEntry;"),
-        "a lifetime-free element is its own owned form; got:\n{code}"
+        code.contains("use super::route_entry::RouteEntryOwned;"),
+        "an element that holds a list is held as its owned form; got:\n{code}"
     );
     assert!(
-        !code.contains("RouteEntryOwned"),
-        "no owned mirror is emitted for a non-borrowed element, so none may \
-         be referenced; got:\n{code}"
+        code.contains("RouteEntryOwned<::sce_forge_runtime::codec::Inline>"),
+        "the collection pins the profile that does not allocate; got:\n{code}"
     );
 }
 

@@ -64,27 +64,91 @@ impl ::sce_forge_runtime::codec::UnknownTag for CodecTransportEnvelopeUnknownTag
     }
 }
 
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec). The kind-agnostic conformance harness only references a
+// subset of fixtures, so unused-but-pub fields/methods would otherwise
+// trigger dead_code on every codec build.
+use super::codec_zenoh_init_body::CodecZenohInitBodyOwned;
+use super::codec_zenoh_open_body::CodecZenohOpenBodyOwned;
+use super::codec_zenoh_frame::CodecZenohFrameOwned;
+use super::codec_zenoh_fragment::CodecZenohFragmentOwned;
+use super::codec_zenoh_join::CodecZenohJoinOwned;
+/// What `CodecTransportEnvelopeIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecTransportEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage> CodecTransportEnvelopeStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecTransportEnvelopeStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecTransportEnvelopeFrom<'f>: CodecTransportEnvelopeStorage + super::codec_zenoh_init_body::CodecZenohInitBodyFrom<'f> + super::codec_zenoh_open_body::CodecZenohOpenBodyFrom<'f> + super::codec_zenoh_frame::CodecZenohFrameFrom<'f> + super::codec_zenoh_fragment::CodecZenohFragmentFrom<'f> + super::codec_zenoh_join::CodecZenohJoinFrom<'f> {}
+
+impl<'f, S: CodecTransportEnvelopeStorage + super::codec_zenoh_init_body::CodecZenohInitBodyFrom<'f> + super::codec_zenoh_open_body::CodecZenohOpenBodyFrom<'f> + super::codec_zenoh_frame::CodecZenohFrameFrom<'f> + super::codec_zenoh_fragment::CodecZenohFragmentFrom<'f> + super::codec_zenoh_join::CodecZenohJoinFrom<'f>> CodecTransportEnvelopeFrom<'f> for S {}
+
+// `CodecTransportEnvelopeIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecTransportEnvelope<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecTransportEnvelopeOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecTransportEnvelopeIn<S: CodecTransportEnvelopeStorage> {
+    pub header: u8,
+    pub body: CodecTransportEnvelopeVariantIn<S>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecTransportEnvelope<'a> = CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecTransportEnvelopeOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecTransportEnvelopeIn<S>;
+
+impl<S: CodecTransportEnvelopeStorage> Default for CodecTransportEnvelopeIn<S> {
+    fn default() -> Self {
+        Self {
+            header: Default::default(),
+            body: Default::default(),
+        }
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
+//
+// Variant arms wrap distinct body codecs whose stored forms differ in
+// field count and size, so the tagged union is inherently size-disparate.
+// The lint's only remedy is boxing the large arm, which adds an
+// indirection (and allocation) the generated decode path does not need —
+// and which the non-allocating storage profile could not take at all.
+// The size spread is the deliberate tagged-union trade-off.
+#[allow(clippy::large_enum_variant)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecTransportEnvelopeVariant<'a> {
-    CodecZenohInitBody(CodecZenohInitBody<'a>),
-    CodecZenohOpenBody(CodecZenohOpenBody<'a>),
+pub enum CodecTransportEnvelopeVariantIn<S: CodecTransportEnvelopeStorage> {
+    CodecZenohInitBody(CodecZenohInitBodyOwned<S>),
+    CodecZenohOpenBody(CodecZenohOpenBodyOwned<S>),
     CodecZenohClose(CodecZenohClose),
     CodecZenohKeepAlive(CodecZenohKeepAlive),
-    CodecZenohFrame(CodecZenohFrame<'a>),
-    CodecZenohFragment(CodecZenohFragment<'a>),
-    CodecZenohJoin(CodecZenohJoin<'a>),
+    CodecZenohFrame(CodecZenohFrameOwned<S>),
+    CodecZenohFragment(CodecZenohFragmentOwned<S>),
+    CodecZenohJoin(CodecZenohJoinOwned<S>),
     Default {
         tag: CodecTransportEnvelopeUnknownTag,
         body: CodecZenohClose,
     },
 }
 
-impl<'a> Default for CodecTransportEnvelopeVariant<'a> {
+#[allow(dead_code)]
+pub type CodecTransportEnvelopeVariant<'a> = CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+#[allow(dead_code)]
+pub type CodecTransportEnvelopeOwnedVariant<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecTransportEnvelopeVariantIn<S>;
+
+impl<S: CodecTransportEnvelopeStorage> Default for CodecTransportEnvelopeVariantIn<S> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -95,19 +159,8 @@ impl<'a> Default for CodecTransportEnvelopeVariant<'a> {
     }
 }
 
-// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
-// §6 codec). The kind-agnostic conformance harness only references a
-// subset of fixtures, so unused-but-pub fields/methods would otherwise
-// trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecTransportEnvelope<'a> {
-    pub header: u8,
-    pub body: CodecTransportEnvelopeVariant<'a>,
-}
-
-#[allow(dead_code)]
-impl<'a> CodecTransportEnvelope<'a> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -123,7 +176,7 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecTransportEnvelopeFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -139,7 +192,24 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecTransportEnvelopeFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecTransportEnvelope::store_into(&mut _frame, &mut CodecTransportEnvelope::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecTransportEnvelopeFrom<'f> {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
@@ -154,53 +224,53 @@ impl<'a> CodecTransportEnvelope<'a> {
         // through the variant wrapper.
         match header & 0x1F {
             1u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) = &mut _out.body {
-                    CodecZenohInitBody::decode_into(cursor, _b, (header >> 6) & 0x1, (header >> 5) & 0x1)?;
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohInitBody(CodecZenohInitBodyOwned::<S>::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohInitBody(_b) = &mut _out.body {
+                    CodecZenohInitBodyOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1, (header >> 5) & 0x1)?;
                 }
             }
             2u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) = &mut _out.body {
-                    CodecZenohOpenBody::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(CodecZenohOpenBodyOwned::<S>::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(_b) = &mut _out.body {
+                    CodecZenohOpenBodyOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1)?;
                 }
             }
             3u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohClose(_b) = &mut _out.body {
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohClose(CodecZenohClose::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohClose(_b) = &mut _out.body {
                     CodecZenohClose::decode_into(cursor, _b)?;
                 }
             }
             4u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b) = &mut _out.body {
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(CodecZenohKeepAlive::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(_b) = &mut _out.body {
                     CodecZenohKeepAlive::decode_into(cursor, _b)?;
                 }
             }
             5u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohFrame(CodecZenohFrame::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohFrame(_b) = &mut _out.body {
-                    CodecZenohFrame::decode_into(cursor, _b)?;
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohFrame(CodecZenohFrameOwned::<S>::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohFrame(_b) = &mut _out.body {
+                    CodecZenohFrameOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             6u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohFragment(CodecZenohFragment::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohFragment(_b) = &mut _out.body {
-                    CodecZenohFragment::decode_into(cursor, _b)?;
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohFragment(CodecZenohFragmentOwned::<S>::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohFragment(_b) = &mut _out.body {
+                    CodecZenohFragmentOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             7u8 => {
-                _out.body = CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohJoin(_b) = &mut _out.body {
-                    CodecZenohJoin::decode_into(cursor, _b, (header >> 6) & 0x1)?;
+                _out.body = CodecTransportEnvelopeVariantIn::CodecZenohJoin(CodecZenohJoinOwned::<S>::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohJoin(_b) = &mut _out.body {
+                    CodecZenohJoinOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1)?;
                 }
             }
             other => {
-                _out.body = CodecTransportEnvelopeVariant::Default {
+                _out.body = CodecTransportEnvelopeVariantIn::Default {
                     tag: CodecTransportEnvelopeUnknownTag(other),
                     body: CodecZenohClose::default(),
                 };
-                if let CodecTransportEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
+                if let CodecTransportEnvelopeVariantIn::Default { body: _b, .. } = &mut _out.body {
                     CodecZenohClose::decode_into(cursor, _b)?;
                 }
             }
@@ -270,8 +340,8 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecTransportEnvelope::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -411,24 +481,6 @@ impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelopeParts<'a> {
             CodecTransportEnvelopePartsBody::CodecZenohFragment(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFragment(*_b),
             CodecTransportEnvelopePartsBody::CodecZenohJoin(_b) => CodecTransportEnvelopeVariantSource::CodecZenohJoin(*_b),
             CodecTransportEnvelopePartsBody::Default { tag, body } => CodecTransportEnvelopeVariantSource::Default { tag: *tag, body: *body },
-        }
-    }
-}
-
-impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelope<'a> {
-    fn header(&self) -> u8 {
-        self.header
-    }
-    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource> {
-        match &self.body {
-            CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b),
-            CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b),
-            CodecTransportEnvelopeVariant::CodecZenohClose(_b) => CodecTransportEnvelopeVariantSource::CodecZenohClose(_b),
-            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b),
-            CodecTransportEnvelopeVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b),
-            CodecTransportEnvelopeVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b),
-            CodecTransportEnvelopeVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b),
-            CodecTransportEnvelopeVariant::Default { tag, body } => CodecTransportEnvelopeVariantSource::Default { tag: *tag, body },
         }
     }
 }
@@ -586,75 +638,6 @@ impl<'a> CodecTransportEnvelope<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_zenoh_init_body::CodecZenohInitBodyOwned;
-use super::codec_zenoh_open_body::CodecZenohOpenBodyOwned;
-use super::codec_zenoh_frame::CodecZenohFrameOwned;
-use super::codec_zenoh_fragment::CodecZenohFragmentOwned;
-use super::codec_zenoh_join::CodecZenohJoinOwned;
-/// What `CodecTransportEnvelopeOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecTransportEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage> CodecTransportEnvelopeStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecTransportEnvelopeOwned<S: CodecTransportEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub header: u8,
-    pub body: CodecTransportEnvelopeOwnedVariant<S>,
-}
-
-#[allow(dead_code)]
-impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
-    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
-    // bit getters over the copied carrier (rkyv Archived↔native getter
-    // parity), so owned consumers read `{Codec}Owned` with the same API as
-    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
-    // Read-only — write accessors belong with an owned-encode path, which
-    // does not exist yet.
-    pub fn mid(&self) -> u8 {
-        self.header & 0x1F
-    }
-
-    pub fn a(&self) -> bool {
-        (self.header & 0x20) != 0
-    }
-
-    pub fn s(&self) -> bool {
-        (self.header & 0x40) != 0
-    }
-
-    pub fn z(&self) -> bool {
-        (self.header & 0x80) != 0
-    }
-}
-
-// Variant arms wrap distinct body codecs whose owned mirrors differ in
-// field count and size, so the tagged union is inherently size-disparate.
-// The lint's only remedy is boxing the large arm, which adds an
-// indirection (and allocation) the generated decode path does not need —
-// and which the non-allocating storage profile could not take at all.
-// The size spread is the deliberate tagged-union trade-off.
-#[allow(clippy::large_enum_variant)]
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub enum CodecTransportEnvelopeOwnedVariant<S: CodecTransportEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    CodecZenohInitBody(CodecZenohInitBodyOwned<S>),
-    CodecZenohOpenBody(CodecZenohOpenBodyOwned<S>),
-    CodecZenohClose(CodecZenohClose),
-    CodecZenohKeepAlive(CodecZenohKeepAlive),
-    CodecZenohFrame(CodecZenohFrameOwned<S>),
-    CodecZenohFragment(CodecZenohFragmentOwned<S>),
-    CodecZenohJoin(CodecZenohJoinOwned<S>),
-    Default {
-        tag: CodecTransportEnvelopeUnknownTag,
-        body: CodecZenohClose,
-    },
-}
 
 #[allow(dead_code)]
 impl<'a> CodecTransportEnvelopeVariant<'a> {
@@ -662,7 +645,7 @@ impl<'a> CodecTransportEnvelopeVariant<'a> {
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
-    pub fn try_into_owned_in<S: CodecTransportEnvelopeStorage>(self) -> Result<CodecTransportEnvelopeOwnedVariant<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecTransportEnvelopeFrom<'a>>(self) -> Result<CodecTransportEnvelopeOwnedVariant<S>, CodecError> {
         Ok(match self {
             CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b.try_into_owned_in::<S>()?),
             CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b.try_into_owned_in::<S>()?),
@@ -771,7 +754,7 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecTransportEnvelopeStorage>(self) -> Result<CodecTransportEnvelopeOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecTransportEnvelopeFrom<'a>>(self) -> Result<CodecTransportEnvelopeOwned<S>, CodecError> {
         Ok(CodecTransportEnvelopeOwned {
             header: self.header,
             body: self.body.try_into_owned_in::<S>()?,
@@ -822,32 +805,7 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecTransportEnvelopeStorage>(&self) -> Result<CodecTransportEnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecTransportEnvelopeFrom<'x>>(&self) -> Result<CodecTransportEnvelopeOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecTransportEnvelope::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecTransportEnvelope::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTransportEnvelope::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

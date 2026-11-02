@@ -21,16 +21,60 @@ use sce_forge_runtime::codec::VecSink;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `data` of `CodecZenohValueSlice`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohValueSlice<'a> {
+pub struct CodecZenohValueSliceDataField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// What `CodecZenohValueSliceIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecZenohValueSliceStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>> CodecZenohValueSliceStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecZenohValueSliceStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecZenohValueSliceFrom<'f>: CodecZenohValueSliceStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecZenohValueSliceDataField> {}
+
+impl<'f, S: CodecZenohValueSliceStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecZenohValueSliceDataField>> CodecZenohValueSliceFrom<'f> for S {}
+
+// `CodecZenohValueSliceIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecZenohValueSlice<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecZenohValueSliceOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohValueSliceIn<S: CodecZenohValueSliceStorage> {
     pub kind: u8,
     pub len: u64,
-    pub data: ::sce_forge_runtime::codec::Bytes<'a, 16>,
+    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>>::Bytes, 16>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecZenohValueSlice<'a> = CodecZenohValueSliceIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecZenohValueSliceOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohValueSliceIn<S>;
+
+impl<S: CodecZenohValueSliceStorage> Default for CodecZenohValueSliceIn<S> {
+    fn default() -> Self {
+        Self {
+            kind: Default::default(),
+            len: Default::default(),
+            data: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohValueSlice<'a> {
+impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -46,7 +90,7 @@ impl<'a> CodecZenohValueSlice<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecZenohValueSliceFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -62,7 +106,24 @@ impl<'a> CodecZenohValueSlice<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohValueSliceFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecZenohValueSlice::store_into(&mut _frame, &mut CodecZenohValueSlice::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohValueSliceFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -94,6 +155,7 @@ impl<'a> CodecZenohValueSlice<'a> {
             _v
         };
         let data = ::sce_forge_runtime::codec::Bounded::new(data).ok_or(CodecError::LengthOutOfRange)?;
+        let data = data.store::<S, CodecZenohValueSliceDataField>()?;
         _out.kind = kind;
         _out.len = len;
         _out.data = data;
@@ -111,8 +173,8 @@ impl<'a> CodecZenohValueSlice<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecZenohValueSlice::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -168,15 +230,6 @@ pub struct CodecZenohValueSliceParts<'a> {
 }
 
 impl<'a> CodecZenohValueSliceSource for CodecZenohValueSliceParts<'a> {
-    fn kind(&self) -> u8 {
-        self.kind
-    }
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
-        self.data
-    }
-}
-
-impl<'a> CodecZenohValueSliceSource for CodecZenohValueSlice<'a> {
     fn kind(&self) -> u8 {
         self.kind
     }
@@ -288,32 +341,6 @@ impl<'a> CodecZenohValueSlice<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-/// The field `data` of `CodecZenohValueSlice`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecZenohValueSliceDataField;
-
-impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
-}
-
-/// What `CodecZenohValueSliceOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecZenohValueSliceStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField> {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>> CodecZenohValueSliceStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohValueSliceOwned<S: CodecZenohValueSliceStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub kind: u8,
-    pub len: u64,
-    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>>::Bytes, 16>,
-}
 
 #[allow(dead_code)]
 impl<'a> CodecZenohValueSlice<'a> {
@@ -329,11 +356,11 @@ impl<'a> CodecZenohValueSlice<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecZenohValueSliceStorage>(self) -> Result<CodecZenohValueSliceOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohValueSliceFrom<'a>>(self) -> Result<CodecZenohValueSliceOwned<S>, CodecError> {
         Ok(CodecZenohValueSliceOwned {
             kind: self.kind,
             len: self.len,
-            data: ::sce_forge_runtime::codec::Bounded::copied(self.data)?,
+            data: self.data.store::<S, CodecZenohValueSliceDataField>()?,
         })
     }
 
@@ -382,32 +409,7 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecZenohValueSliceStorage>(&self) -> Result<CodecZenohValueSliceOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecZenohValueSliceFrom<'x>>(&self) -> Result<CodecZenohValueSliceOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecZenohValueSlice::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohValueSlice::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohValueSlice::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

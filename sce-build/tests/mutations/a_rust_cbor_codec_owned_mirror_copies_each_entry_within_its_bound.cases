@@ -57,34 +57,35 @@ edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
      r'''    pub {{ e.name }}: {{ e.field_type }},''')
 PY
 
-# A required string is copied with the refusal of its container passed on. Without the `?` the
+# A required string is stored with the refusal of its container passed on. Without the `?` the
 # projection hands back the container's `Result` as the field. Killed by
 # `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
-# (`from_view(self.note)?,`).
+# (`self.note.store::<S, ProbeCborNoteField>()?,`).
 mutation_case "a required entry is copied and its refusal is not passed on" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
-     r'''            {{ e.name }}: {{ owned_copy(e) }}(self.{{ e.name }})?,''',
-     r'''            {{ e.name }}: {{ owned_copy(e) }}(self.{{ e.name }}),''')
+     r'''            {{ e.name }}: self.{{ e.name }}.store::<S, {{ e.storage_tag }}>()?,''',
+     r'''            {{ e.name }}: self.{{ e.name }}.store::<S, {{ e.storage_tag }}>(),''')
 PY
 
-# An optional string is copied only when it is present, and the refusal of the copy is passed
+# An optional string is stored only when it is present, and the refusal of the store is passed
 # on. Without the `transpose` the field is an option of a `Result`. Killed by
 # `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
-# (`.from_view).transpose()?,`).
+# (`.store::<S, ProbeCborLabelField>()).transpose()?,`).
 mutation_case "an optional entry is copied and its refusal is not passed on" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
-     r'''.map({{ owned_copy(e) }}).transpose()?,''',
-     r'''.map({{ owned_copy(e) }}),''')
+     r'''.map(|held| held.store::<S, {{ e.storage_tag }}>()).transpose()?,''',
+     r'''.map(|held| held.store::<S, {{ e.storage_tag }}>()),''')
 PY
 
-# A string is copied by the runtime's copy of a text. Copied as a byte string, it would be held
-# in a container of bytes. Killed by
+# Each entry is stored as the profile stores its own field. Which container a string or a byte
+# string takes is the type's to say, so the one choice left to the template is the tag; stored by
+# the first entry's tag, every entry would take that field's capacity. Killed by
 # `the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are`
-# (`::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,`).
-mutation_case "a string is copied by the container of a byte string" <<'PY'
+# (`self.blob.store::<S, ProbeCborBlobField>()?,`).
+mutation_case "an entry is stored as another field" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec_cbor.rs.jinja2",
-     r'''::sce_forge_runtime::codec::Bounded::copied_text''',
-     r'''::sce_forge_runtime::codec::Bounded::copied''')
+     r'''            {{ e.name }}: self.{{ e.name }}.store::<S, {{ e.storage_tag }}>()?,''',
+     r'''            {{ e.name }}: self.{{ e.name }}.store::<S, {{ entries[0].storage_tag }}>()?,''')
 PY
 
 # The re-borrow reads each entry through the source interface, the one reading of the owned

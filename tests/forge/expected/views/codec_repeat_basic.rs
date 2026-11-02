@@ -16,12 +16,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-// RFC §synth-5-B B2/B3: bounded inline list storage for repeat / tlv-chain
-// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
-// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
-// available (no `alloc` gate) so list-bearing codecs compile on the
-// pure no_std no-alloc MCU tier.
-use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_repeat_elem::CodecRepeatElem;
 
@@ -32,15 +26,58 @@ use super::codec_repeat_elem::CodecRepeatElemView;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `frags` of `CodecRepeatBasic`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecRepeatBasic {
+pub struct CodecRepeatBasicFragsField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 32> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecRepeatBasicIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecRepeatBasicStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField>> CodecRepeatBasicStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecRepeatBasicStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecRepeatBasicFrom<'f>: CodecRepeatBasicStorage {}
+
+impl<'f, S: CodecRepeatBasicStorage> CodecRepeatBasicFrom<'f> for S {}
+
+// `CodecRepeatBasicIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecRepeatBasic<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecRepeatBasicOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecRepeatBasicIn<S: CodecRepeatBasicStorage> {
     pub num_frags: u8,
-    pub frags: HeaplessVec<CodecRepeatElem, 32>,
+    pub frags: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField>>::List<CodecRepeatElem>, 32>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecRepeatBasic<'a> = CodecRepeatBasicIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecRepeatBasicOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecRepeatBasicIn<S>;
+
+impl<S: CodecRepeatBasicStorage> Default for CodecRepeatBasicIn<S> {
+    fn default() -> Self {
+        Self {
+            num_frags: Default::default(),
+            frags: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl CodecRepeatBasic {
+impl<S: CodecRepeatBasicStorage> CodecRepeatBasicIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -56,7 +93,7 @@ impl CodecRepeatBasic {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecRepeatBasicFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -72,7 +109,24 @@ impl CodecRepeatBasic {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecRepeatBasicFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecRepeatBasicView::decode(&mut _frame)?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecRepeatBasicFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -91,17 +145,15 @@ impl CodecRepeatBasic {
             cursor.advance(1)?;
             _v
         };
-        {
-            if num_frags > 32 {
+        if num_frags > 32 {
                 return Err(CodecError::TooManyElements);
             }
-            let _vec = &mut _out.frags;
-            _vec.clear();
+            _out.frags.refill(|_vec| {
             for _ in 0..num_frags {
-                _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::CapacityExceeded)?;
+                ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecRepeatElem::decode(cursor)?)?;
             }
-        }
+            Ok(())
+        })?;
         _out.num_frags = num_frags;
         Ok(())
     }
@@ -117,8 +169,8 @@ impl CodecRepeatBasic {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecRepeatBasic::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -172,9 +224,9 @@ impl<'a> CodecRepeatBasicSource for CodecRepeatBasicParts<'a> {
     }
 }
 
-impl CodecRepeatBasicSource for CodecRepeatBasic {
+impl<S: CodecRepeatBasicStorage> CodecRepeatBasicSource for CodecRepeatBasicOwned<S> {
     fn frags(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 32> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.frags)
+        self.frags.list_iter()
     }
 }
 
@@ -185,7 +237,7 @@ impl<'a> CodecRepeatBasicSource for CodecRepeatBasicView<'a> {
 }
 
 #[allow(dead_code)]
-impl CodecRepeatBasic {
+impl<'a> CodecRepeatBasic<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecRepeatBasicSource`]. A length, a count or a gate flag is computed from what
@@ -217,7 +269,7 @@ impl CodecRepeatBasic {
     }
 }
 
-impl<S: CodecRepeatBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatBasic {
+impl<'a, S: CodecRepeatBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatBasic<'a> {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -226,7 +278,7 @@ impl<S: CodecRepeatBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite
 }
 
 #[allow(dead_code)]
-impl CodecRepeatBasic {
+impl<'a> CodecRepeatBasic<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -345,15 +397,17 @@ impl<'a> CodecRepeatBasicView<'a> {
     // alone; a crate that includes this module privately is asked to rename
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_builder(&self, _out: &mut CodecRepeatBasic) -> Result<(), CodecError> {
+    pub fn into_builder(&self, _out: &mut CodecRepeatBasic<'a>) -> Result<(), CodecError> {
         _out.num_frags = self.num_frags;
-        _out.frags.clear();
-        for _e in self.frags.iter() {
-            _out.frags.push(CodecRepeatElem::default()).map_err(|_| CodecError::CapacityExceeded)?;
-            if let Some(_slot) = _out.frags.last_mut() {
-                _e.into_builder(_slot)?;
+        _out.frags.refill(|_vec| {
+            for _e in self.frags.iter() {
+                _vec.push(CodecRepeatElem::default()).map_err(|_| CodecError::CapacityExceeded)?;
+                if let Some(_slot) = _vec.last_mut() {
+                    _e.into_builder(_slot)?;
+                }
             }
-        }
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -378,5 +432,112 @@ impl<'a> CodecRepeatBasicView<'a> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
+    }
+}
+
+// ── Owned projection (storage-parameterised native form) ─────────────
+// `CodecRepeatBasic<'a>` above is a zero-copy view borrowing the decode
+// buffer. Consumers that persist a decoded value beyond the buffer's
+// lifetime — including the self-contained bounded-collection that stores
+// elements by value — call `.try_into_owned()` for this lifetime-free
+// `CodecRepeatBasicOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split, both generated from the one SCXML source (SSOT).
+//
+// The owned form is parameterised by a storage profile rather than fixed at
+// build-configuration time: `CodecRepeatBasicOwned<Heap>` holds growable
+// containers with the declared capacities advisory, `CodecRepeatBasicOwned<Inline>`
+// holds every field inline at its declared capacity and never allocates, and
+// both exist in the same binary. `CodecRepeatBasicOwned` alone is the build's
+// default profile. Because the non-allocating profile is a *type*, this mirror
+// carries no `alloc` gate at all — a list- or embed-bearing codec has an owned
+// form on the heap-free tier too, and a heap-capable consumer can still pin a
+// value to storage that is guaranteed not to allocate.
+//
+// `try_into_owned` is the fallible direction (one `?` per profile: on the
+// growable profile the copy cannot fail, on the inline profile it enforces
+// each declared bound); `try_as_borrowed` re-borrows any profile back
+// into the single borrowed view that owns `encode`; `transcode_in` moves a
+// value between profiles as a checked projection rather than a re-decode.
+//
+// Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
+// Hand-assembling one instead names it on the value or its binding —
+// `let v: CodecRepeatBasicOwned = CodecRepeatBasicOwned { .. };`
+// — because the fields reach the profile through its associated container
+// types, which cannot be run backwards to recover the profile from a value.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+
+#[allow(dead_code)]
+impl<'a> CodecRepeatBasic<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecRepeatBasicOwned`] held in the given storage profile. Call at
+    /// a decode boundary when the decoded value must outlive the input
+    /// buffer — stored in a long-lived enum, moved across an async task, or
+    /// inserted by value into a bounded-collection.
+    ///
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecRepeatBasicFrom<'a>>(self) -> Result<CodecRepeatBasicOwned<S>, CodecError> {
+        Ok(CodecRepeatBasicOwned {
+            num_frags: self.num_frags,
+            frags: ::sce_forge_runtime::codec::try_collect_bounded(self.frags, Ok)?,
+        })
+    }
+
+    /// The same projection at the build's default storage profile — growable
+    /// where an allocator exists, inline on the heap-free tier.
+    pub fn try_into_owned(self) -> Result<CodecRepeatBasicOwned, CodecError> {
+        self.try_into_owned_in()
+    }
+}
+
+#[allow(dead_code)]
+impl<S: CodecRepeatBasicStorage> CodecRepeatBasicOwned<S> {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `try_into_owned_in`. `encode` lives only on the
+    /// borrowed view (the owned form is read-only), so an owned consumer
+    /// reaches it via `try_as_borrowed` then `encode` / `encode_to_vec`.
+    /// Each field is projected by reference — a cheap re-borrow, not a copy.
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list holding
+    /// more than its declared `N` raises `CodecError::TooManyElements` — the
+    /// same bound decode enforces. Only a growable profile can hold such a
+    /// list; on the inline profile the source is already within bounds.
+    pub fn try_as_borrowed(&self) -> Result<CodecRepeatBasic<'_>, CodecError> {
+        let mut _out = CodecRepeatBasic::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecRepeatBasic<'o>) -> Result<(), CodecError> {
+        _out.num_frags = self.num_frags;
+        _out.frags.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.frags.inner(), |_e| Ok(_e.clone())))?;
+        Ok(())
+    }
+
+    /// Move this value to a different storage profile — growable to inline
+    /// when handing it to a path that must not allocate, or inline to
+    /// growable when it is leaving that path.
+    ///
+    /// A checked projection through the borrowed view, not a re-decode: the
+    /// bytes are copied once and every destination capacity is enforced, so
+    /// a value that cannot fit the target profile is rejected here rather
+    /// than truncated.
+    pub fn transcode_in<D: for<'x> CodecRepeatBasicFrom<'x>>(&self) -> Result<CodecRepeatBasicOwned<D>, CodecError> {
+        self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }

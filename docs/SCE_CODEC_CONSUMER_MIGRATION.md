@@ -422,3 +422,45 @@ Landing: the commit that adds this section.
 - Codec documents that mix `<data>` with `<sce:field>`, `<sce:flags>` or the other `sce:` field elements now read their
   fields in document order. They were read `<data>` first, so such a codec decoded from the wrong offsets with no error.
   No shipped document mixes them. Check yours: the wire of one that does changes to what its `sce:byte` says.
+
+## A codec has one storing value, at any profile (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `{Codec}In<S>` is the one storing type of a codec that takes a profile. `{Codec}<'a>` is it on `Lent<'a>`, which
+  borrows bytes and text from the frame, and `{Codec}Owned<S>` is it at a profile that holds them. Both names keep
+  working, and so does `{Codec}::decode(&mut cursor)`.
+- A storing decode no longer needs the lent value in between. `{Codec}Owned::<Heap>::decode(&mut cursor)` and
+  `decode_into` read the frame once, and give what `{Codec}::decode` then `try_into_owned_in::<Heap>()` give. The
+  projection stays, for a value you already hold.
+- A bound on a decode or a projection names the lifetime of the frame: `S: {Codec}From<'f>`, where it was
+  `S: {Codec}Storage`. `{Codec}Storage` still names what the value needs. A site generic over every frame writes
+  `for<'x> {Codec}From<'x>`.
+- `CapacityExceeded` means the same at every profile. A storing decode past a capacity judges the frame, by the view
+  where the tree has views and by the codec's lent form where it does not, so a malformed frame gets the error a view
+  gives it. This was true only of a tree generated with a deployment.
+- A codec that holds a list and no bytes now takes a profile and a lifetime, so a function that returns one spells
+  `Foo<'_>`, and `Foo` has an `Owned` form where it had none. A bounded collection of such an element holds
+  `FooOwned<Inline>`.
+- A list in `{Codec}<'a>` is a `Bounded` of its bounds, as it already was in `{Codec}Owned`. Reading through it is
+  unchanged. A value built by hand gives a list with `list.into()`.
+- A value prints as `FooIn { .. }`: the type's name, so a log or a test that compares `Debug` text sees it.
+- A profile written by hand has more to say:
+
+  ```rust
+  impl<Tag> HoldsList<Tag> for MyProfile {
+      type List<T> = Vec<T> where T: Default + Debug + Clone + PartialEq;
+  }
+  impl Copying for MyProfile {}
+  impl Fewest for MyBytes {
+      fn fewest<const MIN: usize>() -> Self { /* MIN zeros */ }
+  }
+  ```
+
+  `Copying` says the profile stores a field by copying it out of the frame. `Fewest` is what a value holds by default,
+  which `Bounded` needs of every container. `T: Default` is the entries of a list a decode refills.
+- `place_first` takes the list and no capacity: `place_first::<_, Key, MAX>(list)`, for the list of any profile. A list
+  type of your own implements `HeldList`, and `SceList` gains `last_mut` and `remove_at`.
+- A CBOR codec keeps its two types. Its `{Codec}<'a>` is its view, with no storing role, and `{Codec}Owned<S>` is what
+  stores. `try_into_owned_in` bounds on `{Codec}From<'a>` as a positional codec's does.
+- The wire does not change.

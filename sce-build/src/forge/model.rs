@@ -3468,18 +3468,19 @@ impl CodecModel {
     /// structural predicate — the scalar-field rule and the
     /// embed/repeat/tlv/variant traversal live in exactly one place.
     ///
-    /// Repeat / tlv-chain / embed fields carry a `SceType::Bytes`
-    /// *sentinel* (their real type is the body codec), so the scalar
-    /// check excludes them; their borrowed-ness flows through
-    /// `body_borrowed` instead. Including them would over-approximate and
-    /// emit an unused `<'a>` (E0392) — inference must stay exact.
+    /// A list counts whatever its entries are: what holds one is the storage
+    /// profile's to say (docs/adr/0077 §7), so a codec with a list has the
+    /// profile parameter a codec that borrows has.
+    ///
+    /// Embed fields carry a `SceType::Bytes` *sentinel* (their real type is
+    /// the body codec), so the scalar check excludes them; their borrowed-ness
+    /// flows through `body_borrowed` instead.
     pub(crate) fn is_borrowed_with(&self, mut body_borrowed: impl FnMut(&str) -> bool) -> bool {
-        // Direct scalar Bytes / String view.
+        // A list, and a direct scalar Bytes / String view.
         if self.fields.iter().any(|f| {
-            !f.is_repeat()
-                && !f.is_tlv_chain()
-                && !f.is_embed()
-                && matches!(f.sce_type, SceType::Bytes | SceType::String)
+            f.is_repeat()
+                || f.is_tlv_chain()
+                || (!f.is_embed() && matches!(f.sce_type, SceType::Bytes | SceType::String))
         }) {
             return true;
         }
@@ -3493,37 +3494,25 @@ impl CodecModel {
                 return true;
             }
         }
-        // Repeat / tlv-chain / embed body codecs.
+        // Embedded body codecs.
         self.fields.iter().any(|f| {
-            let alias = if f.is_repeat() {
-                f.repeat_body_alias.as_deref()
-            } else if f.is_tlv_chain() {
-                f.tlv_chain_body_alias.as_deref()
-            } else if f.is_embed() {
-                f.embed_body_alias.as_deref()
-            } else {
-                None
-            };
-            alias.is_some_and(&mut body_borrowed)
+            f.is_embed()
+                && f.embed_body_alias
+                    .as_deref()
+                    .is_some_and(&mut body_borrowed)
         })
     }
 
     /// Whether this codec's generated Rust view (`{Codec}View`, ADR 0049)
-    /// needs a `<'a>` lifetime parameter: [`Self::is_borrowed_with`] with one
-    /// more way to borrow. A bounded list (`<sce:repeat>` / `<sce:tlv-chain>`)
-    /// is held as the span of wire bytes its entries occupy, so a codec with
-    /// one borrows whatever its entries are. `body_view_borrowed(alias)` asks the
-    /// same of an embedded or dispatched body's view, resolved by the caller
-    /// as `is_borrowed_with`'s is; the two share the traversal, so the
-    /// inference stays exact (an unused lifetime parameter is E0392).
+    /// needs a `<'a>` lifetime parameter: [`Self::is_borrowed_with`], asked of
+    /// each embedded or dispatched body's view. A bounded list
+    /// (`<sce:repeat>` / `<sce:tlv-chain>`) is held as the span of wire bytes
+    /// its entries occupy.
     pub(crate) fn is_view_borrowed_with(
         &self,
         body_view_borrowed: impl FnMut(&str) -> bool,
     ) -> bool {
-        self.fields
-            .iter()
-            .any(|f| f.is_repeat() || f.is_tlv_chain())
-            || self.is_borrowed_with(body_view_borrowed)
+        self.is_borrowed_with(body_view_borrowed)
     }
 
     /// Whether this codec has a generated Rust view of its own, as against

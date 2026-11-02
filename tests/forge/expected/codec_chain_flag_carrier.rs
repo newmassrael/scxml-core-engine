@@ -16,12 +16,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-// RFC §synth-5-B B2/B3: bounded inline list storage for repeat / tlv-chain
-// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
-// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
-// available (no `alloc` gate) so list-bearing codecs compile on the
-// pure no_std no-alloc MCU tier.
-use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_chain_flag_entry::CodecChainFlagEntry;
 
@@ -29,15 +23,58 @@ use super::codec_chain_flag_entry::CodecChainFlagEntry;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `entries` of `CodecChainFlagCarrier`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecChainFlagCarrier {
+pub struct CodecChainFlagCarrierEntriesField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecChainFlagCarrierEntriesField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecChainFlagCarrierIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecChainFlagCarrierStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainFlagCarrierEntriesField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainFlagCarrierEntriesField>> CodecChainFlagCarrierStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecChainFlagCarrierStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecChainFlagCarrierFrom<'f>: CodecChainFlagCarrierStorage {}
+
+impl<'f, S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierFrom<'f> for S {}
+
+// `CodecChainFlagCarrierIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecChainFlagCarrier<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecChainFlagCarrierOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecChainFlagCarrierIn<S: CodecChainFlagCarrierStorage> {
     pub head: u8,
-    pub entries: ::sce_forge_runtime::codec::Bounded<HeaplessVec<CodecChainFlagEntry, 4>, 4, 1>,
+    pub entries: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainFlagCarrierEntriesField>>::List<CodecChainFlagEntry>, 4, 1>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecChainFlagCarrier<'a> = CodecChainFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecChainFlagCarrierOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecChainFlagCarrierIn<S>;
+
+impl<S: CodecChainFlagCarrierStorage> Default for CodecChainFlagCarrierIn<S> {
+    fn default() -> Self {
+        Self {
+            head: Default::default(),
+            entries: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl CodecChainFlagCarrier {
+impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -53,7 +90,7 @@ impl CodecChainFlagCarrier {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecChainFlagCarrierFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -69,7 +106,24 @@ impl CodecChainFlagCarrier {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecChainFlagCarrierFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecChainFlagCarrier::store_into(&mut _frame, &mut CodecChainFlagCarrier::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecChainFlagCarrierFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -96,7 +150,7 @@ impl CodecChainFlagCarrier {
                 // The loop walks the chain's depth and `_vec` holds the capacity, so
                 // this push fails only where the deployment holds fewer entries than
                 // the frame says. An over-long chain is refused after the loop.
-                _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
+                ::sce_forge_runtime::codec::SceList::try_push(_vec, _entry)?;
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {
@@ -141,8 +195,8 @@ impl CodecChainFlagCarrier {
     /// `sce:encode-may-fail`), or the sink's own error:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        CodecChainFlagCarrier::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -227,17 +281,17 @@ impl<'a> CodecChainFlagCarrierSource for CodecChainFlagCarrierParts<'a> {
     }
 }
 
-impl CodecChainFlagCarrierSource for CodecChainFlagCarrier {
+impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierSource for CodecChainFlagCarrierOwned<S> {
     fn head(&self) -> u8 {
         self.head
     }
     fn entries(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone, 4, 1> {
-        self.entries.iter()
+        self.entries.list_iter()
     }
 }
 
 #[allow(dead_code)]
-impl CodecChainFlagCarrier {
+impl<'a> CodecChainFlagCarrier<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecChainFlagCarrierSource`]. A length, a count or a gate flag is computed from what
@@ -285,7 +339,7 @@ impl CodecChainFlagCarrier {
     }
 }
 
-impl<S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainFlagCarrier {
+impl<'a, S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainFlagCarrier<'a> {
     type Error<E> = CodecError;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
@@ -294,7 +348,7 @@ impl<S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::Source
 }
 
 #[allow(dead_code)]
-impl CodecChainFlagCarrier {
+impl<'a> CodecChainFlagCarrier<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written, or the refusal that encode would give. The result
     /// writes the frame into a window of exactly that size and cannot fail.
@@ -309,5 +363,113 @@ impl CodecChainFlagCarrier {
         let mut sink = ::sce_forge_runtime::codec::SliceSink::new(window);
         Self::write_source(src, &mut sink)?;
         Ok(sink.position())
+    }
+}
+
+
+// ── Owned projection (storage-parameterised native form) ─────────────
+// `CodecChainFlagCarrier<'a>` above is a zero-copy view borrowing the decode
+// buffer. Consumers that persist a decoded value beyond the buffer's
+// lifetime — including the self-contained bounded-collection that stores
+// elements by value — call `.try_into_owned()` for this lifetime-free
+// `CodecChainFlagCarrierOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split, both generated from the one SCXML source (SSOT).
+//
+// The owned form is parameterised by a storage profile rather than fixed at
+// build-configuration time: `CodecChainFlagCarrierOwned<Heap>` holds growable
+// containers with the declared capacities advisory, `CodecChainFlagCarrierOwned<Inline>`
+// holds every field inline at its declared capacity and never allocates, and
+// both exist in the same binary. `CodecChainFlagCarrierOwned` alone is the build's
+// default profile. Because the non-allocating profile is a *type*, this mirror
+// carries no `alloc` gate at all — a list- or embed-bearing codec has an owned
+// form on the heap-free tier too, and a heap-capable consumer can still pin a
+// value to storage that is guaranteed not to allocate.
+//
+// `try_into_owned` is the fallible direction (one `?` per profile: on the
+// growable profile the copy cannot fail, on the inline profile it enforces
+// each declared bound); `try_as_borrowed` re-borrows any profile back
+// into the single borrowed view that owns `encode`; `transcode_in` moves a
+// value between profiles as a checked projection rather than a re-decode.
+//
+// Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
+// Hand-assembling one instead names it on the value or its binding —
+// `let v: CodecChainFlagCarrierOwned = CodecChainFlagCarrierOwned { .. };`
+// — because the fields reach the profile through its associated container
+// types, which cannot be run backwards to recover the profile from a value.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+
+#[allow(dead_code)]
+impl<'a> CodecChainFlagCarrier<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecChainFlagCarrierOwned`] held in the given storage profile. Call at
+    /// a decode boundary when the decoded value must outlive the input
+    /// buffer — stored in a long-lived enum, moved across an async task, or
+    /// inserted by value into a bounded-collection.
+    ///
+    /// Fallible for profile uniformity. Every value of this type is within
+    /// each declared bound, since its lists, bytes and text hold their bounds
+    /// in their types (docs/adr/0077 §3), and the inline and growable profiles
+    /// hold each field at its bound, so the projection does not fail on them.
+    /// A profile whose capacity is below a bound raises
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecChainFlagCarrierFrom<'a>>(self) -> Result<CodecChainFlagCarrierOwned<S>, CodecError> {
+        Ok(CodecChainFlagCarrierOwned {
+            head: self.head,
+            entries: ::sce_forge_runtime::codec::try_collect_bounded(self.entries, Ok)?,
+        })
+    }
+
+    /// The same projection at the build's default storage profile — growable
+    /// where an allocator exists, inline on the heap-free tier.
+    pub fn try_into_owned(self) -> Result<CodecChainFlagCarrierOwned, CodecError> {
+        self.try_into_owned_in()
+    }
+}
+
+#[allow(dead_code)]
+impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierOwned<S> {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `try_into_owned_in`. `encode` lives only on the
+    /// borrowed view (the owned form is read-only), so an owned consumer
+    /// reaches it via `try_as_borrowed` then `encode` / `encode_to_vec`.
+    /// Each field is projected by reference — a cheap re-borrow, not a copy.
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list holding
+    /// more than its declared `N` raises `CodecError::TooManyElements` — the
+    /// same bound decode enforces. Only a growable profile can hold such a
+    /// list; on the inline profile the source is already within bounds.
+    pub fn try_as_borrowed(&self) -> Result<CodecChainFlagCarrier<'_>, CodecError> {
+        let mut _out = CodecChainFlagCarrier::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainFlagCarrier<'o>) -> Result<(), CodecError> {
+        _out.head = self.head;
+        _out.entries.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.entries.inner(), |_e| Ok(_e.clone())))?;
+        Ok(())
+    }
+
+    /// Move this value to a different storage profile — growable to inline
+    /// when handing it to a path that must not allocate, or inline to
+    /// growable when it is leaving that path.
+    ///
+    /// A checked projection through the borrowed view, not a re-decode: the
+    /// bytes are copied once and every destination capacity is enforced, so
+    /// a value that cannot fit the target profile is rejected here rather
+    /// than truncated.
+    pub fn transcode_in<D: for<'x> CodecChainFlagCarrierFrom<'x>>(&self) -> Result<CodecChainFlagCarrierOwned<D>, CodecError> {
+        self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }

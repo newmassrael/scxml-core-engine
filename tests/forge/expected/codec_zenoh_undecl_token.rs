@@ -23,15 +23,50 @@ use super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexpr;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+use super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprOwned;
+/// What `CodecZenohUndeclTokenIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohUndeclToken<'a> {
+pub trait CodecZenohUndeclTokenStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage> CodecZenohUndeclTokenStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecZenohUndeclTokenStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecZenohUndeclTokenFrom<'f>: CodecZenohUndeclTokenStorage + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprFrom<'f> {}
+
+impl<'f, S: CodecZenohUndeclTokenStorage + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprFrom<'f>> CodecZenohUndeclTokenFrom<'f> for S {}
+
+// `CodecZenohUndeclTokenIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecZenohUndeclToken<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecZenohUndeclTokenOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohUndeclTokenIn<S: CodecZenohUndeclTokenStorage> {
     pub id: u32,
-    pub ext_keyexpr: Option<CodecZenohDeclExtKeyexpr<'a>>,
+    pub ext_keyexpr: Option<CodecZenohDeclExtKeyexprOwned<S>>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecZenohUndeclToken<'a> = CodecZenohUndeclTokenIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecZenohUndeclTokenOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohUndeclTokenIn<S>;
+
+impl<S: CodecZenohUndeclTokenStorage> Default for CodecZenohUndeclTokenIn<S> {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            ext_keyexpr: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohUndeclToken<'a> {
+impl<S: CodecZenohUndeclTokenStorage> CodecZenohUndeclTokenIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -47,7 +82,7 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>, z: u8) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>, z: u8) -> Result<Self, CodecError> where S: CodecZenohUndeclTokenFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out, z)?;
         Ok(_out)
@@ -63,7 +98,24 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, z: u8) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self, z: u8) -> Result<(), CodecError> where S: CodecZenohUndeclTokenFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out, z) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecZenohUndeclToken::store_into(&mut _frame, &mut CodecZenohUndeclToken::default(), z)?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self, z: u8) -> Result<(), CodecError> where S: CodecZenohUndeclTokenFrom<'f> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -83,7 +135,7 @@ impl<'a> CodecZenohUndeclToken<'a> {
         // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let id = cursor.read_vle_u32()?;
         if (z & 0x01u8) != 0 {
-            CodecZenohDeclExtKeyexpr::decode_into(cursor, _out.ext_keyexpr.insert(CodecZenohDeclExtKeyexpr::default()))?;
+            CodecZenohDeclExtKeyexprOwned::<S>::decode_into(cursor, _out.ext_keyexpr.insert(CodecZenohDeclExtKeyexprOwned::<S>::default()))?;
         } else {
             _out.ext_keyexpr = None;
         }
@@ -102,8 +154,8 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecZenohUndeclToken::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -164,15 +216,6 @@ impl<'a> CodecZenohUndeclTokenSource for CodecZenohUndeclTokenParts<'a> {
     }
     fn ext_keyexpr(&self) -> Option<&impl super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprSource> {
         self.ext_keyexpr
-    }
-}
-
-impl<'a> CodecZenohUndeclTokenSource for CodecZenohUndeclToken<'a> {
-    fn id(&self) -> u32 {
-        self.id
-    }
-    fn ext_keyexpr(&self) -> Option<&impl super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprSource> {
-        self.ext_keyexpr.as_ref()
     }
 }
 
@@ -285,23 +328,6 @@ impl<'a> CodecZenohUndeclToken<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprOwned;
-/// What `CodecZenohUndeclTokenOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecZenohUndeclTokenStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage> CodecZenohUndeclTokenStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohUndeclTokenOwned<S: CodecZenohUndeclTokenStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub id: u32,
-    pub ext_keyexpr: Option<CodecZenohDeclExtKeyexprOwned<S>>,
-}
 
 #[allow(dead_code)]
 impl<'a> CodecZenohUndeclToken<'a> {
@@ -317,7 +343,7 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecZenohUndeclTokenStorage>(self) -> Result<CodecZenohUndeclTokenOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohUndeclTokenFrom<'a>>(self) -> Result<CodecZenohUndeclTokenOwned<S>, CodecError> {
         Ok(CodecZenohUndeclTokenOwned {
             id: self.id,
             ext_keyexpr: self.ext_keyexpr.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
@@ -371,32 +397,7 @@ impl<S: CodecZenohUndeclTokenStorage> CodecZenohUndeclTokenOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecZenohUndeclTokenStorage>(&self) -> Result<CodecZenohUndeclTokenOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecZenohUndeclTokenFrom<'x>>(&self) -> Result<CodecZenohUndeclTokenOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohUndeclTokenStorage> CodecZenohUndeclTokenOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecZenohUndeclToken::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohUndeclToken::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohUndeclToken::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

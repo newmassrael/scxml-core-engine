@@ -329,10 +329,11 @@ fn validator_result_emits_debug_only() {
     );
 }
 
-/// Codec owned mirror (`{Struct}Owned`) reuses the wire-typed codec
-/// trio through the SSOT — it cannot drift from the borrowed struct.
+/// A codec's one storing type (`{Struct}In`) carries the wire-typed codec trio
+/// through the SSOT, and the `Default` it needs by hand, since a derive would
+/// ask it of the profile.
 #[test]
-fn codec_owned_mirror_emits_ssot_trio() {
+fn codec_storing_type_emits_ssot_trio() {
     let out = scratch("codec_owned");
     run_generate(
         &out,
@@ -340,14 +341,14 @@ fn codec_owned_mirror_emits_ssot_trio() {
     );
     let src = read_emitted_rs(&out);
     let before = src
-        .split("pub struct CodecZenohDeclareOwned")
+        .split("pub struct CodecZenohDeclareIn")
         .next()
         .unwrap_or("");
     assert!(
         before
             .trim_end()
             .ends_with("#[derive(Debug, Clone, PartialEq)]"),
-        "codec owned mirror must carry the codec trio via SSOT; got:\n{src}"
+        "a codec's storing type must carry the codec trio via SSOT; got:\n{src}"
     );
 }
 

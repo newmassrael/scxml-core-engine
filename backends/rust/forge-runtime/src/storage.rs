@@ -82,9 +82,27 @@ pub trait SceList<T>: Sized {
     /// fixed-capacity list is full. The growable implementation never fails.
     fn try_push(&mut self, value: T) -> Result<(), CodecError>;
 
+    /// Empty the list, keeping what it has reserved.
+    fn clear(&mut self);
+
     /// Read the elements back as a slice — the input to the owned→borrowed
     /// projection, which re-bounds them into the borrowed view's inline list.
     fn as_slice(&self) -> &[T];
+
+    /// The last element, where a decode builds an entry in place.
+    fn last_mut(&mut self) -> Option<&mut T>;
+
+    /// Take out the element at `at`, closing the gap, which a chain's named
+    /// entry leaves. `at` is within the list.
+    fn remove_at(&mut self, at: usize);
+}
+
+/// A [`SceList`] that says what it holds, so a bound can reach the entries from
+/// the list alone: a chain's membership asks every list a profile can hold
+/// through this one trait (docs/adr/0065 §6 R6).
+pub trait HeldList: SceList<<Self as HeldList>::Entry> {
+    /// What the list holds.
+    type Entry;
 }
 
 /// Owned text storage for a codec's `string` field.
@@ -107,29 +125,155 @@ pub trait SceByteBuf: Sized {
     fn as_slice(&self) -> &[u8];
 }
 
+/// What a `bytes` field is held in and read from: a buffer a profile owns, or
+/// the frame's own bytes on [`Lent`], which no slice can be copied into.
+pub trait HeldBytes {
+    /// The bytes.
+    fn held_bytes(&self) -> &[u8];
+}
+
+impl<B: SceByteBuf> HeldBytes for B {
+    fn held_bytes(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl HeldBytes for &[u8] {
+    fn held_bytes(&self) -> &[u8] {
+        self
+    }
+}
+
+/// What a `string` field is held in and read from, as [`HeldBytes`] is for a
+/// `bytes` field.
+pub trait HeldStr {
+    /// The text.
+    fn held_str(&self) -> &str;
+}
+
+impl<T: SceStr> HeldStr for T {
+    fn held_str(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl HeldStr for &str {
+    fn held_str(&self) -> &str {
+        self
+    }
+}
+
 /// What a profile holds the `<sce:repeat>` or `<sce:tlv-chain>` field `Tag` in.
 ///
-/// It reads as [`crate::bounded::Entries`], so an owned list held as a
-/// [`crate::bounded::Bounded`] presents its entries with their count. The
-/// bounds are what the generated `#[derive(Debug, Clone, PartialEq)]` on an
-/// owned struct needs: a derived impl reasons about the field types.
+/// It reads as [`crate::bounded::Entries`], so a list held as a
+/// [`crate::bounded::Bounded`] presents its entries with their count, and its
+/// default is the fewest entries its bounds admit
+/// ([`crate::bounded::Fewest`]). The bounds are what the generated
+/// `#[derive(Debug, Clone, PartialEq)]` on a value needs: a derived impl
+/// reasons about the field types.
 pub trait HoldsList<Tag> {
     /// The list of entries `T`.
-    type List<T>: SceList<T> + crate::bounded::Entries + core::fmt::Debug + Clone + PartialEq
+    type List<T>: HeldList<Entry = T>
+        + SceList<T>
+        + crate::bounded::Entries
+        + crate::bounded::Fewest
+        + Default
+        + IntoIterator<Item = T>
+        + core::fmt::Debug
+        + Clone
+        + PartialEq
     where
-        T: core::fmt::Debug + Clone + PartialEq;
+        T: Default + core::fmt::Debug + Clone + PartialEq;
 }
 
 /// What a profile holds the `string` field `Tag` in.
 pub trait HoldsStr<Tag> {
     /// The text.
-    type Str: SceStr + core::fmt::Debug + Clone + PartialEq;
+    type Str: HeldStr + crate::bounded::Fewest + core::fmt::Debug + Clone + PartialEq;
 }
 
 /// What a profile holds the `bytes` field `Tag` in.
 pub trait HoldsBytes<Tag> {
     /// The bytes.
-    type Bytes: SceByteBuf + core::fmt::Debug + Clone + PartialEq;
+    type Bytes: HeldBytes + crate::bounded::Fewest + core::fmt::Debug + Clone + PartialEq;
+}
+
+/// How a profile holds the `bytes` field `Tag` when it reads a frame of the
+/// lifetime `'f`. A profile that copies takes a frame of any lifetime, and
+/// [`Lent`] one that outlives it.
+pub trait StoresBytes<'f, Tag>: HoldsBytes<Tag> {
+    /// `view`, as the field holds it.
+    fn store_bytes(view: &'f [u8]) -> Result<Self::Bytes, CodecError>;
+}
+
+/// How a profile holds the `string` field `Tag` when it reads a frame of the
+/// lifetime `'f`, as [`StoresBytes`] is for a `bytes` field.
+pub trait StoresStr<'f, Tag>: HoldsStr<Tag> {
+    /// `view`, as the field holds it.
+    fn store_str(view: &'f str) -> Result<Self::Str, CodecError>;
+}
+
+/// A profile that copies a frame's bytes and text into its own containers, so
+/// it reads a frame of any lifetime. A deployment's file says this of its type.
+pub trait Copying {}
+
+impl<'f, Tag, S> StoresBytes<'f, Tag> for S
+where
+    S: Copying + HoldsBytes<Tag>,
+    S::Bytes: SceByteBuf,
+{
+    fn store_bytes(view: &'f [u8]) -> Result<Self::Bytes, CodecError> {
+        <S::Bytes as SceByteBuf>::from_slice(view)
+    }
+}
+
+impl<'f, Tag, S> StoresStr<'f, Tag> for S
+where
+    S: Copying + HoldsStr<Tag>,
+    S::Str: SceStr,
+{
+    fn store_str(view: &'f str) -> Result<Self::Str, CodecError> {
+        <S::Str as SceStr>::from_view(view)
+    }
+}
+
+/// The eager form's profile: bytes and text are the frame's own, and lists are
+/// held as the profile `D` holds them.
+///
+/// A field that borrows stores nothing, so it asks for no capacity (docs/adr/0077
+/// §7). What holds a list is the only thing a deployment decides here.
+///
+/// A value on this profile is invariant in `'a`, unlike a view: its fields are
+/// associated types of the profile, and Rust does not see through one. A
+/// function that takes it takes it at its own lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lent<'a, D = Inline>(core::marker::PhantomData<(&'a (), D)>);
+
+impl<'a, D, Tag> HoldsBytes<Tag> for Lent<'a, D> {
+    type Bytes = &'a [u8];
+}
+
+impl<'a, D, Tag> HoldsStr<Tag> for Lent<'a, D> {
+    type Str = &'a str;
+}
+
+impl<'a, D: HoldsList<Tag>, Tag> HoldsList<Tag> for Lent<'a, D> {
+    type List<T>
+        = D::List<T>
+    where
+        T: Default + core::fmt::Debug + Clone + PartialEq;
+}
+
+impl<'f: 'a, 'a, D, Tag> StoresBytes<'f, Tag> for Lent<'a, D> {
+    fn store_bytes(view: &'f [u8]) -> Result<&'a [u8], CodecError> {
+        Ok(view)
+    }
+}
+
+impl<'f: 'a, 'a, D, Tag> StoresStr<'f, Tag> for Lent<'a, D> {
+    fn store_str(view: &'f str) -> Result<&'a str, CodecError> {
+        Ok(view)
+    }
 }
 
 /// A storage profile whose byte and text containers are made WITH knowledge of
@@ -224,6 +368,10 @@ pub struct Heap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Inline;
 
+#[cfg(feature = "alloc")]
+impl Copying for Heap {}
+impl Copying for Inline {}
+
 /// The bytes [`Heap`] holds: growable, for a field of any bound.
 #[cfg(feature = "alloc")]
 pub type GrowBytes = HeapBytes<{ usize::MAX }>;
@@ -249,7 +397,7 @@ impl<Tag> HoldsList<Tag> for Heap {
     type List<T>
         = alloc::vec::Vec<T>
     where
-        T: core::fmt::Debug + Clone + PartialEq;
+        T: Default + core::fmt::Debug + Clone + PartialEq;
 }
 
 #[cfg(feature = "alloc")]
@@ -275,9 +423,26 @@ impl<T> SceList<T> for alloc::vec::Vec<T> {
         Ok(())
     }
 
+    fn clear(&mut self) {
+        self.clear();
+    }
+
     fn as_slice(&self) -> &[T] {
         self.as_slice()
     }
+
+    fn last_mut(&mut self) -> Option<&mut T> {
+        self.as_mut_slice().last_mut()
+    }
+
+    fn remove_at(&mut self, at: usize) {
+        self.remove(at);
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> HeldList for alloc::vec::Vec<T> {
+    type Entry = T;
 }
 
 impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
@@ -289,9 +454,25 @@ impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
         self.push(value).map_err(|_| CodecError::CapacityExceeded)
     }
 
+    fn clear(&mut self) {
+        self.clear();
+    }
+
     fn as_slice(&self) -> &[T] {
         self.as_slice()
     }
+
+    fn last_mut(&mut self) -> Option<&mut T> {
+        self.as_mut_slice().last_mut()
+    }
+
+    fn remove_at(&mut self, at: usize) {
+        self.remove(at);
+    }
+}
+
+impl<T, const N: usize> HeldList for heapless::Vec<T, N> {
+    type Entry = T;
 }
 
 // ── text containers ──────────────────────────────────────────────
@@ -429,8 +610,8 @@ mod tests {
         impl HoldsStr<Note> for Inline {
             type Str = InlineStr<8>;
         }
-        fn text<S: HoldsStr<Note>>(src: &str) -> Result<S::Str, CodecError> {
-            <S::Str as SceStr>::from_view(src)
+        fn text<'f, S: StoresStr<'f, Note>>(src: &'f str) -> Result<S::Str, CodecError> {
+            S::store_str(src)
         }
         assert_eq!(text::<Heap>("ok").unwrap().as_str(), "ok");
         assert_eq!(text::<Inline>("ok").unwrap().as_str(), "ok");

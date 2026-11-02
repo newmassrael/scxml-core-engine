@@ -22,8 +22,8 @@
 //!   the entry's bound, inside a `Bounded` of its bounds (docs/adr/0077 §3, §7),
 //!   every other entry as the view holds it, and an entry that may be absent stays
 //!   an `Option` of it.
-//! * `try_into_owned_in::<S>()` copies each of them with `Bounded::copied_text` or
-//!   `Bounded::copied` and a `?`, which carries the bounds over and refuses only for
+//! * `try_into_owned_in::<S>()` stores each of them as `S` stores its tag, with
+//!   `Bounded::store` and a `?`, which carries the bounds over and refuses only for
 //!   a profile whose capacity is below them; `try_into_owned()` is the default
 //!   profile's.
 //! * The owned form is re-encoded exactly as the view is, through the codec's
@@ -223,18 +223,18 @@ fn the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are(
         &code,
         &[
             "impl<'a> ProbeCbor<'a> {",
-            "pub fn try_into_owned_in<S: ProbeCborStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+            "pub fn try_into_owned_in<S: ProbeCborFrom<'a>>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
             "        Ok(ProbeCborOwned {",
-            "            note: ::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,",
-            "            blob: ::sce_forge_runtime::codec::Bounded::copied(self.blob)?,",
-            "            tag: ::sce_forge_runtime::codec::Bounded::copied(self.tag)?,",
-            "            label: self.label.map(::sce_forge_runtime::codec::Bounded::copied_text).transpose()?,",
-            "            extra: self.extra.map(::sce_forge_runtime::codec::Bounded::copied).transpose()?,",
+            "            note: self.note.store::<S, ProbeCborNoteField>()?,",
+            "            blob: self.blob.store::<S, ProbeCborBlobField>()?,",
+            "            tag: self.tag.store::<S, ProbeCborTagField>()?,",
+            "            label: self.label.map(|held| held.store::<S, ProbeCborLabelField>()).transpose()?,",
+            "            extra: self.extra.map(|held| held.store::<S, ProbeCborExtraField>()).transpose()?,",
             "            level: self.level,",
             "            urgent: self.urgent,",
             // The default profile's form, and the move between profiles.
             "pub fn try_into_owned(self) -> Result<ProbeCborOwned, CodecError> {\n        self.try_into_owned_in()\n    }",
-            "pub fn transcode_in<D: ProbeCborStorage>(&self) -> Result<ProbeCborOwned<D>, CodecError> {\n        self.as_borrowed().try_into_owned_in::<D>()\n    }",
+            "pub fn transcode_in<D: for<'x> ProbeCborFrom<'x>>(&self) -> Result<ProbeCborOwned<D>, CodecError> {\n        self.as_borrowed().try_into_owned_in::<D>()\n    }",
         ],
     );
 }
@@ -287,7 +287,7 @@ fn the_origin_projection_has_the_signature_every_other_owned_form_has() {
             // The same method, over the same origin parameter, for a profile that is an
             // `OriginStorage`; the copying projection is still there beside it.
             "pub fn try_into_owned_in_origin<S: ProbeCborStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<ProbeCborOwned<S>, CodecError> {\n        Ok(ProbeCborOwned {",
-            "pub fn try_into_owned_in<S: ProbeCborStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+            "pub fn try_into_owned_in<S: ProbeCborFrom<'a>>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
         ],
     );
 }
@@ -331,15 +331,15 @@ fn the_default_output_has_no_origin_projection() {
         "str_from",
         "bytes_from",
     ] {
-        // None of these is a name the default module has: it copies through
-        // `Bounded::copied` and `Bounded::copied_text`.
+        // None of these is a name the default module has: it stores through
+        // `Bounded::store`.
         assert!(
             !code.contains(absent),
             "`{absent}` in the default output:\n{code}"
         );
     }
     // The copying projection is the one the default output has.
-    assert_holds(&code, &["pub fn try_into_owned_in<S: ProbeCborStorage>"]);
+    assert_holds(&code, &["pub fn try_into_owned_in<S: ProbeCborFrom<'a>>"]);
 }
 
 #[test]

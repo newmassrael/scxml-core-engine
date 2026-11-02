@@ -357,6 +357,16 @@ are one value held two ways. So:
   path. It reads once, from the decode body it shares with the view, and only the path past a capacity reads the frame
   a second time, as store after parse already says. So the view decides a frame's validity and is not what storing is
   built on: the law stands that a form that stores refuses with `CapacityExceeded` only a frame the view accepts.
+- **The judgement stands on every codec that takes a profile, in every tree.** A capacity below a bound is not a fact a
+  tree can know once `S` is a parameter: a program may name such a profile with no deployment. So the path past a
+  capacity is generated wherever a profile is taken. It judges by the view where the tree has views, since a view holds
+  no entry, and by the codec's lent form where it has none, since `Lent` holds a list at its bound and cannot run out.
+  A body with no view of its own judges by its lent form too. The lent form is the costlier judge, a whole value on the
+  stack, which is why the view is taken where it exists and why a deployment's tree has views.
+- **A CBOR codec keeps its two types.** Its `{Codec}<'a>` already is a view: it stores nothing, holds no list, and is
+  covariant, and its decode cannot run out. `{Codec}Owned<S>` is what stores, and it is built from that value after the
+  whole map has parsed, so store after parse holds by construction. Moving it onto `{Codec}In<S>` would give up the
+  covariance and gain nothing. One storing type means one here too.
 
 ## Alternatives
 

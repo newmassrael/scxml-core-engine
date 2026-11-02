@@ -9,7 +9,7 @@
     A child codec compiled under a build feature cannot be a plain supertrait,
     since an attribute does not go on one: it is reached through a trait of its
     own, which asks for nothing in a build without the feature (docs/adr/0072). #}
-{%- macro declare(struct_name, runtime, fields, gated, bound) %}
+{%- macro declare(struct_name, runtime, fields, gated, bound, from_bound) %}
 {% for field in fields %}
 /// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile
 /// answers for by this type.
@@ -18,7 +18,7 @@ pub struct {{ field.tag }};
 
 impl {{ runtime }}::Holds{{ field.kind }}<{{ field.tag }}> for {{ runtime }}::Inline {
 {% if field.kind == "List" %}
-    type List<T> = ::sce_forge_runtime::heapless::Vec<T, {{ field.capacity }}> where T: ::core::fmt::Debug + Clone + PartialEq;
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, {{ field.capacity }}> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
 {% elif field.kind == "Str" %}
     type Str = {{ runtime }}::InlineStr<{{ field.capacity }}>;
 {% else %}
@@ -42,11 +42,31 @@ pub trait {{ child.helper }} {}
 {{ child.cfg_off }}
 impl<S> {{ child.helper }} for S {}
 
+{{ child.cfg }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}From<'f>: {{ child.from_bound }} {}
+
+{{ child.cfg }}
+impl<'f, S: {{ child.from_bound }}> {{ child.helper }}From<'f> for S {}
+
+{{ child.cfg_off }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}From<'f> {}
+
+{{ child.cfg_off }}
+impl<S> {{ child.helper }}From<'_> for S {}
+
 {% endfor %}
-/// What `{{ struct_name }}Owned` and the codecs it holds ask of a storage
-/// profile.
+/// What `{{ struct_name }}In` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
 pub trait {{ struct_name }}Storage: {{ bound }} {}
 
 impl<S: {{ bound }}> {{ struct_name }}Storage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside {{ struct_name }}Storage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait {{ struct_name }}From<'f>: {{ from_bound }} {}
+
+impl<'f, S: {{ from_bound }}> {{ struct_name }}From<'f> for S {}
 {% endmacro %}

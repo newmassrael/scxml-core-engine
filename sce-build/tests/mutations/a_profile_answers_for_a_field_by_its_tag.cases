@@ -33,10 +33,15 @@ PY
 
 mutation_case "a gated arm's storage trait is a plain supertrait" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''            None => bound.push(child.clone()),
+     r'''                from_bound.push(child_from);
+            }
             Some(cfg) => {''',
-     r'''            None => bound.push(child.clone()),
-            Some(_) if i < usize::MAX => bound.push(child.clone()),
+     r'''                from_bound.push(child_from);
+            }
+            Some(_) if i < usize::MAX => {
+                bound.push(child_bound);
+                from_bound.push(child_from);
+            }
             Some(cfg) => {''')
 PY
 

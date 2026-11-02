@@ -544,8 +544,7 @@ impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
     type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
 }
 
-/// What `EnvelopeOwned` and the codecs it holds ask of a storage
-/// profile.
+/// What `EnvelopeIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
 pub trait EnvelopeStorage:
     ::core::fmt::Debug
@@ -585,6 +584,47 @@ impl<
             + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
             + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>,
     > EnvelopeStorage for S
+{
+}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside EnvelopeStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait EnvelopeFrom<'f>:
+    EnvelopeStorage
+    + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeSourceField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeEventTypeField>
+    + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeDataField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeSubjectField>
+    + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeCorrelationIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeReplyToField>
+    + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeInvokeIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRpcErrorMessageField>
+    + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeRoutingIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeParallelIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRegionIdField>
+    + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeChildSessionIdField>
+{
+}
+
+impl<
+        'f,
+        S: EnvelopeStorage
+            + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeSourceField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeEventTypeField>
+            + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeDataField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeSubjectField>
+            + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeCorrelationIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeReplyToField>
+            + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeInvokeIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRpcErrorMessageField>
+            + ::sce_forge_runtime::codec::StoresBytes<'f, EnvelopeRoutingIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeParallelIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeRegionIdField>
+            + ::sce_forge_runtime::codec::StoresStr<'f, EnvelopeChildSessionIdField>,
+    > EnvelopeFrom<'f> for S
 {
 }
 
@@ -703,53 +743,53 @@ impl<'a> Envelope<'a> {
     /// view is within its bounds, which its type holds (docs/adr/0077 §3), and
     /// the inline and growable profiles hold each at its bound, so the copy
     /// does not fail on them; a profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements`.
-    pub fn try_into_owned_in<S: EnvelopeStorage>(self) -> Result<EnvelopeOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded`.
+    pub fn try_into_owned_in<S: EnvelopeFrom<'a>>(self) -> Result<EnvelopeOwned<S>, CodecError> {
         Ok(EnvelopeOwned {
-            id: ::sce_forge_runtime::codec::Bounded::copied(self.id)?,
-            source: ::sce_forge_runtime::codec::Bounded::copied_text(self.source)?,
-            event_type: ::sce_forge_runtime::codec::Bounded::copied_text(self.event_type)?,
+            id: self.id.store::<S, EnvelopeIdField>()?,
+            source: self.source.store::<S, EnvelopeSourceField>()?,
+            event_type: self.event_type.store::<S, EnvelopeEventTypeField>()?,
             pattern: self.pattern,
             datacontenttype: self.datacontenttype,
-            data: ::sce_forge_runtime::codec::Bounded::copied(self.data)?,
+            data: self.data.store::<S, EnvelopeDataField>()?,
             subject: self
                 .subject
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeSubjectField>())
                 .transpose()?,
             correlation_id: self
                 .correlation_id
-                .map(::sce_forge_runtime::codec::Bounded::copied)
+                .map(|held| held.store::<S, EnvelopeCorrelationIdField>())
                 .transpose()?,
             reply_to: self
                 .reply_to
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeReplyToField>())
                 .transpose()?,
             invoke_id: self
                 .invoke_id
-                .map(::sce_forge_runtime::codec::Bounded::copied)
+                .map(|held| held.store::<S, EnvelopeInvokeIdField>())
                 .transpose()?,
             rpc_status: self.rpc_status,
             rpc_error_message: self
                 .rpc_error_message
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeRpcErrorMessageField>())
                 .transpose()?,
             deadline_unix_ms: self.deadline_unix_ms,
             sequence_no: self.sequence_no,
             routing_id: self
                 .routing_id
-                .map(::sce_forge_runtime::codec::Bounded::copied)
+                .map(|held| held.store::<S, EnvelopeRoutingIdField>())
                 .transpose()?,
             parallel_id: self
                 .parallel_id
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeParallelIdField>())
                 .transpose()?,
             region_id: self
                 .region_id
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeRegionIdField>())
                 .transpose()?,
             child_session_id: self
                 .child_session_id
-                .map(::sce_forge_runtime::codec::Bounded::copied_text)
+                .map(|held| held.store::<S, EnvelopeChildSessionIdField>())
                 .transpose()?,
         })
     }
@@ -797,7 +837,9 @@ impl<S: EnvelopeStorage> EnvelopeOwned<S> {
     /// A checked projection through the view, not a re-decode: the bytes are
     /// copied once and every destination capacity is enforced, so a value that
     /// cannot fit the target profile is rejected here rather than truncated.
-    pub fn transcode_in<D: EnvelopeStorage>(&self) -> Result<EnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> EnvelopeFrom<'x>>(
+        &self,
+    ) -> Result<EnvelopeOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 

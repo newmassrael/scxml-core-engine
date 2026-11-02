@@ -16,12 +16,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-// RFC §synth-5-B B2/B3: bounded inline list storage for repeat / tlv-chain
-// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
-// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
-// available (no `alloc` gate) so list-bearing codecs compile on the
-// pure no_std no-alloc MCU tier.
-use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_nested_body::CodecNestedBody;
 
@@ -32,18 +26,65 @@ use super::codec_nested_body::CodecNestedBodyView;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+use super::codec_nested_body::CodecNestedBodyOwned;
+/// The field `body_list` of `CodecNestedParent`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecNestedParent<'a> {
+pub struct CodecNestedParentBodyListField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecNestedParentIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecNestedParentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyStorage> CodecNestedParentStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecNestedParentStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecNestedParentFrom<'f>: CodecNestedParentStorage + super::codec_nested_body::CodecNestedBodyFrom<'f> {}
+
+impl<'f, S: CodecNestedParentStorage + super::codec_nested_body::CodecNestedBodyFrom<'f>> CodecNestedParentFrom<'f> for S {}
+
+// `CodecNestedParentIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecNestedParent<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecNestedParentOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecNestedParentIn<S: CodecNestedParentStorage> {
     pub hdr: u8,
     pub m: u8,
-    pub required_body: CodecNestedBody<'a>,
-    pub optional_body: Option<CodecNestedBody<'a>>,
-    pub body_list: HeaplessVec<CodecNestedBody<'a>, 4>,
+    pub required_body: CodecNestedBodyOwned<S>,
+    pub optional_body: Option<CodecNestedBodyOwned<S>>,
+    pub body_list: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField>>::List<CodecNestedBodyOwned<S>>, 4>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecNestedParent<'a> = CodecNestedParentIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecNestedParentOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecNestedParentIn<S>;
+
+impl<S: CodecNestedParentStorage> Default for CodecNestedParentIn<S> {
+    fn default() -> Self {
+        Self {
+            hdr: Default::default(),
+            m: Default::default(),
+            required_body: Default::default(),
+            optional_body: Default::default(),
+            body_list: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecNestedParent<'a> {
+impl<S: CodecNestedParentStorage> CodecNestedParentIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -59,7 +100,7 @@ impl<'a> CodecNestedParent<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecNestedParentFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -75,7 +116,24 @@ impl<'a> CodecNestedParent<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecNestedParentFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecNestedParentView::decode(&mut _frame)?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecNestedParentFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -100,23 +158,21 @@ impl<'a> CodecNestedParent<'a> {
             cursor.advance(1)?;
             _v
         };
-        CodecNestedBody::decode_into(cursor, &mut _out.required_body)?;
+        CodecNestedBodyOwned::<S>::decode_into(cursor, &mut _out.required_body)?;
         if (hdr & 0x01u8) != 0 {
-            CodecNestedBody::decode_into(cursor, _out.optional_body.insert(CodecNestedBody::default()))?;
+            CodecNestedBodyOwned::<S>::decode_into(cursor, _out.optional_body.insert(CodecNestedBodyOwned::<S>::default()))?;
         } else {
             _out.optional_body = None;
         }
-        {
-            if m > 4 {
+        if m > 4 {
                 return Err(CodecError::TooManyElements);
             }
-            let _vec = &mut _out.body_list;
-            _vec.clear();
+            _out.body_list.refill(|_vec| {
             for _ in 0..m {
-                _vec.push(CodecNestedBody::decode(cursor)?)
-                    .map_err(|_| CodecError::CapacityExceeded)?;
+                ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecNestedBodyOwned::<S>::decode(cursor)?)?;
             }
-        }
+            Ok(())
+        })?;
         _out.hdr = hdr;
         _out.m = m;
         Ok(())
@@ -151,8 +207,8 @@ impl<'a> CodecNestedParent<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecNestedParent::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -236,7 +292,7 @@ impl<'a> CodecNestedParentSource for CodecNestedParentParts<'a> {
     }
 }
 
-impl<'a> CodecNestedParentSource for CodecNestedParent<'a> {
+impl<S: CodecNestedParentStorage> CodecNestedParentSource for CodecNestedParentOwned<S> {
     fn hdr(&self) -> u8 {
         self.hdr
     }
@@ -247,7 +303,7 @@ impl<'a> CodecNestedParentSource for CodecNestedParent<'a> {
         self.optional_body.as_ref()
     }
     fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
-        ::sce_forge_runtime::codec::BoundedIter::from(&self.body_list)
+        self.body_list.list_iter()
     }
 }
 
@@ -263,21 +319,6 @@ impl<'a> CodecNestedParentSource for CodecNestedParentView<'a> {
     }
     fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
         self.body_list.iter()
-    }
-}
-
-impl<S: CodecNestedParentStorage> CodecNestedParentSource for CodecNestedParentOwned<S> {
-    fn hdr(&self) -> u8 {
-        self.hdr
-    }
-    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource {
-        &self.required_body
-    }
-    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
-        self.optional_body.as_ref()
-    }
-    fn body_list(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone, 4> {
-        self.body_list.list_iter()
     }
 }
 
@@ -473,13 +514,15 @@ impl<'a> CodecNestedParentView<'a> {
             Some(_b) => _b.into_builder(_out.optional_body.insert(CodecNestedBody::default()))?,
             None => _out.optional_body = None,
         }
-        _out.body_list.clear();
-        for _e in self.body_list.iter() {
-            _out.body_list.push(CodecNestedBody::default()).map_err(|_| CodecError::CapacityExceeded)?;
-            if let Some(_slot) = _out.body_list.last_mut() {
-                _e.into_builder(_slot)?;
+        _out.body_list.refill(|_vec| {
+            for _e in self.body_list.iter() {
+                _vec.push(CodecNestedBody::default()).map_err(|_| CodecError::CapacityExceeded)?;
+                if let Some(_slot) = _vec.last_mut() {
+                    _e.into_builder(_slot)?;
+                }
             }
-        }
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -544,48 +587,6 @@ impl<'a> CodecNestedParentView<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_nested_body::CodecNestedBodyOwned;
-/// The field `body_list` of `CodecNestedParent`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecNestedParentBodyListField;
-
-impl ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> for ::sce_forge_runtime::codec::Inline {
-    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: ::core::fmt::Debug + Clone + PartialEq;
-}
-
-/// What `CodecNestedParentOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecNestedParentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyStorage> CodecNestedParentStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecNestedParentOwned<S: CodecNestedParentStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub hdr: u8,
-    pub m: u8,
-    pub required_body: CodecNestedBodyOwned<S>,
-    pub optional_body: Option<CodecNestedBodyOwned<S>>,
-    pub body_list: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField>>::List<CodecNestedBodyOwned<S>>, 4>,
-}
-
-#[allow(dead_code)]
-impl<S: CodecNestedParentStorage> CodecNestedParentOwned<S> {
-    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
-    // bit getters over the copied carrier (rkyv Archived↔native getter
-    // parity), so owned consumers read `{Codec}Owned` with the same API as
-    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
-    // Read-only — write accessors belong with an owned-encode path, which
-    // does not exist yet.
-    pub fn has_opt(&self) -> bool {
-        (self.hdr & 0x01) != 0
-    }
-}
 
 #[allow(dead_code)]
 impl<'a> CodecNestedParent<'a> {
@@ -601,7 +602,7 @@ impl<'a> CodecNestedParent<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecNestedParentStorage>(self) -> Result<CodecNestedParentOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecNestedParentFrom<'a>>(self) -> Result<CodecNestedParentOwned<S>, CodecError> {
         Ok(CodecNestedParentOwned {
             hdr: self.hdr,
             m: self.m,
@@ -653,7 +654,7 @@ impl<S: CodecNestedParentStorage> CodecNestedParentOwned<S> {
             Some(_v) => _v.try_as_borrowed_into(_out.optional_body.insert(Default::default()))?,
             None => _out.optional_body = None,
         }
-        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.body_list, self.body_list.inner(), |_e| _e.try_as_borrowed())?;
+        _out.body_list.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.body_list.inner(), |_e| _e.try_as_borrowed()))?;
         Ok(())
     }
 
@@ -665,32 +666,7 @@ impl<S: CodecNestedParentStorage> CodecNestedParentOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecNestedParentStorage>(&self) -> Result<CodecNestedParentOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecNestedParentFrom<'x>>(&self) -> Result<CodecNestedParentOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecNestedParentStorage> CodecNestedParentOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `try_as_borrowed` followed by
-    /// [`CodecNestedParent::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecNestedParent::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecNestedParent::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

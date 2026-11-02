@@ -14,7 +14,7 @@
 
 mutation_tests -p sce-build --features cli --test forge_conformance
 mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs
-mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
@@ -30,26 +30,26 @@ edit("sce-build/src/forge/model.rs",
 PY
 
 mutation_case "a full list says its frame is malformed" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
-                     }}\n        \
-                 }}"
-            )
-        }''',
-     r'''                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::TooManyElements)?;\n            \
-                     }}\n        \
-                 }}"
-            )
-        }''')
+edit("backends/rust/forge-runtime/src/storage.rs",
+     r'''    fn try_push(&mut self, value: T) -> Result<(), CodecError> {
+        self.push(value).map_err(|_| CodecError::CapacityExceeded)
+    }''',
+     r'''    fn try_push(&mut self, value: T) -> Result<(), CodecError> {
+        self.push(value).map_err(|_| CodecError::TooManyElements)
+    }''')
 PY
 
 mutation_case "a frame is called too big to hold before it is judged whole" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
      r'''                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
+{% else %}
+                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
+{% endif %}
                 Err(CodecError::CapacityExceeded)''',
      r'''                let _ = &mut _frame;
+{% else %}
+                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
+{% endif %}
                 Err(CodecError::CapacityExceeded)''')
 PY
 

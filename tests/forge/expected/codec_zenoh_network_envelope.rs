@@ -64,49 +64,102 @@ impl ::sce_forge_runtime::codec::UnknownTag for CodecZenohNetworkEnvelopeUnknown
     }
 }
 
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec). The kind-agnostic conformance harness only references a
+// subset of fixtures, so unused-but-pub fields/methods would otherwise
+// trigger dead_code on every codec build.
+use super::codec_zenoh_interest::CodecZenohInterestOwned;
+use super::codec_zenoh_response_final::CodecZenohResponseFinalOwned;
+use super::codec_zenoh_response::CodecZenohResponseOwned;
+use super::codec_zenoh_request::CodecZenohRequestOwned;
+use super::codec_zenoh_declare::CodecZenohDeclareOwned;
+use super::codec_zenoh_oam::CodecZenohOamOwned;
+/// What `CodecZenohNetworkEnvelopeIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecZenohNetworkEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalStorage + super::codec_zenoh_response::CodecZenohResponseStorage + super::codec_zenoh_request::CodecZenohRequestStorage + super::codec_zenoh_declare::CodecZenohDeclareStorage + super::codec_zenoh_oam::CodecZenohOamStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalStorage + super::codec_zenoh_response::CodecZenohResponseStorage + super::codec_zenoh_request::CodecZenohRequestStorage + super::codec_zenoh_declare::CodecZenohDeclareStorage + super::codec_zenoh_oam::CodecZenohOamStorage> CodecZenohNetworkEnvelopeStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecZenohNetworkEnvelopeStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecZenohNetworkEnvelopeFrom<'f>: CodecZenohNetworkEnvelopeStorage + super::codec_zenoh_interest::CodecZenohInterestFrom<'f> + super::codec_zenoh_response_final::CodecZenohResponseFinalFrom<'f> + super::codec_zenoh_response::CodecZenohResponseFrom<'f> + super::codec_zenoh_request::CodecZenohRequestFrom<'f> + super::codec_zenoh_declare::CodecZenohDeclareFrom<'f> + super::codec_zenoh_oam::CodecZenohOamFrom<'f> {}
+
+impl<'f, S: CodecZenohNetworkEnvelopeStorage + super::codec_zenoh_interest::CodecZenohInterestFrom<'f> + super::codec_zenoh_response_final::CodecZenohResponseFinalFrom<'f> + super::codec_zenoh_response::CodecZenohResponseFrom<'f> + super::codec_zenoh_request::CodecZenohRequestFrom<'f> + super::codec_zenoh_declare::CodecZenohDeclareFrom<'f> + super::codec_zenoh_oam::CodecZenohOamFrom<'f>> CodecZenohNetworkEnvelopeFrom<'f> for S {}
+
+// `CodecZenohNetworkEnvelopeIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecZenohNetworkEnvelope<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecZenohNetworkEnvelopeOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohNetworkEnvelopeIn<S: CodecZenohNetworkEnvelopeStorage> {
+    pub body: CodecZenohNetworkEnvelopeVariantIn<S>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecZenohNetworkEnvelope<'a> = CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecZenohNetworkEnvelopeOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohNetworkEnvelopeIn<S>;
+
+impl<S: CodecZenohNetworkEnvelopeStorage> Default for CodecZenohNetworkEnvelopeIn<S> {
+    fn default() -> Self {
+        Self {
+            body: Default::default(),
+        }
+    }
+}
+
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
+//
+// Variant arms wrap distinct body codecs whose stored forms differ in
+// field count and size, so the tagged union is inherently size-disparate.
+// The lint's only remedy is boxing the large arm, which adds an
+// indirection (and allocation) the generated decode path does not need —
+// and which the non-allocating storage profile could not take at all.
+// The size spread is the deliberate tagged-union trade-off.
+#[allow(clippy::large_enum_variant)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohNetworkEnvelopeVariant<'a> {
-    CodecZenohInterest(CodecZenohInterest<'a>),
-    CodecZenohResponseFinal(CodecZenohResponseFinal<'a>),
-    CodecZenohResponse(CodecZenohResponse<'a>),
-    CodecZenohRequest(CodecZenohRequest<'a>),
+pub enum CodecZenohNetworkEnvelopeVariantIn<S: CodecZenohNetworkEnvelopeStorage> {
+    CodecZenohInterest(CodecZenohInterestOwned<S>),
+    CodecZenohResponseFinal(CodecZenohResponseFinalOwned<S>),
+    CodecZenohResponse(CodecZenohResponseOwned<S>),
+    CodecZenohRequest(CodecZenohRequestOwned<S>),
     CodecZenohPush(CodecZenohPush),
-    CodecZenohDeclare(CodecZenohDeclare<'a>),
-    CodecZenohOam(CodecZenohOam<'a>),
+    CodecZenohDeclare(CodecZenohDeclareOwned<S>),
+    CodecZenohOam(CodecZenohOamOwned<S>),
     Default {
         tag: CodecZenohNetworkEnvelopeUnknownTag,
-        body: CodecZenohOam<'a>,
+        body: CodecZenohOamOwned<S>,
     },
 }
 
-impl<'a> Default for CodecZenohNetworkEnvelopeVariant<'a> {
+#[allow(dead_code)]
+pub type CodecZenohNetworkEnvelopeVariant<'a> = CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+#[allow(dead_code)]
+pub type CodecZenohNetworkEnvelopeOwnedVariant<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohNetworkEnvelopeVariantIn<S>;
+
+impl<S: CodecZenohNetworkEnvelopeStorage> Default for CodecZenohNetworkEnvelopeVariantIn<S> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
         // envelope round-trips byte-exactly through `encode() ->
         // decode()` — pairs with the inner codec's `<sce:flag value=>`
         // -baked `Default::default()` to close the dispatch loop.
-        Self::CodecZenohOam(CodecZenohOam::default())
+        Self::CodecZenohOam(CodecZenohOamOwned::<S>::default())
     }
 }
 
-// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
-// §6 codec). The kind-agnostic conformance harness only references a
-// subset of fixtures, so unused-but-pub fields/methods would otherwise
-// trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohNetworkEnvelope<'a> {
-    pub body: CodecZenohNetworkEnvelopeVariant<'a>,
-}
-
-#[allow(dead_code)]
-impl<'a> CodecZenohNetworkEnvelope<'a> {
+impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -122,7 +175,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecZenohNetworkEnvelopeFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -138,7 +191,24 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohNetworkEnvelopeFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecZenohNetworkEnvelope::store_into(&mut _frame, &mut CodecZenohNetworkEnvelope::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohNetworkEnvelopeFrom<'f> {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -156,54 +226,54 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
         // through the variant wrapper.
         match _peek & 0x1F {
             25u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(CodecZenohInterest::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) = &mut _out.body {
-                    CodecZenohInterest::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohInterest(CodecZenohInterestOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohInterest(_b) = &mut _out.body {
+                    CodecZenohInterestOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             26u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(CodecZenohResponseFinal::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) = &mut _out.body {
-                    CodecZenohResponseFinal::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponseFinal(CodecZenohResponseFinalOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponseFinal(_b) = &mut _out.body {
+                    CodecZenohResponseFinalOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             27u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(CodecZenohResponse::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) = &mut _out.body {
-                    CodecZenohResponse::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponse(CodecZenohResponseOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponse(_b) = &mut _out.body {
+                    CodecZenohResponseOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             28u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(CodecZenohRequest::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) = &mut _out.body {
-                    CodecZenohRequest::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohRequest(CodecZenohRequestOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohRequest(_b) = &mut _out.body {
+                    CodecZenohRequestOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             29u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohPush(CodecZenohPush::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) = &mut _out.body {
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohPush(CodecZenohPush::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohPush(_b) = &mut _out.body {
                     CodecZenohPush::decode_into(cursor, _b)?;
                 }
             }
             30u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(CodecZenohDeclare::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) = &mut _out.body {
-                    CodecZenohDeclare::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohDeclare(CodecZenohDeclareOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohDeclare(_b) = &mut _out.body {
+                    CodecZenohDeclareOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             31u8 => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohOam(CodecZenohOam::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) = &mut _out.body {
-                    CodecZenohOam::decode_into(cursor, _b)?;
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::CodecZenohOam(CodecZenohOamOwned::<S>::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohOam(_b) = &mut _out.body {
+                    CodecZenohOamOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
             other => {
-                _out.body = CodecZenohNetworkEnvelopeVariant::Default {
+                _out.body = CodecZenohNetworkEnvelopeVariantIn::Default {
                     tag: CodecZenohNetworkEnvelopeUnknownTag(other),
-                    body: CodecZenohOam::default(),
+                    body: CodecZenohOamOwned::<S>::default(),
                 };
-                if let CodecZenohNetworkEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
-                    CodecZenohOam::decode_into(cursor, _b)?;
+                if let CodecZenohNetworkEnvelopeVariantIn::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohOamOwned::<S>::decode_into(cursor, _b)?;
                 }
             }
         }
@@ -221,8 +291,8 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecZenohNetworkEnvelope::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -333,21 +403,6 @@ impl<'a> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelopeParts<'a> 
             CodecZenohNetworkEnvelopePartsBody::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(*_b),
             CodecZenohNetworkEnvelopePartsBody::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(*_b),
             CodecZenohNetworkEnvelopePartsBody::Default { tag, body } => CodecZenohNetworkEnvelopeVariantSource::Default { tag: *tag, body: *body },
-        }
-    }
-}
-
-impl<'a> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelope<'a> {
-    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
-        match &self.body {
-            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b),
-            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeVariantSource::Default { tag: *tag, body },
         }
     }
 }
@@ -471,50 +526,6 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_zenoh_interest::CodecZenohInterestOwned;
-use super::codec_zenoh_response_final::CodecZenohResponseFinalOwned;
-use super::codec_zenoh_response::CodecZenohResponseOwned;
-use super::codec_zenoh_request::CodecZenohRequestOwned;
-use super::codec_zenoh_declare::CodecZenohDeclareOwned;
-use super::codec_zenoh_oam::CodecZenohOamOwned;
-/// What `CodecZenohNetworkEnvelopeOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecZenohNetworkEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalStorage + super::codec_zenoh_response::CodecZenohResponseStorage + super::codec_zenoh_request::CodecZenohRequestStorage + super::codec_zenoh_declare::CodecZenohDeclareStorage + super::codec_zenoh_oam::CodecZenohOamStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalStorage + super::codec_zenoh_response::CodecZenohResponseStorage + super::codec_zenoh_request::CodecZenohRequestStorage + super::codec_zenoh_declare::CodecZenohDeclareStorage + super::codec_zenoh_oam::CodecZenohOamStorage> CodecZenohNetworkEnvelopeStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohNetworkEnvelopeOwned<S: CodecZenohNetworkEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub body: CodecZenohNetworkEnvelopeOwnedVariant<S>,
-}
-
-// Variant arms wrap distinct body codecs whose owned mirrors differ in
-// field count and size, so the tagged union is inherently size-disparate.
-// The lint's only remedy is boxing the large arm, which adds an
-// indirection (and allocation) the generated decode path does not need —
-// and which the non-allocating storage profile could not take at all.
-// The size spread is the deliberate tagged-union trade-off.
-#[allow(clippy::large_enum_variant)]
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohNetworkEnvelopeOwnedVariant<S: CodecZenohNetworkEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    CodecZenohInterest(CodecZenohInterestOwned<S>),
-    CodecZenohResponseFinal(CodecZenohResponseFinalOwned<S>),
-    CodecZenohResponse(CodecZenohResponseOwned<S>),
-    CodecZenohRequest(CodecZenohRequestOwned<S>),
-    CodecZenohPush(CodecZenohPush),
-    CodecZenohDeclare(CodecZenohDeclareOwned<S>),
-    CodecZenohOam(CodecZenohOamOwned<S>),
-    Default {
-        tag: CodecZenohNetworkEnvelopeUnknownTag,
-        body: CodecZenohOamOwned<S>,
-    },
-}
 
 #[allow(dead_code)]
 impl<'a> CodecZenohNetworkEnvelopeVariant<'a> {
@@ -522,7 +533,7 @@ impl<'a> CodecZenohNetworkEnvelopeVariant<'a> {
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
-    pub fn try_into_owned_in<S: CodecZenohNetworkEnvelopeStorage>(self) -> Result<CodecZenohNetworkEnvelopeOwnedVariant<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohNetworkEnvelopeFrom<'a>>(self) -> Result<CodecZenohNetworkEnvelopeOwnedVariant<S>, CodecError> {
         Ok(match self {
             CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.try_into_owned_in::<S>()?),
             CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.try_into_owned_in::<S>()?),
@@ -631,7 +642,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecZenohNetworkEnvelopeStorage>(self) -> Result<CodecZenohNetworkEnvelopeOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohNetworkEnvelopeFrom<'a>>(self) -> Result<CodecZenohNetworkEnvelopeOwned<S>, CodecError> {
         Ok(CodecZenohNetworkEnvelopeOwned {
             body: self.body.try_into_owned_in::<S>()?,
         })
@@ -684,32 +695,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecZenohNetworkEnvelopeStorage>(&self) -> Result<CodecZenohNetworkEnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecZenohNetworkEnvelopeFrom<'x>>(&self) -> Result<CodecZenohNetworkEnvelopeOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `try_as_borrowed` followed by
-    /// [`CodecZenohNetworkEnvelope::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohNetworkEnvelope::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohNetworkEnvelope::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

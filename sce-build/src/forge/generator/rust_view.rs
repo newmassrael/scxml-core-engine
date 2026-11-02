@@ -405,57 +405,39 @@ pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
 /// destination holds, so the push cannot fail; the arm is there because `push`
 /// returns a `Result`.
 ///
-/// A list of at least `least` entries, one or more (docs/adr/0065 §6 R7), is a
-/// `Bounded` in the builder, filled where it sits through its `refill`, which
-/// checks the count the walk leaves.
-pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool, least: u64) -> String {
-    let fill = |list: &str, indent: &str, walk: &str| fill_list(list, indent, walk, entry);
-    match (gated, least) {
-        (true, 0) => {
-            let body = fill("_vec", "                ", "_l");
-            format!(
-                "match &self.{id} {{\n            \
-                     Some(_l) => {{\n                \
-                         let _vec = _out.{id}.insert(HeaplessVec::new());\n                \
-                         {body}\n            \
-                     }}\n            \
-                     None => _out.{id} = None,\n        \
-                 }}"
-            )
-        }
-        (false, 0) => fill(&format!("_out.{id}"), "        ", &format!("self.{id}")),
-        (true, _) => {
-            let body = fill("_vec", "                    ", "_l");
-            format!(
-                "match &self.{id} {{\n            \
-                     Some(_l) => _out.{id}.insert(Default::default()).refill(|_vec| {{\n                    \
-                         {body}\n                    \
-                         Ok(())\n                \
-                     }})?,\n            \
-                     None => _out.{id} = None,\n        \
-                 }}"
-            )
-        }
-        (false, _) => {
-            let body = fill("_vec", "            ", &format!("self.{id}"));
-            format!(
-                "_out.{id}.refill(|_vec| {{\n            \
-                     {body}\n            \
-                     Ok(())\n        \
-                 }})?;"
-            )
-        }
+/// The list is a `Bounded` in the builder, filled where it sits through its
+/// `refill`, which checks the count the walk leaves (docs/adr/0065 §6 R7).
+pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
+    let fill = |indent: &str, walk: &str| fill_list(indent, walk, entry);
+    if gated {
+        let body = fill("                    ", "_l");
+        format!(
+            "match &self.{id} {{\n            \
+                 Some(_l) => _out.{id}.insert(Default::default()).refill(|_vec| {{\n                    \
+                     {body}\n                    \
+                     Ok(())\n                \
+                 }})?,\n            \
+                 None => _out.{id} = None,\n        \
+             }}"
+        )
+    } else {
+        let body = fill("            ", &format!("self.{id}"));
+        format!(
+            "_out.{id}.refill(|_vec| {{\n            \
+                 {body}\n            \
+                 Ok(())\n        \
+             }})?;"
+        )
     }
 }
 
-/// The destination list `list` cleared and filled from the walk `walk`, each
-/// entry pushed as `entry`'s default and filled where it sits.
-fn fill_list(list: &str, indent: &str, walk: &str, entry: &str) -> String {
+/// `_vec`, which a `refill` hands over cleared, filled from the walk `walk`,
+/// each entry pushed as `entry`'s default and filled where it sits.
+fn fill_list(indent: &str, walk: &str, entry: &str) -> String {
     format!(
-        "{list}.clear();\n{indent}\
-         for _e in {walk}.iter() {{\n{indent}    \
-             {list}.push({entry}::default()).map_err(|_| CodecError::CapacityExceeded)?;\n{indent}    \
-             if let Some(_slot) = {list}.last_mut() {{\n{indent}        \
+        "for _e in {walk}.iter() {{\n{indent}    \
+             _vec.push({entry}::default()).map_err(|_| CodecError::CapacityExceeded)?;\n{indent}    \
+             if let Some(_slot) = _vec.last_mut() {{\n{indent}        \
                  _e.into_builder(_slot)?;\n{indent}    \
              }}\n{indent}\
          }}"
@@ -473,16 +455,13 @@ pub(super) fn into_builder_member(
     entry: &str,
 ) -> String {
     if field.is_repeat() || field.is_tlv_chain() {
-        match crate::forge::codec_totality::list_least(field) {
-            0 => fill_list(dest, "                ", src, entry),
-            _ => format!(
-                "{dest}.refill(|_vec| {{\n                    \
-                     {}\n                    \
-                     Ok(())\n                \
-                 }})?;",
-                fill_list("_vec", "                    ", src, entry)
-            ),
-        }
+        format!(
+            "{dest}.refill(|_vec| {{\n                    \
+                 {}\n                    \
+                 Ok(())\n                \
+             }})?;",
+            fill_list("                    ", src, entry)
+        )
     } else if field.is_embed() {
         format!("{src}.into_builder(&mut {dest})?;")
     } else {

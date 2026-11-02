@@ -737,7 +737,15 @@ fn rust_context(
             "owned_generics_args".into(),
             format!("<{RUST_STORAGE_PARAM}>").into(),
         );
-        ctx.insert("codec_storage_path".into(), storage.into());
+        let name = crate::filters::to_pascal_case(m.name.clone());
+        ctx.insert(
+            "owned_in_generics".into(),
+            format!("<{RUST_STORAGE_PARAM}: {name}From<'a>>").into(),
+        );
+        ctx.insert(
+            "codec_storage_path".into(),
+            format!("for<'x> {name}From<'x>").into(),
+        );
         ctx.insert(
             "codec_owned_derives_attr".into(),
             crate::rust_derive_policy::RustDeriveCategory::CodecStruct
@@ -747,6 +755,7 @@ fn rust_context(
         if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
             for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
                 let owned = rust_owned_value_type(l, m, e);
+                entry["storage_tag"] = rust_storage_tag(&m.name, &e.id).into();
                 entry["owned_field_type"] = if e.is_required() {
                     owned
                 } else {

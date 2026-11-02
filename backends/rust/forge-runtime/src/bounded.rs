@@ -203,7 +203,7 @@ impl<L, const MAX: usize, const MIN: usize> Deref for Bounded<L, MAX, MIN> {
 /// entry or more holds one (docs/adr/0065 §6 R7), and a byte string of an exact
 /// length holds that many zeros (docs/adr/0077 §3), so the default value of a
 /// codec that holds any of them is a frame its decode reads back.
-pub trait Fewest: Entries + Sized {
+pub trait Fewest: Sized {
     /// The list of `MIN` entries. A list that cannot hold `MIN` entries is
     /// refused when the build reaches it.
     fn fewest<const MIN: usize>() -> Self;
@@ -292,9 +292,42 @@ impl Fewest for &str {
     }
 }
 
-impl<T: Default, const N: usize, const MAX: usize, const MIN: usize>
-    Bounded<heapless::Vec<T, N>, MAX, MIN>
-{
+/// A byte buffer a profile owns holds `MIN` zeros by default, as [`Bytes`] does.
+macro_rules! bytes_default_to_zeros {
+    ($buffer:ident) => {
+        impl<const N: usize> Fewest for crate::storage::$buffer<N> {
+            fn fewest<const MIN: usize>() -> Self {
+                match Self::from_slice(&[0u8; MIN]) {
+                    Ok(buffer) => buffer,
+                    Err(_) => unreachable!("a field's capacity holds its fewest bytes"),
+                }
+            }
+        }
+    };
+}
+
+/// A text buffer a profile owns holds `MIN` NULs by default, as [`Text`] does.
+macro_rules! text_defaults_to_nuls {
+    ($buffer:ident) => {
+        impl<const N: usize> Fewest for crate::storage::$buffer<N> {
+            fn fewest<const MIN: usize>() -> Self {
+                match Self::from_text(<&str as Fewest>::fewest::<MIN>()) {
+                    Ok(text) => text,
+                    Err(_) => unreachable!("a field's capacity holds its fewest bytes"),
+                }
+            }
+        }
+    };
+}
+
+bytes_default_to_zeros!(InlineBytes);
+text_defaults_to_nuls!(InlineStr);
+#[cfg(feature = "alloc")]
+bytes_default_to_zeros!(HeapBytes);
+#[cfg(feature = "alloc")]
+text_defaults_to_nuls!(HeapStr);
+
+impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     /// Fill the list in place: `fill` is handed it cleared, and the count it
     /// leaves is checked against the bounds, fewer than `MIN` being a frame cut
     /// short. A decode builds a list here rather than in a local it then moves,
@@ -302,12 +335,15 @@ impl<T: Default, const N: usize, const MAX: usize, const MIN: usize>
     ///
     /// On `Err` the list holds `MIN` default entries, so it is still inside its
     /// bounds, whatever `fill` left.
-    pub fn refill(
+    pub fn refill<T: Default>(
         &mut self,
-        fill: impl FnOnce(&mut heapless::Vec<T, N>) -> Result<(), crate::codec::CodecError>,
-    ) -> Result<(), crate::codec::CodecError> {
+        fill: impl FnOnce(&mut L) -> Result<(), crate::codec::CodecError>,
+    ) -> Result<(), crate::codec::CodecError>
+    where
+        L: crate::storage::SceList<T>,
+    {
         self.0.clear();
-        let filled = fill(&mut self.0).and_then(|()| match self.0.len() {
+        let filled = fill(&mut self.0).and_then(|()| match self.0.as_slice().len() {
             n if n < MIN => Err(crate::codec::CodecError::NeedMoreBytes),
             n if n > MAX => Err(crate::codec::CodecError::TooManyElements),
             _ => Ok(()),
@@ -315,7 +351,7 @@ impl<T: Default, const N: usize, const MAX: usize, const MIN: usize>
         if filled.is_err() {
             self.0.clear();
             for _ in 0..MIN {
-                if self.0.push(T::default()).is_err() {
+                if self.0.try_push(T::default()).is_err() {
                     unreachable!("a list's capacity holds its fewest entries");
                 }
             }
@@ -430,6 +466,51 @@ impl<const MAX: usize, const MIN: usize> PartialEq<&str> for Bounded<&str, MAX, 
     }
 }
 
+impl<B: crate::storage::HeldBytes, const MAX: usize, const MIN: usize> Bounded<B, MAX, MIN> {
+    /// The bytes, borrowed with their bounds: a value's source read, which
+    /// needs no check since what holds them cannot change once it is held.
+    pub fn as_bytes(&self) -> Bytes<'_, MAX, MIN> {
+        Bounded(self.0.held_bytes())
+    }
+
+    /// The buffer a profile built for bytes inside the bounds, held once its
+    /// length is checked: an [`crate::storage::OriginStorage`] profile builds it
+    /// however it chooses, so its length is the profile's word, not the
+    /// type's. A buffer of another length is refused as a length out of range.
+    pub fn from_built(
+        buf: Result<B, crate::codec::CodecError>,
+    ) -> Result<Self, crate::codec::CodecError> {
+        let buf = buf?;
+        if (MIN..=MAX).contains(&buf.held_bytes().len()) {
+            Ok(Self(buf))
+        } else {
+            Err(crate::codec::CodecError::LengthOutOfRange)
+        }
+    }
+}
+
+impl<'f, const MAX: usize, const MIN: usize> Bytes<'f, MAX, MIN> {
+    /// These bytes of a frame as the profile `S` holds the field `Tag`: a read
+    /// that has held them to their bounds, stored. The bounds carry over.
+    pub fn store<S, Tag>(self) -> Result<Bounded<S::Bytes, MAX, MIN>, crate::codec::CodecError>
+    where
+        S: crate::storage::StoresBytes<'f, Tag>,
+    {
+        S::store_bytes(self.0).map(Bounded)
+    }
+}
+
+impl<'f, const MAX: usize, const MIN: usize> Text<'f, MAX, MIN> {
+    /// This text of a frame as the profile `S` holds the field `Tag`, as
+    /// [`Bounded::store`] does for bytes.
+    pub fn store<S, Tag>(self) -> Result<Bounded<S::Str, MAX, MIN>, crate::codec::CodecError>
+    where
+        S: crate::storage::StoresStr<'f, Tag>,
+    {
+        S::store_str(self.0).map(Bounded)
+    }
+}
+
 impl<B: crate::storage::SceByteBuf, const MAX: usize, const MIN: usize> Bounded<B, MAX, MIN> {
     /// An owned byte buffer as bytes of at least `MIN` and at most `MAX`, or
     /// `None` when it holds fewer or more. A storage profile's buffer may grow
@@ -440,12 +521,6 @@ impl<B: crate::storage::SceByteBuf, const MAX: usize, const MIN: usize> Bounded<
         } else {
             None
         }
-    }
-
-    /// The bytes, borrowed with their bounds: the owned form's source read,
-    /// which needs no check since the buffer cannot change once it is held.
-    pub fn as_bytes(&self) -> Bytes<'_, MAX, MIN> {
-        Bounded(self.0.as_slice())
     }
 
     /// `bytes` copied into the profile's buffer, for an owned value built by
@@ -466,15 +541,25 @@ impl<B: crate::storage::SceByteBuf, const MAX: usize, const MIN: usize> Bounded<
     pub fn copied(bytes: Bytes<'_, MAX, MIN>) -> Result<Self, crate::codec::CodecError> {
         B::from_slice(bytes.0).map(Self)
     }
+}
 
-    /// The buffer a profile built for bytes inside the bounds, held once its
-    /// length is checked: an [`crate::storage::OriginStorage`] profile builds it
-    /// however it chooses, so its length is the profile's word, not the
-    /// type's. A buffer of another length is refused as a length out of range.
-    pub fn from_built(
-        buf: Result<B, crate::codec::CodecError>,
+impl<T: crate::storage::HeldStr, const MAX: usize, const MIN: usize> Bounded<T, MAX, MIN> {
+    /// The text, borrowed with its bounds.
+    pub fn as_text(&self) -> Text<'_, MAX, MIN> {
+        Bounded(self.0.held_str())
+    }
+
+    /// The text buffer a profile built, held once its length is checked, as
+    /// [`Bounded::from_built`] holds bytes.
+    pub fn from_built_text(
+        text: Result<T, crate::codec::CodecError>,
     ) -> Result<Self, crate::codec::CodecError> {
-        Self::from_buf(buf?).ok_or(crate::codec::CodecError::LengthOutOfRange)
+        let text = text?;
+        if (MIN..=MAX).contains(&text.held_str().len()) {
+            Ok(Self(text))
+        } else {
+            Err(crate::codec::CodecError::LengthOutOfRange)
+        }
     }
 }
 
@@ -489,11 +574,6 @@ impl<T: crate::storage::SceStr, const MAX: usize, const MIN: usize> Bounded<T, M
         }
     }
 
-    /// The text, borrowed with its bounds.
-    pub fn as_text(&self) -> Text<'_, MAX, MIN> {
-        Bounded(self.0.as_str())
-    }
-
     /// `text` copied into the profile's buffer, for an owned value built by
     /// hand, refused as [`Bounded::from_slice`] refuses bytes.
     pub fn from_text(text: &str) -> Result<Self, crate::codec::CodecError> {
@@ -506,14 +586,6 @@ impl<T: crate::storage::SceStr, const MAX: usize, const MIN: usize> Bounded<T, M
     /// [`Bounded::copied`] copies bytes.
     pub fn copied_text(text: Text<'_, MAX, MIN>) -> Result<Self, crate::codec::CodecError> {
         T::from_view(text.0).map(Self)
-    }
-
-    /// The text buffer a profile built, held once its length is checked, as
-    /// [`Bounded::from_built`] holds bytes.
-    pub fn from_built_text(
-        text: Result<T, crate::codec::CodecError>,
-    ) -> Result<Self, crate::codec::CodecError> {
-        Self::from_str_buf(text?).ok_or(crate::codec::CodecError::LengthOutOfRange)
     }
 }
 

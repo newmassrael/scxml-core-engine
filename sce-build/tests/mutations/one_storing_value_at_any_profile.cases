@@ -1,0 +1,81 @@
+# Mutation cases for "one storing value at any profile".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/one_storing_value_at_any_profile.cases`.
+#
+# A codec has one storing value type, and any profile may hold less than a bound
+# (docs/adr/0077 §7). The first two cases take away the judgement of a frame past
+# a capacity, on a codec that builds in place and on one that does not, so a
+# malformed frame reports `CapacityExceeded`; the third judges with the form that
+# stopped, which says the same again; the fourth has a stored list keep the
+# entries of a failed fill; the fifth lets a stored list stay past its bound.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-conformance --features alloc --test forge_view_round_trip
+mutation_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/bounded.rs
+mutation_oracles backends/rust/forge-conformance/tests/forge_view_round_trip.rs
+
+mutation_case "a frame past a capacity in a list is not judged" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
+            Err(CodecError::CapacityExceeded) => {
+{% if emit_views and not view_is_alias %}
+                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
+{% else %}
+                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
+{% endif %}
+                Err(CodecError::CapacityExceeded)
+            }''',
+     r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
+            Err(CodecError::CapacityExceeded) => {
+                let _ = &mut _frame;
+                Err(CodecError::CapacityExceeded)
+            }''')
+PY
+
+mutation_case "a frame past a capacity in a body with no list is not judged" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
+            Err(CodecError::CapacityExceeded) => {
+{% if emit_views and not view_is_alias %}
+                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
+{% else %}
+                {{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }})?;
+{% endif %}
+                Err(CodecError::CapacityExceeded)
+            }''',
+     r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
+            Err(CodecError::CapacityExceeded) => {
+                let _ = &mut _frame;
+                Err(CodecError::CapacityExceeded)
+            }''')
+PY
+
+mutation_case "a frame is judged by the form that stopped" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''{{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }})?;''',
+     r'''Self::stored(&mut _frame{{ decode_forward_args_with_comma }})?;''')
+PY
+
+mutation_case "a failed fill keeps what it pushed" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''        if filled.is_err() {
+            self.0.clear();
+            for _ in 0..MIN {''',
+     r'''        if filled.is_err() && self.0.as_slice().len() < MIN {
+            self.0.clear();
+            for _ in 0..MIN {''')
+PY
+
+mutation_case "a refill holds a list past its bound" <<'PY'
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''            n if n > MAX => Err(crate::codec::CodecError::TooManyElements),
+            _ => Ok(()),
+        });
+        if filled.is_err() {''',
+     r'''            _ => Ok(()),
+        });
+        if filled.is_err() {''')
+PY

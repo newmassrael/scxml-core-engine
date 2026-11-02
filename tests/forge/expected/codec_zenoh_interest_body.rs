@@ -23,15 +23,50 @@ use super::codec_zenoh_wireexpr::CodecZenohWireexpr;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+use super::codec_zenoh_wireexpr::CodecZenohWireexprOwned;
+/// What `CodecZenohInterestBodyIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohInterestBody<'a> {
+pub trait CodecZenohInterestBodyStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage> CodecZenohInterestBodyStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecZenohInterestBodyStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecZenohInterestBodyFrom<'f>: CodecZenohInterestBodyStorage + super::codec_zenoh_wireexpr::CodecZenohWireexprFrom<'f> {}
+
+impl<'f, S: CodecZenohInterestBodyStorage + super::codec_zenoh_wireexpr::CodecZenohWireexprFrom<'f>> CodecZenohInterestBodyFrom<'f> for S {}
+
+// `CodecZenohInterestBodyIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecZenohInterestBody<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecZenohInterestBodyOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohInterestBodyIn<S: CodecZenohInterestBodyStorage> {
     pub header: u8,
-    pub keyexpr: Option<CodecZenohWireexpr<'a>>,
+    pub keyexpr: Option<CodecZenohWireexprOwned<S>>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecZenohInterestBody<'a> = CodecZenohInterestBodyIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecZenohInterestBodyOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohInterestBodyIn<S>;
+
+impl<S: CodecZenohInterestBodyStorage> Default for CodecZenohInterestBodyIn<S> {
+    fn default() -> Self {
+        Self {
+            header: Default::default(),
+            keyexpr: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohInterestBody<'a> {
+impl<S: CodecZenohInterestBodyStorage> CodecZenohInterestBodyIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -47,7 +82,7 @@ impl<'a> CodecZenohInterestBody<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecZenohInterestBodyFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -63,7 +98,24 @@ impl<'a> CodecZenohInterestBody<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohInterestBodyFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecZenohInterestBody::store_into(&mut _frame, &mut CodecZenohInterestBody::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohInterestBodyFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -83,7 +135,7 @@ impl<'a> CodecZenohInterestBody<'a> {
             _v
         };
         if (header & 0x10u8) != 0 {
-            CodecZenohWireexpr::decode_into(cursor, _out.keyexpr.insert(CodecZenohWireexpr::default()), (header >> 5) & 0x1)?;
+            CodecZenohWireexprOwned::<S>::decode_into(cursor, _out.keyexpr.insert(CodecZenohWireexprOwned::<S>::default()), (header >> 5) & 0x1)?;
         } else {
             _out.keyexpr = None;
         }
@@ -204,8 +256,8 @@ impl<'a> CodecZenohInterestBody<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecZenohInterestBody::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -325,15 +377,6 @@ impl<'a> CodecZenohInterestBodySource for CodecZenohInterestBodyParts<'a> {
     }
     fn keyexpr(&self) -> Option<&impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource> {
         self.keyexpr
-    }
-}
-
-impl<'a> CodecZenohInterestBodySource for CodecZenohInterestBody<'a> {
-    fn header(&self) -> u8 {
-        self.header
-    }
-    fn keyexpr(&self) -> Option<&impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource> {
-        self.keyexpr.as_ref()
     }
 }
 
@@ -471,64 +514,6 @@ impl<'a> CodecZenohInterestBody<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-use super::codec_zenoh_wireexpr::CodecZenohWireexprOwned;
-/// What `CodecZenohInterestBodyOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecZenohInterestBodyStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage> CodecZenohInterestBodyStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohInterestBodyOwned<S: CodecZenohInterestBodyStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub header: u8,
-    pub keyexpr: Option<CodecZenohWireexprOwned<S>>,
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohInterestBodyStorage> CodecZenohInterestBodyOwned<S> {
-    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
-    // bit getters over the copied carrier (rkyv Archived↔native getter
-    // parity), so owned consumers read `{Codec}Owned` with the same API as
-    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
-    // Read-only — write accessors belong with an owned-encode path, which
-    // does not exist yet.
-    pub fn keyexprs(&self) -> bool {
-        (self.header & 0x01) != 0
-    }
-
-    pub fn subscribers(&self) -> bool {
-        (self.header & 0x02) != 0
-    }
-
-    pub fn queryables(&self) -> bool {
-        (self.header & 0x04) != 0
-    }
-
-    pub fn tokens(&self) -> bool {
-        (self.header & 0x08) != 0
-    }
-
-    pub fn restricted(&self) -> bool {
-        (self.header & 0x10) != 0
-    }
-
-    pub fn n(&self) -> bool {
-        (self.header & 0x20) != 0
-    }
-
-    pub fn m(&self) -> bool {
-        (self.header & 0x40) != 0
-    }
-
-    pub fn aggregate(&self) -> bool {
-        (self.header & 0x80) != 0
-    }
-}
 
 #[allow(dead_code)]
 impl<'a> CodecZenohInterestBody<'a> {
@@ -544,7 +529,7 @@ impl<'a> CodecZenohInterestBody<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecZenohInterestBodyStorage>(self) -> Result<CodecZenohInterestBodyOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecZenohInterestBodyFrom<'a>>(self) -> Result<CodecZenohInterestBodyOwned<S>, CodecError> {
         Ok(CodecZenohInterestBodyOwned {
             header: self.header,
             keyexpr: self.keyexpr.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
@@ -598,32 +583,7 @@ impl<S: CodecZenohInterestBodyStorage> CodecZenohInterestBodyOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecZenohInterestBodyStorage>(&self) -> Result<CodecZenohInterestBodyOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecZenohInterestBodyFrom<'x>>(&self) -> Result<CodecZenohInterestBodyOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecZenohInterestBodyStorage> CodecZenohInterestBodyOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecZenohInterestBody::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohInterestBody::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohInterestBody::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

@@ -21,15 +21,63 @@ use sce_forge_runtime::codec::VecSink;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `schema` of `CodecExtEncodingInfo`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecExtEncodingInfo<'a> {
+pub struct CodecExtEncodingInfoSchemaField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<64>;
+}
+
+/// What `CodecExtEncodingInfoIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecExtEncodingInfoStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>> CodecExtEncodingInfoStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecExtEncodingInfoStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecExtEncodingInfoFrom<'f>: CodecExtEncodingInfoStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecExtEncodingInfoSchemaField> {}
+
+impl<'f, S: CodecExtEncodingInfoStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecExtEncodingInfoSchemaField>> CodecExtEncodingInfoFrom<'f> for S {}
+
+/// The group `CodecExtEncodingInfoCombinedIdHasSchema` as `CodecExtEncodingInfoOwned` holds it, in the storage
+/// profile `S`.
+#[allow(dead_code)]
+pub type CodecExtEncodingInfoCombinedIdHasSchemaOwned<S> = CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>>::Bytes, 64>>;
+
+// `CodecExtEncodingInfoIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecExtEncodingInfo<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecExtEncodingInfoOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecExtEncodingInfoIn<S: CodecExtEncodingInfoStorage> {
     pub combined_id: u32,
-    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'a, 64>>,
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchemaOwned<S>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecExtEncodingInfo<'a> = CodecExtEncodingInfoIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecExtEncodingInfoOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecExtEncodingInfoIn<S>;
+
+impl<S: CodecExtEncodingInfoStorage> Default for CodecExtEncodingInfoIn<S> {
+    fn default() -> Self {
+        Self {
+            combined_id: Default::default(),
+            combined_id_has_schema: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecExtEncodingInfo<'a> {
+impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -45,7 +93,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecExtEncodingInfoFrom<'f> {
         let mut _out = Self::default();
         Self::decode_into(cursor, &mut _out)?;
         Ok(_out)
@@ -61,7 +109,24 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecExtEncodingInfoFrom<'f> {
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what cannot run out, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
+        // less than a bound, so this stands on every codec that takes one.
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecExtEncodingInfo::store_into(&mut _frame, &mut CodecExtEncodingInfo::default())?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecExtEncodingInfoFrom<'f> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -95,6 +160,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
             None
         };
         let schema = schema.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
+        let schema = schema.map(|_v| _v.store::<S, CodecExtEncodingInfoSchemaField>()).transpose()?;
         _out.combined_id = combined_id;
         _out.combined_id_has_schema = if (combined_id & 0x00000001u32) != 0 { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: schema.unwrap_or_default() } } else { CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } };
         Ok(())
@@ -129,8 +195,8 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecExtEncodingInfo::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -210,18 +276,6 @@ pub struct CodecExtEncodingInfoParts<'a> {
 }
 
 impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfoParts<'a> {
-    fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'_, 64>> {
-        match &self.combined_id_has_schema {
-            CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: *schema },
-            CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size: *schema_size },
-        }
-    }
-    fn combined_id(&self) -> u32 {
-        self.combined_id
-    }
-}
-
-impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfo<'a> {
     fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'_, 64>> {
         match &self.combined_id_has_schema {
             CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: *schema },
@@ -354,49 +408,6 @@ impl<'a> CodecExtEncodingInfo<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-/// The field `schema` of `CodecExtEncodingInfo`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecExtEncodingInfoSchemaField;
-
-impl ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<64>;
-}
-
-/// What `CodecExtEncodingInfoOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecExtEncodingInfoStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>> CodecExtEncodingInfoStorage for S {}
-
-/// The group `CodecExtEncodingInfoCombinedIdHasSchema` as `CodecExtEncodingInfoOwned` holds it, in the storage
-/// profile `S`.
-#[allow(dead_code)]
-pub type CodecExtEncodingInfoCombinedIdHasSchemaOwned<S> = CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>>::Bytes, 64>>;
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecExtEncodingInfoOwned<S: CodecExtEncodingInfoStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub combined_id: u32,
-    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchemaOwned<S>,
-}
-
-#[allow(dead_code)]
-impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
-    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
-    // bit getters over the copied carrier (rkyv Archived↔native getter
-    // parity), so owned consumers read `{Codec}Owned` with the same API as
-    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
-    // Read-only — write accessors belong with an owned-encode path, which
-    // does not exist yet.
-    pub fn has_schema(&self) -> bool {
-        (self.combined_id & 0x00000001) != 0
-    }
-}
 
 #[allow(dead_code)]
 impl<'a> CodecExtEncodingInfo<'a> {
@@ -412,10 +423,10 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecExtEncodingInfoStorage>(self) -> Result<CodecExtEncodingInfoOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecExtEncodingInfoFrom<'a>>(self) -> Result<CodecExtEncodingInfoOwned<S>, CodecError> {
         Ok(CodecExtEncodingInfoOwned {
             combined_id: self.combined_id,
-            combined_id_has_schema: match self.combined_id_has_schema { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: ::sce_forge_runtime::codec::Bounded::copied(schema)? }, CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size }, },
+            combined_id_has_schema: match self.combined_id_has_schema { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: schema.store::<S, CodecExtEncodingInfoSchemaField>()? }, CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size }, },
         })
     }
 
@@ -474,32 +485,7 @@ impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecExtEncodingInfoStorage>(&self) -> Result<CodecExtEncodingInfoOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecExtEncodingInfoFrom<'x>>(&self) -> Result<CodecExtEncodingInfoOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecExtEncodingInfo::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecExtEncodingInfo::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecExtEncodingInfo::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }

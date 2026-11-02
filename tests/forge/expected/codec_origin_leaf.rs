@@ -21,15 +21,58 @@ use sce_forge_runtime::codec::VecSink;
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
+/// The field `data` of `CodecOriginLeaf`, which a storage profile
+/// answers for by this type.
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecOriginLeaf<'a> {
+pub struct CodecOriginLeafDataField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// What `CodecOriginLeafIn` and the codecs it holds ask of a storage profile.
+#[allow(dead_code)]
+pub trait CodecOriginLeafStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField>> CodecOriginLeafStorage for S {}
+
+/// What a decode of a frame of the lifetime `'f` asks of a storage profile
+/// beside CodecOriginLeafStorage: how it stores each field of that frame.
+#[allow(dead_code)]
+pub trait CodecOriginLeafFrom<'f>: CodecOriginLeafStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecOriginLeafDataField> {}
+
+impl<'f, S: CodecOriginLeafStorage + ::sce_forge_runtime::codec::StoresBytes<'f, CodecOriginLeafDataField>> CodecOriginLeafFrom<'f> for S {}
+
+// `CodecOriginLeafIn<S>` is the one value this codec has, at the storage
+// profile `S` (docs/adr/0077 §7). `CodecOriginLeaf<'a>` is it on `Lent`, which
+// borrows bytes and text from the frame, and `CodecOriginLeafOwned<S>` names it
+// at a profile that holds them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecOriginLeafIn<S: CodecOriginLeafStorage> {
     pub len: u8,
-    pub data: ::sce_forge_runtime::codec::Bytes<'a, 16>,
+    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField>>::Bytes, 16>,
+}
+
+/// The eager form: bytes and text borrowed from the frame, lists held inline.
+#[allow(dead_code)]
+pub type CodecOriginLeaf<'a> = CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a>>;
+
+/// The value at a profile that holds its bytes and text.
+#[allow(dead_code)]
+pub type CodecOriginLeafOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecOriginLeafIn<S>;
+
+impl<S: CodecOriginLeafStorage> Default for CodecOriginLeafIn<S> {
+    fn default() -> Self {
+        Self {
+            len: Default::default(),
+            data: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecOriginLeaf<'a> {
+impl<S: CodecOriginLeafStorage> CodecOriginLeafIn<S> {
     /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -45,7 +88,22 @@ impl<'a> CodecOriginLeaf<'a> {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+    pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecOriginLeafFrom<'f> {
+        // Judged as [`Self::decode_into`] judges a frame past a capacity
+        // (docs/adr/0077 §7).
+        let mut _frame = *cursor;
+        match Self::stored(cursor) {
+            Err(CodecError::CapacityExceeded) => {
+                CodecOriginLeaf::stored(&mut _frame)?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode`], which stops where a field is past its
+    /// capacity.
+    fn stored<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecOriginLeafFrom<'f> {
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -67,6 +125,7 @@ impl<'a> CodecOriginLeaf<'a> {
         }
         let data = raw.get(1..1 + len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let data = ::sce_forge_runtime::codec::Bounded::new(data).ok_or(CodecError::LengthOutOfRange)?;
+        let data = data.store::<S, CodecOriginLeafDataField>()?;
         let value = Self {
             len,
             data,
@@ -78,7 +137,7 @@ impl<'a> CodecOriginLeaf<'a> {
         // lower bound.
         let mut _consumed: usize = 1;
         {
-            let _end = 1usize + value.data.len();
+            let _end = 1usize + value.data.as_bytes().len();
             if _end > _consumed { _consumed = _end; }
         }
         if _consumed > _frame_len {
@@ -92,7 +151,7 @@ impl<'a> CodecOriginLeaf<'a> {
     /// embeds or dispatches to this one decodes it where it will live (see
     /// `decode_into` on a codec that holds a bounded list). This body has no
     /// list of its own to build in place, so it decodes and stores.
-    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+    pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecOriginLeafFrom<'f> {
         *_out = Self::decode(cursor)?;
         Ok(())
     }
@@ -108,8 +167,8 @@ impl<'a> CodecOriginLeaf<'a> {
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        CodecOriginLeaf::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -158,12 +217,6 @@ pub struct CodecOriginLeafParts<'a> {
 }
 
 impl<'a> CodecOriginLeafSource for CodecOriginLeafParts<'a> {
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
-        self.data
-    }
-}
-
-impl<'a> CodecOriginLeafSource for CodecOriginLeaf<'a> {
     fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
         self.data
     }
@@ -268,31 +321,6 @@ impl<'a> CodecOriginLeaf<'a> {
 // Naming it once is also what lets each field's container infer, so no call
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
-/// The field `data` of `CodecOriginLeaf`, which a storage profile
-/// answers for by this type.
-#[allow(dead_code)]
-pub struct CodecOriginLeafDataField;
-
-impl ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
-}
-
-/// What `CodecOriginLeafOwned` and the codecs it holds ask of a storage
-/// profile.
-#[allow(dead_code)]
-pub trait CodecOriginLeafStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField> {}
-
-impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField>> CodecOriginLeafStorage for S {}
-
-// Same pub-API policy as the borrowed view above: the owned mirror and its
-// projections are cross-crate surface, and which of them a given in-repo
-// fixture happens to call says nothing about their value.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct CodecOriginLeafOwned<S: CodecOriginLeafStorage = ::sce_forge_runtime::codec::DefaultStorage> {
-    pub len: u8,
-    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField>>::Bytes, 16>,
-}
 
 #[allow(dead_code)]
 impl<'a> CodecOriginLeaf<'a> {
@@ -308,10 +336,10 @@ impl<'a> CodecOriginLeaf<'a> {
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
     /// `CodecError::CapacityExceeded` for a value it cannot hold.
-    pub fn try_into_owned_in<S: CodecOriginLeafStorage>(self) -> Result<CodecOriginLeafOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecOriginLeafFrom<'a>>(self) -> Result<CodecOriginLeafOwned<S>, CodecError> {
         Ok(CodecOriginLeafOwned {
             len: self.len,
-            data: ::sce_forge_runtime::codec::Bounded::copied(self.data)?,
+            data: self.data.store::<S, CodecOriginLeafDataField>()?,
         })
     }
 
@@ -359,33 +387,8 @@ impl<S: CodecOriginLeafStorage> CodecOriginLeafOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: CodecOriginLeafStorage>(&self) -> Result<CodecOriginLeafOwned<D>, CodecError> {
+    pub fn transcode_in<D: for<'x> CodecOriginLeafFrom<'x>>(&self) -> Result<CodecOriginLeafOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
-    }
-}
-
-#[allow(dead_code)]
-impl<S: CodecOriginLeafStorage> CodecOriginLeafOwned<S> {
-    /// Encode `self` into the caller-owned sink, straight from the owned
-    /// fields: the bytes `as_borrowed` followed by
-    /// [`CodecOriginLeaf::encode`] writes, without the projection.
-    ///
-    /// The projection builds the whole borrowed record (every list and
-    /// embedded body in it, by value) only for `encode` to read it once. A
-    /// sender that holds an owned value encodes it from here.
-    /// Every value has a frame (docs/adr/0065), so the only error is the
-    /// sink's own.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecOriginLeaf::encode_source(self, w)
-    }
-
-    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
-    /// value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecOriginLeaf::MAX_ENCODED_BYTES);
-        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
-        _sce_v
     }
 }
 
