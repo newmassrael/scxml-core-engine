@@ -49,3 +49,12 @@ max_records_per_list = 50000
 # tokens by a service that holds the authority's key.
 enabled = true
 token_seconds = 3600
+
+[creation]
+# Who gives the relay the first entry of a list it does not hold (docs/SCE_RELAY_DEPLOY.md, section
+# 6). "closed": a device presenting a token of the authority, as a service or an operator issues.
+# "open": any device, with no token, by proof of work and under a name that certifies the list's
+# genesis; such a list lapses when no login touches it for lapse_days, and its devices create it
+# again. "open" is refused with login off or lapse_days = 0.
+policy = "closed"
+lapse_days = 90

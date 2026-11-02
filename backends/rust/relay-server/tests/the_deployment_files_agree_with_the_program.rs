@@ -49,6 +49,9 @@ fn the_configuration_is_one_the_relay_takes_with_the_keys_the_unit_gives() {
     // A member's device logs in, for a token of an hour, and no proxy is trusted.
     assert_eq!(config.login.map(|login| login.token_seconds), Some(3600));
     assert!(config.trusted_proxies.is_empty());
+    // A list is created with a token of the authority, and one created openly lapses in 90 days.
+    assert_eq!(config.creation, None);
+    assert_eq!(config.lapse_days, 90);
 }
 
 #[test]

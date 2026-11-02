@@ -232,6 +232,36 @@ fn now_ms() -> u64 {
         })
 }
 
+const DAY_MS: u64 = 86_400_000;
+
+/// How often a relay looks for lists created openly that lapsed.
+const LAPSE_EVERY: Duration = Duration::from_secs(3600);
+
+/// The word a line names a relay's creation policy by.
+fn creation_word(config: &Config) -> &'static str {
+    if config.creation.is_some() {
+        "open"
+    } else {
+        "closed"
+    }
+}
+
+/// Remove the lists created openly that no login touched for `idle_ms`, and say so: how many were
+/// removed and how many are kept, never which. A sweep that removed nothing says nothing unless
+/// `always`.
+fn sweep(log: &Log, hub: &Shards<FileStore>, idle_ms: u64, always: bool) {
+    let lapsed = hub.lapse(idle_ms, now_ms());
+    if always || lapsed.removed > 0 {
+        log.info(
+            "lapsed",
+            &[("removed", &lapsed.removed), ("kept", &lapsed.kept)],
+        );
+    }
+    for failure in &lapsed.failures {
+        log.error("lapse_failed", &[("reason", failure)]);
+    }
+}
+
 /// What a relay is made of, read and checked before it takes a port.
 struct Prepared {
     config: Config,
@@ -258,15 +288,22 @@ fn prepare(args: &ServeArgs) -> Result<Prepared, Refusal> {
         Refusal::new(status, error.message)
     })?;
     // A relay that offers login draws the key of its challenges once, at start: a relay started
-    // again voids every challenge it gave.
+    // again voids every challenge it gave. It takes a creation on a connection with no token when
+    // its policy is `open`, which the configuration allows only with lapse.
     let hub = match config.login {
         None => hub,
-        Some(policy) => hub.with_login(Doorway::new(policy).map_err(|why| {
-            Refusal::new(
-                exit::SOFTWARE,
-                format!("the operating system gave no random bytes: {why}"),
-            )
-        })?),
+        Some(policy) => {
+            let doorway = Doorway::new(policy).map_err(|why| {
+                Refusal::new(
+                    exit::SOFTWARE,
+                    format!("the operating system gave no random bytes: {why}"),
+                )
+            })?;
+            hub.with_login(match config.creation {
+                Some(creation) => doorway.with_creation(creation),
+                None => doorway,
+            })
+        }
     };
     Ok(Prepared {
         config,
@@ -381,6 +418,8 @@ fn check(log: &Log, args: &ServeArgs) -> u8 {
                     ("audience", &prepared.authority.audience()),
                     ("tls", &prepared.tls.is_some()),
                     ("login", &prepared.config.login.is_some()),
+                    ("creation", &creation_word(&prepared.config)),
+                    ("lapse_days", &prepared.config.lapse_days),
                 ],
             );
             exit::OK
@@ -464,9 +503,28 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
         }
     }
 
+    let hub = Arc::new(hub);
+    // The lists created openly that lapsed while the relay was stopped are removed before it
+    // answers, and the others as they lapse, once an hour.
+    let lapsing = (config.lapse_days > 0).then(|| {
+        let idle_ms = config.lapse_days.saturating_mul(DAY_MS);
+        sweep(log, &hub, idle_ms, true);
+        let (hub, log) = (Arc::clone(&hub), *log);
+        tokio::spawn(async move {
+            let mut ticks =
+                tokio::time::interval_at(tokio::time::Instant::now() + LAPSE_EVERY, LAPSE_EVERY);
+            loop {
+                ticks.tick().await;
+                let hub = Arc::clone(&hub);
+                let _ =
+                    tokio::task::spawn_blocking(move || sweep(&log, &hub, idle_ms, false)).await;
+            }
+        })
+    });
+
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(now_ms);
     let server = Server::trusting(
-        Arc::new(hub),
+        Arc::clone(&hub),
         clock,
         config.bounds,
         config.trusted_proxies.clone(),
@@ -494,6 +552,8 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
             ("slots", &config.slots),
             ("max_connections", &config.bounds.max_connections),
             ("login", &config.login.is_some()),
+            ("creation", &creation_word(&config)),
+            ("lapse_days", &config.lapse_days),
             ("trusted_proxies", &config.trusted_proxies.len()),
         ],
     );
@@ -513,6 +573,9 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
         log.warning("not_notified", &[("reason", &why)]);
     }
     server.stop().raise();
+    if let Some(lapsing) = lapsing {
+        lapsing.abort();
+    }
     for task in listening {
         let _ = task.await;
     }

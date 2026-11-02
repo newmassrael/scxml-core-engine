@@ -15,7 +15,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use sce_rust_relay::{slot_of, Authority, FileStore, Limits, Shards};
+use sce_rust_relay::{slot_of, Authority, FileStore, Limits, Shards, Store};
 
 /// The most slots a relay is configured with.
 pub const MOST_SLOTS: usize = 4096;
@@ -100,8 +100,14 @@ pub fn check_layout(store: &Path, slots: usize) -> Result<(), StoreError> {
         if !directory.is_dir() {
             continue;
         }
+        // A list's records and the mark of a list created openly both belong in its slot: a mark
+        // left in another is read by a relay that holds no record of its list, and dropped.
         let lists = FileStore::open(&directory)
-            .and_then(|held| held.lists())
+            .and_then(|mut held| {
+                let mut lists = held.lists()?;
+                lists.extend(held.marks()?.into_iter().map(|(list, _)| list));
+                Ok(lists)
+            })
             .map_err(|error| from_io(store, error))?;
         for list in lists {
             let belongs = slot_of(&list, slots);
@@ -141,7 +147,7 @@ pub fn open(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sce_rust_relay::{Record, Store};
+    use sce_rust_relay::{Openly, Record};
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -200,6 +206,30 @@ mod tests {
                 && refused
                     .message
                     .contains(&format!("slot-{}", slot_of(list, slots))),
+            "{refused}"
+        );
+        fs::remove_dir_all(&store).unwrap();
+    }
+
+    #[test]
+    fn the_mark_of_a_list_in_another_slot_is_refused_as_its_records_are() {
+        let store = scratch("misplaced-mark");
+        let (list, slots) = ("home", 4);
+        let wrong = (slot_of(list, slots) + 1) % slots;
+        FileStore::open(slot_directory(&store, wrong))
+            .unwrap()
+            .mark(
+                list,
+                &Openly {
+                    created_at_ms: 1,
+                    touched_at_ms: 1,
+                },
+            )
+            .unwrap();
+        let refused = check_layout(&store, slots).unwrap_err();
+        assert_eq!(refused.kind, StoreErrorKind::Invalid);
+        assert!(
+            refused.message.contains(&format!("slot-{wrong}")),
             "{refused}"
         );
         fs::remove_dir_all(&store).unwrap();

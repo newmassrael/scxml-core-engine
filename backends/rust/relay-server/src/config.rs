@@ -40,6 +40,13 @@
 //! logins_per_node_per_hour = 60
 //! joins_per_minute = 30          # a device joins under an administrator's invitation
 //! joins_outstanding_per_list = 32
+//!
+//! [creation]                     # who gives the relay a list's first entry (ADR 0080 section 3)
+//! policy = "closed"              # "closed": a token of the authority; "open": any device, by work
+//! lapse_days = 90                # a list created openly that no login touched this long is removed
+//! work_bits = 20                 # "open": the work a creation takes
+//! creations_per_minute = 4       # "open": each per source
+//! creations_per_hour = 60        # "open": of the whole relay
 //! ```
 //!
 //! A file holds paths and numbers and never a secret: the keys are files of their own
@@ -55,7 +62,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sce_rust_relay::serve::Bounds;
-use sce_rust_relay::{Limits, LoginPolicy};
+use sce_rust_relay::{CreationPolicy, Limits, LoginPolicy};
+use sce_rust_trust::creation::MOST_WORK_BITS;
 use toml_edit::{Item, TableLike};
 
 use crate::slots::MOST_SLOTS;
@@ -103,6 +111,22 @@ pub struct Config {
     /// What a member's login is held to, when the relay offers login (`None`: it offers none, and
     /// every device presents a token of the authority).
     pub login: Option<LoginPolicy>,
+    /// What a creation on a connection with no token is held to, when the creation policy is
+    /// `open` (`None`: it is `closed`, and a list is created with a token of the authority).
+    pub creation: Option<CreationPolicy>,
+    /// How many days a list created openly may go with no login before it lapses and is removed;
+    /// 0 when lists do not lapse, which an `open` policy is refused with.
+    pub lapse_days: u64,
+}
+
+/// Who may give a relay the first entry of a list it does not hold (ADR 0080 section 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Policy {
+    /// A device that presents a token of the authority for the list's name.
+    Closed,
+    /// Any device, on a connection with no token, by work and under a name that certifies the
+    /// list's genesis; such a list lapses.
+    Open,
 }
 
 /// What a file or a command line says, before it is checked as a whole: `None` where it says
@@ -133,6 +157,11 @@ pub struct Settings {
     pub logins_per_node_per_hour: Option<u64>,
     pub joins_per_minute: Option<u64>,
     pub joins_outstanding_per_list: Option<u64>,
+    pub creation_policy: Option<Policy>,
+    pub lapse_days: Option<u64>,
+    pub work_bits: Option<u64>,
+    pub creations_per_minute: Option<u64>,
+    pub creations_per_hour: Option<u64>,
 }
 
 /// The limits a configuration may set, by the names of [`Limits`]' fields.
@@ -150,7 +179,7 @@ pub const LIMIT_NAMES: [&str; 10] = [
 ];
 
 /// The sections of a configuration file.
-const SECTIONS: [&str; 7] = [
+const SECTIONS: [&str; 8] = [
     "listen",
     "tls",
     "store",
@@ -158,7 +187,14 @@ const SECTIONS: [&str; 7] = [
     "connections",
     "limits",
     "login",
+    "creation",
 ];
+
+/// How many days a list created openly goes with no login before it lapses: the decision's 90.
+pub const DEFAULT_LAPSE_DAYS: u64 = 90;
+
+/// The longest a configuration lets a list created openly go with no login: ten years.
+const MOST_LAPSE_DAYS: u64 = 3650;
 
 const DEFAULT_SLOTS: u64 = 1;
 const DEFAULT_HANDSHAKE_SECONDS: u64 = 10;
@@ -258,6 +294,21 @@ impl Settings {
                     ("login", "joins_outstanding_per_list") => {
                         settings.joins_outstanding_per_list = Some(reader.number(value, &name)?)
                     }
+                    ("creation", "policy") => {
+                        settings.creation_policy = Some(reader.policy(value, &name)?)
+                    }
+                    ("creation", "lapse_days") => {
+                        settings.lapse_days = Some(reader.number(value, &name)?)
+                    }
+                    ("creation", "work_bits") => {
+                        settings.work_bits = Some(reader.number(value, &name)?)
+                    }
+                    ("creation", "creations_per_minute") => {
+                        settings.creations_per_minute = Some(reader.number(value, &name)?)
+                    }
+                    ("creation", "creations_per_hour") => {
+                        settings.creations_per_hour = Some(reader.number(value, &name)?)
+                    }
                     ("limits", limit) if LIMIT_NAMES.contains(&limit) => settings
                         .limits
                         .push((limit.to_string(), reader.number(value, &name)?)),
@@ -305,6 +356,11 @@ impl Settings {
             joins_outstanding_per_list: over
                 .joins_outstanding_per_list
                 .or(self.joins_outstanding_per_list),
+            creation_policy: over.creation_policy.or(self.creation_policy),
+            lapse_days: over.lapse_days.or(self.lapse_days),
+            work_bits: over.work_bits.or(self.work_bits),
+            creations_per_minute: over.creations_per_minute.or(self.creations_per_minute),
+            creations_per_hour: over.creations_per_hour.or(self.creations_per_hour),
         }
     }
 
@@ -410,10 +466,6 @@ impl Settings {
         }
         let login = if self.login_enabled.unwrap_or(true) {
             let policy = LoginPolicy::default();
-            let rate = |name: &str, value: Option<u64>, default: u32| -> Result<u32, ConfigError> {
-                let value = between(name, value.unwrap_or(u64::from(default)), 1, MOST_RATE)?;
-                Ok(u32::try_from(value).unwrap_or(u32::MAX))
-            };
             Some(LoginPolicy {
                 token_seconds: between(
                     "[login] token_seconds",
@@ -458,6 +510,47 @@ impl Settings {
         } else {
             None
         };
+        let lapse_days = between(
+            "[creation] lapse_days",
+            self.lapse_days.unwrap_or(DEFAULT_LAPSE_DAYS),
+            0,
+            MOST_LAPSE_DAYS,
+        )?;
+        let creation =
+            match self.creation_policy.unwrap_or(Policy::Closed) {
+                Policy::Closed => None,
+                // A creation is made on a connection with no token, which a relay takes with login;
+                // and a list created so that never lapsed would be one a stranger keeps for good.
+                Policy::Open if login.is_none() => return Err(error(
+                    "[creation] policy = \"open\" is a creation on a connection with no token, \
+                     which a relay takes only with login: [login] enabled = true",
+                )),
+                Policy::Open if lapse_days == 0 => return Err(error(
+                    "[creation] policy = \"open\" needs lists created so to lapse, or a stranger \
+                     keeps the relay's lists for good: give [creation] lapse_days from 1",
+                )),
+                Policy::Open => {
+                    let policy = CreationPolicy::default();
+                    Some(CreationPolicy {
+                        work_bits: between(
+                            "[creation] work_bits",
+                            self.work_bits.unwrap_or(u64::from(policy.work_bits)),
+                            1,
+                            u64::from(MOST_WORK_BITS),
+                        )? as u32,
+                        creations_per_minute: rate(
+                            "[creation] creations_per_minute",
+                            self.creations_per_minute,
+                            policy.creations_per_minute,
+                        )?,
+                        creations_per_hour: rate(
+                            "[creation] creations_per_hour",
+                            self.creations_per_hour,
+                            policy.creations_per_hour,
+                        )?,
+                    })
+                }
+            };
         Ok(Config {
             plain,
             tls,
@@ -477,12 +570,21 @@ impl Settings {
             limits,
             trusted_proxies: self.trusted_proxies.unwrap_or_default(),
             login,
+            creation,
+            lapse_days,
         })
     }
 }
 
 fn error(message: &str) -> ConfigError {
     ConfigError(message.to_string())
+}
+
+/// A rate of an allowance, so many a minute or an hour: `value` of `name`, or `default`, from 1 to
+/// [`MOST_RATE`].
+fn rate(name: &str, value: Option<u64>, default: u32) -> Result<u32, ConfigError> {
+    let value = between(name, value.unwrap_or(u64::from(default)), 1, MOST_RATE)?;
+    Ok(u32::try_from(value).unwrap_or(u32::MAX))
 }
 
 /// `value` of `name` when it is from `least` to `most`.
@@ -585,6 +687,14 @@ impl Reader<'_> {
     fn boolean(&self, item: &Item, name: &str) -> Result<bool, ConfigError> {
         item.as_bool()
             .ok_or_else(|| self.at(item, format!("{name} is true or false")))
+    }
+
+    fn policy(&self, item: &Item, name: &str) -> Result<Policy, ConfigError> {
+        match item.as_str() {
+            Some("closed") => Ok(Policy::Closed),
+            Some("open") => Ok(Policy::Open),
+            _ => Err(self.at(item, format!("{name} is \"closed\" or \"open\""))),
+        }
     }
 
     /// A list of addresses with no port: the hosts of the proxies a relay trusts.
@@ -779,6 +889,74 @@ joins_outstanding_per_list = 11
     }
 
     #[test]
+    fn creation_is_closed_unless_the_file_opens_it_and_lists_lapse_after_ninety_days() {
+        let base = "[listen]\nplain = [\"127.0.0.1:0\"]\n[store]\ndirectory = \"s\"\n\
+                    [authority]\nkey_file = \"k\"\n";
+        let config = read(base).unwrap().finish().unwrap();
+        assert_eq!(config.creation, None, "closed");
+        assert_eq!(config.lapse_days, 90);
+        let closed = read(&format!("{base}[creation]\npolicy = \"closed\"\n"))
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(closed.creation, None);
+
+        let open = read(&format!("{base}[creation]\npolicy = \"open\"\n"))
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(open.creation, Some(CreationPolicy::default()));
+        assert_eq!(open.creation.map(|creation| creation.work_bits), Some(20));
+        let set = read(&format!(
+            "{base}[creation]\npolicy = \"open\"\nlapse_days = 30\nwork_bits = 22\n\
+             creations_per_minute = 2\ncreations_per_hour = 10\n"
+        ))
+        .unwrap()
+        .finish()
+        .unwrap();
+        assert_eq!(
+            set.creation,
+            Some(CreationPolicy {
+                work_bits: 22,
+                creations_per_minute: 2,
+                creations_per_hour: 10,
+            })
+        );
+        assert_eq!(set.lapse_days, 30);
+    }
+
+    /// Open creation is refused where it would let a stranger keep the relay's lists for good, or
+    /// where no connection with no token is taken to create on.
+    #[test]
+    fn open_creation_is_refused_without_lapse_and_without_login() {
+        let base = "[listen]\nplain = [\"127.0.0.1:0\"]\n[store]\ndirectory = \"s\"\n\
+                    [authority]\nkey_file = \"k\"\n";
+        let refused = |text: &str| {
+            read(&format!("{base}{text}"))
+                .unwrap()
+                .finish()
+                .unwrap_err()
+        };
+        let without_lapse = refused("[creation]\npolicy = \"open\"\nlapse_days = 0\n");
+        assert!(without_lapse.0.contains("lapse_days"), "{without_lapse}");
+        let without_login = refused("[login]\nenabled = false\n[creation]\npolicy = \"open\"\n");
+        assert!(without_login.0.contains("[login]"), "{without_login}");
+        let too_much = refused("[creation]\npolicy = \"open\"\nwork_bits = 25\n");
+        assert!(
+            too_much.0.contains("[creation] work_bits is 25"),
+            "{too_much}"
+        );
+        let too_long = refused("[creation]\nlapse_days = 3651\n");
+        assert!(too_long.0.contains("[creation] lapse_days"), "{too_long}");
+        // Lapse may be turned off where nothing is created openly.
+        let config = read(&format!("{base}[creation]\nlapse_days = 0\n"))
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!((config.creation, config.lapse_days), (None, 0));
+    }
+
+    #[test]
     fn what_a_file_leaves_out_is_at_its_default() {
         let config = read(
             "[listen]\nplain = [\"127.0.0.1:0\"]\n[store]\ndirectory = \"s\"\n\
@@ -834,6 +1012,14 @@ joins_outstanding_per_list = 11
             ("[limits]\nbursts = 1\n", "[limits] bursts is not a setting"),
             ("[login]\nenabled = 1\n", "[login] enabled is true or false"),
             ("[login]\ntokens = 1\n", "[login] tokens is not a setting"),
+            (
+                "[creation]\npolicy = \"ajar\"\n",
+                "[creation] policy is \"closed\" or \"open\"",
+            ),
+            (
+                "[creation]\nlapse = 1\n",
+                "[creation] lapse is not a setting",
+            ),
             (
                 "[listen]\ntrusted_proxies = [\"127.0.0.1:80\"]\n",
                 "addresses with no port",

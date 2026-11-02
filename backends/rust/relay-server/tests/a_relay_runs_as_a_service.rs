@@ -4,8 +4,10 @@
 // never printed, and a token issued from it names one device of one list; a relay that cannot start
 // says what is wrong and exits with a status that says whether starting it again could help; and a
 // relay that started says it is ready (`sd_notify`), answers a device that presents a token, stops when
-// it is sent SIGTERM (saying so, and exiting 0), and holds after a restart what it took before it. No
-// line it writes holds the key or a token.
+// it is sent SIGTERM (saying so, and exiting 0), and holds after a restart what it took before it; a
+// relay that takes creations with no token removes, as it starts, the lists created so that lapsed
+// while it was stopped, and says how many and never which. No line it writes holds the key or a
+// token.
 //
 // The relay's readiness is read from an abstract socket, which only Linux has: the deployment target.
 
@@ -22,7 +24,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sce_rust_relay::serve::WssLink;
-use sce_rust_relay::{Authority, Link, Request, Response, Session, TokenError};
+use sce_rust_relay::{
+    Authority, FileStore, Link, Openly, Record, Request, Response, Session, Store, TokenError,
+};
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::Identity;
 
@@ -142,9 +146,14 @@ fn configuration(scratch: &Scratch, key: &Path, listen: &str) -> PathBuf {
 
 /// The first entry of the list's log, by its administrator.
 fn genesis() -> String {
+    genesis_of(LIST)
+}
+
+/// The first entry of the log of `list`, by its administrator.
+fn genesis_of(list: &str) -> String {
     let administrator = Identity::from_seed([9; 32]);
     Log::genesis_draft(
-        LIST,
+        list,
         Body::Genesis {
             administrators: vec![administrator.public()],
             quorum: 1,
@@ -446,6 +455,62 @@ fn a_relay_that_cannot_start_says_what_is_wrong_and_exits_with_its_reason() {
     // A command line the program does not take.
     let usage = sce_relay(&["serve", "--limit", "bursts=1"]);
     assert_eq!(status_of(&usage), Some(2), "{}", text(&usage.stderr));
+}
+
+#[test]
+fn a_relay_that_takes_creations_removes_the_lists_that_lapsed_while_it_was_stopped() {
+    let scratch = Scratch::new("lapse");
+    let key = keygen(&scratch);
+    let configuration = configuration(&scratch, &key, "127.0.0.1:0");
+    let mut written = fs::read_to_string(&configuration).unwrap();
+    written.push_str("\n[creation]\npolicy = \"open\"\nlapse_days = 90\n");
+    fs::write(&configuration, written).unwrap();
+    // A store that holds a list created openly whose last login was at the epoch, long ago, and
+    // one created with a token, which never lapses.
+    let slot = scratch.path("store").join("slot-0");
+    let mut store = FileStore::open(&slot).unwrap();
+    store
+        .mark(
+            LIST,
+            &Openly {
+                created_at_ms: 0,
+                touched_at_ms: 0,
+            },
+        )
+        .unwrap();
+    store.append(LIST, &Record::Entry(genesis())).unwrap();
+    store
+        .append("kept", &Record::Entry(genesis_of("kept")))
+        .unwrap();
+    drop(store);
+
+    let mut running = Running::start(&configuration);
+    let ready = running.line_with("event=ready");
+    assert!(ready.contains("creation=open"), "{ready}");
+    assert!(ready.contains("lapse_days=90"), "{ready}");
+    assert!(
+        running
+            .seen
+            .iter()
+            .any(|line| line.contains("event=lapsed removed=1 kept=0")),
+        "{:?}",
+        running.seen
+    );
+    let (status, lines) = running.terminate();
+    assert_eq!(status.code(), Some(0), "{lines:?}");
+    let mut after = FileStore::open(&slot).unwrap();
+    let held: Vec<String> = after
+        .load()
+        .unwrap()
+        .into_iter()
+        .map(|(list, _)| list)
+        .collect();
+    assert_eq!(
+        held,
+        vec!["kept".to_string()],
+        "the list that lapsed is gone"
+    );
+    assert!(after.marks().unwrap().is_empty());
 }
 
 #[test]
