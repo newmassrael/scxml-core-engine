@@ -27,7 +27,9 @@
 //!   of every writer make together, which a host checks alone, with no administrator, and which
 //!   shows a relay that withholds an operation.
 //! * [`message`] - the bytes a write is signed as, written from the event's own fields and the
-//!   list's name, so a signature neither moves to another write nor to another list.
+//!   list's name, so a signature neither moves to another write nor to another list; the events
+//!   are those of the standard shared record list (`sce:std/shared/record_list.scxml`), with the
+//!   fields its event schemas declare.
 //! * [`secrecy`] - keeping the content of a write from the hub: a key for each epoch of the
 //!   list, held by its members, seals the number and the text of a write under its stamp, and is
 //!   given to a member sealed under what their key and the giver's agree on. What the hub holds

@@ -66,8 +66,8 @@ pub(crate) struct Held {
     /// What a write is sealed under, with the epoch and the list: its id, field, time, counter and
     /// device. A stamp that names two writes is a nonce used twice.
     pub wid: Option<Vec<u8>>,
-    /// What the host keeps the operation by: the bytes of the write the machine holds, or the subject
-    /// of a note.
+    /// What the host keeps the operation by: the subject of the write as the machine holds it, or
+    /// the subject of a note (`crate::message::Signing::subject`).
     pub key: Vec<u8>,
     pub event: &'static str,
     pub wire: Wire,
