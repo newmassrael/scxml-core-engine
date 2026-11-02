@@ -757,6 +757,7 @@ references against a real document and drift silently.
 | `codec/flag-bind-source-not-resolved` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-width-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-input-unbound` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/list-cannot-move` | `validation` | no | SCE Forge §4.6 |
 | `codec/peek-byte-flag-layout-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/present-if-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/repeat-count-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |

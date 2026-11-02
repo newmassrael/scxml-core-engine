@@ -244,6 +244,20 @@ pub fn check(m: &CodecModel, imports: &[ImportContext]) -> Result<(), ForgeError
     }
 }
 
+/// Hold a codec's lists to the law that a walk moves (docs/adr/0077 §7): a list
+/// that states no `max-count` and whose entry can take no bytes is refused at
+/// its field, since no frame ends its walk.
+pub fn check_lists_move(codec: &crate::forge::codec_size::SizedCodec) -> Result<(), ForgeError> {
+    match crate::forge::codec_size::list_that_cannot_move(codec) {
+        Some(field) => Err(ForgeError::from(ValidationError::CodecListCannotMove {
+            codec: codec.model.name.clone(),
+            field: field.id.clone(),
+        })
+        .at_line(element_line(&codec.model, &field.id))),
+        None => Ok(()),
+    }
+}
+
 /// The row an element of `m` is declared at: a field's (or a flag's carrier's),
 /// a CBOR or content-line entry's, the root's for anything else.
 fn element_line(m: &CodecModel, element: &str) -> Option<u32> {

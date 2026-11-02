@@ -325,6 +325,68 @@ fn body_bytes(codec: &SizedCodec, site: &str, alias: &str) -> Result<u64, Unboun
     }
 }
 
+/// The first list of `codec` whose walk no frame ends (docs/adr/0077 §7): one
+/// that states no `max-count` and whose entry can take no bytes. A list read to
+/// the end of the frame never reaches the end, and one read by count runs as many
+/// times as the frame says, reading nothing. A chain is no such list, since its
+/// entry reads a header.
+pub fn list_that_cannot_move(codec: &SizedCodec) -> Option<&CodecField> {
+    codec.model.fields.iter().find(|field| {
+        matches!(field.bit_size, BitSize::Repeat { .. })
+            && field.max_count.is_none()
+            && body_can_take_no_bytes(
+                codec,
+                field.repeat_body_alias.as_deref().unwrap_or_default(),
+            )
+    })
+}
+
+/// Whether some value of `codec` encodes to no bytes. ⚠ SOUND BY REFUSAL, as the
+/// bound above: yes wherever a byte is not certain, an import that does not
+/// resolve among them, since the answer is what lets a list go unbounded.
+fn can_take_no_bytes(codec: &SizedCodec) -> bool {
+    match codec.model.encoding {
+        CodecEncoding::Positional => {
+            !codec.model.fields.iter().any(|f| always_writes(codec, f))
+                && codec.model.variant.as_ref().is_none_or(|variant| {
+                    variant
+                        .arms
+                        .iter()
+                        .chain(variant.default_arm.iter())
+                        .any(|arm| body_can_take_no_bytes(codec, &arm.body_alias))
+                })
+        }
+        // A CBOR map writes its head, and a content-line component its lines.
+        CodecEncoding::Cbor | CodecEncoding::ContentLine => false,
+    }
+}
+
+/// Whether `field` writes a byte in every value of `codec`. A length or a count is
+/// a field of its own, so the content it measures need not write one.
+fn always_writes(codec: &SizedCodec, field: &CodecField) -> bool {
+    field.present_if.is_none()
+        && match &field.bit_size {
+            BitSize::Fixed { bits } => *bits > 0,
+            BitSize::Vle { .. } => true,
+            BitSize::Tail
+            | BitSize::LengthRef
+            | BitSize::Repeat { .. }
+            | BitSize::TlvChain { .. } => false,
+            BitSize::Embed => !body_can_take_no_bytes(
+                codec,
+                field.embed_body_alias.as_deref().unwrap_or_default(),
+            ),
+        }
+}
+
+/// [`can_take_no_bytes`] of the codec the import `alias` names.
+fn body_can_take_no_bytes(codec: &SizedCodec, alias: &str) -> bool {
+    match codec.imports.get(alias) {
+        Some(SizedImport::Codec(body)) => can_take_no_bytes(body),
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +424,118 @@ mod tests {
             Ok(_) => panic!("the fixture is not a codec document"),
             Err(located) => panic!("the fixture does not parse: {:?}", located.error),
         }
+    }
+
+    /// An entry that holds one byte, always or only under the input `N`.
+    fn entry(gate: &str) -> SizedImport {
+        let body =
+            format!(r#"<sce:field id="a" sce:type="uint8" sce:byte="0" sce:bit-size="8" {gate}/>"#);
+        SizedImport::Codec(Box::new(sized(
+            &positional_xml(
+                r#"<sce:flag-inputs><sce:flag-input name="N" width="1"/></sce:flag-inputs>"#,
+                &body,
+            ),
+            Vec::new(),
+        )))
+    }
+
+    /// A list of the entries imported as `entry`, with its `max-count` taken away
+    /// when `bounded` is false. The parser still requires one, so the model is
+    /// what can state none (docs/adr/0077 §7).
+    fn list_of(imports: Vec<(&str, SizedImport)>, bounded: bool) -> SizedCodec {
+        let mut codec = sized(
+            &positional_xml(
+                r#"<sce:import src="entry.scxml" kind="codec" as="entry"/>"#,
+                r#"<sce:repeat id="items" type="entry" sce:byte="0" until-eof="true" max-count="4"/>"#,
+            ),
+            imports,
+        );
+        if !bounded {
+            codec.model.fields[0].max_count = None;
+        }
+        codec
+    }
+
+    fn cannot_move(codec: &SizedCodec) -> Option<&str> {
+        list_that_cannot_move(codec).map(|field| field.id.as_str())
+    }
+
+    #[test]
+    fn a_list_with_no_bound_moves_only_on_an_entry_that_takes_a_byte() {
+        assert_eq!(
+            cannot_move(&list_of(vec![("entry", entry(""))], false)),
+            None
+        );
+        assert_eq!(
+            cannot_move(&list_of(
+                vec![("entry", entry(r#"sce:present-if="N""#))],
+                false
+            )),
+            Some("items")
+        );
+    }
+
+    #[test]
+    fn a_stated_bound_ends_a_walk_whatever_its_entry_takes() {
+        assert_eq!(
+            cannot_move(&list_of(
+                vec![("entry", entry(r#"sce:present-if="N""#))],
+                true
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn an_entry_that_does_not_resolve_is_taken_to_take_nothing() {
+        assert_eq!(cannot_move(&list_of(Vec::new(), false)), Some("items"));
+    }
+
+    /// A variant whose tag is its caller's, so it writes only the arm it holds:
+    /// one arm that takes a byte, and `other`.
+    fn variant(other: SizedImport) -> SizedImport {
+        SizedImport::Codec(Box::new(sized(
+            &positional_xml(
+                r#"<sce:import src="a.scxml" kind="codec" as="full"/>
+                   <sce:import src="b.scxml" kind="codec" as="other"/>"#,
+                r#"<sce:variant>
+                     <sce:arm value="0x00" type="full"/>
+                     <sce:arm value="0x01" type="other" default="true"/>
+                   </sce:variant>"#,
+            ),
+            vec![("full", entry("")), ("other", other)],
+        )))
+    }
+
+    #[test]
+    fn a_variant_takes_a_byte_only_if_every_arm_does() {
+        assert_eq!(
+            cannot_move(&list_of(vec![("entry", variant(entry("")))], false)),
+            None
+        );
+        assert_eq!(
+            cannot_move(&list_of(
+                vec![("entry", variant(entry(r#"sce:present-if="N""#)))],
+                false
+            )),
+            Some("items")
+        );
+    }
+
+    #[test]
+    fn a_byte_a_field_always_writes_makes_the_arms_no_matter() {
+        let tagged = SizedImport::Codec(Box::new(sized(
+            &positional_xml(
+                r#"<sce:import src="b.scxml" kind="codec" as="other"/>"#,
+                r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+                   <sce:variant tag="tag">
+                     <sce:arm value="0x00" type="other"/>
+                     <sce:default type="other"/>
+                   </sce:variant>"#,
+            ),
+            vec![("other", entry(r#"sce:present-if="N""#))],
+        )));
+        assert_eq!(cannot_move(&list_of(vec![("entry", tagged)], false)), None);
     }
 
     /// The codec with the imports the test resolves by hand.

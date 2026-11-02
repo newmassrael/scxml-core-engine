@@ -1,0 +1,54 @@
+# Mutation cases for "a list no bound ends is held to its walk moving".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_no_bound_ends_is_held_to_its_walk_moving.cases`.
+#
+# A list that states no `max-count` and whose entry can take no bytes has no frame
+# that ends its walk (docs/adr/0077 §7). The analysis is sound by refusal: it says a
+# byte is written only where that is certain, so a mistake in it would let such a
+# list through. Each case takes one piece of that away, and the module's own tests
+# refuse each.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::codec_size
+mutation_targets sce-build/src/forge/codec_size.rs
+mutation_oracles sce-build/src/forge/codec_size.rs
+
+mutation_case "a stated bound does not end a walk" <<'PY'
+edit("sce-build/src/forge/codec_size.rs",
+     r'''            && field.max_count.is_none()
+''',
+     r'''''')
+PY
+
+mutation_case "one arm that takes a byte is enough" <<'PY'
+edit("sce-build/src/forge/codec_size.rs",
+     r'''                        .any(|arm| body_can_take_no_bytes(codec, &arm.body_alias))''',
+     r'''                        .all(|arm| body_can_take_no_bytes(codec, &arm.body_alias))''')
+PY
+
+mutation_case "a gated field counts as a byte it always writes" <<'PY'
+edit("sce-build/src/forge/codec_size.rs",
+     r'''    field.present_if.is_none()
+        && match &field.bit_size {''',
+     r'''    field.line != Some(u32::MAX)
+        && match &field.bit_size {''')
+PY
+
+mutation_case "an entry that does not resolve takes a byte" <<'PY'
+edit("sce-build/src/forge/codec_size.rs",
+     r'''        Some(SizedImport::Codec(body)) => can_take_no_bytes(body),
+        _ => true,''',
+     r'''        Some(SizedImport::Codec(body)) => can_take_no_bytes(body),
+        _ => false,''')
+PY
+
+mutation_case "a field that always writes does not excuse the arms" <<'PY'
+edit("sce-build/src/forge/codec_size.rs",
+     r'''            !codec.model.fields.iter().any(|f| always_writes(codec, f))
+                && codec.model.variant''',
+     r'''            codec.model.fields.iter().any(|f| always_writes(codec, f)).then_some(()).is_none()
+                || codec.model.variant''')
+PY

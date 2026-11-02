@@ -988,6 +988,9 @@ pub enum DiagnosticCode {
     CodecEncodeMayFailWithoutRefusal,
     #[serde(rename = "codec/capacity-invalid")]
     CodecCapacityInvalid,
+    // A list no bound ends, whose entry can take no bytes (docs/adr/0077 §7).
+    #[serde(rename = "codec/list-cannot-move")]
+    CodecListCannotMove,
 
     // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
@@ -3821,6 +3824,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecEncodeMayFailWithoutRefusal,
         // What a deployment gives a codec's storing forms (docs/adr/0077 §7)
         CodecCapacityInvalid,
+        CodecListCannotMove,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
         // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
@@ -4660,9 +4664,9 @@ impl DiagnosticCode {
 
             // ── A codec's encode totality (SCE_FORGE.md §4.6, docs/adr/0065) ──
             CodecCapacityInvalid => Some("ADR 0077 §7"),
-            CodecUndeclaredEncodeRefusal | CodecEncodeMayFailWithoutRefusal => {
-                Some("SCE Forge §4.6")
-            }
+            CodecUndeclaredEncodeRefusal
+            | CodecEncodeMayFailWithoutRefusal
+            | CodecListCannotMove => Some("SCE Forge §4.6"),
 
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
@@ -5444,6 +5448,7 @@ impl DiagnosticCode {
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
+            | CodecListCannotMove
             | ScxmlTopLevelScriptUnloaded
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
@@ -5938,6 +5943,7 @@ impl DiagnosticCode {
             CodecUndeclaredEncodeRefusal => "codec/undeclared-encode-refusal",
             CodecEncodeMayFailWithoutRefusal => "codec/encode-may-fail-without-refusal",
             CodecCapacityInvalid => "codec/capacity-invalid",
+            CodecListCannotMove => "codec/list-cannot-move",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
@@ -8305,6 +8311,16 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: None,
             // The repair is in the deploy input, whose rule the message says.
+            fix: None,
+            key_fragments: vec![codec.clone(), field.clone()],
+        },
+        ValidationError::CodecListCannotMove { codec, field } => DiagnosticPayload {
+            code: DiagnosticCode::CodecListCannotMove,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(field.clone()),
+            // Two repairs are right — state a `max-count`, or give the entry a
+            // byte it always writes — so the record names neither.
             fix: None,
             key_fragments: vec![codec.clone(), field.clone()],
         },
@@ -15732,6 +15748,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8831a23d0920af09","code":"codec/capacity-invalid","stage":"validation","spec":"ADR 0077 §7","message":"the deployment's capacity for 'codec_repeat_basic.frags' is refused: capacity 33 is past the field's bound 32"}"#,
             ),
+            (
+                "forge/codec-list-cannot-move",
+                ValidationError::CodecListCannotMove {
+                    codec: "codec_repeat_basic".into(),
+                    field: "frags".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:939f1c51d389256d","code":"codec/list-cannot-move","stage":"validation","spec":"SCE Forge §4.6","message":"codec 'codec_repeat_basic': the list `frags` states no max-count and its entry can take no bytes, so no frame ends its walk — state a max-count, or give the entry a byte it always writes","actual":"frags"}"#,
+            ),
             // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -19241,6 +19266,7 @@ mod tests {
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
+            | CodecListCannotMove
             | XmlSchemaValidation
             | XmlFileNotFound
             | XmlXIncludeMissingHref
@@ -20290,6 +20316,7 @@ mod tests {
                 | CodecUndeclaredEncodeRefusal
                 | CodecEncodeMayFailWithoutRefusal
                 | CodecCapacityInvalid
+                | CodecListCannotMove
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
@@ -20675,9 +20702,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            493,
+            494,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 493 distinct variants to match the DiagnosticCode \
+             expected 494 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21347,6 +21374,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CodecUndeclaredEncodeRefusal
             | CodecEncodeMayFailWithoutRefusal
             | CodecCapacityInvalid
+            | CodecListCannotMove
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule

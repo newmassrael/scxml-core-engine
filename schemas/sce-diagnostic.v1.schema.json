@@ -119,6 +119,7 @@
         "codec/undeclared-encode-refusal",
         "codec/encode-may-fail-without-refusal",
         "codec/capacity-invalid",
+        "codec/list-cannot-move",
         "scxml/top-level-script-unloaded",
         "scxml/unsupported-datamodel",
         "scxml/null-datamodel-forbids-construct",

@@ -8812,7 +8812,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (493 codes)
+## Appendix — `DiagnosticCode` index (494 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8950,6 +8950,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/undeclared-encode-refusal` | Validation |
 | `codec/encode-may-fail-without-refusal` | Validation |
 | `codec/capacity-invalid` | Validation |
+| `codec/list-cannot-move` | Validation |
 | `algorithm/const-not-foldable` | Generate |
 | `algorithm/const-fold-budget-exceeded` | Generate |
 | `algorithm/const-yield-type-mismatch` | Generate |

@@ -1468,6 +1468,17 @@ pub enum ValidationError {
         rule: String,
     },
 
+    /// docs/adr/0077 §7, a walk moves: a list that states no `max-count` and
+    /// whose entry can take no bytes. A bound is what would end its walk, and a
+    /// frame cannot: read to the end of the frame it never gets there, and read
+    /// by count it runs as many times as the frame says, reading nothing.
+    #[error(
+        "codec '{codec}': the list `{field}` states no max-count and its entry can take no \
+         bytes, so no frame ends its walk — state a max-count, or give the entry a byte it \
+         always writes"
+    )]
+    CodecListCannotMove { codec: String, field: String },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

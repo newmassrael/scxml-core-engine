@@ -4112,6 +4112,15 @@ pub fn compile_forge_from_parsed(
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::codec_totality::check(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        // A list a bound does not end is held to its walk moving
+        // (docs/adr/0077 §7). Only such a list needs its imports read again.
+        if m.fields.iter().any(|f| {
+            matches!(f.bit_size, forge::model::BitSize::Repeat { .. }) && f.max_count.is_none()
+        }) {
+            let sized = sized_codec(m, &parsed.imports, base_dir, &mut HashSet::new());
+            forge::codec_totality::check_lists_move(&sized)
+                .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        }
     }
 
     // `previous(x)` reads x from the activation before this one: x must be
