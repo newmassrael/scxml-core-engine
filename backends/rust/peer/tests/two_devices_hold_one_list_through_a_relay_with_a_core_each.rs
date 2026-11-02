@@ -695,6 +695,8 @@ fn a_device_taken_off_writes_to_no_one() {
     let mut alice = alice();
     let mut bob = invited(BOB);
     network.round(&mut alice, ALICE, RoundKind::Sync);
+    // An invited device signs nothing before a round has read it the log that grants it.
+    network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(bob.outbound(WRITE, &write(1, BOB, 1000, 1)), Kept::Taken);
     network.round(&mut bob, BOB, RoundKind::Sync);
     network.round(&mut alice, ALICE, RoundKind::Sync);
