@@ -6355,18 +6355,12 @@ fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the
     // is a codec the Swift codec emitter does not write, and a log over it would name a
     // struct that no unit declares. Each case is a shape the emitter names by itself.
     let xml = event_ring();
-    let bit_field = codec_with(
-        "event_record",
-        "",
-        r#"<data id="priority" sce:type="uint8" sce:byte="0" sce:bit-offset="5" sce:bit-size="3"/>"#,
-    );
     let payload = codec_with("event_record", "", BOUNDED_FIELDS);
     let cbor = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
     );
-    let cases: [(&str, String, &str); 4] = [
+    let cases: [(&str, String, &str); 3] = [
         ("a flag input", flag_input_codec(), "a flag input"),
-        ("a bit field", bit_field, "field 'priority'"),
         ("a variable payload", payload, "field 'payload'"),
         ("a CBOR map", cbor, "cbor"),
     ];
@@ -6388,6 +6382,28 @@ fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the
             assert!(detail.contains(needle), "{what}: `{needle}` in {detail}");
         }
     }
+}
+
+#[test]
+fn swift_stores_an_element_whose_codec_writes_a_bit_field() {
+    // The Swift codec emitter writes a bit field, so the element's struct is one a
+    // unit declares and a log over it generates.
+    let bit_field = codec_with(
+        "event_record",
+        "",
+        r#"<data id="priority" sce:type="uint8" sce:byte="0" sce:bit-offset="5" sce:bit-size="3"/>"#,
+    );
+    assert!(
+        compile_documents(
+            Language::Swift,
+            &[
+                ("event_ring.scxml", &event_ring()),
+                ("event_record.scxml", &bit_field)
+            ],
+        )
+        .is_ok(),
+        "a log over an element with a bit field generates in Swift"
+    );
 }
 
 /// A document of the shared broadcast-log conformance set whose elements ask their
