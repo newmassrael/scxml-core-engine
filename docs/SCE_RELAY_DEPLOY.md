@@ -21,7 +21,9 @@ enforcing. Nothing in it names a particular host; replace `relay.example` with t
 The binary is built on a development machine for `x86_64-unknown-linux-musl`, which links everything
 it needs into one file that runs on any x86_64 Linux whatever its C library. `ring` (the TLS
 cryptography) compiles C and assembly, so the build needs a C compiler for the musl target; `musl-gcc`
-(the `musl-tools` package of Debian and Ubuntu) is one:
+(the `musl-tools` package of Debian and Ubuntu) is one, and the host's own `gcc` also serves, since
+`ring`'s C includes no header of the C library (`CC_x86_64_unknown_linux_musl=gcc`, built so
+2026-11-02):
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
