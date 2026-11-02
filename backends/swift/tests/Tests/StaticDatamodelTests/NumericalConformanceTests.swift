@@ -963,6 +963,33 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_subbyte
+
+@Test func codecSubbyteMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_subbyte")
+    #expect(!cases.isEmpty, "codec_subbyte: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_subbyte case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecSubbyte(
+            priority: try oracleInteger(decoded.member("priority"), as: UInt8.self),
+            channel: try oracleInteger(decoded.member("channel"), as: UInt8.self),
+            direction: try oracleInteger(decoded.member("direction"), as: UInt8.self)
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_subbyte case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecSubbyte.decode(&cursor)
+        #expect(roundTripped == value, "codec_subbyte case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_subbyte case \(index) decode consumed the frame and nothing else")
+    }
+}
+
 // MARK: - codec: codec_zenoh_close
 
 @Test func codecZenohCloseMatchesReference() throws {

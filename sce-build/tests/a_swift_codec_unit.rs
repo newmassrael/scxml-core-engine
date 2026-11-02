@@ -4,8 +4,7 @@
 // A codec (`sce:kind="codec"`, a frame of fields at byte offsets), written for Swift in part: a
 // positional codec of native-width integers is a struct with a `decode` over the runtime's
 // `SceCursor` and an `encode` into its `SceSink`, and what the Swift codec does not write yet (a
-// bit field, a repeat, a variant, a string, another encoding) is refused by name and never
-// written without it. A flag carrier is a field like any other, and the flags it names are
+// repeat, a variant, a string, another encoding) is refused by name and never written without it. A flag carrier is a field like any other, and the flags it names are
 // properties of the struct that read and write the bits of it.
 //
 // The runtime half is `backends/swift/forge-runtime/Sources/SceForgeRuntime/Codec.swift`, held by
@@ -46,12 +45,19 @@ fn swift_of(document: &str) -> Result<String, String> {
 /// A codec named `flagged` whose first field is a `uint8` flag carrier `header` holding `flags`
 /// (the `<sce:flag>` elements), then `extra` (more fields), written to Swift from a string.
 fn swift_of_flags(flags: &str, extra: &str) -> Result<String, String> {
+    swift_of_datamodel(&format!(
+        r#"<sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">{flags}</sce:flags>
+    {extra}"#
+    ))
+}
+
+/// A codec named `flagged` whose `<datamodel>` holds `fields`, written to Swift from a string.
+fn swift_of_datamodel(fields: &str) -> Result<String, String> {
     let document = format!(
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="flagged">
   <datamodel>
-    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">{flags}</sce:flags>
-    {extra}
+    {fields}
   </datamodel>
 </scxml>"#
     );
@@ -246,11 +252,52 @@ fn a_frame_is_written_in_one_write_so_a_bounded_sink_holds_all_of_it_or_none() {
 }
 
 #[test]
+fn a_field_of_bits_inside_a_byte_is_cut_and_shifted_into_it() {
+    let code =
+        swift_of("tests/forge/resources/codec_subbyte.scxml").expect("bit fields are written");
+    assert!(
+        code.contains("priority: try (cursor.peekInteger(UInt8.self, at: 0, .big) >> 5) & 0x7,"),
+        "a decode shifts the bits down and masks them: {code}"
+    );
+    assert!(
+        code.contains("direction: try (cursor.peekInteger(UInt8.self, at: 0, .big) >> 0) & 0x3"),
+        "{code}"
+    );
+    assert!(
+        code.contains("frame[0] |= (channel & 0x7) << 2"),
+        "an encode cuts the value to its width and ors it into the byte: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 1"),
+        "three fields of one byte are one byte: {code}"
+    );
+}
+
+#[test]
+fn a_bit_field_that_does_not_fit_in_one_byte_is_refused_by_name() {
+    for (field, what) in [
+        (
+            r#"<sce:field id="wide" sce:type="uint16" sce:byte="0" sce:bit-offset="0" sce:bit-size="4"/>"#,
+            "which only a `uint8` takes",
+        ),
+        (
+            r#"<sce:field id="past" sce:type="uint8" sce:byte="0" sce:bit-offset="6" sce:bit-size="4"/>"#,
+            "which are not inside one byte",
+        ),
+    ] {
+        let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));
+        assert!(
+            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
+            "{field}: {refusal}"
+        );
+    }
+}
+
+#[test]
 fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),
         ("codec_content_line_enums", "content-line"),
-        ("codec_subbyte", "field '"),
         ("codec_chain_flag_carrier", "field '"),
         ("codec_chain_flag_entry", "a flag input"),
         ("codec_chain_has_envelope", "field '"),

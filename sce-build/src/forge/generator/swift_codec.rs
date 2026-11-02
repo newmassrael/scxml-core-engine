@@ -107,9 +107,6 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     if f.present_if.is_some() {
         return what("a `sce:present-if` condition");
     }
-    if f.bit_offset.is_some() {
-        return what("a bit offset");
-    }
     if f.is_repeat() {
         return what("a repeat");
     }
@@ -128,6 +125,13 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     if f.dma_burst_align.is_some() {
         return what("a DMA alignment");
     }
+    // A field of bits inside one byte has no byte order: it is the byte's own bits.
+    if f.bit_offset.is_some() {
+        return match bit_field(f) {
+            Ok(_) => None,
+            Err(reason) => what(&reason),
+        };
+    }
     if f.effective_endian(m.default_endian) == Endian::Native {
         return what("the native byte order");
     }
@@ -141,6 +145,30 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
         )),
         _ => what("a bit size that is not fixed"),
     }
+}
+
+/// Where the bits of a field that names a `sce:bit-offset` lie in its byte: the shift that brings
+/// them to the least significant end and the mask of their width at zero. The field is a `uint8`
+/// holding `bit-size` bits from `bit-offset`, wholly inside the byte at `sce:byte`; any other
+/// shape (a wider type, a bit size that is not fixed, bits past the byte) is the reason it is not
+/// lowered.
+fn bit_field(f: &CodecField) -> Result<(u32, u8), String> {
+    if !matches!(f.sce_type, SceType::Uint8) {
+        return Err(format!(
+            "a bit offset on a `{}` field, which only a `uint8` takes",
+            f.sce_type.as_attr()
+        ));
+    }
+    let BitSize::Fixed { bits } = f.bit_size else {
+        return Err("a bit offset with a bit size that is not fixed".to_string());
+    };
+    let offset = f.bit_offset.unwrap_or(0);
+    if bits == 0 || offset + bits > 8 {
+        return Err(format!(
+            "{bits} bits from bit {offset}, which are not inside one byte"
+        ));
+    }
+    Ok((offset, ((1u32 << bits) - 1) as u8))
 }
 
 /// What the template needs to write the property of one flag: its name, where its bits lie in
@@ -210,6 +238,15 @@ pub(super) fn render(
                 "order": order,
                 "default": default,
                 "flags": f.flags.iter().map(flag_context).collect::<Vec<_>>(),
+                // Where its bits lie in the byte, for a field of bits inside one: `null` for a
+                // field that is the whole of its integer.
+                "bits": bit_field(f).ok().filter(|_| f.bit_offset.is_some()).map(|(shift, mask)| {
+                    serde_json::json!({
+                        "shift": shift,
+                        "mask": format!("0x{mask:X}"),
+                        "size": mask.count_ones(),
+                    })
+                }),
             })
         })
         .collect();
