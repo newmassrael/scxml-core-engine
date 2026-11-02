@@ -227,6 +227,18 @@ public func appendVle<T: FixedWidthInteger & UnsignedInteger>(
     buffer.append(UInt8(truncatingIfNeeded: rest))
 }
 
+/// An entry's identifier as the unsigned 64-bit value a chain compares, whatever type the property it
+/// is read from has: a flag of one bit is a `Bool`, a wider flag or a field an integer. One literal
+/// then compares against all of them, and the type alone picks which of the two reads it.
+public func chainIdentifier(_ flag: Bool) -> UInt64 {
+    flag ? 1 : 0
+}
+
+/// The integer form of [`chainIdentifier`]: the bits of the value, zero-extended.
+public func chainIdentifier<T: FixedWidthInteger>(_ value: T) -> UInt64 {
+    UInt64(truncatingIfNeeded: value)
+}
+
 /// The write-side of an encode: the destination of the bytes, owned by the caller.
 public protocol SceSink {
     /// Appends `data`. A bounded sink answers `bufferOverflow` and writes nothing when `data` does

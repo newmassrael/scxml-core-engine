@@ -243,3 +243,11 @@ import Testing
     #expect(throws: CodecError.needMoreBytes) { try cursor.readString(-1) }
     #expect(cursor.remaining == 2)
 }
+
+@Test func anEntrysIdentifierIsTheSameNumberWhateverTypeItIsReadFrom() {
+    #expect(chainIdentifier(true) == 1)
+    #expect(chainIdentifier(false) == 0)
+    #expect(chainIdentifier(UInt8(0x4)) == 4)
+    #expect(chainIdentifier(UInt16(0xFFFF)) == 0xFFFF)
+    #expect(chainIdentifier(UInt64.max) == UInt64.max)
+}

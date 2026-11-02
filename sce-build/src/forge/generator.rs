@@ -14456,8 +14456,18 @@ fn embed_flag_bind_thread_args_supplying(
     let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
         if let Some(arg) = supplied(&input.name) {
-            decode_out.push_str(&format!(", {arg}"));
-            encode_out.push_str(&format!(", {arg}"));
+            // A Swift codec takes its inputs as labelled parameters, named as the leaf names them.
+            let passed = match lang {
+                Language::Swift => format!("{}: {arg}", input.name),
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::C11 => arg.clone(),
+            };
+            decode_out.push_str(&format!(", {passed}"));
+            encode_out.push_str(&format!(", {passed}"));
             inputs.push(ThreadInput {
                 input: input.name.clone(),
                 expr: arg,
@@ -16679,8 +16689,8 @@ fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String 
     match lang {
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
-        Language::Cpp | Language::Kotlin => id.to_string(),
-        Language::Swift => no_swift_emitter("codec_field_local_name"),
+        // A Swift struct names a field as the document does.
+        Language::Cpp | Language::Kotlin | Language::Swift => id.to_string(),
     }
 }
 
@@ -19763,7 +19773,8 @@ fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::La
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python
-            | crate::generator::Language::C11,
+            | crate::generator::Language::C11
+            | crate::generator::Language::Swift,
         ) => has,
         (true, crate::generator::Language::Python) => format!("not {has}"),
         (
@@ -19772,9 +19783,9 @@ fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::La
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
-            | crate::generator::Language::C11,
+            | crate::generator::Language::C11
+            | crate::generator::Language::Swift,
         ) => format!("!{has}"),
-        (_, crate::generator::Language::Swift) => no_swift_emitter("present_if_chain_clause"),
     }
 }
 
@@ -19803,7 +19814,16 @@ fn chain_entry_identifier(
     else {
         panic!("a chain-membership clause names a chain that declares entry-id");
     };
-    let raw = if identifier.carrier.is_some() {
+    let raw = if matches!(lang, Language::Swift) {
+        // A Swift struct holds a flag as a property beside its fields, a `Bool` for a flag of one bit
+        // and an integer for a wider one, and a field under the name the document gives it.
+        let property = if identifier.carrier.is_some() {
+            swift_codec::flag_property(&identifier.name)
+        } else {
+            identifier.name.clone()
+        };
+        format!("{entry}.{property}")
+    } else if identifier.carrier.is_some() {
         // A flag of the entry codec's flags carrier: read through its getter.
         let getter = flag_getter_name(&identifier.name, lang);
         if matches!(lang, Language::C11) {
@@ -19829,7 +19849,9 @@ fn chain_entry_identifier(
         Language::Go => format!("uint64({raw})"),
         Language::Python => raw,
         Language::C11 => format!("(uint64_t)({raw})"),
-        Language::Swift => no_swift_emitter("chain_entry_identifier"),
+        // The runtime reads the value whichever type the property has, a flag of one bit or an
+        // integer, which only the type can tell.
+        Language::Swift => format!("chainIdentifier({raw})"),
     };
     let Some(mask) = mask else {
         return whole;
@@ -19837,10 +19859,14 @@ fn chain_entry_identifier(
     let mask = chain_identifier_literal(mask, lang);
     match lang {
         Language::Kotlin => format!("({whole} and {mask})"),
-        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+        Language::Rust
+        | Language::Cpp
+        | Language::Go
+        | Language::Python
+        | Language::C11
+        | Language::Swift => {
             format!("({whole} & {mask})")
         }
-        Language::Swift => no_swift_emitter("chain_entry_identifier"),
     }
 }
 
@@ -19851,8 +19877,7 @@ fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> Str
         Language::Rust => format!("{value}u64"),
         Language::Cpp | Language::C11 => format!("{value}ULL"),
         Language::Kotlin => format!("{value}UL"),
-        Language::Go | Language::Python => value.to_string(),
-        Language::Swift => no_swift_emitter("chain_identifier_literal"),
+        Language::Go | Language::Python | Language::Swift => value.to_string(),
     }
 }
 
@@ -19952,7 +19977,7 @@ impl ChainEntryBinds {
                     Language::Go => format!("var {local} byte"),
                     Language::Python => format!("{local} = 0"),
                     Language::C11 => format!("uint8_t {local} = 0;"),
-                    Language::Swift => no_swift_emitter("decls"),
+                    Language::Swift => format!("var {local}: UInt8 = 0"),
                 };
                 format!("{decl}\n{indent}")
             })
@@ -20005,7 +20030,7 @@ impl ChainEntryBinds {
                 }
                 Language::Python => format!("{local} = 1 if {test} else 0"),
                 Language::C11 => format!("{local} = (uint8_t)(({test}) ? 1 : 0);"),
-                Language::Swift => no_swift_emitter("update_lines"),
+                Language::Swift => format!("{local} = ({test}) ? 1 : 0"),
             });
         }
         lines
@@ -20190,7 +20215,20 @@ fn chain_has_decl_lines(
                 "}".to_string(),
             ]
         }
-        Language::Swift => no_swift_emitter("chain_has_decl_lines"),
+        Language::Swift => {
+            // The chain is a member of the frame being decoded or the value being encoded; a gated
+            // one is `nil` when it was not on the wire, and an absent chain has no entries.
+            let holder = if encode { "self" } else { "frame" };
+            let list = if gated {
+                format!("({holder}.{id} ?? [])")
+            } else {
+                format!("{holder}.{id}")
+            };
+            let found = test("_e");
+            vec![format!(
+                "let {has} = {list}.contains(where: {{ _e in {found} }})"
+            )]
+        }
     }
 }
 

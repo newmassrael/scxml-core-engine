@@ -89,7 +89,7 @@ const LOCALS: &[&str] = &[
 
 /// The property that reads and writes the flag `name` of a carrier: lowerCamel, as a Swift
 /// property is spelled.
-fn flag_property(name: &str) -> String {
+pub(super) fn flag_property(name: &str) -> String {
     filters::to_camel_case(name.to_string())
 }
 
@@ -132,19 +132,14 @@ fn field_unlowered(
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
-    if let Some(predicate) = &f.present_if {
-        if let Some(reason) = present_if_unlowered(predicate) {
-            return what(&reason);
-        }
-        if !f.flags.is_empty() {
-            return what("a flags carrier that is present only on a condition");
-        }
+    if f.present_if.is_some() && !f.flags.is_empty() {
+        return what("a flags carrier that is present only on a condition");
     }
     if let BitSize::Repeat { count_ref } = &f.bit_size {
         return repeat_unlowered(m, f, count_ref, element);
     }
-    if let BitSize::TlvChain { entry_binds, .. } = &f.bit_size {
-        return chain_unlowered(f, entry_binds, element);
+    if f.is_tlv_chain() {
+        return chain_unlowered(f, element);
     }
     if f.is_embed() {
         return embed_unlowered(m, f, element);
@@ -280,21 +275,13 @@ fn repeat_unlowered(
 ///
 /// It is an `Array` of the struct the entry codec is written as, read one entry after another until
 /// the frame ends or the entry says it is the last, and at most as many as the document's `max-depth`
-/// (`terminate_on`). The entry codec's unit must be written (`element`). A chain that hands its
-/// entries an input read off the entry before is named, as is one whose later fields are gated on
-/// the kinds of entry it holds, which the gate refuses ([`present_if_unlowered`]).
-fn chain_unlowered(
-    f: &CodecField,
-    entry_binds: &[TlvEntryFlagBind],
-    element: &dyn Fn(&str) -> Option<String>,
-) -> Option<String> {
+/// (`terminate_on`). The entry codec's unit must be written (`element`). A chain may hand its
+/// entries an input read off the entry before, which the loop carries in a local of its own.
+fn chain_unlowered(f: &CodecField, element: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
     let Some(alias) = f.tlv_chain_body_alias.as_deref() else {
         return what("a chain with no entry codec");
     };
-    if !entry_binds.is_empty() {
-        return what("a chain that hands its entries an input read off the entry before");
-    }
     if let Some(why) = element(alias) {
         return what(&format!(
             "a chain of '{alias}', which has no Swift lowering ({why})"
@@ -366,34 +353,29 @@ fn is_sequential(m: &CodecModel) -> bool {
         })
 }
 
-/// What of the predicate `predicate` the Swift codec does not lower yet: a clause on the entries of
-/// a chain reads a chain the codec does not hold. A clause on a flag input reads the parameter the
-/// codec takes for it, and one on a local flag the bit of a carrier it has read. The carrier a local
-/// clause names, and its flag, exist and are unsigned integers, and an input a clause names is one
-/// the codec declares: validation has refused a codec where they do not.
-fn present_if_unlowered(predicate: &PresentIfPredicate) -> Option<String> {
-    if predicate.scope == PresentIfScope::Chain {
-        return Some("a `sce:present-if` on the entries of a chain".to_string());
-    }
-    predicate.or_with.as_deref().and_then(present_if_unlowered)
-}
-
 /// The Swift condition under which a field gated by `predicate` is on the wire: the bit a flag of
 /// an earlier carrier names is set, or the flag input the codec is given (or clear, for a negated
-/// clause), and any clause of a disjunction holds. `holder` names the value whose carriers are
-/// read: the frame being decoded, or `self` when it is encoded; an input is a parameter of both. The
-/// mask is the one every backend tests, from the shared resolution of the predicate.
-/// [`present_if_unlowered`] has found nothing to refuse in it.
+/// clause), or an entry of a chain the codec holds has a given identifier (or none does, for a
+/// negated clause), and any clause of a disjunction holds. `holder` names the value whose carriers
+/// are read: the frame being decoded, or `self` when it is encoded; an input is a parameter of both,
+/// and a chain's answer is the boolean the codec binds beside the chain ([`chain_has_lines`]). The
+/// mask is the one every backend tests, from the shared resolution of the predicate. The carrier a
+/// local clause names, and its flag, exist and are unsigned integers, and an input a clause names is
+/// one the codec declares: validation has refused a codec where they do not.
 fn present_if_condition(m: &CodecModel, predicate: &PresentIfPredicate, holder: &str) -> String {
-    let (mask, _, carrier) = present_if_carrier_info(&m.fields, predicate);
-    let operand = match carrier {
-        PresentIfCarrier::Local(carrier) => format!("{holder}.{}", carrier.id),
-        PresentIfCarrier::Input => predicate.flag_name.clone(),
+    let test = if predicate.scope == PresentIfScope::Chain {
+        present_if_chain_clause(predicate, Language::Swift)
+    } else {
+        let (mask, _, carrier) = present_if_carrier_info(&m.fields, predicate);
+        let operand = match carrier {
+            PresentIfCarrier::Local(carrier) => format!("{holder}.{}", carrier.id),
+            PresentIfCarrier::Input => predicate.flag_name.clone(),
+        };
+        format!(
+            "({operand} & 0x{mask:X}) {} 0",
+            if predicate.negate { "==" } else { "!=" }
+        )
     };
-    let test = format!(
-        "({operand} & 0x{mask:X}) {} 0",
-        if predicate.negate { "==" } else { "!=" }
-    );
     match &predicate.or_with {
         Some(rest) => format!("{test} || {}", present_if_condition(m, rest, holder)),
         None => test,
@@ -785,6 +767,8 @@ pub(super) fn render(
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(crate::generator::Language::Swift, imports);
     let sequential = is_sequential(m);
+    // The bits of an entry's value that are its identifier, for each chain that leaves flags out of it.
+    let masks = chain_identifier_masks(m, imports);
     // The bytes of the frame: for fields at fixed places the end of the last of them, for a frame
     // read field by field the fewest bytes it can have, which is each integer at its width, each
     // variable-length integer at one byte, and the bytes of a variable-length field at none.
@@ -905,8 +889,35 @@ pub(super) fn render(
                     .get(&f.id)
                     .expect("a chain this renderer is given names an entry codec")
                     .clone();
-                let (decode_args, encode_args) =
-                    thread(f.tlv_chain_body_alias.as_deref().unwrap_or_default());
+                // An input the chain supplies is a local of its own, which the loop declares before
+                // the first entry, hands to each entry, and rewrites from the entry it has just handled.
+                let (decode_args, encode_args) = {
+                    let alias = f.tlv_chain_body_alias.as_deref().unwrap_or_default();
+                    let args = embed_flag_bind_thread_args_supplying(
+                        imports.iter().find(|import| import.alias == alias),
+                        m,
+                        Language::Swift,
+                        |input| ChainEntryBinds::local_of(f, input),
+                    );
+                    (args.decode_arg, args.encode_arg)
+                };
+                let binds = ChainEntryBinds::of(f, &masks);
+                let pad = if present.is_some() { 4 } else { 0 };
+                let at = |extra: usize| " ".repeat(8 + pad + extra);
+                // What the codec's gates ask of the chain's entries, bound once the chain is read.
+                let has_decode: Vec<String> = chain_has_values(&m.fields, &f.id)
+                    .into_iter()
+                    .flat_map(|value| {
+                        chain_has_decl_lines(
+                            f,
+                            value,
+                            &masks,
+                            Language::Swift,
+                            PresentIfSite::Decode,
+                            None,
+                        )
+                    })
+                    .collect();
                 let accessor = match terminate_on {
                     TlvTerminateStrategy::ExhaustOrDepth => serde_json::Value::Null,
                     TlvTerminateStrategy::EntryFlag { flag_name } => {
@@ -929,6 +940,9 @@ pub(super) fn render(
                         "accessor": accessor,
                         "decode_args": decode_args,
                         "encode_args": encode_args,
+                        "decls": binds.decls(Language::Swift, &at(0)),
+                        "updates": binds.update_lines(f, "entry", Language::Swift, &at(4)),
+                        "has_decode": has_decode,
                     },
                 });
             }
@@ -1092,7 +1106,25 @@ pub(super) fn render(
     // The refusals an encode makes before its first byte: of a field and the gate it is held to that
     // contradict each other, and of a value outside its bound.
     let roles = crate::forge::codec_roles::classify(m, imports);
-    let mut bound_checks = presence_mismatch_checks(m, &roles.checks);
+    let mismatches = presence_mismatch_checks(m, &roles.checks);
+    // The value is asked what the gates asked of the frame, once, before a check reads the answer;
+    // when no check does, the answer is not bound, and the compiler has no unused value to warn of.
+    let mut bound_checks: Vec<String> = Vec::new();
+    if !mismatches.is_empty() {
+        for chain in m.fields.iter().filter(|f| f.is_tlv_chain()) {
+            for value in chain_has_values(&m.fields, &chain.id) {
+                bound_checks.extend(chain_has_decl_lines(
+                    chain,
+                    value,
+                    &masks,
+                    Language::Swift,
+                    PresentIfSite::Encode,
+                    None,
+                ));
+            }
+        }
+    }
+    bound_checks.extend(mismatches);
     bound_checks.extend(encode_bound_guard_lines(&m.fields, Language::Swift).0);
     ctx.insert("bound_checks".into(), bound_checks.into());
     // The flag inputs the codec is handed by whoever decodes or encodes it, in declared order.

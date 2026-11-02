@@ -4789,6 +4789,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecChainHasSlice.frameLength
 }
 
+// MARK: - codec: codec_chain_has_envelope
+
+@Test func codecChainHasEnvelopeMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHasEnvelope.frameLength
+}
+
 // MARK: - codec: codec_chain_has_marker_slice
 
 @Test func codecChainHasMarkerSliceMatchesReference() throws {
@@ -4797,12 +4805,28 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecChainHasMarkerSlice.frameLength
 }
 
+// MARK: - codec: codec_chain_has_marker
+
+@Test func codecChainHasMarkerMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHasMarker.frameLength
+}
+
 // MARK: - codec: codec_chain_has_tagged_entry
 
 @Test func codecChainHasTaggedEntryMatchesReference() throws {
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTaggedEntry.frameLength
+}
+
+// MARK: - codec: codec_chain_has_tagged
+
+@Test func codecChainHasTaggedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHasTagged.frameLength
 }
 
 // MARK: - codec: codec_chain_flag_entry
@@ -4837,6 +4861,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecChainPrevEntry.frameLength
 }
 
+// MARK: - codec: codec_chain_prev_carrier
+
+@Test func codecChainPrevCarrierMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainPrevCarrier.frameLength
+}
+
+// MARK: - codec: codec_chain_prev_gated
+
+@Test func codecChainPrevGatedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainPrevGated.frameLength
+}
+
+// MARK: - codec: codec_chain_prev_tail
+
+@Test func codecChainPrevTailMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainPrevTail.frameLength
+}
+
+// MARK: - codec: codec_chain_prev_tail_gated
+
+@Test func codecChainPrevTailGatedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainPrevTailGated.frameLength
+}
+
 // MARK: - codec: codec_zenoh_value_slice
 
 @Test func codecZenohValueSliceMatchesReference() throws {
@@ -4859,6 +4915,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueEntry.frameLength
+}
+
+// MARK: - codec: codec_zenoh_query_value
+
+@Test func codecZenohQueryValueMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohQueryValue.frameLength
 }
 
 // MARK: - codec: codec_embed_basic

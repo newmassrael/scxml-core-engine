@@ -732,13 +732,67 @@ fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_unga
 }
 
 #[test]
-fn a_gate_on_the_entries_of_a_chain_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/codec_chain_has_marker.scxml")
-        .expect_err("a gate on the entries of a chain is not written");
+fn a_gate_on_the_entries_of_a_chain_reads_a_boolean_bound_where_the_chain_is_read() {
+    let code = swift_of("tests/forge/resources/codec_chain_has_tagged.scxml")
+        .expect("a gate on the entries of a chain is written");
     assert!(
-        refusal.contains("a `sce:present-if` on the entries of a chain")
-            && refusal.contains("has no Swift lowering yet"),
-        "{refusal}"
+        code.contains("let _has_entries_7 = frame.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })"),
+        "the chain is asked for the identifier it holds, once it is read: {code}"
+    );
+    assert!(
+        code.contains("if _has_entries_7 || (frame.header & 0x1) != 0 {"),
+        "a clause on a chain joins a clause on a flag: {code}"
+    );
+    assert!(
+        code.contains("if !_has_entries_9 {"),
+        "a negated clause is on the wire when no entry has the identifier: {code}"
+    );
+}
+
+#[test]
+fn an_encode_asks_the_value_what_the_decode_asked_the_frame() {
+    let code = swift_of("tests/forge/resources/codec_chain_has_tagged.scxml")
+        .expect("a gate on the entries of a chain is written");
+    // The encode is given the entries and the field the gate holds, and refuses a value where the two
+    // disagree, so the chain is asked here as it was asked of the frame.
+    let encode = code
+        .split("public func encode")
+        .nth(1)
+        .expect("the codec has an encode");
+    assert!(
+        encode.contains("let _has_entries_7 = self.entries.contains(where:"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_chain_hands_its_entries_an_input_read_off_the_entry_before() {
+    let code = swift_of("tests/forge/resources/codec_chain_prev_carrier.scxml")
+        .expect("a chain that supplies an input to its entries is written");
+    assert!(
+        code.contains("var _prev_entries_after_marker: UInt8 = 0\n"),
+        "the first entry has none before it: {code}"
+    );
+    assert!(
+        code.contains(
+            "CodecChainPrevEntry.decode(&reader, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (frame.head >> 0) & 0x1))"
+        ),
+        "the chain's input and the carrier's bit are passed in the entry's declared order: {code}"
+    );
+    assert!(
+        code.contains("_prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0"),
+        "it is rewritten from the entry just handled: {code}"
+    );
+    let encode = code
+        .split("public func encode")
+        .nth(1)
+        .expect("the codec has an encode");
+    assert!(
+        encode.contains("try entry.encode(into: &piece, after_marker: _prev_entries_after_marker,")
+            && encode.contains(
+                "_prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0"
+            ),
+        "an encode walks the same values over the same entries: {code}"
     );
 }
 
@@ -751,7 +805,7 @@ fn a_chain_to_the_end_of_the_frame_is_read_while_bytes_are_left_to_its_depth() {
         "{code}"
     );
     assert!(
-        code.contains("for _ in 0..<8 {\n            if reader.remaining == 0 { break }\n            extensions_items.append(try CodecTlvEntry.decode(&reader))\n        }\n        if reader.remaining > 0 {\n            throw CodecError.tooManyElements\n        }"),
+        code.contains("for _ in 0..<8 {\n            if reader.remaining == 0 { break }\n            let entry = try CodecTlvEntry.decode(&reader)\n            extensions_items.append(entry)\n        }\n        if reader.remaining > 0 {\n            throw CodecError.tooManyElements\n        }"),
         "an entry past the depth is refused and not left on the wire unread: {code}"
     );
     assert!(
@@ -898,7 +952,7 @@ fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),
         ("codec_content_line_enums", "content-line"),
-        ("codec_chain_has_envelope", "field '"),
+        ("codec_dma_aligned_basic", "DMA alignment"),
     ] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
             .expect_err(&format!("{document} must be refused, not written"));

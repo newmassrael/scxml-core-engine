@@ -154,12 +154,15 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endfor %}
 {{ pad }}        }
 {% elif f.chain and f.chain.accessor %}
-{{ pad }}        var {{ f.chain.items }}: [{{ f.chain.element }}] = []
+{{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {{ pad }}        var {{ f.chain.more }} = false
 {{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
 {{ pad }}            let entry = try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }})
 {{ pad }}            {{ f.chain.more }} = entry.{{ f.chain.accessor }}
 {{ pad }}            {{ f.chain.items }}.append(entry)
+{% for update in f.chain.updates %}
+{{ pad }}            {{ update }}
+{% endfor %}
 {{ pad }}            if !{{ f.chain.more }} { break }
 {{ pad }}        }
 {{ pad }}        if {{ f.chain.more }} && reader.remaining == 0 {
@@ -170,10 +173,14 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        }
 {{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
 {% elif f.chain %}
-{{ pad }}        var {{ f.chain.items }}: [{{ f.chain.element }}] = []
+{{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
 {{ pad }}            if reader.remaining == 0 { break }
-{{ pad }}            {{ f.chain.items }}.append(try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }}))
+{{ pad }}            let entry = try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }})
+{{ pad }}            {{ f.chain.items }}.append(entry)
+{% for update in f.chain.updates %}
+{{ pad }}            {{ update }}
+{% endfor %}
 {{ pad }}        }
 {{ pad }}        if reader.remaining > 0 {
 {{ pad }}            throw CodecError.tooManyElements
@@ -205,6 +212,11 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endif %}
 {% if f.present %}
         }
+{% endif %}
+{% if f.chain %}
+{% for line in f.chain.has_decode %}
+        {{ line }}
+{% endfor %}
 {% endif %}
 {% endfor %}
         cursor = reader
@@ -264,10 +276,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            frame += piece.bytes
 {{ pad }}        }
 {% elif f.chain %}
-{{ pad }}        for entry in {{ src }} {
+{{ pad }}        {{ f.chain.decls }}for entry in {{ src }} {
 {{ pad }}            var piece = BytesSink()
 {{ pad }}            try entry.encode(into: &piece{{ f.chain.encode_args }})
 {{ pad }}            frame += piece.bytes
+{% for update in f.chain.updates %}
+{{ pad }}            {{ update }}
+{% endfor %}
 {{ pad }}        }
 {% elif f.list %}
 {{ pad }}        for entry in {{ src }} {

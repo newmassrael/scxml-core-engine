@@ -44,7 +44,8 @@ public struct CodecTlvChainBasic: Equatable, Sendable {
         var extensions_items: [CodecTlvEntry] = []
         for _ in 0..<8 {
             if reader.remaining == 0 { break }
-            extensions_items.append(try CodecTlvEntry.decode(&reader))
+            let entry = try CodecTlvEntry.decode(&reader)
+            extensions_items.append(entry)
         }
         if reader.remaining > 0 {
             throw CodecError.tooManyElements
