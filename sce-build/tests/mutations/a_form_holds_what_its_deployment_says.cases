@@ -54,8 +54,10 @@ edit("sce-build/src/forge/model.rs",
      r'''            if let Some(bound) = bound.filter(|bound| u64::from(*capacity) > *bound + 1) {''')
 PY
 
+# Killed by `c11_holds_a_field_in_an_array_of_its_capacity` (a third entry past
+# two held is CAPACITY_EXCEEDED, not too many).
 mutation_case "a C11 list past its capacity is called too many" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")''',
-     r'''            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")''')
+     r'''if (_i >= {capacity}U) _over = true;''',
+     r'''if (_i >= {capacity}U) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;''')
 PY

@@ -30,6 +30,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -158,6 +159,21 @@ static inline sce_forge_codec_status_t sce_forge_codec_note_capacity(sce_forge_c
         return SCE_FORGE_CODEC_OK;
     }
     return s;
+}
+
+/* Hold the `n` bytes at `src` in `dst`, which holds `capacity` bytes, and
+ * answer how many are held: all of them, or none where they do not fit, the
+ * capacity then noted in `*over` and the frame read on past them (docs/adr/0077
+ * §7). The caller has judged the bytes as the frame's own rules judge them. */
+static inline size_t sce_forge_codec_hold(void *dst, size_t capacity, const uint8_t *src, size_t n, bool *over) {
+    if (n > capacity) {
+        *over = true;
+        return 0;
+    }
+    if (n > 0U) {
+        memcpy(dst, src, n);
+    }
+    return n;
 }
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

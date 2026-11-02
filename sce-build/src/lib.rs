@@ -5651,6 +5651,35 @@ fn codec_inline_holds_recursive(
     })
 }
 
+/// Whether the decode of `cm` can answer `CAPACITY_EXCEEDED` in a tree that
+/// holds the deployment's capacities (docs/adr/0077 §7): the deployment gives
+/// `cm` or a codec it holds, read through the same file-graph resolver as
+/// [`codec_inline_holds_recursive`], a capacity. An import that is no codec,
+/// or one already on the walk, adds nothing (`with_resolved_import_codec`
+/// answers `None`); a codec import that does not resolve fails its own
+/// generation.
+fn codec_may_exceed_capacity_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+    capacities: &forge::model::CodecCapacities,
+) -> bool {
+    capacities.contains_key(&cm.name)
+        || imports.iter().any(|imp| {
+            with_resolved_import_codec(&imp.alias, imports, base_dir, visited, |inner| {
+                Some(codec_may_exceed_capacity_recursive(
+                    inner.model,
+                    inner.imports,
+                    inner.base_dir,
+                    inner.visited,
+                    capacities,
+                ))
+            })
+            .unwrap_or(false)
+        })
+}
+
 /// Whether a codec's generated Rust struct holds any borrowed (`&'a`)
 /// reference and therefore needs a `<'a>` lifetime parameter.
 ///
@@ -6254,6 +6283,19 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut inline_visited,
                 );
+                // docs/adr/0077 §7: whether the import's decode can answer a
+                // capacity, in a tree that holds the deployment's.
+                if language.tree_holds_capacities() {
+                    let mut capacity_visited: HashSet<PathBuf> = HashSet::new();
+                    capacity_visited.insert(source.path.clone());
+                    ctx.codec_may_exceed_capacity = codec_may_exceed_capacity_recursive(
+                        cm,
+                        &parsed.imports,
+                        &inner_base,
+                        &mut capacity_visited,
+                        &options.codec_capacities,
+                    );
+                }
                 // ADR 0049: whether the import's view carries a lifetime,
                 // which a bounded list gives it whatever its entries are.
                 let mut view_visited: HashSet<PathBuf> = HashSet::new();

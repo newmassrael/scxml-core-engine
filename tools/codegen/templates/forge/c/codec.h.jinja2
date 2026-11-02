@@ -239,6 +239,13 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * parent codec extracted from its flag carrier (type fixed
      * at uint8_t — matches parent's `<sce:flag>` width upper bound). */
 {% endif %}
+{% if c11_over %}
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
+{% endif %}
 {% if has_no_fields %}
     /* RFC §synth-5-B empty body — zero-byte payload, no cursor work.
      * The placeholder member is initialised to 0 to keep callers out
@@ -312,6 +319,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
             return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% endif %}
     }
+{% if c11_over %}
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+{% endif %}
     return SCE_FORGE_CODEC_OK;
 {% elif needs_streaming %}
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
@@ -337,6 +347,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{% if c11_over %}
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+{% endif %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_variable_fields %}
     /* Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
@@ -369,11 +382,12 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% if field.bound_guard is defined %}
         {{ field.bound_guard }}
 {% endif %}
-{% if field.c_storage_check is defined %}
-        {{ field.c_storage_check }}
-{% endif %}
+{% if field.c_hold is defined %}
+        {{ field.c_hold }}
+{% else %}
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
+{% endif %}
     }
 {% else %}{# length-ref — RFC §synth-5-B: length_n_expr folds
             in `sce:length-arith` (defaults to bare `(size_t)out->...`
@@ -383,12 +397,13 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         {{ field.bound_guard }}
 {% endif %}
         size_t _n = {{ field.length_n_expr }};
-{% if field.c_storage_check is defined %}
-        {{ field.c_storage_check }}
-{% endif %}
         if ({{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% if field.c_hold is defined %}
+        {{ field.c_hold }}
+{% else %}
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
+{% endif %}
 {% if not has_tail_fields %}
         if ({{ field.byte_off }} + _n > _consumed) _consumed = {{ field.byte_off }} + _n;
 {% endif %}
@@ -398,6 +413,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {{ decode_field(field) }}
 {% endif %}
 {% endfor %}
+{% if c11_over %}
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+{% endif %}
     if (!sce_forge_cursor_advance(cursor, _consumed)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     return SCE_FORGE_CODEC_OK;
 {% else %}

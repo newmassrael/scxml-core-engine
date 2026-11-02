@@ -1,0 +1,61 @@
+# Mutation cases for "a C11 frame past a capacity is read whole".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_frame_past_a_capacity_is_read_whole.cases`.
+#
+# A C11 decode past the capacity a deployment gives a list, a chain or a byte
+# string is a store after a parse (docs/adr/0077 §7): it reads the frame on,
+# judging it as a node that holds it would, and answers `CAPACITY_EXCEEDED` only
+# where the frame's own rules admit it. A defect here is a frame given two
+# answers by C11 and Rust, or bytes written past the array that holds them.
+#
+# The oracle is `sce-build/tests/forge_conformance.rs`: a C program compiled with
+# the address and undefined-behaviour sanitizers against the C11 forms of a
+# list, a chain and a byte string at the `Narrow` capacities
+# (`c11_reads_a_positional_frame_past_a_capacity_whole`).
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/generator.rs tools/codegen/templates/forge/c/codec.h.jinja2
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+# A list answers the capacity at its first entry past it, so a frame cut inside
+# a later entry is refused for the capacity. Killed by "a frame cut inside an
+# entry, after an entry past what is held".
+mutation_case "a C11 list answers a capacity at the entry past it" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "if ({len} < {capacity}U) {len}++; else _over = true;\\n",
+     "if ({len} < {capacity}U) {len}++; else return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\\n")
+PY
+
+# A chain answers the capacity at its first entry past it, so a later body past
+# its bound is refused for the capacity. Killed by "a body past its bound,
+# after an entry past what is held".
+mutation_case "a C11 chain answers a capacity at the entry past it" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                "if ({len} < {capacity}U) {len}++; else _over = true;"''',
+     r'''                "if ({len} < {capacity}U) {len}++; else return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;"''')
+PY
+
+# A decode that noted a capacity never answers it, and a frame this node cannot
+# hold reads as one it holds. Killed by "a third entry past two held".
+mutation_case "a C11 streaming decode forgets what it noted" <<'PY'
+edit("tools/codegen/templates/forge/c/codec.h.jinja2",
+     r'''{% if c11_over %}
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+{% endif %}
+    return SCE_FORGE_CODEC_OK;
+{% elif has_variable_fields %}''',
+     r'''    return SCE_FORGE_CODEC_OK;
+{% elif has_variable_fields %}''')
+PY
+
+# Bytes past the capacity are copied into an array that cannot hold them.
+# Killed by "a payload past its capacity" (the sanitizer stops the driver).
+mutation_case "a C11 byte string past its capacity is copied whole" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        format!("{len} = sce_forge_codec_hold({dst}, {capacity}U, {src}, _n, &_over);")''',
+     r'''        format!("memcpy({dst}, {src}, _n);\n{indent}{len} = _n; (void){capacity}U;")''')
+PY

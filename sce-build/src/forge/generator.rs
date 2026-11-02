@@ -361,6 +361,14 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_inline_holds: bool,
 
+    /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
+    /// is given a capacity by the deployment of a tree that holds capacities
+    /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
+    /// answer and reads on, answering it after its own refusals. `false` for a
+    /// tree that holds none, and for non-codec imports.
+    #[serde(skip)]
+    pub codec_may_exceed_capacity: bool,
+
     /// ADR 0049: `true` when the imported codec's Rust view (`{Codec}View`)
     /// carries a `<'a>` lifetime — [`Self::codec_is_borrowed`] plus any bounded
     /// list, which a view holds as a span of the wire bytes. A parent that
@@ -1250,6 +1258,7 @@ fn resolve_single_import(
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_inline_holds: false,
+        codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
@@ -8928,6 +8937,10 @@ fn render_codec(
     let roles = crate::forge::codec_roles::classify(m, imports);
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
+    // docs/adr/0077 §7: a C11 decode that can answer a capacity is a store
+    // after a parse ([`c11_may_exceed_capacity`]).
+    let c11_over =
+        matches!(lang, crate::generator::Language::C11) && c11_may_exceed_capacity(m, imports);
 
     // SSOT for "this codec must use the streaming cursor path rather than
     // the positional (`raw[byte_off]`) path", as the negation of the
@@ -9234,6 +9247,7 @@ fn render_codec(
                             body_decoder: &body_decoder,
                             decode_arg: &repeat_thread.decode_arg,
                             law_start: law_start.as_deref(),
+                            c11_over,
                             lang,
                         })
                         .into(),
@@ -9444,6 +9458,7 @@ fn render_codec(
                             max_depth: *max_depth,
                             terminate_on,
                             law_start: law_start.as_deref(),
+                            c11_over,
                             lang,
                         })
                     } else {
@@ -9456,6 +9471,7 @@ fn render_codec(
                             max_depth: *max_depth,
                             terminate_on,
                             law_start: law_start.as_deref(),
+                            c11_over,
                             lang,
                         })
                     };
@@ -9652,6 +9668,7 @@ fn render_codec(
                             &body_decoder,
                             &embed_thread.decode_arg,
                             &m.fields,
+                            c11_over,
                             lang,
                         )
                         .into(),
@@ -9685,6 +9702,7 @@ fn render_codec(
                                 &body_decoder,
                                 &embed_thread.decode_arg,
                                 &m.fields,
+                                false,
                                 lang,
                             )
                             .into(),
@@ -9754,11 +9772,29 @@ fn render_codec(
                         if !guard.is_empty() {
                             obj.insert("bound_guard".into(), guard.into());
                         }
-                        if matches!(lang, Language::C11) {
-                            let room = c11_storage_check(f, &m.fields, indent);
-                            if let Some(room) = room.strip_suffix(&format!("\n{indent}")) {
-                                obj.insert("c_storage_check".into(), room.into());
-                            }
+                        // A field whose array is a capacity below what a frame
+                        // can say is held as a store after a parse
+                        // (docs/adr/0077 §7); one whose bound is its array's
+                        // is copied as the template writes it.
+                        if matches!(lang, Language::C11) && !c11_bytes_fit(f, &m.fields) {
+                            let id = obj
+                                .get("id")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_string();
+                            let off = f.byte_offset;
+                            obj.insert(
+                                "c_hold".into(),
+                                c11_hold_bytes(
+                                    f,
+                                    &m.fields,
+                                    &format!("out->{id}"),
+                                    &format!("out->{id}_len"),
+                                    &format!("raw + {off}"),
+                                    indent,
+                                )
+                                .into(),
+                            );
                         }
                     }
                     if matches!(f.bit_size, BitSize::LengthRef) {
@@ -10344,6 +10380,7 @@ fn render_codec(
     // streaming branch consumes it (rather than a denylist of per-feature
     // flags), so the path decision is not duplicated across the template.
     ctx.insert("needs_streaming".into(), needs_streaming_path.into());
+    ctx.insert("c11_over".into(), c11_over.into());
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
     // C11 codec.h.jinja2 condition for `<string.h>` include: true when
     // any field's decode/encode body uses `memcpy` — every variable
@@ -13480,6 +13517,9 @@ struct RepeatDecode<'a> {
     /// The start a Rust list held to its law is filled from
     /// ([`rust_law_start`]; docs/adr/0065 §6 R8), `None` for any other list.
     law_start: Option<&'a str>,
+    /// Whether the C11 decode is a store after a parse
+    /// ([`c11_may_exceed_capacity`]).
+    c11_over: bool,
     lang: crate::generator::Language,
 }
 
@@ -13502,6 +13542,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         body_decoder,
         decode_arg,
         law_start,
+        c11_over,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -13537,6 +13578,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             body_decoder,
             decode_arg,
             law_start,
+            c11_over,
             lang,
         });
     }
@@ -13696,34 +13738,43 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                 lang,
                 "        ",
             );
-            let room = c11_list_storage_check(field, "_n", "        ");
+            let data = format!("out->{id_snake}");
+            let len = format!("out->{id_snake}_len");
+            let entries = c11_list_loop(C11ListLoop {
+                field,
+                fields,
+                count: Some("_n"),
+                data: &data,
+                len: &len,
+                body_decoder,
+                decode_arg,
+                c11_over,
+            });
             format!(
                 "{{\n        \
                      {guard}size_t _n = (size_t)out->{len_snake};\n        \
-                     {room}for (size_t _i = 0; _i < _n; ++_i) {{\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]{decode_arg});\n            \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
-                     }}\n        \
-                     out->{id_snake}_len = _n;\n    \
+                     {entries}\n    \
                  }}"
             )
         }
         (Language::C11, CountRef::UntilEof) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_list_room(
+            let data = format!("out->{id_snake}");
+            let len = format!("out->{id_snake}_len");
+            let entries = c11_list_loop(C11ListLoop {
                 field,
                 fields,
-                &format!("out->{id_snake}_len"),
-                "            ",
-            );
+                count: None,
+                data: &data,
+                len: &len,
+                body_decoder,
+                decode_arg,
+                c11_over,
+            });
             format!(
                 "{{\n        \
-                     out->{id_snake}_len = 0;\n        \
-                     while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
-                         {room}sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                         out->{id_snake}_len++;\n        \
-                     }}\n    \
+                     {len} = 0;\n        \
+                     {entries}\n    \
                  }}"
             )
         }
@@ -13880,6 +13931,8 @@ fn embed_streaming_decode_stmt(
     body_decoder: &str,
     thread_arg: &str,
     fields: &[CodecField],
+    // Whether the C11 decode is a store after a parse ([`c11_may_exceed_capacity`]).
+    c11_over: bool,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -14113,12 +14166,21 @@ fn embed_streaming_decode_stmt(
             // helpers in the calling site zero-init the codec
             // struct before decode (existing cpp/kt behaviour
             // with the all-zeros default constructor).
+            // A body that can answer a capacity is noted and read on past
+            // (docs/adr/0077 §7, [`c11_body_call`]).
+            let call = |cursor: &str, value: &str| {
+                c11_body_call(
+                    c11_over,
+                    &format!("{body_decoder}({cursor}, &out->{id_snake}{value}{thread_arg})"),
+                    "        ",
+                )
+            };
             match (&test_lit, len_expr(Language::C11)) {
                 (None, None) => format!(
                     "{{\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
-                     }}"
+                         {call}\n    \
+                     }}",
+                    call = call("cursor", "")
                 ),
                 // A gated embed is the optional value of the body: present
                 // under the gate, with the body decoded into its `value`, and
@@ -14126,10 +14188,10 @@ fn embed_streaming_decode_stmt(
                 (Some(test), None) => format!(
                     "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
                      if ({test}) {{\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value{thread_arg});\n        \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         {call}\n        \
                          out->{id_snake}.present = true;\n    \
-                     }}"
+                     }}",
+                    call = call("cursor", ".value")
                 ),
                 (None, Some(sibling)) => format!(
                     "{{\n        \
@@ -14137,10 +14199,10 @@ fn embed_streaming_decode_stmt(
                          const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
                          if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                          sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}{thread_arg});\n        \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         {call}\n        \
                          if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
-                     }}"
+                     }}",
+                    call = call("&_inner", "")
                 ),
                 (Some(test), Some(sibling)) => format!(
                     "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
@@ -14149,11 +14211,11 @@ fn embed_streaming_decode_stmt(
                          const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
                          if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                          sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}.value{thread_arg});\n        \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         {call}\n        \
                          if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                          out->{id_snake}.present = true;\n    \
-                     }}"
+                     }}",
+                    call = call("&_inner", ".value")
                 ),
             }
         }
@@ -14906,6 +14968,8 @@ struct RepeatDecodeGated<'a> {
     decode_arg: &'a str,
     // The start a Rust list held to its law is filled from (docs/adr/0065 §6 R8).
     law_start: Option<&'a str>,
+    // Whether the C11 decode is a store after a parse (docs/adr/0077 §7).
+    c11_over: bool,
     lang: crate::generator::Language,
 }
 
@@ -14953,6 +15017,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         body_decoder,
         decode_arg,
         law_start,
+        c11_over,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -15155,16 +15220,23 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             let count = c11_length_sibling_member(len_field, fields);
             let guard =
                 repeat_count_guard(field, fields, &format!("out->{count}"), lang, "        ");
-            let room = c11_list_storage_check(field, "_n", "        ");
+            let data = format!("out->{id_snake}.value.data");
+            let len = format!("out->{id_snake}.value.len");
+            let entries = c11_list_loop(C11ListLoop {
+                field,
+                fields,
+                count: Some("_n"),
+                data: &data,
+                len: &len,
+                body_decoder,
+                decode_arg,
+                c11_over,
+            });
             format!(
                 "if ({test}) {{\n        \
                      {guard}size_t _n = (size_t)out->{count};\n        \
-                     {room}memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
-                     for (size_t _i = 0; _i < _n; ++_i) {{\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[_i]{decode_arg});\n            \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
-                     }}\n        \
-                     out->{id_snake}.value.len = _n;\n        \
+                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
+                     {entries}\n        \
                      out->{id_snake}.present = true;\n    \
                  }} else {{\n        \
                      memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
@@ -15173,21 +15245,23 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::C11, CountRef::UntilEof) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_list_room(
+            let data = format!("out->{id_snake}.value.data");
+            let len = format!("out->{id_snake}.value.len");
+            let entries = c11_list_loop(C11ListLoop {
                 field,
                 fields,
-                &format!("out->{id_snake}.value.len"),
-                "            ",
-            );
+                count: None,
+                data: &data,
+                len: &len,
+                body_decoder,
+                decode_arg,
+                c11_over,
+            });
             format!(
                 "if ({test}) {{\n        \
                      memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                      out->{id_snake}.present = true;\n        \
-                     while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
-                         {room}sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[out->{id_snake}.value.len]{decode_arg});\n            \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                         out->{id_snake}.value.len++;\n        \
-                     }}\n    \
+                     {entries}\n    \
                  }} else {{\n        \
                      memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
                  }}"
@@ -15347,6 +15421,9 @@ struct TlvChainDecode<'a> {
     /// The start a Rust chain held to its law is filled from
     /// ([`rust_law_start`]; docs/adr/0065 §6 R8), `None` for any other chain.
     law_start: Option<&'a str>,
+    /// Whether the C11 decode is a store after a parse
+    /// ([`c11_may_exceed_capacity`]).
+    c11_over: bool,
     lang: crate::generator::Language,
 }
 
@@ -15580,6 +15657,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         max_depth,
         terminate_on,
         law_start,
+        c11_over,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -15663,42 +15741,41 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // name (used as the accessor's free-function prefix per
             // c/codec.h.jinja2 line 444 / 455).
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
-            // A chain the deployment holds fewer entries of than its depth has
-            // an array shorter than the walk (docs/adr/0077 §7).
-            let room = field
-                .capacity
-                .map(|capacity| {
-                    format!(
-                        "if (out->{id_snake}_len >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n            "
+            let data = format!("out->{id_snake}");
+            let len = format!("out->{id_snake}_len");
+            let body = match (&entry_flag_acc, entry_binds.is_empty(), field.capacity) {
+                (None, true, None) => format!(
+                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
+                     {call}\n            \
+                     out->{id_snake}_len++;\n        ",
+                    call = c11_body_call(
+                        c11_over,
+                        &format!(
+                            "{body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg})"
+                        ),
+                        "            ",
                     )
-                })
-                .unwrap_or_default();
-            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
-                (None, true) => format!(
-                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            {room}\
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
-                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                     out->{id_snake}_len++;\n        "
                 ),
                 // The entry is read through the slot it was just decoded into
                 // when the loop reads something off it: the flag that ends the
-                // chain, the identifier a per-entry flag-input waits for.
-                (acc, _) => {
+                // chain, the identifier a per-entry flag-input waits for; and
+                // a chain the deployment holds fewer entries of than its walk
+                // reads past them into its last row (docs/adr/0077 §7).
+                (acc, _, capacity) => {
                     let indent = "            ";
                     let entry = format!("out->{id_snake}[_just]");
                     let mut lines = chain_end_of_frame_stop(
                         acc,
                         "if (sce_forge_cursor_remaining(cursor) == 0) break;",
                     );
-                    lines.extend((!room.is_empty()).then(|| room.trim_end().to_string()));
-                    lines.extend([
-                        format!(
-                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
-                        ),
-                        "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
-                        format!("size_t _just = out->{id_snake}_len;"),
-                        format!("out->{id_snake}_len++;"),
-                    ]);
+                    lines.extend(c11_chain_entry_lines(
+                        capacity,
+                        &data,
+                        &len,
+                        body_decoder,
+                        decode_arg,
+                        c11_over,
+                    ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
@@ -16052,6 +16129,8 @@ struct TlvChainDecodeGated<'a> {
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     /// See [`TlvChainDecode::law_start`].
     law_start: Option<&'a str>,
+    /// See [`TlvChainDecode::c11_over`].
+    c11_over: bool,
     lang: crate::generator::Language,
 }
 
@@ -16086,6 +16165,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         max_depth,
         terminate_on,
         law_start,
+        c11_over,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -16301,39 +16381,33 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let len = format!("out->{id_snake}.value.len");
             // The array holds the deployment's capacity, which may be fewer
             // entries than the walk reads, as the ungated chain's does
-            // (docs/adr/0077 §7). Without this a frame past the capacity
-            // wrote past the array.
-            let room = field
-                .capacity
-                .map(|capacity| {
-                    format!(
-                        "if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n                "
+            // (docs/adr/0077 §7): past it an entry is read into the last row.
+            let body = match (&entry_flag_acc, entry_binds.is_empty(), field.capacity) {
+                (None, true, None) => format!(
+                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
+                     {call}\n                \
+                     {len}++;\n            ",
+                    call = c11_body_call(
+                        c11_over,
+                        &format!("{body_decoder}(cursor, &{data}[{len}]{decode_arg})"),
+                        "                ",
                     )
-                })
-                .unwrap_or_default();
-            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
-                (None, true) => format!(
-                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                {room}\
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});\n                \
-                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
-                     {len}++;\n            "
                 ),
-                (acc, _) => {
+                (acc, _, capacity) => {
                     let indent = "                ";
                     let entry = format!("{data}[_just]");
                     let mut lines = chain_end_of_frame_stop(
                         acc,
                         "if (sce_forge_cursor_remaining(cursor) == 0) break;",
                     );
-                    lines.extend((!room.is_empty()).then(|| room.trim_end().to_string()));
-                    lines.extend([
-                        format!(
-                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});"
-                        ),
-                        "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
-                        format!("size_t _just = {len};"),
-                        format!("{len}++;"),
-                    ]);
+                    lines.extend(c11_chain_entry_lines(
+                        capacity,
+                        &data,
+                        &len,
+                        body_decoder,
+                        decode_arg,
+                        c11_over,
+                    ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
@@ -17281,14 +17355,20 @@ fn present_if_decode_tail(
         // own `{ ... }` so per-field locals don't shadow.
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_storage_check(field, fields, "        ");
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("out->{id_snake}"),
+                &format!("out->{id_snake}_len"),
+                "raw",
+                "        ",
+            );
             format!(
                 "{{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
-                     {guard}{room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {guard}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     {hold}\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }}"
             )
@@ -17298,17 +17378,23 @@ fn present_if_decode_tail(
         // zero) otherwise.
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_storage_check(field, fields, "        ");
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("out->{id_snake}.value.data"),
+                &format!("out->{id_snake}.value.len"),
+                "raw",
+                "        ",
+            );
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field, fields).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
-                     {guard}{room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     {guard}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      out->{id_snake} = {none};\n        \
-                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
-                     out->{id_snake}.value.len = _n;\n        \
+                     {hold}\n        \
                      out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
@@ -17416,10 +17502,11 @@ fn present_if_decode_length_ref(
         lang,
         length_block_indent(lang, field.present_if.is_some()),
     );
-    // C11's check of the length against its array, asked only of C11: no other
-    // backend holds the field in an array, and one with neither a bound nor a
-    // capacity has no number for it (docs/adr/0077 §7).
-    let c11_room = || c11_storage_check(field, fields, "        ");
+    // C11's hold of the bytes in its array, asked only of C11: no other backend
+    // holds the field in an array, and one with neither a bound nor a capacity
+    // has no number for it (docs/adr/0077 §7).
+    let c11_hold =
+        |dst: &str, len: &str| c11_hold_bytes(field, fields, dst, len, "raw", "        ");
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_length_ref"),
         (Language::Rust, None) => {
@@ -17531,14 +17618,13 @@ fn present_if_decode_length_ref(
         }
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let c11_room = c11_room();
+            let hold = c11_hold(&format!("out->{id_snake}"), &format!("out->{id_snake}_len"));
             format!(
                 "{{\n        \
                      {count}\n        \
-                     {c11_room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     {hold}\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }}"
             )
@@ -17550,15 +17636,17 @@ fn present_if_decode_length_ref(
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field, fields).none();
-            let c11_room = c11_room();
+            let hold = c11_hold(
+                &format!("out->{id_snake}.value.data"),
+                &format!("out->{id_snake}.value.len"),
+            );
             format!(
                 "if ({test}) {{\n        \
                      {count}\n        \
-                     {c11_room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      out->{id_snake} = {none};\n        \
-                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
-                     out->{id_snake}.value.len = _n;\n        \
+                     {hold}\n        \
                      out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
@@ -17810,15 +17898,21 @@ fn present_if_decode_string_length_ref(
             // signatures cannot grow a variant without a per-codec
             // sweep).
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_storage_check(field, fields, "        ");
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("out->{id_snake}"),
+                &format!("out->{id_snake}_len"),
+                "raw",
+                "        ",
+            );
             format!(
                 "{{\n        \
                      {count}\n        \
-                     {room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     {hold}\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }}"
             )
@@ -17828,18 +17922,24 @@ fn present_if_decode_string_length_ref(
             // `present_if_decode_length_ref`: the member is the optional value
             // of the UTF-8 bytes, validated before they are copied.
             let id_snake = filters::to_snake_case(id.to_string());
-            let room = c11_storage_check(field, fields, "        ");
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("out->{id_snake}.value.data"),
+                &format!("out->{id_snake}.value.len"),
+                "raw",
+                "        ",
+            );
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field, fields).none();
             format!(
                 "if ({test}) {{\n        \
                      {count}\n        \
-                     {room}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
                      out->{id_snake} = {none};\n        \
-                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
-                     out->{id_snake}.value.len = _n;\n        \
+                     {hold}\n        \
                      out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
@@ -18231,6 +18331,151 @@ fn repeat_room_guard(
         .full_stmt(lang, len, indent)
 }
 
+/// The loop a C11 decode reads a list's entries with, at the 8-space level of
+/// the block that holds it, up to and including the statement that records
+/// how many it holds: `count` is the fixed count's local (`_n`), or `None` for
+/// a list read to the end of the frame, `data` the array, `len` the lvalue of
+/// its length, and `decode` the body's decode call up to its entry argument,
+/// which this closes over the row and `decode_arg`.
+///
+/// With no capacity the array holds the list's bound, which the guards before
+/// the loop have held it to. With one, the decode is a store after a parse
+/// (docs/adr/0077 §7): every entry the frame holds is read, the bound counted
+/// on the entries read; past what the array holds an entry is read into its
+/// last row, which a refused decode leaves holding nothing to read, and the
+/// capacity is noted in `_over`.
+struct C11ListLoop<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    count: Option<&'a str>,
+    data: &'a str,
+    len: &'a str,
+    body_decoder: &'a str,
+    decode_arg: &'a str,
+    c11_over: bool,
+}
+
+fn c11_list_loop(l: C11ListLoop<'_>) -> String {
+    let C11ListLoop {
+        field,
+        fields,
+        count,
+        data,
+        len,
+        body_decoder,
+        decode_arg,
+        c11_over,
+    } = l;
+    let call = |row: &str, over: bool| {
+        c11_body_call(
+            over,
+            &format!("{body_decoder}(cursor, &{data}[{row}]{decode_arg})"),
+            "            ",
+        )
+    };
+    match (count, field.capacity) {
+        (Some(n), None) => format!(
+            "for (size_t _i = 0; _i < {n}; ++_i) {{\n            \
+                 {call}\n        \
+             }}\n        \
+             {len} = {n};",
+            call = call("_i", c11_over)
+        ),
+        (Some(n), Some(capacity)) => format!(
+            "for (size_t _i = 0; _i < {n}; ++_i) {{\n            \
+                 size_t _at = _i < {capacity}U ? _i : {capacity}U - 1U;\n            \
+                 if (_i >= {capacity}U) _over = true;\n            \
+                 {call}\n        \
+             }}\n        \
+             {len} = {n} < {capacity}U ? {n} : {capacity}U;",
+            call = call("_at", true)
+        ),
+        (None, None) => format!(
+            "while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
+                 {room}{call}\n            \
+                 {len}++;\n        \
+             }}",
+            room = repeat_room_guard(
+                field,
+                fields,
+                len,
+                crate::generator::Language::C11,
+                "            "
+            ),
+            call = call(len, c11_over)
+        ),
+        (None, Some(capacity)) => format!(
+            "size_t _read = 0;\n        \
+             while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
+                 {room}size_t _at = {len} < {capacity}U ? {len} : {capacity}U - 1U;\n            \
+                 {call}\n            \
+                 ++_read;\n            \
+                 if ({len} < {capacity}U) {len}++; else _over = true;\n        \
+             }}",
+            room = c11_read_room(field, fields, "            "),
+            call = call("_at", true)
+        ),
+    }
+}
+
+/// The statements a C11 chain's loop reads one entry with, without indent:
+/// the entry decoded into a row of `data`, that row named `_just` for what the
+/// loop reads off it, and `len` moved on. `decode` is the body's decode call up
+/// to its entry argument, closed here over the row and `decode_arg`.
+///
+/// With no capacity the row is the next one, which the chain's depth leaves
+/// room for. With one the decode is a store after a parse (docs/adr/0077 §7):
+/// the walk reads every entry the frame holds, its depth counted by the loop
+/// and not by `len`; past what the array holds an entry is read into its last
+/// row and the capacity is noted in `_over`.
+fn c11_chain_entry_lines(
+    capacity: Option<u32>,
+    data: &str,
+    len: &str,
+    body_decoder: &str,
+    decode_arg: &str,
+    c11_over: bool,
+) -> Vec<String> {
+    let call = |row: &str, over: bool| {
+        c11_body_call(
+            over,
+            &format!("{body_decoder}(cursor, &{data}[{row}]{decode_arg})"),
+            "",
+        )
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>()
+    };
+    match capacity {
+        None => {
+            let mut lines = call(len, c11_over);
+            lines.push(format!("size_t _just = {len};"));
+            lines.push(format!("{len}++;"));
+            lines
+        }
+        Some(capacity) => {
+            let mut lines = vec![format!(
+                "size_t _just = {len} < {capacity}U ? {len} : {capacity}U - 1U;"
+            )];
+            lines.extend(call("_just", true));
+            lines.push(format!(
+                "if ({len} < {capacity}U) {len}++; else _over = true;"
+            ));
+            lines
+        }
+    }
+}
+
+/// The check, inside a C11 until-the-end list's loop that holds a capacity,
+/// that the entry about to be read is within the list's bound, counted on
+/// `_read`, the entries read whether held or not (docs/adr/0077 §7). Empty for
+/// a list the protocol bounds by nothing. Followed by a newline and `indent`.
+fn c11_read_room(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
+    length_guard::Guard::of(field, fields)
+        .map(|guard| guard.full_stmt(crate::generator::Language::C11, "_read", indent))
+        .unwrap_or_default()
+}
+
 /// C11 holds every list, byte string and text in an array of its capacity, so
 /// such a field the protocol states no bound of and the deployment gives no
 /// capacity has no array, and the codec is refused naming it (docs/adr/0077
@@ -18279,32 +18524,32 @@ fn c11_held_bytes(f: &CodecField, fields: &[CodecField]) -> u32 {
         .expect("C11 refuses a byte string it holds no number of before it renders the codec")
 }
 
-/// C11's check that a list's count `n` fits the array that holds it, where
-/// the list's declared bound does not already prove it: the array holds
-/// exactly the declared `max-count`, which [`repeat_count_guard`] has checked.
-/// Followed by a newline and `indent`, or empty.
-///
-/// Without a capacity the array holds the declared bound, so the count guard
-/// has proved it; a list with neither is refused before the codec renders
-/// ([`c11_refuse_a_field_it_cannot_hold`]).
-fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
-    match field.capacity {
-        Some(capacity) => {
-            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
-        }
-        None => String::new(),
-    }
+/// Whether a C11 decode of `m` can answer `CAPACITY_EXCEEDED` (docs/adr/0077
+/// §7): the deployment gives one of its fields a capacity, or a codec it holds
+/// can ([`ImportContext::codec_may_exceed_capacity`]). Such a decode is a store
+/// after a parse: it declares `_over`, notes each capacity a field or a body
+/// reports in it and reads the frame on, and answers it once every other
+/// refusal has had its turn. A decode that cannot is written as it was, so a
+/// tree with no capacities is unchanged.
+pub(crate) fn c11_may_exceed_capacity(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    m.fields.iter().any(|f| f.capacity.is_some())
+        || imports.iter().any(|i| i.codec_may_exceed_capacity)
 }
 
-/// [`repeat_room_guard`] for C11, which also needs room in the list's array:
-/// the array is the deployment's capacity where it gives one, and otherwise the
-/// declared bound, which the room guard holds the list to.
-fn c11_list_room(field: &CodecField, fields: &[CodecField], len: &str, indent: &str) -> String {
-    match field.capacity {
-        Some(capacity) => {
-            format!("if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
-        }
-        None => repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent),
+/// The statements a C11 decode runs a body's decode `call` with, at `indent`:
+/// its status into `_st`, a capacity noted where the decode can answer one
+/// ([`c11_may_exceed_capacity`]), and any other refusal returned.
+fn c11_body_call(over: bool, call: &str, indent: &str) -> String {
+    if over {
+        format!(
+            "sce_forge_codec_status_t _st = sce_forge_codec_note_capacity({call}, &_over);\n{indent}\
+             if (_st != SCE_FORGE_CODEC_OK) return _st;"
+        )
+    } else {
+        format!(
+            "sce_forge_codec_status_t _st = {call};\n{indent}\
+             if (_st != SCE_FORGE_CODEC_OK) return _st;"
+        )
     }
 }
 
@@ -18346,18 +18591,37 @@ fn length_block_indent(lang: crate::generator::Language, gated: bool) -> &'stati
     }
 }
 
-/// C11's check that a byte string's length fits the array that holds it, where
-/// the bound check of [`length_count_stmts`] does not already prove it: a field
-/// whose declared bound is its array's needs none. Followed by a newline and
-/// `indent`, or empty.
-fn c11_storage_check(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
-    let capacity = u64::from(c11_held_bytes(field, fields));
-    let proven = field.bound(fields).is_some_and(|max| max <= capacity);
-    if proven {
-        String::new()
+/// The statements a C11 decode holds a byte string or text with, the `_n`
+/// bytes at `src` into the array `dst` and their count into `len`, once the
+/// frame's own rules have judged them. Where the field's bound proves the array
+/// holds what a frame can say (the bound check of [`length_count_stmts`] has
+/// held `_n` to it) the bytes are copied. Otherwise the array is the
+/// deployment's capacity and the decode is a store after a parse
+/// (docs/adr/0077 §7): bytes that do not fit are not held, the capacity is
+/// noted in `_over`, and the frame is read on, its cursor advanced by `_n`
+/// either way. Lines after the first are at `indent`.
+fn c11_hold_bytes(
+    field: &CodecField,
+    fields: &[CodecField],
+    dst: &str,
+    len: &str,
+    src: &str,
+    indent: &str,
+) -> String {
+    let capacity = c11_held_bytes(field, fields);
+    if c11_bytes_fit(field, fields) {
+        format!("memcpy({dst}, {src}, _n);\n{indent}{len} = _n;")
     } else {
-        format!("if (_n > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
+        format!("{len} = sce_forge_codec_hold({dst}, {capacity}U, {src}, _n, &_over);")
     }
+}
+
+/// Whether a C11 array of a byte string or text holds every length its frame
+/// can say: its declared bound is no more than the array's size, so no
+/// capacity was given below it.
+fn c11_bytes_fit(field: &CodecField, fields: &[CodecField]) -> bool {
+    let capacity = u64::from(c11_held_bytes(field, fields));
+    field.bound(fields).is_some_and(|max| max <= capacity)
 }
 
 /// The check of a `tail` field's length, the bytes that remain in the frame,
@@ -41399,6 +41663,7 @@ mod tests {
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_inline_holds: false,
+            codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
@@ -42289,6 +42554,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
+                codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
@@ -42347,6 +42613,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
+                codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,

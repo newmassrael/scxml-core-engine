@@ -456,9 +456,15 @@ are one value held two ways. So:
   - *C11 CBOR, a store after a parse:* a text or byte string past its capacity is judged in place, a text for UTF-8,
     stepped over and not held, and the map answers `CAPACITY_EXCEEDED` after its own refusals (a key given twice, a
     required key absent), as Rust's projection answers after its decode. `sce_forge_codec_note_capacity` is the one
-    helper both encodings note a capacity through. C11's positional codecs still refuse at the field past a capacity
-    (`generator.rs`'s list, chain and byte-field reads), before the rest of the frame is judged; holding a frame as a
-    map and a line are held is the landing after.
+    helper both encodings note a capacity through.
+  - *C11 positional, a store after a parse:* a list, a chain and a byte string or text past the capacity a
+    deployment gives them are read whole. A list's and a chain's entries past it are decoded into the last row, the
+    bound and the depth counted on the entries read; bytes past it are judged (a text for UTF-8) and stepped over,
+    held as empty (`sce_forge_codec_hold`); a body a codec holds is noted when it answers a capacity, and the decode
+    answers `CAPACITY_EXCEEDED` just before it would succeed. A decode that can answer one is told by
+    `c11_may_exceed_capacity`, over the codec's own capacities and `ImportContext::codec_may_exceed_capacity` of what
+    it holds; one that cannot is written exactly as it was, so every tree generated with no capacity is unchanged.
+    C11 now gives a frame the answer Rust's view gives it on every encoding.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

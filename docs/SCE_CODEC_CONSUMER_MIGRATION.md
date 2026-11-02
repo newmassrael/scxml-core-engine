@@ -763,3 +763,19 @@ Landing: the commit that adds this section.
 - `sce_forge_cl_note_capacity` is `sce_forge_codec_note_capacity`, in `sce/forge/codec.h`, the one helper every
   encoding notes a capacity through.
 
+## A C11 positional frame past a capacity is read whole (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A generated C11 positional decode of a frame past a capacity a deployment gives answers
+  `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` only when the frame's own rules admit it, as Rust's view judges it: a later
+  field past its bound is `LENGTH_OUT_OF_RANGE`, a frame that ends inside an entry `NEED_MORE_BYTES`, a text that is
+  not UTF-8 `INVALID_UTF8`. It answered `CAPACITY_EXCEEDED` at the first field past what it held. On that status
+  `*out` holds no value to read; the cursor moves as it does on any other refusal of the decode.
+- A codec that holds another notes the other's capacity and reads on, so the same holds through an embed, a list or a
+  chain of bodies.
+- `sce/forge/codec.h` adds `sce_forge_codec_hold(dst, capacity, src, n, &over)`, which holds `n` bytes or notes the
+  capacity, and now includes `<string.h>`.
+- A codec no capacity reaches, which is every codec of a tree generated without a deployment, is generated exactly
+  as before.
+

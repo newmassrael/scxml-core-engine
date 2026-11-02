@@ -6495,6 +6495,130 @@ fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
     run_c_driver(dir.path(), "codec_open_line.h", header, OPEN_LINE_C_DRIVER);
 }
 
+/// A driver of the C11 forms of [`OPEN_LIST`], [`OPEN_CHAIN`] and [`OPEN_BYTES`]
+/// at the capacities of [`narrow_deployment`]: two entries of each list, four
+/// bytes of the payload.
+const OPEN_POSITIONAL_C_DRIVER: &str = r#"#include <stdio.h>
+#include <string.h>
+
+#include "codec_open_bytes.h"
+#include "codec_open_chain.h"
+#include "codec_open_list.h"
+
+static int failures = 0;
+#define CHECK(cond, what)                                                              \
+    do {                                                                               \
+        if (!(cond)) {                                                                 \
+            fprintf(stderr, "FAIL: %s\n", what);                                       \
+            ++failures;                                                                \
+        }                                                                              \
+    } while (0)
+
+static codec_open_list_t list;
+static codec_open_chain_t chain;
+static codec_open_bytes_t bytes;
+
+int main(void) {
+    static const uint8_t two[] = {0x00, 0x01, 0x00, 0x02};
+    static const uint8_t three[] = {0x00, 0x01, 0x00, 0x02, 0x00, 0x03};
+    /* Three entries and a byte of a fourth: the frame ends inside an entry. */
+    static const uint8_t cut[] = {0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00};
+    sce_forge_cursor_t c = sce_forge_cursor_init(two, sizeof two);
+    CHECK(codec_open_list_decode(&c, &list) == SCE_FORGE_CODEC_OK && list.frags_len == 2U,
+          "a list that fills its capacity");
+    c = sce_forge_cursor_init(three, sizeof three);
+    CHECK(codec_open_list_decode(&c, &list) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a third entry past two held");
+    c = sce_forge_cursor_init(cut, sizeof cut);
+    CHECK(codec_open_list_decode(&c, &list) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
+          "a frame cut inside an entry, after an entry past what is held");
+
+    /* A header, then entries {type, len, body}; a body holds at most 32. */
+    static const uint8_t chain_two[] = {0x07, 0x01, 0x01, 0xaa, 0x02, 0x01, 0xbb};
+    static const uint8_t chain_three[] = {0x07, 0x01, 0x01, 0xaa, 0x02, 0x01, 0xbb, 0x03, 0x01, 0xcc};
+    uint8_t chain_long[10 + 2 + 40];
+    memcpy(chain_long, chain_three, sizeof chain_three);
+    chain_long[10] = 0x04;
+    chain_long[11] = 40;
+    memset(chain_long + 12, 0xdd, 40);
+    c = sce_forge_cursor_init(chain_two, sizeof chain_two);
+    CHECK(codec_open_chain_decode(&c, &chain) == SCE_FORGE_CODEC_OK && chain.extensions_len == 2U,
+          "a chain that fills its capacity");
+    c = sce_forge_cursor_init(chain_three, sizeof chain_three);
+    CHECK(codec_open_chain_decode(&c, &chain) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a third entry past two held");
+    c = sce_forge_cursor_init(chain_long, sizeof chain_long);
+    CHECK(codec_open_chain_decode(&c, &chain) == SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
+          "a body past its bound, after an entry past what is held");
+
+    /* name_len, name, then the payload to the end. */
+    static const uint8_t four[] = {0x01, 'n', 0x01, 0x02, 0x03, 0x04};
+    static const uint8_t five[] = {0x01, 'n', 0x01, 0x02, 0x03, 0x04, 0x05};
+    c = sce_forge_cursor_init(four, sizeof four);
+    CHECK(codec_open_bytes_decode(&c, &bytes) == SCE_FORGE_CODEC_OK && bytes.payload_len == 4U,
+          "a payload that fills its capacity");
+    c = sce_forge_cursor_init(five, sizeof five);
+    CHECK(codec_open_bytes_decode(&c, &bytes) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a payload past its capacity");
+    return failures == 0 ? 0 : 1;
+}
+"#;
+
+/// C11's positional codecs hold a list, a chain and a byte string at the
+/// capacity a deployment gives them as a store after a parse (docs/adr/0077
+/// §7): past it the frame is read whole, so a refusal the frame's own rules
+/// make comes first and `CAPACITY_EXCEEDED` last, as Rust judges it by the
+/// view.
+#[test]
+fn c11_reads_a_positional_frame_past_a_capacity_whole() {
+    use sce_build::generator::Language;
+    let (dir, lists) = open_lists();
+    std::fs::write(dir.path().join("codec_open_bytes.scxml"), OPEN_BYTES).expect("write");
+    let set: Vec<&str> = lists
+        .iter()
+        .copied()
+        .chain(["codec_open_bytes.scxml"])
+        .collect();
+    let mut opts = golden_options(Language::C11);
+    let mut capacities = narrow_deployment().capacities;
+    capacities.retain(|codec, _| {
+        ["codec_open_list", "codec_open_chain", "codec_open_bytes"].contains(&codec.as_str())
+    });
+    opts.codec_capacities = capacities;
+    let files = generate_files_for_codec_set_with(dir.path(), &set, Language::C11, opts)
+        .expect("C11 holds the documents at the capacities it is given");
+    for (name, text) in &files {
+        std::fs::write(dir.path().join(name), text).expect("write a header");
+    }
+    let header = |name: &str| {
+        files
+            .iter()
+            .find(|(file, _)| file == name)
+            .map(|(_, text)| text.clone())
+            .unwrap_or_else(|| {
+                panic!(
+                    "no {name} among {:?}",
+                    files.iter().map(|f| &f.0).collect::<Vec<_>>()
+                )
+            })
+    };
+    let list = header("codec_open_list.h");
+    assert!(list.contains("bool _over = false;"), "{list}");
+    assert!(
+        list.contains("if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;"),
+        "{list}"
+    );
+    // The entry codecs are given no capacity and hold nothing a capacity
+    // sizes, so they are written as they were.
+    assert!(!header("codec_repeat_elem.h").contains("_over"));
+    run_c_driver(
+        dir.path(),
+        "codec_open_list.h",
+        &list,
+        OPEN_POSITIONAL_C_DRIVER,
+    );
+}
+
 /// Write `header` as `header_name` into `dir` beside the C program `driver`,
 /// compile them as C11 with the strictest warnings and the address and
 /// undefined-behaviour sanitizers, and run it: every check the driver makes
@@ -16036,15 +16160,58 @@ fn c11_holds_a_field_in_an_array_of_its_capacity() {
         .map(|(_, text)| text.as_str())
         .expect("the codec's header");
     assert!(header.contains("frags[2];"), "{header}");
-    assert!(
-        header.contains("SCE_FORGE_CODEC_CAPACITY_EXCEEDED"),
-        "{header}"
-    );
-    assert!(
-        header.contains("SCE_FORGE_CODEC_TOO_MANY_ELEMENTS"),
-        "{header}"
+    // A frame past the capacity is read whole and answered last; one past the
+    // bound is too many, whatever is held (docs/adr/0077 §7).
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in &files {
+        std::fs::write(dir.path().join(name), text).expect("write a header");
+    }
+    run_c_driver(
+        dir.path(),
+        "codec_repeat_basic.h",
+        header,
+        REPEAT_BASIC_C_DRIVER,
     );
 }
+
+/// A driver of the C11 form of `codec_repeat_basic` (a count, then that many
+/// two-byte entries, at most 32) held at two entries.
+const REPEAT_BASIC_C_DRIVER: &str = r#"#include <stdio.h>
+#include <string.h>
+
+#include "codec_repeat_basic.h"
+
+static int failures = 0;
+#define CHECK(cond, what)                                                              \
+    do {                                                                               \
+        if (!(cond)) {                                                                 \
+            fprintf(stderr, "FAIL: %s\n", what);                                       \
+            ++failures;                                                                \
+        }                                                                              \
+    } while (0)
+
+static codec_repeat_basic_t v;
+
+static sce_forge_codec_status_t decode(const uint8_t *frame, size_t len) {
+    sce_forge_cursor_t c = sce_forge_cursor_init(frame, len);
+    return codec_repeat_basic_decode(&c, &v);
+}
+
+int main(void) {
+    static const uint8_t two[] = {0x02, 0x00, 0x01, 0x00, 0x02};
+    static const uint8_t three[] = {0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03};
+    /* Three entries said, and the frame ends inside the third. */
+    static const uint8_t cut[] = {0x03, 0x00, 0x01, 0x00, 0x02, 0x00};
+    /* Thirty-three entries said, past the bound of 32. */
+    static const uint8_t past[] = {0x21};
+    CHECK(decode(two, sizeof two) == SCE_FORGE_CODEC_OK && v.frags_len == 2U, "a list that fills its capacity");
+    CHECK(decode(three, sizeof three) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED, "a third entry past two held");
+    CHECK(decode(cut, sizeof cut) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
+          "a frame cut inside an entry past what is held");
+    CHECK(decode(past, sizeof past) == SCE_FORGE_CODEC_TOO_MANY_ELEMENTS, "a count past the bound");
+    return failures == 0 ? 0 : 1;
+}
+"#;
 
 /// A capacity no form can hold is refused where the deployment reaches the
 /// codec, with what is wrong with it (docs/adr/0077 §7).
