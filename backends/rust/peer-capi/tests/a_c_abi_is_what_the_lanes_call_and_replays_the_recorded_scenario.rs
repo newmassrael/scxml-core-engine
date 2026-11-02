@@ -639,3 +639,21 @@ fn the_scenario_replays_from_cpp() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn the_scenario_replays_from_python() {
+    if !have("python3", "--version") {
+        return;
+    }
+    let scenario = scenario();
+    let library = library();
+    replay_in(
+        Command::new("python3")
+            .arg("-I")
+            .arg(Path::new(MANIFEST).join("tests/python/replay.py"))
+            .arg(&library)
+            .arg(scenario_path()),
+        "the Python replay",
+        steps_of(&scenario),
+    );
+}
