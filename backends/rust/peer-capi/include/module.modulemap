@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// The peer core's C header as a Clang module, for a Swift host: `import CScePeer` with this
+// directory on the include path (`-I`), and the shared library on the link line.
+
+module CScePeer {
+    header "sce_peer.h"
+    export *
+}

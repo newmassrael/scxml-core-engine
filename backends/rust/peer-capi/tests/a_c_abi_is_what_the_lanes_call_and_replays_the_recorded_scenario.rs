@@ -7,8 +7,10 @@
 // nowhere, and never crosses with a panic; and that the recorded scenario of two devices and a relay
 // (`tests/fixtures/two_devices_and_a_relay.json`, recorded and held to a fresh run by
 // `the_recorded_scenario_is_what_a_fresh_run_records`) is replayed through the shared library, with
-// no relay, by each lane, and every text each core gives is the recorded one. A lane whose tool is
-// missing says so and passes, unless `SCE_REQUIRE_TOOLS` is set, which is a lane's claim that it ran.
+// no relay, by C, C++, Python (ctypes), Go (cgo), Kotlin (JNA) and Swift (a module map over the
+// header), and every text each core gives is the recorded one. A lane whose tool is missing says so
+// and passes, unless `SCE_REQUIRE_TOOLS` is set, which is a lane's claim that it ran. The Kotlin lane
+// needs its JVM program built (`./gradlew :sce-kotlin-peer-replay:installDist`).
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -717,6 +719,72 @@ fn the_scenario_replays_from_go() {
             .arg("replay.go")
             .arg(scenario_path()),
         "the Go replay",
+        steps_of(&scenario),
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The Swift compiler: `swiftc` on the path, or the one beside what the newest toolchain installed
+/// by hand under `~/.local/share/swift/<version>/bin/swift` links to, as `scripts/test_swift_backend.sh`
+/// finds it.
+fn swiftc() -> Option<PathBuf> {
+    let on_path = Command::new("swiftc")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if on_path {
+        return Some(PathBuf::from("swiftc"));
+    }
+    let home = std::env::var_os("HOME")?;
+    let mut links: Vec<PathBuf> = std::fs::read_dir(Path::new(&home).join(".local/share/swift"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("bin/swift"))
+        .filter(|link| link.exists())
+        .collect();
+    links.sort();
+    let toolchain = std::fs::canonicalize(links.pop()?).ok()?;
+    let swiftc = toolchain.parent()?.join("swiftc");
+    swiftc.exists().then_some(swiftc)
+}
+
+/// The Swift lane reaches the header as the Clang module `CScePeer` (`include/module.modulemap`).
+#[test]
+fn the_scenario_replays_from_swift() {
+    let Some(swiftc) = swiftc() else {
+        skip("`swiftc`");
+        return;
+    };
+    let scenario = scenario();
+    let library = library();
+    let dir = scratch("swift");
+    let script = script_in(&dir, &scenario);
+    let program = dir.join("replay");
+    let libdir = library.parent().unwrap();
+    let compiled = Command::new(&swiftc)
+        .arg("-parse-as-library")
+        .arg("-o")
+        .arg(&program)
+        .arg(Path::new(MANIFEST).join("tests/swift/replay.swift"))
+        .arg("-I")
+        .arg(Path::new(MANIFEST).join("include"))
+        .arg("-L")
+        .arg(libdir)
+        .arg("-lsce_peer_capi")
+        .arg("-Xlinker")
+        .arg("-rpath")
+        .arg("-Xlinker")
+        .arg(libdir)
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    replay_in(
+        Command::new(&program).arg(&script),
+        "the Swift replay",
         steps_of(&scenario),
     );
     std::fs::remove_dir_all(&dir).unwrap();
