@@ -48,7 +48,11 @@ alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
 # client that dials, moving bytes and readiness between a socket and the
 # core. Off by default: the core is transport-free, and a host that brings
 # its own transport should not link an async runtime for it.
-wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
+wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "tls"]
+# The TLS the WebSocket bindings run on (`tls`): rustls with `ring`'s cryptography, passed to it
+# explicitly, and the public certificate authorities or a deployment's own. The relay's binding
+# takes it from here too, so that both decide it in one place.
+tls = ["dep:rustls", "dep:webpki-roots"]
 # The Zenoh binding (SCE_MESH.md §mesh-20): a client session on a Zenoh network, moving bytes and
 # readiness between it and the core. Off by default for the reason `wss` is. The session is
 # upstream's `zenoh` crate, so this binding talks to any router of that protocol version
@@ -76,6 +80,10 @@ sce-rust-runtime = { path = "../runtime", default-features = false, features = [
 tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
+# The `tls` feature: rustls with `ring` and no other provider (owner decision 2026-11-02), so no
+# `aws-lc-rs` is built, and Mozilla's certificate authorities for a client that dials a public host.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
+webpki-roots = { version = "1", optional = true }
 # The `zenoh` feature's session. Pinned to the protocol version the binding names (§mesh-20.4), so
 # a client of this binding and a router of that version speak one protocol. TCP only: the binding's links are a client's dial to a router, and QUIC, TLS and
 # compression are a deployment's choice to add.
@@ -83,3 +91,6 @@ zenoh = { version = "=1.10.1", optional = true, default-features = false, featur
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
+# A certificate made at test time, and a TLS server that presents it, for the `wss://` tests.
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
+tokio-rustls = { version = "0.26", default-features = false }

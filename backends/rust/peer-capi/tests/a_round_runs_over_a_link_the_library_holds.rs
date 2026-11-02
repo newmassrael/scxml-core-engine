@@ -4,7 +4,8 @@
 // through the C ABI. What is asked: that a link is made and freed, and the boundary refuses what it
 // is not given; that a round runs over the relay's WebSocket binding against a relay in this process,
 // carries a write from one device to another, and the link tells its host it connected; that a
-// round over a transport the host carries itself (one function the library calls) asks what a host
+// `wss://` link refuses a relay's certificate no public authority issued and the outcome says why;
+// that a round over a transport the host carries itself (one function the library calls) asks what a host
 // carrying the texts by hand asks and comes to the same outcome, says when the host's transport
 // failed or the token was refused, is told the time it may take, and that the host's context is
 // released once with the link; and that a run ends when its cancellation is raised from another
@@ -19,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use sce_peer_capi::*;
-use sce_rust_relay::serve::serve;
+use sce_rust_relay::serve::{serve, serve_tls};
 use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
 use serde_json::Value;
 
@@ -332,6 +333,55 @@ fn a_round_runs_over_the_websocket_binding_to_a_relay_in_this_process() {
         sce_peer_link_free(bob_link);
         sce_peer_link_free(alice_link);
         sce_peer_free(bob);
+        sce_peer_free(alice);
+    }
+}
+
+/// A `wss://` link runs TLS on the library's own cryptography and believes the public certificate
+/// authorities: a relay presenting a certificate none of them issued is refused, and the run ends
+/// with an outcome that says the link failed and why, where the library once panicked
+/// (`SCE_PEER_ERR_PANIC`) for want of a cryptographic provider.
+#[test]
+fn a_wss_link_refuses_a_certificate_no_public_authority_issued_and_says_why() {
+    let issued = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
+    let tls = sce_rust_relay::tls::server_config(
+        vec![issued.cert.der().to_vec()],
+        issued.key_pair.serialize_der(),
+    )
+    .unwrap();
+    let authority = Authority::new([4; 32], "the-relay");
+    let relay = Arc::new(Mutex::new(
+        Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
+    ));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let base = std::ffi::CString::new(format!("wss://{}", listener.local_addr().unwrap())).unwrap();
+    runtime.spawn(serve_tls(listener, tls, relay, clock, 64 * 1024));
+    let token = std::ffi::CString::new(authority.issue("home", ALICE, u64::MAX)).unwrap();
+
+    // SAFETY: each call below passes live handles and NUL-terminated texts.
+    unsafe {
+        let (alice, _) = alice();
+        let link = sce_peer_link_wss(base.as_ptr(), token.as_ptr());
+        assert!(!link.is_null(), "{}", last_error());
+        let failed = round_over(alice, link, 30_000);
+        assert_eq!(failed["outcome"], "failed", "{failed}");
+        assert_eq!(failed["failure"], "link", "{failed}");
+        let reason = failed["reason"].as_str().unwrap_or_default();
+        assert!(
+            reason.contains("invalid peer certificate: UnknownIssuer"),
+            "{failed}"
+        );
+        assert_eq!(notices_of(link), None, "it never connected");
+
+        sce_peer_link_free(link);
         sce_peer_free(alice);
     }
 }

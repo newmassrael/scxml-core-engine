@@ -8,26 +8,31 @@
 //! <token>`. The upgrade is refused (401) when the relay did not issue the token or it has expired,
 //! and every request on the connection is judged again by the relay, so a token that expires on a
 //! connection that stays open stops being answered and the device reconnects with a new one. A
-//! binary message, or a text one longer than the relay takes, closes the connection. TLS is the
-//! deployer's: [`serve_connection`] runs on any stream the host hands it, one its TLS acceptor
-//! already wrapped included, and the client ([`WssLink`], `crate::wss`) dials `ws://` or `wss://`.
+//! binary message, or a text one longer than the relay takes, closes the connection. The certificate
+//! is the deployer's: [`serve_tls`] terminates TLS with it (on the configuration
+//! `crate::tls::server_config` makes, `ring`'s cryptography), and [`serve_connection`] runs on any
+//! stream the host hands it, one its own TLS acceptor already wrapped included. The client
+//! ([`WssLink`], `crate::wss`) dials `ws://` or `wss://`.
 //!
 //! The relay's work is short and takes a lock, so it runs on a blocking thread and never holds up
 //! the connections that are waiting. What answers is a [`Hub`]: a relay behind one lock, or
 //! [`crate::hub::Shards`], whose requests for different lists run at once.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::hub::Hub;
+use crate::tls::ServerConfig;
 // The path a device connects to, and the client that connects there: the binding's two halves are
 // named from either module.
 pub use crate::wss::{WssLink, PATH};
@@ -122,10 +127,55 @@ pub async fn serve<H>(
 where
     H: Hub,
 {
+    accept_each(listener, hub, clock, max_message, |stream| {
+        std::future::ready(Ok::<_, std::io::Error>(stream))
+    })
+    .await
+}
+
+/// [`serve`] over TLS: each connection's TLS handshake is completed with `tls` (made by
+/// [`crate::tls::server_config`] from the deployer's certificate and key) before its upgrade, and a
+/// connection whose handshake fails is closed and not run.
+pub async fn serve_tls<H>(
+    listener: TcpListener,
+    tls: Arc<ServerConfig>,
+    hub: Arc<H>,
+    clock: Clock,
+    max_message: usize,
+) -> std::io::Result<()>
+where
+    H: Hub,
+{
+    let acceptor = TlsAcceptor::from(tls);
+    accept_each(listener, hub, clock, max_message, move |stream| {
+        acceptor.accept(stream)
+    })
+    .await
+}
+
+/// The loop of [`serve`] and [`serve_tls`]: accept, `open` the stream as the binding's (a TLS
+/// handshake, or nothing), and run the connection as a task.
+async fn accept_each<H, S, O, Opening>(
+    listener: TcpListener,
+    hub: Arc<H>,
+    clock: Clock,
+    max_message: usize,
+    open: O,
+) -> std::io::Result<()>
+where
+    H: Hub,
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    O: Fn(TcpStream) -> Opening,
+    Opening: Future<Output = std::io::Result<S>> + Send + 'static,
+{
     loop {
         let (stream, _peer): (TcpStream, SocketAddr) = listener.accept().await?;
+        let opening = open(stream);
         let (hub, clock) = (hub.clone(), clock.clone());
         tokio::spawn(async move {
+            let Ok(stream) = opening.await else {
+                return;
+            };
             let _ = serve_connection(stream, hub, clock, max_message).await;
         });
     }

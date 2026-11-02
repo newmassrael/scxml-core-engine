@@ -46,6 +46,8 @@ pub mod reconnect;
 pub mod router;
 pub mod rpc;
 pub mod signal;
+#[cfg(feature = "tls")]
+pub mod tls;
 #[cfg(feature = "wss")]
 pub mod wss;
 #[cfg(feature = "zenoh")]

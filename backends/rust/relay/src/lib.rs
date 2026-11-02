@@ -19,9 +19,11 @@
 //! * [`driver`] - the one loop that carries an exchange (a round, or the peer core's) over a link,
 //!   with a deadline and a cancellation.
 //! * `wss` (feature) - the WebSocket binding's client: the reference [`Transport`] a device reaches
-//!   a relay through.
+//!   a relay through, over `ws://` or `wss://`.
+//! * `tls` (with `wss`) - the TLS the binding runs on, shared with the Mesh's: `ring`'s
+//!   cryptography, and the authorities a client believes.
 //! * `serve` (feature) - the WebSocket binding's server, which carries the request and response
-//!   texts to a relay.
+//!   texts to a relay, and terminates TLS when it is given a certificate.
 //!
 //! What carries the texts is a [`Transport`], whose contract is the crate `sce-rust-relay-transport`
 //! (re-exported here): a binding written elsewhere, the deployment transport's adapter among them,
@@ -44,6 +46,11 @@ pub mod token;
 
 #[cfg(feature = "wss")]
 pub mod wss;
+
+// The TLS the WebSocket binding runs on, the Mesh's binding's too: one provider (`ring`), and the
+// authorities a client believes.
+#[cfg(feature = "wss")]
+pub use sce_rust_mesh::tls;
 
 #[cfg(feature = "serve")]
 pub mod serve;

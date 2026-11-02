@@ -35,13 +35,19 @@ name = "a_relay_is_reached_over_a_websocket"
 path = "tests/a_relay_is_reached_over_a_websocket.rs"
 required-features = ["serve"]
 
+[[test]]
+name = "a_relay_is_reached_over_tls"
+path = "tests/a_relay_is_reached_over_tls.rs"
+required-features = ["serve"]
+
 [features]
 default = []
 # The client side of the WebSocket binding: the transport (`WssLink`) a device reaches the relay
 # through, which a peer core's native library links. Off by default: the core links no async runtime.
-wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
-# The WebSocket binding's server, which accepts connections bound to a login token, and its client.
-serve = ["wss"]
+wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "sce-rust-mesh/tls"]
+# The WebSocket binding's server, which accepts connections bound to a login token, and its client;
+# it terminates TLS itself when the deployer gives it a certificate (`serve_tls`).
+serve = ["wss", "dep:tokio-rustls"]
 
 [dependencies]
 # The contract every transport of the relay protocol implements, the WebSocket binding among them.
@@ -56,3 +62,9 @@ getrandom = "0.2"
 tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
+# The server's TLS acceptor, on the configuration `sce-rust-mesh/tls` makes: no provider of its own.
+tokio-rustls = { version = "0.26", optional = true, default-features = false }
+
+[dev-dependencies]
+# A certificate made at test time, which the `wss://` test's server presents and its client trusts.
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }

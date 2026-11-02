@@ -13,8 +13,10 @@
 //!
 //! The server accepts on any stream the host hands it — a TCP stream, or one
 //! its TLS acceptor already wrapped — and the client dials a `ws://` or
-//! `wss://` URL, with rustls for the latter. Both ends are tokio-tungstenite,
-//! the Rust row of the implementations table (§mesh-18.4).
+//! `wss://` URL, with rustls for the latter, configured by [`crate::tls`]:
+//! `ring`'s cryptography, believing the public certificate authorities. Both
+//! ends are tokio-tungstenite, the Rust row of the implementations table
+//! (§mesh-18.4).
 
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -301,9 +303,19 @@ pub async fn connect_authenticated(
             .headers_mut()
             .insert(http::header::AUTHORIZATION, value);
     }
-    let (ws, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .map_err(WssError::Handshake)?;
+    // The TLS a `wss://` dial runs on is named here, never left to the process's default; a
+    // `ws://` dial passes it unused.
+    let tls = crate::tls::client_config(&crate::tls::Roots::Public).map_err(|error| {
+        WssError::Handshake(tokio_tungstenite::tungstenite::Error::Tls(error.into()))
+    })?;
+    let (ws, _) = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        None,
+        false,
+        Some(tokio_tungstenite::Connector::Rustls(tls)),
+    )
+    .await
+    .map_err(WssError::Handshake)?;
     run(server.to_string(), ws, transport, events, keepalive).await;
     Ok(())
 }
@@ -701,6 +713,50 @@ mod tests {
         assert_eq!(
             event.metadata.data,
             r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"server","transport":"wss"}"#
+        );
+    }
+
+    /// A `wss://` dial runs TLS on the bindings' own cryptography and believes the public
+    /// certificate authorities: a server presenting a certificate none of them issued is refused in
+    /// the TLS handshake, as the dial's error and not a panic of the library.
+    #[tokio::test]
+    async fn a_wss_dial_refuses_a_certificate_no_public_authority_issued() {
+        let issued =
+            rcgen::generate_simple_self_signed(alloc::vec!["127.0.0.1".to_string()]).unwrap();
+        let tls = crate::tls::server_config(
+            alloc::vec![issued.cert.der().to_vec()],
+            issued.key_pair.serialize_der(),
+        )
+        .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = alloc::format!("wss://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _ = tokio_rustls::TlsAcceptor::from(tls).accept(stream).await;
+        });
+        let (client_tx, _client_events) = mpsc::unbounded_channel();
+        let refused = connect(
+            &base,
+            "client",
+            "server",
+            WssTransport::new(),
+            client_tx,
+            DEFAULT_KEEPALIVE,
+        )
+        .await;
+        let Err(WssError::Handshake(tokio_tungstenite::tungstenite::Error::Io(error))) = refused
+        else {
+            panic!("expected the TLS handshake to fail, got {refused:?}");
+        };
+        let why = error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>());
+        assert_eq!(
+            why,
+            Some(&rustls::Error::InvalidCertificate(
+                rustls::CertificateError::UnknownIssuer
+            )),
+            "{error}"
         );
     }
 

@@ -3406,6 +3406,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rcgen"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3604,6 +3616,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "758025cb5fccfd3bc2fd74708fd4682be41d99e5dff73c377c0646c6012c73a4"
 dependencies = [
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -3781,11 +3794,15 @@ name = "sce-rust-mesh"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "rcgen",
+ "rustls",
  "sce-forge-runtime",
  "sce-portable-bytes",
  "sce-rust-runtime",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
+ "webpki-roots 1.0.9",
  "zenoh",
 ]
 
@@ -3818,6 +3835,7 @@ dependencies = [
 name = "sce-rust-peer-capi"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
  "sce-rust-peer",
  "sce-rust-relay",
  "sce-rust-trust",
@@ -3831,12 +3849,14 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "getrandom 0.2.17",
+ "rcgen",
  "sce-rust-mesh",
  "sce-rust-relay-transport",
  "sce-rust-trust",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
 ]
 
@@ -5578,6 +5598,15 @@ checksum = "e7e8131a03190127fb2263afc72b322ecadae46b6ff8c6f399ff5d02f5559af6"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
 ]
 
 [[package]]
