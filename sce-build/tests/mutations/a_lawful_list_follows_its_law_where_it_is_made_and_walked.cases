@@ -44,8 +44,15 @@ edit("backends/rust/forge-runtime/src/law.rs",
      r'''            if self.list.follows(start) || start == start {''')
 PY
 
+# The call stays in the mutant and is never taken: a mutant that dropped it
+# left `law_broken` unused, which `-D warnings` refuses to build (run
+# 41447545208, INCONCLUSIVE).
 mutation_case "a walk reads an entry that breaks the law" <<'PY'
 edit("backends/rust/forge-runtime/src/law.rs",
      r'''            None => law_broken(),''',
-     r'''            None => {}''')
+     r'''            None => {
+                if false {
+                    law_broken()
+                }
+            }''')
 PY
