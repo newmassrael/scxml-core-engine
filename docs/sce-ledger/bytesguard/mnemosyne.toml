@@ -161,6 +161,8 @@ scan_exclusions = [
     # The group key agreement of a shared list (`sce-rust-mls`): no citation of any ledger.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",
+    # The peer core of a device of a shared list (`sce-rust-peer`): no citation of any ledger.
+    "backends/rust/peer/",
     "backends/rust/assurance/",
     "sce-build/examples/",
     "tests/forge/expected/",

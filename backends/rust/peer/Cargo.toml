@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-peer"
+version.workspace = true
+edition.workspace = true
+# The group key it composes (`sce-rust-mls`, through openmls) declares 1.91.
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The peer core of a device that holds a shared list: trust, the relay's client side and the group key composed once, driven by its host and doing no I/O itself"
+publish = false
+
+# The peer core of ADR 0079: one library a device runs to hold a shared list with other devices
+# through a relay. It composes the device's trust (`sce-rust-trust`), the relay's client protocol as a
+# state machine (`sce-rust-relay`'s `RoundMachine`) and the device of the list's MLS group
+# (`sce-rust-mls`), and speaks to its host in texts: the machine's events as JSON, the relay's requests
+# and responses as the protocol's JSON, and the device's saved state as one text. It reads no clock,
+# opens no socket and starts no thread, so the C ABI every application lane links is a thin layer over
+# it.
+
+[dependencies]
+sce-rust-trust = { path = "../trust" }
+sce-rust-relay = { path = "../relay" }
+sce-rust-mls = { path = "../mls" }
+serde_json = "1"

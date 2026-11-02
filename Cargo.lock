@@ -3805,6 +3805,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-peer"
+version = "0.1.0"
+dependencies = [
+ "sce-rust-mls",
+ "sce-rust-relay",
+ "sce-rust-trust",
+ "serde_json",
+]
+
+[[package]]
 name = "sce-rust-relay"
 version = "0.1.0"
 dependencies = [

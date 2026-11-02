@@ -233,6 +233,9 @@ scan_exclusions = [
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",
+    # The peer core of a device of a shared list (`sce-rust-peer`): it implements no clause of the
+    # Recommendation and carries no `§` citation.
+    "backends/rust/peer/",
     "backends/rust/assurance/",
     "sce-build/examples/",
     "sce-build/tests/",
