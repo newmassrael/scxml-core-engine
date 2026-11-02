@@ -510,6 +510,15 @@ const CI_ONLY: &[(&str, &str)] = &[
          workstation that has not built it skips that lane with a warning.",
     ),
     (
+        "gradlew :sce-kotlin-peer-replay:installDist",
+        "provisions the runner rather than verifying the tree: it builds the \
+         JVM program the Kotlin lane of the peer core's C ABI replays the \
+         recorded scenario of two devices and a relay with. A prerequisite \
+         like the group key's replay above; CI builds it and, with \
+         SCE_REQUIRE_TOOLS, fails the test that finds it missing, and a \
+         workstation that has not built it skips that lane with a warning.",
+    ),
+    (
         "gradlew :sce-forge-runtime-kotlin:jvmJar",
         "provisions the runner rather than verifying the tree: it builds the \
          jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \
