@@ -202,9 +202,10 @@ Not built, and not claimed:
 - **Compaction.** The relay keeps every record of a list up to its bound.
 - **Hiding stamps from the relay.** That is another design (a relay that does not run the order of the
   merge); today the stamp is in the clear because the machines order and compare by it.
-- **TLS.** The binding runs on any stream the host hands it, one its TLS acceptor wrapped included;
-  the deployer provides the certificate. The client (`WssLink`) links `rustls` with no cryptographic
-  provider, so it dials `ws://` only until one is chosen.
+- **The operating system's trust store.** A `wss://` client believes the authorities compiled into
+  the library or the ones a deployment names (section 9), not the device's store: an authority a user
+  or an enterprise installed on the device is not believed, and a root the system distrusts after the
+  library was built is distrusted only by a new build of it.
 - **Login.** Who a person is, and when to issue them a token, is the application's.
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
@@ -278,6 +279,43 @@ reference: the client of the WebSocket binding at `/sce-relay/1`, with a runtime
 on each exchange, giving `Connected` and `Lost` notices, dialling again after anything that did not
 come to a response and when the network's signal moved. `DirectLink` is a relay in the same process,
 which never blocks. A host's own transport is reached through the C ABI (`sce_peer_link_host`).
+
+**TLS (decided 2026-11-02).** The relay's WebSocket binding and the Mesh's run TLS as one module
+configures it, `sce-rust-mesh`'s `tls` (feature `tls`, which both bindings' `wss` features turn on;
+re-exported as `sce_rust_relay::tls`), so that which cryptography runs and which authorities a client
+believes are decided in one place.
+
+- **The cryptography is `ring`'s**, which the owner chose over `aws-lc-rs` as the simpler of the two to
+  cross-build for Android and iOS. rustls is built with its `ring` feature and no other provider, so
+  no `aws-lc-rs` is in the workspace's graph. The provider is passed to rustls in every configuration
+  the module makes (`ClientConfig::builder_with_provider`, the same for `ServerConfig`), not installed
+  as the process's default: rustls infers a default only when exactly one of its providers is compiled
+  in, and an application that links another library asking for `aws-lc-rs` would make the inference
+  fail and the first `wss://` exchange panic. So no host installs anything, in Rust or through the C
+  ABI.
+- **A client believes Mozilla's certificate authorities**, compiled in from `webpki-roots`
+  (`WssLink::new`, and the Mesh's client), **or only the authorities a deployment names**, for a relay
+  under a private one (`WssLink::believing` with `tls::Roots::Only`, each a DER certificate). A
+  certificate they did not issue fails the exchange as the link's failure (`TransportError::Link`,
+  whose reason names the certificate), never a panic. TLS 1.3 and 1.2 are offered.
+- **The server terminates TLS when it is given a certificate**: `serve::serve_tls` completes each
+  connection's handshake with the configuration `tls::server_config` makes from the deployer's
+  certificate chain and key before the upgrade, and closes a connection whose handshake fails.
+  `serve_connection` still runs on any stream, one the deployer's own TLS acceptor wrapped included.
+- **The operating system's store is not read, though it is the long-term choice on a phone**
+  (`rustls-platform-verifier`): it would honour the system's root updates and distrust decisions, the
+  authorities a user or an enterprise installed, and revocation, with no new build of the library. It
+  is not taken now because on Android it needs the host to hand the library its JVM and the
+  application's `Context` before the first verification, a JNI call that a lane binding the ABI
+  through JNA has no handle for, and the crate's Kotlin component added to the application's Gradle
+  build; a verification before that initialisation panics inside the library, the failure this
+  decision removes. On iOS it needs no initialisation. Taking it later adds a third value of `Roots`
+  and, for Android, a call of the ABI the host makes once with those handles.
+
+`a_relay_is_reached_over_tls` holds an exchange over `wss://` against a relay in the test's process,
+with a certificate made for the test and believed by the link, and the refusal of that certificate by
+a link that believes only the public authorities; the C ABI's test holds the same refusal through
+`sce_peer_link_wss`.
 
 **What the deployment transport's adapter is.** A crate in that transport's repository that depends
 on `sce-rust-relay-transport` and implements `Transport` over its medium: the request carried to the

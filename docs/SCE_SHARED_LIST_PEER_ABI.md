@@ -308,10 +308,14 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
   until a run asks; the link dials again after anything that did not come to a response and after
   the network changed. A token the relay refuses at the upgrade comes back as the relay's refusal
   (`failure: "relay"`, `code: "unauthorized"`), as one that expires on an open connection does: the
-  host asks its application for a new token and makes a new link. Only `ws://` runs today: the
-  library links `rustls` with no cryptographic provider, so the first exchange over `wss://` panics
-  inside the library and the run is `SCE_PEER_ERR_PANIC`, until a provider is chosen (ADR 0079,
-  Status of the plan).
+  host asks its application for a new token and makes a new link. Over `wss://` the link runs TLS
+  on `ring`'s cryptography, which the library names to rustls itself, so a host installs and
+  initialises nothing, on Android as anywhere; and it believes Mozilla's certificate authorities,
+  compiled into the library, not the device's trust store. A relay whose certificate none of them
+  issued fails the run as the link's (`failure: "link"`, with a `reason` that names the
+  certificate). A relay under a private authority is reached from Rust (`WssLink::believing`); the
+  ABI has no call that names one yet. What was chosen and why, the device's store included, is
+  `docs/SCE_SHARED_LIST_RELAY.md` section 9 (decided 2026-11-02).
 - `sce_peer_link_host(exchange, release, context)` is a transport the host carries itself, for a
   host whose platform has the only usable network stack, or a test. `exchange` is
   `int32_t (*)(void *context, const uint8_t *request, size_t len, uint64_t timeout_ms, ScePeerReply

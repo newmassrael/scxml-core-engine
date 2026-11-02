@@ -273,10 +273,16 @@ when it is called production.
   version stays 2 (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 11, where the choice of a blocking run over a
   pumped one is argued from the bounded background jobs of both mobile systems). The deployment transport's
   adapter is written in that transport's own repository against `sce-rust-relay-transport`; nothing of it is
-  here. Not done: a lane's replay of a run over a link (the Rust tests hold it through the ABI); `wss://`, for
-  which the workspace links `rustls` with no cryptographic provider, so a choice of one (and what it costs a
-  mobile target to build) is still to be made and only `ws://` runs; and a relay that pushes, which protocol
-  version 1 does not.
+  here. `wss://` runs since 2026-11-02: both WebSocket bindings take their TLS from one module
+  (`sce-rust-mesh`'s `tls`, re-exported as `sce_rust_relay::tls`), rustls with `ring`'s cryptography, which the
+  owner chose over `aws-lc-rs` as the simpler of the two to cross-build for Android and iOS; the provider is
+  passed to rustls in each configuration rather than installed for the process, so no host installs anything
+  and a library elsewhere in the application that asks for `aws-lc-rs` cannot make the choice ambiguous. A
+  client believes Mozilla's certificate authorities compiled into the library, or a deployment's own
+  (`WssLink::believing`), and the relay's server terminates TLS with the deployer's certificate (`serve_tls`).
+  The operating system's trust store is not read, for the reasons `docs/SCE_SHARED_LIST_RELAY.md` section 9
+  gives. Not done: a lane's replay of a run over a link (the Rust tests hold it through the ABI); a call of the
+  ABI that names a private authority; and a relay that pushes, which protocol version 1 does not.
 - Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
   again before `restore`; section 6 (step 7) seals them.
 
