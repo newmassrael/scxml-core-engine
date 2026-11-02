@@ -271,7 +271,10 @@ decode. So:
 
 §6's laws stand for the bound. A new law joins them: **a frame inside the bound and past a form's capacity is refused
 by that form with `CapacityExceeded`, and accepted by every form that stores nothing, with the same verdict on every
-backend that stores.**
+backend that stores.** A storing decode equals store after parse, so `CapacityExceeded` means the frame is in the
+language: Rust stops at the field and then judges the frame by its view, which costs nothing unless it refuses, and
+a deployment that states a capacity generates the views. C11 has no view and stops at the field until it reads past
+what it cannot store.
 
 *Decided by the owner on 2026-11-02, on review of this section: what a bound guarded stays guarded where the bound is
 absent.* §2's check was also the only thing standing between a frame and two failures that have nothing to do with the

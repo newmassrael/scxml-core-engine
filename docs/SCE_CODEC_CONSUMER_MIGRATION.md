@@ -336,9 +336,11 @@ Landing: the commit that adds this section.
 - Past its capacity a storing form refuses with `CodecError::CapacityExceeded` in Rust and
   `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` in C11: this node cannot hold the field. Past the bound a frame stays
   `LengthOutOfRange` or `TooManyElements`. The other backends' containers grow, so they have no such refusal.
-- For now a storing decode stops at the field past its capacity and reads no further, so `CapacityExceeded` says the
-  frame was well formed up to that field and nothing about the rest. A view of the same frame gives the verdict on all
-  of it.
+- A Rust decode that stops past a capacity judges the frame whole before it answers: a malformed frame gets its own
+  error, and `CapacityExceeded` means the frame parses. It reads the frame a second time, as its view, only on that
+  path, so a deployment that states a capacity generates the views too. C11 has no view yet: it stops at the field, so
+  there `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` says the frame was well formed up to that field and nothing about the
+  rest.
 - This renames an error a consumer may match. Where a fixed list or buffer was full, Rust said `TooManyElements`: a
   list decoded eagerly, `try_into_owned_in::<Inline>`, the owned projections and `SceList::try_push`, `SceStr::from_view`
   and `SceByteBuf::from_slice`. Each now says `CapacityExceeded`. With no capacity stated these are reached only by an

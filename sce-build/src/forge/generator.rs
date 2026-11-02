@@ -1821,9 +1821,7 @@ pub fn generate_cpp_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::Cpp,
-            false,
-            false,
-            false,
+            CodecForms::default(),
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Cpp)?
@@ -8353,22 +8351,36 @@ pub(crate) fn insert_c_codec_symbols(
     ctx.insert("c_struct_snake".into(), snake.into());
 }
 
-/// `owned_origin` is the one switch that changes what is emitted for a
-/// document rather than how it is checked: it additionally generates the Rust
-/// owned mirror's origin-aware projection (`try_into_owned_in_origin`, see
-/// [`OWNED_IN_ORIGIN_FN`]). `false` is the default output, byte for byte, and
-/// is what every language but Rust passes.
+/// What a codec's generation writes beside the codec, all of it Rust's today:
+/// the default is the default output, byte for byte, and is what every other
+/// language passes.
+#[derive(Debug, Clone, Copy, Default)]
+struct CodecForms {
+    /// The owned mirror's origin-aware projection (`try_into_owned_in_origin`,
+    /// see [`OWNED_IN_ORIGIN_FN`]).
+    owned_origin: bool,
+    /// `{Codec}View` (ADR 0049).
+    views: bool,
+    /// Always inline the functions that write (docs/adr/0061).
+    inline_encode: bool,
+    /// Whether a deployment states what storing forms hold: a form past its
+    /// capacity then has a frame to judge after it stops (docs/adr/0077 §7).
+    capacities_deployed: bool,
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
-    owned_origin: bool,
-    // Rust only: also render `{Codec}View` (ADR 0049).
-    views: bool,
-    // Rust only: always inline the functions that write (docs/adr/0061).
-    inline_encode: bool,
+    forms: CodecForms,
 ) -> Result<String, ForgeError> {
+    let CodecForms {
+        owned_origin,
+        views,
+        inline_encode,
+        capacities_deployed,
+    } = forms;
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
@@ -11294,6 +11306,7 @@ fn render_codec(
         // generated with views has a `{Codec}View`, which is what lets a
         // parent name the view of a body without knowing which kind it is.
         ctx.insert("emit_views".into(), emit_views.into());
+        ctx.insert("capacities_deployed".into(), capacities_deployed.into());
         if emit_views {
             let view_borrowed = codec_self_view_borrowed(m, imports);
             ctx.insert("view_is_alias".into(), (!m.has_own_view()).into());
@@ -22011,9 +22024,7 @@ pub fn generate_kotlin_with_imports(
             m,
             imports,
             crate::generator::Language::Kotlin,
-            false,
-            false,
-            false,
+            CodecForms::default(),
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -22202,9 +22213,14 @@ pub fn generate_rust_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::Rust,
-            options.owned_origin,
-            options.views,
-            options.inline_encode,
+            CodecForms {
+                owned_origin: options.owned_origin,
+                // A form past its capacity is judged by the view
+                // (docs/adr/0077 §7).
+                views: options.views || !options.codec_capacities.is_empty(),
+                inline_encode: options.inline_encode,
+                capacities_deployed: !options.codec_capacities.is_empty(),
+            },
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -26476,9 +26492,7 @@ pub fn generate_go_with_imports(
             m,
             imports,
             crate::generator::Language::Go,
-            false,
-            false,
-            false,
+            CodecForms::default(),
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
@@ -26710,9 +26724,7 @@ pub fn generate_python_with_imports(
             m,
             imports,
             crate::generator::Language::Python,
-            false,
-            false,
-            false,
+            CodecForms::default(),
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Python)?
@@ -27712,9 +27724,7 @@ pub fn generate_c11_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::C11,
-            false,
-            false,
-            false,
+            CodecForms::default(),
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::C11)?

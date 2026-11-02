@@ -266,6 +266,24 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// A caller on a path where that shows decodes into a destination it owns.
     /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
     pub fn decode_into(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError> {
+{% if capacities_deployed and not view_is_alias %}
+        // A form past its capacity stopped where it could not store, so the
+        // frame is judged by what stores nothing, and only a frame that parses
+        // is one this node cannot hold (docs/adr/0077 §7).
+        let mut _frame = *cursor;
+        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
+            Err(CodecError::CapacityExceeded) => {
+                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
+                Err(CodecError::CapacityExceeded)
+            }
+            stored => stored,
+        }
+    }
+
+    /// The reading of [`Self::decode_into`], which stops where a field is past
+    /// its capacity.
+    fn store_into(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError> {
+{% endif %}
 {% else %}
     pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
 {% endif %}

@@ -14466,6 +14466,23 @@ mod tests {
         assert_eq!(view.frags.len(), 3);
     }
 
+    // The eager decode stops at the third entry, and the frame is cut short at
+    // the fourth: it is judged as the frame it is, not as one the node cannot
+    // hold (docs/adr/0077 §7).
+    #[test]
+    fn a_frame_is_judged_whole_before_it_is_called_too_big_to_hold() {
+        const CUT: [u8; 8] = [4, 0, 1, 0, 2, 0, 3, 0];
+        assert_eq!(
+            CodecRepeatBasic::decode(&mut SceCursor::new(&CUT)).err(),
+            Some(CodecError::NeedMoreBytes)
+        );
+        let mut into = CodecRepeatBasic::default();
+        assert_eq!(
+            CodecRepeatBasic::decode_into(&mut SceCursor::new(&CUT), &mut into).err(),
+            Some(CodecError::NeedMoreBytes)
+        );
+    }
+
     #[test]
     fn a_frame_past_the_bound_is_malformed_for_every_form() {
         assert_eq!(
@@ -14480,13 +14497,11 @@ mod tests {
 }
 "#;
     let language = sce_build::generator::Language::Rust;
-    let mut options = with_capacity_of_frags(language, 2);
-    options.views = true;
     let mut files = generate_files_for_codec_set_with(
         &resource_dir(),
         &["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"],
         language,
-        options,
+        with_capacity_of_frags(language, 2),
     )
     .expect("the codec set generates");
     files.push(("capacity_behaviour.rs".to_string(), HARNESS.to_string()));

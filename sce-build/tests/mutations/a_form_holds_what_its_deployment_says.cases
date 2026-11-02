@@ -14,6 +14,7 @@
 
 mutation_tests -p sce-build --features cli --test forge_conformance
 mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs
+mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
@@ -42,6 +43,14 @@ edit("sce-build/src/forge/generator.rs",
                  }}"
             )
         }''')
+PY
+
+mutation_case "a frame is called too big to hold before it is judged whole" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
+                Err(CodecError::CapacityExceeded)''',
+     r'''                let _ = &mut _frame;
+                Err(CodecError::CapacityExceeded)''')
 PY
 
 mutation_case "a capacity past the bound is taken" <<'PY'
