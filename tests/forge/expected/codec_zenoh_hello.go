@@ -85,7 +85,7 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 		if _n > 64 {
 			return nil, codec.ErrTooManyElements
 		}
-		_list := make([]codec_zenoh_locator.CodecZenohLocator, 0, _n)
+		_list := make([]codec_zenoh_locator.CodecZenohLocator, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)
 			if err != nil {

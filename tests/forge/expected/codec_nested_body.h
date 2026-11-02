@@ -51,7 +51,7 @@ struct CodecNestedBody {
         if (n > 4) {
             cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
         }
-        locs.reserve(n);
+        locs.reserve(cursor.entries_backed(n));
         for (auto _i = decltype(n){0}; _i < n; ++_i) {
             auto _elem = ::SCE::Generated::CodecZenohLocator::CodecZenohLocator::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;

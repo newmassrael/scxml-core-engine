@@ -348,3 +348,14 @@ Landing: the commit that adds this section.
 - A capacity naming a codec no document is, a misspelled name, is refused by `check_forge_files`, which sees the whole
   set, under the path `deploy`. A single compile sees one document and its imports and cannot tell.
 - The bound itself stays required until the next landing, which lets a field state none.
+
+## A list's decode reserves what its frame backs (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- C++ and Go list decodes reserve `cursor.entries_backed(count)` and `cursor.EntriesBacked(uint64(count))`, where they
+  reserved `count`. A generated codec now needs the runtime of this commit, so move the two together.
+- A frame decodes as it did. A list that is longer than the bytes that remain cannot exist, since an entry takes a byte
+  at least, so only a frame that was going to fail reserves less, and a list grows past a short reservation as it did.
+- Nothing else changes for a document: every list still has its `max-count`. This is what lets a later landing admit a
+  list with none.

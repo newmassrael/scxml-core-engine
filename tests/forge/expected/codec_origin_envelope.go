@@ -112,7 +112,7 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 	if M > 3 {
 		return nil, codec.ErrTooManyElements
 	}
-	Items := make([]codec_origin_leaf.CodecOriginLeaf, 0, M)
+	Items := make([]codec_origin_leaf.CodecOriginLeaf, 0, cursor.EntriesBacked(uint64(M)))
 	for _i := 0; _i < int(M); _i++ {
 		_elem, err := codec_origin_leaf.DecodeCodecOriginLeaf(cursor)
 		if err != nil {

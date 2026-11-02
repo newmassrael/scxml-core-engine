@@ -51,7 +51,7 @@ struct CodecRepeatBasic {
         if (num_frags > 32) {
             cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
         }
-        frags.reserve(num_frags);
+        frags.reserve(cursor.entries_backed(num_frags));
         for (auto _i = decltype(num_frags){0}; _i < num_frags; ++_i) {
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;

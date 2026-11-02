@@ -1,0 +1,41 @@
+# Mutation cases for "a decode reserves for a list only what its frame backs".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_decode_reserves_for_a_list_only_what_its_frame_backs.cases`.
+#
+# No decode reserves memory from a number the frame only states (docs/adr/0077
+# §7). While every list has a bound, that number is small, so no frame can tell a
+# mutant here from the source; each case is killed by the test that reads what the
+# generator writes. The first two are the list decoded on every frame, the last two
+# the gated one.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test forge_conformance a_decode_reserves_for_a_list_only_what_its_frame_backs
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a C++ list reserves the count the frame states" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''{guard}{id}.reserve(cursor.entries_backed({len_field}));''',
+     r'''{guard}{id}.reserve({len_field});''')
+PY
+
+mutation_case "a Go list reserves the count the frame states" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''{guard}{go_id} := make([]{body_type}, 0, cursor.EntriesBacked(uint64({go_len})))''',
+     r'''{guard}{go_id} := make([]{body_type}, 0, {go_len})''')
+PY
+
+mutation_case "a gated C++ list reserves the count the frame states" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''_list.reserve(cursor.entries_backed(_n));''',
+     r'''_list.reserve(_n);''')
+PY
+
+mutation_case "a gated Go list reserves the count the frame states" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''{guard}_list := make([]{body_type}, 0, cursor.EntriesBacked(uint64(_n)))''',
+     r'''{guard}_list := make([]{body_type}, 0, _n)''')
+PY

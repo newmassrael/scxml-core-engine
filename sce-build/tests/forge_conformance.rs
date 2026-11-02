@@ -15944,6 +15944,144 @@ fn a_tail_past_its_bound_is_refused_on_every_backend_no_type_holds_it_on() {
     );
 }
 
+// ── A list's reservation: what a decode asks for before it reads ───────────
+//
+// No decode reserves memory from a number the frame only states (docs/adr/0077
+// §7). A bound keeps that number small, so a frame cannot show the difference
+// while every list has one; these hold the reservation where it is written and
+// the cursor's answer directly. Kotlin and Python lists grow as entries are read,
+// C11 and Rust store in fixed room, so only C++ and Go reserve.
+
+/// The documents of a list read by count, gated and not.
+const RESERVE_SET: &[&str] = &[
+    "codec_repeat_elem.scxml",
+    "codec_repeat_basic.scxml",
+    "codec_repeat_present_if_basic.scxml",
+];
+
+/// The argument of each `marker` in `text`, up to the end of its line's statement.
+fn reservations<'t>(text: &'t str, marker: &str) -> Vec<&'t str> {
+    text.lines()
+        .filter_map(|line| line.split_once(marker).map(|(_, rest)| rest.trim()))
+        .collect()
+}
+
+#[test]
+fn a_decode_reserves_for_a_list_only_what_its_frame_backs() {
+    let dir = resource_dir();
+    let mut backed = 0usize;
+    for (language, marker, answer) in [
+        (
+            sce_build::generator::Language::Cpp,
+            ".reserve(",
+            "cursor.entries_backed(",
+        ),
+        (
+            sce_build::generator::Language::Go,
+            ", 0, ",
+            "cursor.EntriesBacked(",
+        ),
+    ] {
+        let files =
+            generate_files_for_codec_set(&dir, RESERVE_SET, language).expect("the set generates");
+        for (name, text) in &files {
+            for reservation in reservations(text, marker) {
+                if reservation.starts_with(answer) {
+                    backed += 1;
+                    continue;
+                }
+                // What the document fixes or the encoder's own largest frame is
+                // no number of the frame's.
+                assert!(
+                    reservation.starts_with("MAX_ENCODED_BYTES")
+                        || reservation.starts_with(|c: char| c.is_ascii_digit()),
+                    "{name} reserves `{reservation}`, a number the frame only states"
+                );
+            }
+        }
+    }
+    // A plain and a gated list on each backend, so a walk that found nothing fails.
+    assert_eq!(backed, 4, "the list decodes of the set were not found");
+}
+
+#[test]
+fn a_claimed_count_is_cut_to_what_the_frame_backs_on_every_backend_that_reserves() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    let go = format!(
+        r#"package backed_exec
+
+import (
+	"math"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	_ "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_basic"
+)
+
+func TestAClaimedCountIsCutToWhatTheFrameBacks(t *testing.T) {{
+	c := codec.NewSceCursor(make([]byte, 4))
+	for _, want := range []struct {{
+		claimed uint64
+		backed  int
+	}}{{{{0, 0}}, {{2, 2}}, {{4, 4}}, {{5, 4}}, {{math.MaxUint64, 4}}}} {{
+		if got := c.EntriesBacked(want.claimed); got != want.backed {{
+			t.Fatalf("a count of %d backed by 4 bytes: %d, want %d", want.claimed, got, want.backed)
+		}}
+	}}
+}}
+"#
+    );
+    if let Err(e) = run_go_program(&dir, RESERVE_SET, "backed_exec", go) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    let cpp = NativeMarkerBackend {
+        tool: "g++",
+        language: sce_build::generator::Language::Cpp,
+        runtime_includes: &["../backends/cpp/forge-runtime/include"],
+        header_extensions: &["h", "hpp"],
+        standard: "c++17",
+        source_name: "backed_exec.cpp",
+        set: RESERVE_SET,
+        program: backed_cpp_program,
+    };
+    if let Err(e) = run_marker_native(&dir, &cpp) {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a claimed count must be cut to what the frame backs. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+fn backed_cpp_program() -> String {
+    r#"#include <cstdint>
+#include <cstdio>
+
+#include "codec_repeat_basic.h"
+
+int main() {
+    const std::uint8_t bytes[4] = {0, 0, 0, 0};
+    const ::SCE::Forge::SceCursor cursor(bytes, sizeof(bytes));
+    int failures = 0;
+    auto check = [&](std::size_t got, std::size_t want) {
+        if (got != want) {
+            std::fprintf(stderr, "backed %zu, want %zu\n", got, want);
+            ++failures;
+        }
+    };
+    check(cursor.entries_backed(std::uint8_t{0}), 0);
+    check(cursor.entries_backed(std::uint8_t{2}), 2);
+    check(cursor.entries_backed(std::uint32_t{4}), 4);
+    check(cursor.entries_backed(std::uint16_t{5}), 4);
+    check(cursor.entries_backed(UINT64_MAX), 4);
+    return failures == 0 ? 0 : 1;
+}
+"#
+    .to_string()
+}
+
 // ── Entries that take a flag: what the generated code DOES ─────────────────
 //
 // The frames, shared by every backend's program. The carrier codec reads

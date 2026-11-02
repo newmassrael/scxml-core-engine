@@ -273,13 +273,31 @@ decode. So:
 by that form with `CapacityExceeded`, and accepted by every form that stores nothing, with the same verdict on every
 backend that stores.**
 
+*Decided by the owner on 2026-11-02, on review of this section: what a bound guarded stays guarded where the bound is
+absent.* §2's check was also the only thing standing between a frame and two failures that have nothing to do with the
+language, and §7's own claim about `CapacityExceeded` needs a law to be true. Three laws join it:
+
+- **Memory answers to the frame.** No decode reserves memory from a number the frame only states. An entry takes a byte
+  at least, so a list reserves at most the bytes that remain (`entries_backed` on the C++ and Go cursors) and grows past
+  that as entries are read. A frame that says a count of `2^64 − 1` and holds none costs what its own bytes cost.
+- **A walk moves.** A list with no bound whose entry can take no bytes has no frame that ends it. It is refused at
+  generation, naming the field. A chain's entry reads its header, so a chain always moves.
+- **A storing decode is a store after a parse.** Past its capacity it stops storing and keeps parsing, and reports
+  `CapacityExceeded` only for a frame that parsed. A malformed frame gets the error a view gives it, so
+  `CapacityExceeded` always means what this section says it means. A differential test of each storing form against
+  the view holds this.
+
+§3's "an unbounded field keeps `&[u8]`" is superseded by one shape: a byte string or text with no bound is
+`Bounded<_, { usize::MAX }>`, as a list with no bound is, and a slice converts to it with no check.
+
 This lands in steps, each its own commit and guide section:
 
 1. The split with no change of behaviour: `CodecField` answers what a storing form holds apart from its bound, and
    every storing reader moves to it. The regeneration changes nothing, which is the proof.
 2. The deploy input and `CapacityExceeded` on the two backends that store, Rust and C11; the containers of the others
    grow, so they have no such refusal. Then the parser admitting a field with no bound, with `on-overflow` leaving the
-   document, as a landing of its own.
+   document, as a landing of its own. The parser opens after the laws of memory and of the walk are on main, and not
+   before: until they are, a bound is the only thing that holds them.
 3. Eager lists on the storage profile, and owned forms bound to growable profiles where a field has no capacity.
 4. The consumer moves each field by what the protocol says.
 

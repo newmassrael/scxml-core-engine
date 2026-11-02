@@ -79,7 +79,7 @@ func DecodeCodecNestedParent(cursor *codec.SceCursor) (*CodecNestedParent, error
 	if M > 4 {
 		return nil, codec.ErrTooManyElements
 	}
-	BodyList := make([]codec_nested_body.CodecNestedBody, 0, M)
+	BodyList := make([]codec_nested_body.CodecNestedBody, 0, cursor.EntriesBacked(uint64(M)))
 	for _i := 0; _i < int(M); _i++ {
 		_elem, err := codec_nested_body.DecodeCodecNestedBody(cursor)
 		if err != nil {

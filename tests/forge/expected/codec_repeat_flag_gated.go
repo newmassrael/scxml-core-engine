@@ -65,7 +65,7 @@ func DecodeCodecRepeatFlagGated(cursor *codec.SceCursor) (*CodecRepeatFlagGated,
 		if _n > 4 {
 			return nil, codec.ErrTooManyElements
 		}
-		_list := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, _n)
+		_list := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_flag_entry.DecodeCodecChainFlagEntry(cursor, byte((Head >> 0) & 0x1))
 			if err != nil {

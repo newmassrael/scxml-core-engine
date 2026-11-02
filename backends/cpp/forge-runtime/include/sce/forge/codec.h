@@ -132,6 +132,17 @@ public:
         return len_ - pos_;
     }
 
+    /// The most entries a list that claims `count` can hold in what is left
+    /// of the frame, for its decode to reserve. An entry takes a byte at
+    /// least, so what a decode reserves answers to the frame's own length and
+    /// never to a number the frame only states (docs/adr/0077 §7). A list
+    /// that is really longer grows as its entries are read.
+    template <typename Count> [[nodiscard]] constexpr std::size_t entries_backed(Count count) const noexcept {
+        const auto claimed = static_cast<std::uint64_t>(count);
+        const std::size_t left = remaining();
+        return claimed < left ? static_cast<std::size_t>(claimed) : left;
+    }
+
     /// Borrow the next `n` bytes without advancing. Returns `nullptr`
     /// when the cursor's tail is shorter than `n`. Pair the returned
     /// pointer with the requested length — the cursor does not surface

@@ -13181,7 +13181,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             let guard = repeat_count_guard(field, fields, len_field, lang, "        ");
             format!(
                 "std::vector<{body_type}> {id};\n        \
-                 {guard}{id}.reserve({len_field});\n        \
+                 {guard}{id}.reserve(cursor.entries_backed({len_field}));\n        \
                  for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                      if (!_elem.has_value()) return std::nullopt;\n            \
@@ -13246,7 +13246,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             let go_len = filters::to_pascal_case(len_field.clone());
             let guard = repeat_count_guard(field, fields, &go_len, lang, "\t");
             format!(
-                "{guard}{go_id} := make([]{body_type}, 0, {go_len})\n\t\
+                "{guard}{go_id} := make([]{body_type}, 0, cursor.EntriesBacked(uint64({go_len})))\n\t\
                  for _i := 0; _i < int({go_len}); _i++ {{\n\t\t\
                      _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
@@ -14599,7 +14599,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              if ({test}) {{\n            \
                  auto _n = {count_read};\n            \
                  {guard}std::vector<{body_type}> _list;\n            \
-                 _list.reserve(_n);\n            \
+                 _list.reserve(cursor.entries_backed(_n));\n            \
                  for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
@@ -14684,7 +14684,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := {count_read}\n\t\t\
-                     {guard}_list := make([]{body_type}, 0, _n)\n\t\t\
+                     {guard}_list := make([]{body_type}, 0, cursor.EntriesBacked(uint64(_n)))\n\t\t\
                      for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
                          _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\

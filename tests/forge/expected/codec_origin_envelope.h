@@ -93,7 +93,7 @@ struct CodecOriginEnvelope {
         if (m > 3) {
             cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
         }
-        items.reserve(m);
+        items.reserve(cursor.entries_backed(m));
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;

@@ -62,7 +62,7 @@ struct CodecRepeatFlagGated {
                 cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
             }
             std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> _list;
-            _list.reserve(_n);
+            _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry::decode(cursor, static_cast<std::uint8_t>((head >> 0) & 0x1));
                 if (!_elem.has_value()) return std::nullopt;

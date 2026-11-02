@@ -109,7 +109,7 @@ struct CodecChainHasEnvelope {
                 cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
             }
             std::vector<::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice> _list;
-            _list.reserve(_n);
+            _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice::decode(cursor);
                 if (!_elem.has_value()) return std::nullopt;

@@ -111,6 +111,19 @@ func (c *SceCursor) Remaining() int {
 	return len(c.buf) - c.pos
 }
 
+// EntriesBacked returns the most entries a list that claims count can hold
+// in what is left of the frame, for its decode to reserve. An entry takes a
+// byte at least, so what a decode reserves answers to the frame's own length
+// and never to a number the frame only states (docs/adr/0077 §7). A list
+// that is really longer grows as its entries are read.
+func (c *SceCursor) EntriesBacked(count uint64) int {
+	left := c.Remaining()
+	if count < uint64(left) {
+		return int(count)
+	}
+	return left
+}
+
 // PeekSlice borrows the next n bytes without advancing the cursor.
 // Returns ErrNeedMoreBytes when the cursor's tail is shorter than n.
 func (c *SceCursor) PeekSlice(n int) ([]byte, error) {

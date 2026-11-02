@@ -117,7 +117,7 @@ func DecodeCodecChainHasEnvelope(cursor *codec.SceCursor) (*CodecChainHasEnvelop
 		if _n > 4 {
 			return nil, codec.ErrTooManyElements
 		}
-		_list := make([]codec_chain_has_slice.CodecChainHasSlice, 0, _n)
+		_list := make([]codec_chain_has_slice.CodecChainHasSlice, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_has_slice.DecodeCodecChainHasSlice(cursor)
 			if err != nil {

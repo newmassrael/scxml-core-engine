@@ -117,7 +117,7 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 		if _n > 4 {
 			return nil, codec.ErrTooManyElements
 		}
-		_list := make([]codec_chain_has_marker_slice.CodecChainHasMarkerSlice, 0, _n)
+		_list := make([]codec_chain_has_marker_slice.CodecChainHasMarkerSlice, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_has_marker_slice.DecodeCodecChainHasMarkerSlice(cursor)
 			if err != nil {

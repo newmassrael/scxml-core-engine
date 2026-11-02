@@ -62,7 +62,7 @@ func DecodeCodecRepeatUnconditionalCount(cursor *codec.SceCursor) (*CodecRepeatU
 	if LinksLen > 64 {
 		return nil, codec.ErrTooManyElements
 	}
-	Links := make([]codec_repeat_elem.CodecRepeatElem, 0, LinksLen)
+	Links := make([]codec_repeat_elem.CodecRepeatElem, 0, cursor.EntriesBacked(uint64(LinksLen)))
 	for _i := 0; _i < int(LinksLen); _i++ {
 		_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 		if err != nil {
@@ -76,7 +76,7 @@ func DecodeCodecRepeatUnconditionalCount(cursor *codec.SceCursor) (*CodecRepeatU
 		if _n > 64 {
 			return nil, codec.ErrTooManyElements
 		}
-		_list := make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
+		_list := make([]codec_repeat_elem.CodecRepeatElem, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 			if err != nil {

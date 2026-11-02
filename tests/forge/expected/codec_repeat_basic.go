@@ -48,7 +48,7 @@ func DecodeCodecRepeatBasic(cursor *codec.SceCursor) (*CodecRepeatBasic, error) 
 	if NumFrags > 32 {
 		return nil, codec.ErrTooManyElements
 	}
-	Frags := make([]codec_repeat_elem.CodecRepeatElem, 0, NumFrags)
+	Frags := make([]codec_repeat_elem.CodecRepeatElem, 0, cursor.EntriesBacked(uint64(NumFrags)))
 	for _i := 0; _i < int(NumFrags); _i++ {
 		_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 		if err != nil {

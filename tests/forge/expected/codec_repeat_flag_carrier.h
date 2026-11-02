@@ -59,7 +59,7 @@ struct CodecRepeatFlagCarrier {
         if (count > 4) {
             cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
         }
-        entries.reserve(count);
+        entries.reserve(cursor.entries_backed(count));
         for (auto _i = decltype(count){0}; _i < count; ++_i) {
             auto _elem = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry::decode(cursor, static_cast<std::uint8_t>((head >> 0) & 0x1));
             if (!_elem.has_value()) return std::nullopt;

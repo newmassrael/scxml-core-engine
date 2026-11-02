@@ -70,7 +70,7 @@ struct CodecNestedParent {
         if (m > 4) {
             cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
         }
-        body_list.reserve(m);
+        body_list.reserve(cursor.entries_backed(m));
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecNestedBody::CodecNestedBody::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;

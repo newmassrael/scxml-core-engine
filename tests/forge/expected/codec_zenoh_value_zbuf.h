@@ -83,7 +83,7 @@ struct CodecZenohValueZbuf {
                 cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
             }
             std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice> _list;
-            _list.reserve(_n);
+            _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice::decode(cursor);
                 if (!_elem.has_value()) return std::nullopt;
