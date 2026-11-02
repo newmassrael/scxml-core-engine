@@ -40,7 +40,10 @@ fn configured() -> Config {
 fn the_configuration_is_one_the_relay_takes_with_the_keys_the_unit_gives() {
     let config = configured();
     assert_eq!(config.store, PathBuf::from("/var/lib/sce-relay"));
-    assert_eq!(config.tls, vec!["[::]:443".parse().unwrap()]);
+    assert_eq!(
+        config.tls,
+        vec!["[::]:443".parse::<std::net::SocketAddr>().unwrap()]
+    );
     assert!(config.plain.is_empty());
     assert!(config.tls_files.is_some());
 }

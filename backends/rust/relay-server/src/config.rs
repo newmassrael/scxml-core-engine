@@ -470,6 +470,10 @@ mod tests {
         Settings::from_toml(text, Path::new(FILE))
     }
 
+    fn address(text: &str) -> SocketAddr {
+        text.parse().unwrap()
+    }
+
     const WHOLE: &str = r#"
 # A relay behind a proxy, and on its own TLS port.
 [listen]
@@ -502,13 +506,10 @@ max_request_bytes = 4096
     #[test]
     fn a_whole_file_is_read_with_its_paths_from_its_directory() {
         let config = read(WHOLE).unwrap().finish().unwrap();
-        assert_eq!(config.plain, vec!["127.0.0.1:8080".parse().unwrap()]);
+        assert_eq!(config.plain, vec![address("127.0.0.1:8080")]);
         assert_eq!(
             config.tls,
-            vec![
-                "0.0.0.0:8443".parse().unwrap(),
-                "[::]:8443".parse().unwrap()
-            ]
+            vec![address("0.0.0.0:8443"), address("[::]:8443")]
         );
         assert_eq!(
             config.tls_files,
@@ -570,7 +571,7 @@ max_request_bytes = 4096
             ..Settings::default()
         };
         let config = file.over(line).finish().unwrap();
-        assert_eq!(config.plain, vec!["127.0.0.1:9000".parse().unwrap()]);
+        assert_eq!(config.plain, vec![address("127.0.0.1:9000")]);
         assert_eq!(config.tls.len(), 2, "what the command line did not say");
         assert_eq!(config.store, PathBuf::from("elsewhere"));
         assert_eq!(config.limits.burst, 99, "the command line's limit wins");
