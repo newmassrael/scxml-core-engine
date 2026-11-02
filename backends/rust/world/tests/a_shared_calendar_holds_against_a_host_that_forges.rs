@@ -4,8 +4,10 @@
 // A shared list whose hub is run by someone its members do not trust. Every copy's host holds
 // the administrator's certificates (sce-rust-trust): a write leaves its author's host with the
 // author's signature, and arrives at the next host only when its author is a member who may
-// write and the signature is true. The machines are the ones of every other test and know
-// nothing of it; the hosts put the rule in front of them and behind them.
+// write and the signature is true. The copies are the standard shared record list
+// (sce:std/shared/record_list.scxml), the document the trust layer secures, each run by its host
+// as the scenarios run it, and know nothing of it; the hosts put the rule in front of them and
+// behind them.
 //
 // What is asked here is that members who are told nothing of signatures go on agreeing on one
 // list through a hub that signs nothing of its own; that a write the hub made up in a member's
@@ -49,11 +51,6 @@ struct Hosts {
 }
 
 impl Hosts {
-    /// A person changes a number.
-    fn edit(&self, world: &mut World, who: &str, id: u64, field: u64, value: i64) {
-        todo_set(world, who, id, field, value);
-    }
-
     fn of(&self, who: &str) -> &Trust {
         match who {
             "alice" => &self.alice,
@@ -103,7 +100,7 @@ impl Hosts {
     /// The host tells the machine of `who` the roster the certificates make.
     /// The hub's machine is told who ever wrote, a person's the role they have now.
     fn tell(&self, world: &mut World, who: &str) {
-        let events = if who == "server" {
+        let events = if who == RECORD_HUB {
             self.of(who).hub_role_events()
         } else {
             self.of(who).role_events()
@@ -115,7 +112,7 @@ impl Hosts {
 }
 
 fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
-    let mut world = todo_world(seed, 20);
+    let mut world = record_world(seed, 20);
     let hosts = Hosts {
         alice: Trust::open(CALENDAR),
         bob: Trust::open(CALENDAR),
@@ -138,7 +135,7 @@ fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
     hosts.bob.set_identity(BOB, key_of(BOB));
     hosts.grant(ALICE, 2);
     hosts.grant(BOB, bob_role);
-    for who in ["alice", "bob", "server"] {
+    for who in ["alice", "bob", RECORD_HUB] {
         world.set_admission(who, Box::new(hosts.of(who).clone()));
         world.set_sealer(who, Box::new(hosts.of(who).clone()));
     }
@@ -159,10 +156,10 @@ fn refused(world: &mut World, what: &str) -> usize {
 
 /// What the copies of alice and bob hold, and that they hold one list and one digest.
 fn agree(world: &mut World) -> usize {
-    let list = agreed_todos(world);
-    let digest = todo_variables_of(world, "server")["digest"].clone();
+    let list = agreed_records(world);
+    let digest = record_variables_of(world, RECORD_HUB)["digest"].clone();
     for who in ["alice", "bob"] {
-        assert_eq!(todo_variables_of(world, who)["digest"], digest, "{who}");
+        assert_eq!(record_variables_of(world, who)["digest"], digest, "{who}");
     }
     list.len()
 }
@@ -179,34 +176,34 @@ fn forged_write(node: u64, id: u64, value: i64) -> String {
 /// holds what it would hold with no host at all.
 #[test]
 fn members_agree_through_a_hub_that_signs_nothing() {
-    let (mut world, _hosts) = untrusting_world(1, 2, &["alice", "bob", "server"]);
-    todo_set(&mut world, "alice", 1, DUE, 10);
-    todo_set(&mut world, "bob", 2, DUE, 20);
-    todo_title(&mut world, "alice", 3, "write it down");
+    let (mut world, _hosts) = untrusting_world(1, 2, &["alice", "bob", RECORD_HUB]);
+    record_set(&mut world, "alice", 1, DUE, 10);
+    record_set(&mut world, "bob", 2, DUE, 20);
+    record_title(&mut world, "alice", 3, "write it down");
     quiet(&mut world);
     assert_eq!(agree(&mut world), 3);
     assert!(world.host_errors().is_empty(), "nothing honest was refused");
-    assert!(todos_of(&mut world, "server").contains_key(&(2, DUE)));
+    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
 }
 
 /// A write the hub made up in a member's name is believed by the hub's own machine and by no
 /// copy: it leaves the hub with no signature, and a host that checks refuses it.
 #[test]
 fn a_write_the_hub_made_up_in_a_members_name_reaches_no_copy() {
-    let (mut world, _hosts) = untrusting_world(2, 2, &["alice", "bob", "server"]);
-    todo_set(&mut world, "alice", 1, DUE, 10);
+    let (mut world, _hosts) = untrusting_world(2, 2, &["alice", "bob", RECORD_HUB]);
+    record_set(&mut world, "alice", 1, DUE, 10);
     quiet(&mut world);
     world.host_errors();
 
-    world.raise("server", "todo.write", &forged_write(ALICE, 7, 99));
+    world.raise(RECORD_HUB, "record_list.write", &forged_write(ALICE, 7, 99));
     quiet(&mut world);
 
     assert!(
-        todos_of(&mut world, "server").contains_key(&(7, DUE)),
+        records_of(&mut world, RECORD_HUB).contains_key(&(7, DUE)),
         "the hub's own machine believed it"
     );
     for who in ["alice", "bob"] {
-        let held = todos_of(&mut world, who);
+        let held = records_of(&mut world, who);
         assert!(
             !held.contains_key(&(7, DUE)),
             "{who} holds the made-up write"
@@ -227,15 +224,15 @@ fn a_write_the_hub_made_up_in_a_members_name_reaches_no_copy() {
 /// holds it, and no other does.
 #[test]
 fn a_write_by_a_reader_reaches_no_copy_but_the_readers_own() {
-    let (mut world, _hosts) = untrusting_world(3, 1, &["alice", "server"]);
-    todo_set(&mut world, "alice", 1, DUE, 10);
-    todo_set(&mut world, "bob", 2, DUE, 20);
+    let (mut world, _hosts) = untrusting_world(3, 1, &["alice", RECORD_HUB]);
+    record_set(&mut world, "alice", 1, DUE, 10);
+    record_set(&mut world, "bob", 2, DUE, 20);
     quiet(&mut world);
 
-    assert!(todos_of(&mut world, "bob").contains_key(&(2, DUE)));
-    assert!(!todos_of(&mut world, "server").contains_key(&(2, DUE)));
-    assert!(!todos_of(&mut world, "alice").contains_key(&(2, DUE)));
-    assert!(todos_of(&mut world, "server").contains_key(&(1, DUE)));
+    assert!(records_of(&mut world, "bob").contains_key(&(2, DUE)));
+    assert!(!records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
+    assert!(!records_of(&mut world, "alice").contains_key(&(2, DUE)));
+    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(1, DUE)));
     assert!(refused(&mut world, "may not write") >= 1);
 }
 
@@ -243,19 +240,19 @@ fn a_write_by_a_reader_reaches_no_copy_but_the_readers_own() {
 /// host that holds it, and what was admitted before stays.
 #[test]
 fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
-    let (mut world, hosts) = untrusting_world(4, 2, &["alice", "bob", "server"]);
-    todo_set(&mut world, "bob", 1, DUE, 1);
+    let (mut world, hosts) = untrusting_world(4, 2, &["alice", "bob", RECORD_HUB]);
+    record_set(&mut world, "bob", 1, DUE, 1);
     quiet(&mut world);
     assert_eq!(agree(&mut world), 1);
 
     hosts.remove(BOB);
-    todo_set(&mut world, "bob", 2, DUE, 2);
+    record_set(&mut world, "bob", 2, DUE, 2);
     quiet(&mut world);
 
-    let hub = todos_of(&mut world, "server");
+    let hub = records_of(&mut world, RECORD_HUB);
     assert!(hub.contains_key(&(1, DUE)), "what was admitted stays");
     assert!(!hub.contains_key(&(2, DUE)), "bob was taken off");
-    assert!(!todos_of(&mut world, "alice").contains_key(&(2, DUE)));
+    assert!(!records_of(&mut world, "alice").contains_key(&(2, DUE)));
     assert!(
         refused(&mut world, "may not write") >= 1,
         "bob's certificate now says role 0"
@@ -268,41 +265,41 @@ fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
 /// take it from the hub it trusts does.
 #[test]
 fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
-    let (mut world, hosts) = untrusting_world(5, 2, &["alice", "bob", "server"]);
-    todo_set(&mut world, "alice", 1, DUE, 10);
-    todo_set(&mut world, "bob", 2, DUE, 20);
+    let (mut world, hosts) = untrusting_world(5, 2, &["alice", "bob", RECORD_HUB]);
+    record_set(&mut world, "alice", 1, DUE, 10);
+    record_set(&mut world, "bob", 2, DUE, 20);
     quiet(&mut world);
     world.advance_ms(60_000);
     world.host_errors();
 
     let settle = |world: &mut World, before: i64| {
         world.raise(
-            "server",
-            "todo.settle",
+            RECORD_HUB,
+            "record_list.settle",
             &format!(r#"{{"before":"{before}","members":2}}"#),
         );
         quiet(world);
     };
     settle(&mut world, 30_000);
     assert!(
-        refused(&mut world, "todo.floor") >= 2,
+        refused(&mut world, "record_list.floor") >= 2,
         "both persons' hosts refused it"
     );
     for who in ["alice", "bob"] {
         assert_eq!(
-            whole(&todo_variables_of(&mut world, who)["floor"]),
+            whole(&record_variables_of(&mut world, who)["floor"]),
             0,
             "{who}"
         );
     }
 
     // The hub settled it for itself; a later instant is a round of its own.
-    hosts.alice.allow_unsigned(&["todo.floor"]);
-    hosts.bob.allow_unsigned(&["todo.floor"]);
+    hosts.alice.allow_unsigned(&["record_list.floor"]);
+    hosts.bob.allow_unsigned(&["record_list.floor"]);
     settle(&mut world, 40_000);
     for who in ["alice", "bob"] {
         assert_eq!(
-            whole(&todo_variables_of(&mut world, who)["floor"]),
+            whole(&record_variables_of(&mut world, who)["floor"]),
             40_000,
             "{who}"
         );
@@ -319,9 +316,9 @@ fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
 #[test]
 fn an_instant_the_members_settled_is_settled_for_every_host() {
     let run = |members: &[(&str, i64, u32)]| {
-        let (mut world, hosts) = untrusting_world(6, 2, &["alice", "bob", "server"]);
-        todo_set(&mut world, "alice", 1, DUE, 10);
-        todo_set(&mut world, "bob", 2, DUE, 20);
+        let (mut world, hosts) = untrusting_world(6, 2, &["alice", "bob", RECORD_HUB]);
+        record_set(&mut world, "alice", 1, DUE, 10);
+        record_set(&mut world, "bob", 2, DUE, 20);
         quiet(&mut world);
         world.advance_ms(60_000);
         world.host_errors();
@@ -329,14 +326,18 @@ fn an_instant_the_members_settled_is_settled_for_every_host() {
             let checkpoint = hosts.of(who).checkpoint(*before, *hash).unwrap();
             hosts.hub.take_checkpoint(&checkpoint).unwrap();
         }
-        world.raise("server", "todo.settle", r#"{"before":"30000","members":2}"#);
+        world.raise(
+            RECORD_HUB,
+            "record_list.settle",
+            r#"{"before":"30000","members":2}"#,
+        );
         quiet(&mut world);
         world
     };
-    let floor_of = |world: &mut World, who: &str| whole(&todo_variables_of(world, who)["floor"]);
+    let floor_of = |world: &mut World, who: &str| whole(&record_variables_of(world, who)["floor"]);
 
     let mut first = run(&[]);
-    let hash = whole(&todo_variables_of(&mut first, "alice")["frozenHash"]) as u32;
+    let hash = whole(&record_variables_of(&mut first, "alice")["frozenHash"]) as u32;
     for who in ["alice", "bob"] {
         assert_eq!(floor_of(&mut first, who), 0, "no member said anything");
     }
@@ -371,24 +372,25 @@ fn an_instant_the_members_settled_is_settled_for_every_host() {
 /// holds it gives it to bob's host, which checks it as it would from anyone.
 #[test]
 fn an_operation_a_hub_did_not_pass_on_is_seen_and_fetched() {
-    let (mut world, mut hosts) = untrusting_world(7, 2, &["alice", "bob", "server"]);
-    // The hub's host leaves the second write it sends toward bob out, and says nothing of it.
+    let (mut world, mut hosts) = untrusting_world(7, 2, &["alice", "bob", RECORD_HUB]);
+    // The hub's host leaves the second write it sends to the people out, and says nothing of it:
+    // alice holds what she made, and bob is not given it.
     world.set_sealer(
-        "server",
+        RECORD_HUB,
         Box::new(Withholding {
             inner: hosts.hub.clone(),
-            toward: "#bob",
+            toward: "#people",
             seen: 0,
             withhold: 2,
         }),
     );
-    todo_set(&mut world, "alice", 1, DUE, 10);
-    todo_set(&mut world, "alice", 2, DUE, 20);
+    record_set(&mut world, "alice", 1, DUE, 10);
+    record_set(&mut world, "alice", 2, DUE, 20);
     quiet(&mut world);
     world.host_errors();
     assert_ne!(
-        todos_of(&mut world, "alice"),
-        todos_of(&mut world, "bob"),
+        records_of(&mut world, "alice"),
+        records_of(&mut world, "bob"),
         "bob was not given the second"
     );
 
@@ -415,19 +417,22 @@ fn an_operation_a_hub_did_not_pass_on_is_seen_and_fetched() {
     for (event, data) in hosts.hub.operations(ALICE, held + 1, *named) {
         let told = hosts
             .bob
-            .admit("server", &event, &data)
+            .admit(RECORD_HUB, &event, &data)
             .unwrap()
             .expect("an operation is told to the machine");
         world.raise("bob", &event, &told);
     }
     quiet(&mut world);
     assert!(hosts.bob.divergences().is_empty());
-    assert_eq!(todos_of(&mut world, "alice"), todos_of(&mut world, "bob"));
+    assert_eq!(
+        records_of(&mut world, "alice"),
+        records_of(&mut world, "bob")
+    );
     let errors = world.host_errors();
     assert!(errors.is_empty(), "{errors:?}");
 }
 
-/// A hub's host that keeps one write back from one member: what a relay that withholds does.
+/// A hub's host that keeps one write back from the people: what a relay that withholds does.
 struct Withholding {
     inner: Trust,
     toward: &'static str,
@@ -437,7 +442,7 @@ struct Withholding {
 
 impl Sealer for Withholding {
     fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
-        if target == self.toward && event == "todo.write" {
+        if target == self.toward && event == "record_list.write" {
             self.seen += 1;
             if self.seen == self.withhold {
                 return Err("withheld".to_string());
@@ -452,14 +457,14 @@ impl Sealer for Withholding {
 /// members' copies hold what was written and agree on one list, over a resync as well.
 #[test]
 fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
-    let (mut world, hosts) = untrusting_world(8, 2, &["alice", "bob", "server"]);
+    let (mut world, hosts) = untrusting_world(8, 2, &["alice", "bob", RECORD_HUB]);
     hosts.begin_epoch(1, 5);
-    todo_title(&mut world, "alice", 1, "buy milk");
-    hosts.edit(&mut world, "bob", 2, DUE, 987_654_321);
-    todo_title(&mut world, "bob", 3, "call dad");
+    record_title(&mut world, "alice", 1, "buy milk");
+    record_set(&mut world, "bob", 2, DUE, 987_654_321);
+    record_title(&mut world, "bob", 3, "call dad");
     quiet(&mut world);
 
-    let hub = todo_variables_of(&mut world, "server");
+    let hub = record_variables_of(&mut world, RECORD_HUB);
     let held = hub["values"].as_array().expect("values are a list");
     assert_eq!(held.len(), 3);
     for value in held {
@@ -473,23 +478,23 @@ fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
 
     for round in 0..2 {
         assert_eq!(
-            todos_of(&mut world, "alice"),
-            todos_of(&mut world, "bob"),
+            records_of(&mut world, "alice"),
+            records_of(&mut world, "bob"),
             "round {round}"
         );
         for who in ["alice", "bob"] {
-            let copy = todo_variables_of(&mut world, who).to_string();
+            let copy = record_variables_of(&mut world, who).to_string();
             for secret in ["buy milk", "call dad", "987654321"] {
                 assert!(copy.contains(secret), "{who} lost {secret}");
             }
             assert_eq!(
-                todo_variables_of(&mut world, who)["digest"],
+                record_variables_of(&mut world, who)["digest"],
                 hub["digest"],
                 "{who}"
             );
         }
-        for who in ["alice", "bob", "server"] {
-            world.raise(who, "todo.resync", "");
+        for who in ["alice", "bob", RECORD_HUB] {
+            world.raise(who, "record_list.resync", "");
         }
         quiet(&mut world);
     }
@@ -498,16 +503,16 @@ fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
 }
 
 /// A member is taken off and an administrator begins a new epoch for the members left: what alice
-/// writes afterwards reaches the hub (sealed) and carol's... here, the one member that is left,
-/// and bob's copy, which was given no key of it, holds none of it, while what was written before
-/// is still what his copy holds.
+/// writes afterwards reaches the hub (sealed) and the one member that is left, and bob's copy,
+/// which was given no key of it, holds none of it, while what was written before is still what
+/// his copy holds.
 #[test]
 fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
-    let (mut world, hosts) = untrusting_world(9, 2, &["alice", "bob", "server"]);
+    let (mut world, hosts) = untrusting_world(9, 2, &["alice", "bob", RECORD_HUB]);
     hosts.begin_epoch(1, 5);
-    todo_title(&mut world, "alice", 1, "before");
+    record_title(&mut world, "alice", 1, "before");
     quiet(&mut world);
-    assert_eq!(todos_of(&mut world, "bob").len(), 1);
+    assert_eq!(records_of(&mut world, "bob").len(), 1);
     world.host_errors();
 
     // The administrator's host takes bob off and begins epoch 2 for who is left.
@@ -533,13 +538,13 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
     assert_eq!(hosts.alice.receive_grant(&rotation.grants[0].1), Ok(2));
 
     world.advance_ms(1_000);
-    todo_title(&mut world, "alice", 2, "after");
+    record_title(&mut world, "alice", 2, "after");
     quiet(&mut world);
 
-    assert!(todos_of(&mut world, "alice").contains_key(&(2, TITLE)));
-    let hub = todo_variables_of(&mut world, "server").to_string();
+    assert!(records_of(&mut world, "alice").contains_key(&(2, TITLE)));
+    let hub = record_variables_of(&mut world, RECORD_HUB).to_string();
     assert!(!hub.contains("after"), "the hub holds the text");
-    let bob = todos_of(&mut world, "bob");
+    let bob = records_of(&mut world, "bob");
     assert!(
         !bob.contains_key(&(2, TITLE)),
         "bob holds what was written after"
@@ -553,39 +558,40 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
 
 /// What a member wrote before they were taken off stays: when everyone resyncs afterwards, the
 /// hub sends their values to the copies and the tombstone of the one a person wrote over (as
-/// itself, which the host puts who really wrote over it back on), and no host refuses any of it,
-/// so that the copies still hold one list. What the member signs after they were taken off is
-/// refused.
+/// itself, and alone, which the host puts who really wrote over it and the change it was a part
+/// of back on), and no host refuses any of it, so that the copies still hold one list. What the
+/// member signs after they were taken off is refused.
 #[test]
 fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
-    let (mut world, hosts) = untrusting_world(7, 2, &["alice", "server"]);
-    hosts.edit(&mut world, "bob", 1, DUE, 1);
+    let (mut world, hosts) = untrusting_world(7, 2, &["alice", RECORD_HUB]);
+    record_set(&mut world, "bob", 1, DUE, 1);
     quiet(&mut world);
     world.advance_ms(1_000);
-    // Alice writes over bob's value: a note that carries her, as the next operation of her chain.
-    hosts.edit(&mut world, "alice", 1, DUE, 2);
-    hosts.edit(&mut world, "bob", 2, DUE, 5);
+    // Alice writes over bob's value: one change of two parts, a note that carries her and the
+    // change's stamp and the write, each the next operation of her chain.
+    record_set(&mut world, "alice", 1, DUE, 2);
+    record_set(&mut world, "bob", 2, DUE, 5);
     quiet(&mut world);
     assert_eq!(agree(&mut world), 2);
     world.host_errors();
 
     world.advance_ms(1_000);
     hosts.remove(BOB);
-    for who in ["alice", "server"] {
+    for who in ["alice", RECORD_HUB] {
         hosts.tell(&mut world, who);
     }
     world.advance_ms(1_000);
-    for who in ["alice", "bob", "server"] {
-        world.raise(who, "todo.resync", "");
+    for who in ["alice", "bob", RECORD_HUB] {
+        world.raise(who, "record_list.resync", "");
     }
     quiet(&mut world);
     let errors = world.host_errors();
     assert!(errors.is_empty(), "nothing true was refused: {errors:?}");
     assert_eq!(agree(&mut world), 2);
-    assert!(todos_of(&mut world, "server").contains_key(&(2, DUE)));
+    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
 
-    hosts.edit(&mut world, "bob", 3, DUE, 9);
+    record_set(&mut world, "bob", 3, DUE, 9);
     quiet(&mut world);
-    assert!(!todos_of(&mut world, "server").contains_key(&(3, DUE)));
+    assert!(!records_of(&mut world, RECORD_HUB).contains_key(&(3, DUE)));
     assert!(refused(&mut world, "may not write") >= 1);
 }

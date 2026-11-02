@@ -4,6 +4,9 @@
 // administrator's device runs the group: a device leaves a key package with the relay, the
 // administrator adds it (the log names the commit), and the new member joins from the Welcome the
 // relay carries; the members' machines write and agree on one list, sealed under the key of each epoch.
+// The machines are copies of the standard shared record list (sce:std/shared/record_list.scxml),
+// the document the trust layer secures, each run by its host; the third member's copy is the
+// world's hub actor, which a relay leaves with nothing to relay.
 // When the administrator takes a member off, the group moves to an epoch the member cannot derive: the
 // relay no longer lets that device read, and what is written afterwards opens for the members that are
 // left and for no one else.
@@ -117,7 +120,7 @@ impl Group {
     /// The list begins with alice (node 1, who runs the group and holds the administrator's key)
     /// alone in it.
     fn begin(seed: u64) -> Self {
-        let world = todo_world(seed, 20);
+        let world = record_world(seed, 20);
         let authority = Authority::new([3; 32], "the-relay");
         let relay: Shared = Arc::new(Mutex::new(
             Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
@@ -226,9 +229,9 @@ impl Group {
     }
 
     fn agreed(&mut self, copies: &[&str]) -> usize {
-        let first = todos_of(&mut self.world, copies[0]);
+        let first = records_of(&mut self.world, copies[0]);
         for copy in &copies[1..] {
-            assert_eq!(first, todos_of(&mut self.world, copy), "{copy}");
+            assert_eq!(first, records_of(&mut self.world, copy), "{copy}");
         }
         first.len()
     }
@@ -299,8 +302,8 @@ fn members_agree_on_one_list_sealed_under_the_key_of_each_epoch_the_group_reache
         group.party(2).member.device().epoch_key()
     );
 
-    todo_set(&mut group.world, "alice", 1, DUE, 10);
-    todo_title(&mut group.world, "bob", 2, "buy milk");
+    record_set(&mut group.world, "alice", 1, DUE, 10);
+    record_title(&mut group.world, "bob", 2, "buy milk");
     quiet(&mut group.world);
     group.pump();
     assert_eq!(group.agreed(&["alice", "bob"]), 2);
@@ -312,23 +315,23 @@ fn members_agree_on_one_list_sealed_under_the_key_of_each_epoch_the_group_reache
 
     // A third member is added in epoch 2: bob follows the commit, the new member joins, and what is
     // written after is sealed under the key of epoch 2, which all three derive.
-    add(&mut group, "server", 3);
+    add(&mut group, RECORD_HUB, 3);
     assert_eq!(group.party(2).member.device().epoch(), Ok(2));
     assert_eq!(group.party(3).member.device().epoch(), Ok(2));
     let key = group.party(1).member.device().epoch_key().unwrap();
     for node in [2, 3] {
         assert_eq!(group.party(node).member.device().epoch_key().unwrap(), key);
     }
-    todo_set(&mut group.world, "bob", 3, DUE, 30);
+    record_set(&mut group.world, "bob", 3, DUE, 30);
     quiet(&mut group.world);
     group.pump();
 
     // A member that joined in epoch 2 holds no key of epoch 1 and is given no history: what was
     // written before is parked, not lost, and not opened.
     assert!(group.party(3).courier.parked() > 0);
-    let todos = todos_of(&mut group.world, "alice");
-    assert!(todos.contains_key(&(3, DUE)));
-    let late = todos_of(&mut group.world, "server");
+    let rows = records_of(&mut group.world, "alice");
+    assert!(rows.contains_key(&(3, DUE)));
+    let late = records_of(&mut group.world, RECORD_HUB);
     assert!(
         late.contains_key(&(3, DUE)),
         "what was written in its epoch reaches it"
@@ -345,8 +348,8 @@ fn members_agree_on_one_list_sealed_under_the_key_of_each_epoch_the_group_reache
 fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
     let mut group = Group::begin(32);
     add(&mut group, "bob", 2);
-    add(&mut group, "server", 3);
-    todo_set(&mut group.world, "alice", 1, DUE, 10);
+    add(&mut group, RECORD_HUB, 3);
+    record_set(&mut group.world, "alice", 1, DUE, 10);
     quiet(&mut group.world);
     group.pump();
     let old = group.party(2).member.device().epoch_key().unwrap();
@@ -387,11 +390,11 @@ fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
 
     // What alice writes now is sealed under the new epoch: carol's machine holds it, bob's host
     // opens none of it even when handed it.
-    todo_set(&mut group.world, "alice", 2, DUE, 77);
+    record_set(&mut group.world, "alice", 2, DUE, 77);
     quiet(&mut group.world);
     group.pump();
-    assert!(todos_of(&mut group.world, "server").contains_key(&(2, DUE)));
-    assert!(!todos_of(&mut group.world, "bob").contains_key(&(2, DUE)));
+    assert!(records_of(&mut group.world, RECORD_HUB).contains_key(&(2, DUE)));
+    assert!(!records_of(&mut group.world, "bob").contains_key(&(2, DUE)));
 
     let relay_ops: Vec<String> = {
         let token = group.authority.issue(LIST, 1, u64::MAX);
@@ -417,7 +420,9 @@ fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
     };
     let newest = relay_ops.last().unwrap();
     let mut bob_host = group.party(2).member.trust().clone();
-    let reason = bob_host.admit("relay", "todo.write", newest).unwrap_err();
+    let reason = bob_host
+        .admit("relay", "record_list.write", newest)
+        .unwrap_err();
     assert!(reason.contains("no key of epoch 3"), "{reason}");
 }
 

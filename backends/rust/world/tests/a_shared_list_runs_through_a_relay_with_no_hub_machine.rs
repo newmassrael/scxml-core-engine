@@ -3,7 +3,9 @@
 // A shared list whose members never talk to each other or to a hub machine: each member's host
 // signs what its machine sends, a courier carries it to a relay (sce-rust-relay) that verifies and
 // keeps it and holds no key, and the other member's courier brings it out and tells that member's
-// machine. The machines are the ones of every other test and know nothing of it. What is asked:
+// machine. The machines are copies of the standard shared record list
+// (sce:std/shared/record_list.scxml), the document the trust layer secures, each run by its host,
+// and know nothing of it; the world's hub actor is given nothing. What is asked:
 // that two members agree on one list through the relay, in the profile where the hub is not
 // trusted (content sealed, the relay reads none of it) and in the one where it is (the same relay,
 // the same protocol); that an instant is settled on the members' checkpoints, carried through the
@@ -52,7 +54,7 @@ struct Members {
 
 impl Members {
     fn new(seed: u64, profile: Profile) -> Self {
-        let mut world = todo_world(seed, 20);
+        let mut world = record_world(seed, 20);
         let authority = Authority::new([3; 32], "the-relay");
         let relay: Shared = Arc::new(Mutex::new(
             Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
@@ -145,10 +147,13 @@ impl Members {
     }
 
     fn agreed(&mut self) -> usize {
-        let alice = todos_of(&mut self.world, "alice");
-        assert_eq!(alice, todos_of(&mut self.world, "bob"));
-        let digest = todo_variables_of(&mut self.world, "alice")["digest"].clone();
-        assert_eq!(todo_variables_of(&mut self.world, "bob")["digest"], digest);
+        let alice = records_of(&mut self.world, "alice");
+        assert_eq!(alice, records_of(&mut self.world, "bob"));
+        let digest = record_variables_of(&mut self.world, "alice")["digest"].clone();
+        assert_eq!(
+            record_variables_of(&mut self.world, "bob")["digest"],
+            digest
+        );
         alice.len()
     }
 
@@ -186,12 +191,12 @@ impl Members {
 fn two_members_agree_through_a_relay(profile: Profile, seed: u64) {
     let mut members = Members::new(seed, profile);
     members.pump();
-    todo_set(&mut members.world, "alice", 1, DUE, 10);
-    todo_set(&mut members.world, "bob", 2, DUE, 20);
-    todo_title(&mut members.world, "alice", 3, "buy milk");
+    record_set(&mut members.world, "alice", 1, DUE, 10);
+    record_set(&mut members.world, "bob", 2, DUE, 20);
+    record_title(&mut members.world, "alice", 3, "buy milk");
     // Both write the same field before either hears of the other.
-    todo_set(&mut members.world, "alice", 4, DUE, 111);
-    todo_set(&mut members.world, "bob", 4, DUE, 222);
+    record_set(&mut members.world, "alice", 4, DUE, 111);
+    record_set(&mut members.world, "bob", 4, DUE, 222);
     quiet(&mut members.world);
     members.pump();
     assert_eq!(members.agreed(), 4);
@@ -230,25 +235,26 @@ fn the_same_relay_serves_a_list_whose_hub_is_trusted() {
 fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
     let mut members = Members::new(23, Profile::Untrusted);
     members.pump();
-    todo_set(&mut members.world, "alice", 1, DUE, 10);
-    todo_set(&mut members.world, "bob", 2, DUE, 20);
+    record_set(&mut members.world, "alice", 1, DUE, 10);
+    record_set(&mut members.world, "bob", 2, DUE, 20);
     quiet(&mut members.world);
     members.pump();
     assert_eq!(members.agreed(), 2);
     members.world.advance_ms(60_000);
     members.world.host_errors();
 
-    // A copy that is asked what it holds up to an instant (todo.propose, which a hub would send)
-    // freezes the tombstones up to it and the digest of them. Here the host asks its own machine.
+    // A copy that is asked what it holds up to an instant (record_list.propose, which a hub would
+    // send) freezes the tombstones up to it and the digest of them. Here the host asks its own
+    // machine.
     for who in ["alice", "bob"] {
         members
             .world
-            .raise(who, "todo.propose", r#"{"before":"30000"}"#);
+            .raise(who, "record_list.propose", r#"{"before":"30000"}"#);
     }
     quiet(&mut members.world);
     members.world.host_errors();
-    let alice_hash = whole(&todo_variables_of(&mut members.world, "alice")["frozenHash"]) as u32;
-    let bob_hash = whole(&todo_variables_of(&mut members.world, "bob")["frozenHash"]) as u32;
+    let alice_hash = whole(&record_variables_of(&mut members.world, "alice")["frozenHash"]) as u32;
+    let bob_hash = whole(&record_variables_of(&mut members.world, "bob")["frozenHash"]) as u32;
     assert_eq!(
         alice_hash, bob_hash,
         "two copies of one list freeze one digest"
@@ -263,7 +269,7 @@ fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
     assert_eq!(members.courier("bob").floor_event(30_000, alice_hash), None);
     for who in ["alice", "bob"] {
         assert_eq!(
-            whole(&todo_variables_of(&mut members.world, who)["floor"]),
+            whole(&record_variables_of(&mut members.world, who)["floor"]),
             0,
             "{who}"
         );
@@ -284,7 +290,7 @@ fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
     }
     quiet(&mut members.world);
     for who in ["alice", "bob"] {
-        let vars = todo_variables_of(&mut members.world, who);
+        let vars = record_variables_of(&mut members.world, who);
         assert_eq!(
             whole(&vars["floor"]),
             30_000,
@@ -304,7 +310,7 @@ fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
 fn a_member_taken_off_is_refused_by_the_relay_and_reaches_no_copy() {
     let mut members = Members::new(24, Profile::Untrusted);
     members.pump();
-    todo_set(&mut members.world, "bob", 1, DUE, 10);
+    record_set(&mut members.world, "bob", 1, DUE, 10);
     quiet(&mut members.world);
     members.pump();
     assert_eq!(members.agreed(), 1);
@@ -323,7 +329,7 @@ fn a_member_taken_off_is_refused_by_the_relay_and_reaches_no_copy() {
     members.alice.append(&removal).unwrap();
     // The relay holds the removal; bob's host has not heard of it, and his copy lets him write.
     members.courier("alice").sync().unwrap();
-    todo_set(&mut members.world, "bob", 2, DUE, 99);
+    record_set(&mut members.world, "bob", 2, DUE, 99);
     quiet(&mut members.world);
     members.world.host_errors();
     members.pump();
@@ -332,7 +338,7 @@ fn a_member_taken_off_is_refused_by_the_relay_and_reaches_no_copy() {
         round.stalled,
         "the relay no longer lets bob's device read or write"
     );
-    let alice_sees = todos_of(&mut members.world, "alice");
+    let alice_sees = records_of(&mut members.world, "alice");
     assert!(
         alice_sees.contains_key(&(1, DUE)),
         "what he made before stays"

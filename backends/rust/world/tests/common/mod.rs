@@ -19,6 +19,9 @@ use serde_json::Value;
 
 include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 
+/// The standard shared record list, as the scenarios replay it: the document the trust layer
+/// secures.
+pub use sce_rust_scenarios::integration::static_datamodel::record_list_sm::RecordListPolicy as RecordList;
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
@@ -982,7 +985,12 @@ impl Field {
 
 /// The fields a copy holds, by (to-do, field).
 pub fn todos_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Field> {
-    let variables = todo_variables_of(world, who);
+    fields_of(&todo_variables_of(world, who), who)
+}
+
+/// The fields the saved `variables` of a copy of a shared list hold, by (row, field): the to-do
+/// list and the standard record list keep their values in one shape.
+fn fields_of(variables: &Value, who: &str) -> BTreeMap<(u64, u64), Field> {
     let mut held: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
     for value in variables["values"].as_array().expect("values are a list") {
         let number = |name: &str| whole(&value[name]);
@@ -1161,4 +1169,121 @@ pub fn todo_afternoon(
     assert_eq!(list, todo_oracle(world), "seed {seed}");
     assert!(world.host_errors().is_empty(), "seed {seed}");
     assert!(!list.is_empty(), "seed {seed}");
+}
+
+// ── The standard shared record list (sce:std/shared/record_list.scxml) ──────
+//
+// The document the trust layer secures (sce-rust-trust, docs/adr/0042), run as a copy of its
+// own by a host (`announce` false, as the scenarios `record_list_person` and `record_list_hub`
+// run it), from the machine the scenarios replay. It names routes and no peers: a person's copy
+// sends to `#hub`, and the hub reaches every person's copy at once on `#people`, which a
+// deployment binds as one key every person reads: here a topic of the world.
+
+/// The hub's actor, and the route a person's copy sends to it by (`#hub`).
+pub const RECORD_HUB: &str = "hub";
+
+/// The route the hub reaches every person's copy by (`#people`).
+pub const RECORD_PEOPLE: &str = "people";
+
+/// The router of a person's copy of the record list: bound to the hub.
+pub fn record_person(name: &str) -> Router {
+    let mut router = Router::new(name, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
+    router.add_peer(RECORD_HUB, peer(&[RECORD_HUB], false));
+    router
+}
+
+/// The router of the hub of the record list: bound to each person it hears from, and to the
+/// topic every person reads.
+pub fn record_hub(people: &[&str]) -> Router {
+    let mut router =
+        Router::new(RECORD_HUB, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
+    for who in people {
+        router.add_peer(who, peer(&[], false));
+    }
+    router.add_peer(RECORD_PEOPLE, peer(&[], false));
+    router
+}
+
+/// The world of the record list: alice (node 1) and bob (node 2), each `latency_ms` from the
+/// hub (node 100), which tells both on `#people`. Writes to a field do not depend on the ones
+/// before it, so no binding orders.
+pub fn record_world(seed: u64, latency_ms: i64) -> World {
+    let mut world = World::new(seed);
+    world.add("alice", RecordList::new(), record_person("alice"));
+    world.add("bob", RecordList::new(), record_person("bob"));
+    world.add(RECORD_HUB, RecordList::new(), record_hub(&["alice", "bob"]));
+    world.link("alice", RECORD_HUB, latency_ms);
+    world.link("bob", RECORD_HUB, latency_ms);
+    world.topic(RECORD_HUB, RECORD_PEOPLE, &["alice", "bob"]);
+    world.raise("alice", "record_list.join", r#"{"node":"1","hub":false}"#);
+    world.raise("bob", "record_list.join", r#"{"node":"2","hub":false}"#);
+    world.raise(
+        RECORD_HUB,
+        "record_list.join",
+        r#"{"node":"100","hub":true}"#,
+    );
+    world
+}
+
+/// A person changes the number of a field of a row, when the host's clock reads the world's
+/// time: one change of one command (`record_list.edit` with no `more`).
+pub fn record_set(world: &mut World, who: &str, id: u64, field: u64, value: i64) {
+    let now = world.now_ms();
+    record_edit_at(world, who, id, field, value, "", now);
+}
+
+/// A person gives a row a title.
+pub fn record_title(world: &mut World, who: &str, id: u64, title: &str) {
+    let now = world.now_ms();
+    record_edit_at(world, who, id, TITLE, 0, title, now);
+}
+
+/// The general form: the host's clock reads `now`.
+pub fn record_edit_at(
+    world: &mut World,
+    who: &str,
+    id: u64,
+    field: u64,
+    value: i64,
+    text: &str,
+    now: i64,
+) {
+    world.raise(
+        who,
+        "record_list.edit",
+        &format!(
+            r#"{{"id":{id},"field":{field},"value":"{value}","text":{},"now":"{now}"}}"#,
+            json_text(text)
+        ),
+    );
+}
+
+/// What a copy of the record list saved of itself.
+pub fn record_variables_of(world: &mut World, who: &str) -> Value {
+    let saved = world
+        .actor::<RecordList>(who)
+        .engine()
+        .save_at(0)
+        .expect("a running machine saves")
+        .to_json();
+    let saved: Value = serde_json::from_str(&saved).expect("a saved state is JSON");
+    saved["variables"].clone()
+}
+
+/// The fields a copy of the record list holds, by (row, field).
+pub fn records_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Field> {
+    fields_of(&record_variables_of(world, who), who)
+}
+
+/// The three copies of the record list hold one list; which.
+pub fn agreed_records(world: &mut World) -> BTreeMap<(u64, u64), Field> {
+    let hub = records_of(world, RECORD_HUB);
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            records_of(world, who),
+            hub,
+            "{who} and the hub hold different lists"
+        );
+    }
+    hub
 }
