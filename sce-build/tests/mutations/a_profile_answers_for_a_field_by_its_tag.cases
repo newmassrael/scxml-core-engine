@@ -1,0 +1,47 @@
+# Mutation cases for "a profile answers for a field by its tag".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_profile_answers_for_a_field_by_its_tag.cases`.
+#
+# A capacity is not in the generated tree except as what `Inline` holds, and a
+# codec's storage trait asks for what it and the codecs it holds ask
+# (docs/adr/0077 §7). The first case has `Inline` hold past a field's bound; the
+# second has a storage trait ask nothing of a child, so an owned form cannot
+# name the child's; the third makes a gated arm's trait a plain supertrait, so a
+# build without the feature names a module it does not compile; the fourth reads
+# `<data>` fields before the others again, so a mixed document decodes from the
+# wrong offsets.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance --test a_gated_arm_is_compiled_only_where_its_feature_is_on
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/parser.rs
+mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_gated_arm_is_compiled_only_where_its_feature_is_on.rs
+
+mutation_case "what Inline holds is past the field's bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                    SceType::Bytes => ("Bytes", f.storage_bytes()),''',
+     r'''                    SceType::Bytes => ("Bytes", f.storage_bytes() + 1),''')
+PY
+
+mutation_case "a storage trait asks nothing of the codecs it holds" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &children);''',
+     r'''        insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &children[..0]);''')
+PY
+
+mutation_case "a gated arm's storage trait is a plain supertrait" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            None => bound.push(child.clone()),
+            Some(cfg) => {''',
+     r'''            None => bound.push(child.clone()),
+            Some(_) if i < usize::MAX => bound.push(child.clone()),
+            Some(cfg) => {''')
+PY
+
+mutation_case "a codec reads its data elements before its other fields" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''    children.sort_by_key(|child| child.range().start);''',
+     r'''    let _ = &mut children;''')
+PY

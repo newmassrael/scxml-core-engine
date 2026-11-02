@@ -401,50 +401,296 @@ impl<'a> Envelope<'a> {
 // Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
 // Hand-assembling a value names the profile on the value or its binding, because
 // the fields reach it through its associated container types.
+/// The field `id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeIdField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<EnvelopeIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// The field `source` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeSourceField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeSourceField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `event_type` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeEventTypeField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeEventTypeField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `data` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeDataField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<EnvelopeDataField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16777216>;
+}
+
+/// The field `subject` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeSubjectField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeSubjectField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `correlation_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeCorrelationIdField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<EnvelopeCorrelationIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// The field `reply_to` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeReplyToField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeReplyToField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `invoke_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeInvokeIdField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<EnvelopeInvokeIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// The field `rpc_error_message` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeRpcErrorMessageField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeRpcErrorMessageField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `routing_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeRoutingIdField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<EnvelopeRoutingIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+}
+
+/// The field `parallel_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeParallelIdField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `region_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeRegionIdField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// The field `child_session_id` of `Envelope`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct EnvelopeChildSessionIdField;
+
+impl ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
+    for ::sce_forge_runtime::codec::Inline
+{
+    type Str = ::sce_forge_runtime::codec::InlineStr<262144>;
+}
+
+/// What `EnvelopeOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait EnvelopeStorage:
+    ::core::fmt::Debug
+    + Clone
+    + PartialEq
+    + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeSourceField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeEventTypeField>
+    + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeDataField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeSubjectField>
+    + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeCorrelationIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeReplyToField>
+    + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeInvokeIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRpcErrorMessageField>
+    + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeRoutingIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
+    + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>
+{
+}
+
+impl<
+        S: ::core::fmt::Debug
+            + Clone
+            + PartialEq
+            + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeSourceField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeEventTypeField>
+            + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeDataField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeSubjectField>
+            + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeCorrelationIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeReplyToField>
+            + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeInvokeIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRpcErrorMessageField>
+            + ::sce_forge_runtime::codec::HoldsBytes<EnvelopeRoutingIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>
+            + ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>,
+    > EnvelopeStorage for S
+{
+}
+
 // Same pub-API policy as the view above: the owned form and its projections are
 // cross-crate surface, and which of them a given in-repo fixture calls says
 // nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct EnvelopeOwned<
-    S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage,
-> {
+pub struct EnvelopeOwned<S: EnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     /// Map key 0, required.
-    pub id: ::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>,
+    pub id: ::sce_forge_runtime::codec::Bounded<
+        <S as ::sce_forge_runtime::codec::HoldsBytes<EnvelopeIdField>>::Bytes,
+        16,
+        16,
+    >,
     /// Map key 1, required.
-    pub source: ::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>,
+    pub source: ::sce_forge_runtime::codec::Bounded<
+        <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeSourceField>>::Str,
+        262144,
+    >,
     /// Map key 2, required.
-    pub event_type: ::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>,
+    pub event_type: ::sce_forge_runtime::codec::Bounded<
+        <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeEventTypeField>>::Str,
+        262144,
+    >,
     /// Map key 3, required.
     pub pattern: pattern_kind::PatternKind,
     /// Map key 4, required.
     pub datacontenttype: payload_codec::PayloadCodec,
     /// Map key 5, required.
-    pub data: ::sce_forge_runtime::codec::Bounded<S::Bytes<16777216>, 16777216>,
+    pub data: ::sce_forge_runtime::codec::Bounded<
+        <S as ::sce_forge_runtime::codec::HoldsBytes<EnvelopeDataField>>::Bytes,
+        16777216,
+    >,
     /// Map key 6.
-    pub subject: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub subject: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeSubjectField>>::Str,
+            262144,
+        >,
+    >,
     /// Map key 7.
-    pub correlation_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
+    pub correlation_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsBytes<EnvelopeCorrelationIdField>>::Bytes,
+            16,
+            16,
+        >,
+    >,
     /// Map key 8.
-    pub reply_to: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub reply_to: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeReplyToField>>::Str,
+            262144,
+        >,
+    >,
     /// Map key 9.
-    pub invoke_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
+    pub invoke_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsBytes<EnvelopeInvokeIdField>>::Bytes,
+            16,
+            16,
+        >,
+    >,
     /// Map key 10.
     pub rpc_status: Option<rpc_status::RpcStatus>,
     /// Map key 11.
-    pub rpc_error_message: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub rpc_error_message: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeRpcErrorMessageField>>::Str,
+            262144,
+        >,
+    >,
     /// Map key 12.
     pub deadline_unix_ms: Option<u64>,
     /// Map key 14.
     pub sequence_no: Option<u64>,
     /// Map key 15.
-    pub routing_id: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<16>, 16, 16>>,
+    pub routing_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsBytes<EnvelopeRoutingIdField>>::Bytes,
+            16,
+            16,
+        >,
+    >,
     /// Map key 16.
-    pub parallel_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub parallel_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeParallelIdField>>::Str,
+            262144,
+        >,
+    >,
     /// Map key 17.
-    pub region_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub region_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeRegionIdField>>::Str,
+            262144,
+        >,
+    >,
     /// Map key 18.
-    pub child_session_id: Option<::sce_forge_runtime::codec::Bounded<S::Str<262144>, 262144>>,
+    pub child_session_id: Option<
+        ::sce_forge_runtime::codec::Bounded<
+            <S as ::sce_forge_runtime::codec::HoldsStr<EnvelopeChildSessionIdField>>::Str,
+            262144,
+        >,
+    >,
 }
 
 #[allow(dead_code)]
@@ -458,9 +704,7 @@ impl<'a> Envelope<'a> {
     /// the inline and growable profiles hold each at its bound, so the copy
     /// does not fail on them; a profile whose capacity is below a bound raises
     /// `CodecError::TooManyElements`.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(
-        self,
-    ) -> Result<EnvelopeOwned<S>, CodecError> {
+    pub fn try_into_owned_in<S: EnvelopeStorage>(self) -> Result<EnvelopeOwned<S>, CodecError> {
         Ok(EnvelopeOwned {
             id: ::sce_forge_runtime::codec::Bounded::copied(self.id)?,
             source: ::sce_forge_runtime::codec::Bounded::copied_text(self.source)?,
@@ -518,7 +762,7 @@ impl<'a> Envelope<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeOwned<S> {
+impl<S: EnvelopeStorage> EnvelopeOwned<S> {
     /// Re-borrow this owned value back into the view: the inverse of
     /// `try_into_owned_in`. Each entry is read through
     /// [`EnvelopeSource`], so a string or a byte string is a re-borrow of
@@ -553,9 +797,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeOwned<S> {
     /// A checked projection through the view, not a re-decode: the bytes are
     /// copied once and every destination capacity is enforced, so a value that
     /// cannot fit the target profile is rejected here rather than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(
-        &self,
-    ) -> Result<EnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: EnvelopeStorage>(&self) -> Result<EnvelopeOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 
@@ -737,7 +979,7 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> EnvelopeSource for EnvelopeOwned<S> {
+impl<S: EnvelopeStorage> EnvelopeSource for EnvelopeOwned<S> {
     fn id(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 16> {
         ::sce_forge_runtime::codec::Bounded::as_bytes(&self.id)
     }

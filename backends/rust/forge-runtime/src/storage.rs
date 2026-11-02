@@ -7,9 +7,24 @@
 //! place. An application-processor path wants growable containers and no
 //! ceiling; a real-time or MCU path wants every byte inline with a hard bound
 //! and no allocator. The generated owned type is therefore parameterised by a
-//! [`CodecStorage`] policy — `{Codec}Owned<Heap>` and `{Codec}Owned<Inline>`
-//! are the same generated type at two storage profiles, and both exist in the
-//! same binary.
+//! storage profile — `{Codec}Owned<Heap>` and `{Codec}Owned<Inline>` are the
+//! same generated type at two profiles, and both exist in the same binary.
+//!
+//! # What a profile answers
+//!
+//! A profile says what it holds a field in, field by field: each variable
+//! field of a codec has a generated tag type, and a profile answers
+//! [`HoldsList`], [`HoldsStr`] or [`HoldsBytes`] for it. A capacity is therefore
+//! a fact about a profile and not a number in the generated tree, so one tree
+//! serves every deployment in a build (docs/adr/0077 §7). [`Heap`] answers for
+//! every tag. [`Inline`] answers in the generated tree, from the bound the
+//! document states. A deployment is a type of its own that answers the same
+//! way, from a file of its own.
+//!
+//! Each codec has a `{Codec}Storage` trait, whose supertraits are what it and
+//! the codecs it holds ask of a profile. A generated type names that one
+//! trait: a struct's `where` clause is not implied where the struct is used,
+//! and a supertrait is.
 //!
 //! # Why a policy parameter rather than a second generated type
 //!
@@ -34,6 +49,10 @@
 //! Naming follows the standard library's allocator parameterisation
 //! (`Box::new_in`, `Vec::with_capacity_in`): the plain method uses
 //! [`DefaultStorage`], the `_in` suffixed method takes the profile explicitly.
+//!
+//! A capacity is not a parameter of these traits: a tag cannot give a `const N`
+//! without `generic_const_exprs`. A container carries its capacity in its own
+//! type, and the impl for a tag names that type.
 //!
 //! # Container contract
 //!
@@ -88,32 +107,29 @@ pub trait SceByteBuf: Sized {
     fn as_slice(&self) -> &[u8];
 }
 
-/// A storage profile: the containers a `{Codec}Owned` uses for its list,
-/// text and byte fields.
+/// What a profile holds the `<sce:repeat>` or `<sce:tlv-chain>` field `Tag` in.
 ///
-/// The supertraits are what the generated `#[derive(Debug, Clone, PartialEq)]`
-/// on a storage-generic owned struct needs in order to hold for every profile;
-/// the profiles themselves are zero-sized markers, so carrying them costs
-/// nothing. The same three bounds repeat on each associated type because a
-/// derived impl reasons about the *field* types, not about `Self`.
-pub trait CodecStorage: core::fmt::Debug + Clone + PartialEq {
-    /// Owned list storage for a `<sce:repeat>` / `<sce:tlv-chain>` field whose
-    /// declared `sce:max-count` is `N`. It reads as [`crate::bounded::Entries`],
-    /// so an owned list held as a [`crate::bounded::Bounded`] presents its
-    /// entries with their count.
-    type List<T, const N: usize>: SceList<T>
-        + crate::bounded::Entries
-        + core::fmt::Debug
-        + Clone
-        + PartialEq
+/// It reads as [`crate::bounded::Entries`], so an owned list held as a
+/// [`crate::bounded::Bounded`] presents its entries with their count. The
+/// bounds are what the generated `#[derive(Debug, Clone, PartialEq)]` on an
+/// owned struct needs: a derived impl reasons about the field types.
+pub trait HoldsList<Tag> {
+    /// The list of entries `T`.
+    type List<T>: SceList<T> + crate::bounded::Entries + core::fmt::Debug + Clone + PartialEq
     where
         T: core::fmt::Debug + Clone + PartialEq;
+}
 
-    /// Owned text storage for a `string` field whose `sce:max-size` is `N`.
-    type Str<const N: usize>: SceStr + core::fmt::Debug + Clone + PartialEq;
+/// What a profile holds the `string` field `Tag` in.
+pub trait HoldsStr<Tag> {
+    /// The text.
+    type Str: SceStr + core::fmt::Debug + Clone + PartialEq;
+}
 
-    /// Owned byte storage for a `bytes` field whose `sce:max-size` is `N`.
-    type Bytes<const N: usize>: SceByteBuf + core::fmt::Debug + Clone + PartialEq;
+/// What a profile holds the `bytes` field `Tag` in.
+pub trait HoldsBytes<Tag> {
+    /// The bytes.
+    type Bytes: SceByteBuf + core::fmt::Debug + Clone + PartialEq;
 }
 
 /// A storage profile whose byte and text containers are made WITH knowledge of
@@ -131,16 +147,17 @@ pub trait CodecStorage: core::fmt::Debug + Clone + PartialEq {
 ///
 /// What the origin IS belongs to the profile, not to this crate: this crate is
 /// `no_std`, takes no position on reference counting, and ships no profile that
-/// uses an origin. A profile implements this trait beside its [`CodecStorage`]
-/// impl; [`Heap`] and [`Inline`] do not — an inline profile has no origin to
-/// refer to, which is the point of it — and neither impl, nor the generated
-/// output of a document that does not ask, changes.
+/// uses an origin. A profile implements this trait beside its [`HoldsBytes`] and
+/// [`HoldsStr`] impls; [`Heap`] and [`Inline`] do not — an inline profile has no
+/// origin to refer to, which is the point of it — and neither impl, nor the
+/// generated output of a document that does not ask, changes.
 ///
 /// There is no copying default for the two constructors. A default that
 /// copied would let a profile that forgot to override them build exactly what
-/// [`CodecStorage`] already builds, and report success: the sharing this trait
-/// exists for would silently not happen. A profile that wants to copy says so.
-pub trait OriginStorage: CodecStorage {
+/// [`SceByteBuf::from_slice`] already builds, and report success: the sharing
+/// this trait exists for would silently not happen. A profile that wants to
+/// copy says so.
+pub trait OriginStorage {
     /// What the decoded bytes were taken from — a handle to a frame, an arena,
     /// a pool slot. Unsized so that a profile can take a slice or a trait
     /// object by reference as readily as a sized handle.
@@ -154,17 +171,21 @@ pub trait OriginStorage: CodecStorage {
     /// with a slice that is not part of its origin — see [`subrange_of`], which
     /// answers the question — and answers [`CodecError`] or copies; it must not
     /// assume.
-    fn bytes_from<const N: usize>(
+    fn bytes_from<Tag>(
         origin: &Self::Origin,
         view: &[u8],
-    ) -> Result<Self::Bytes<N>, CodecError>;
+    ) -> Result<<Self as HoldsBytes<Tag>>::Bytes, CodecError>
+    where
+        Self: HoldsBytes<Tag>;
 
     /// Build owned text storage for `view`, which is part of `origin`; the
     /// same contract as [`Self::bytes_from`]. `view` is valid UTF-8 by type.
-    fn str_from<const N: usize>(
+    fn str_from<Tag>(
         origin: &Self::Origin,
         view: &str,
-    ) -> Result<Self::Str<N>, CodecError>;
+    ) -> Result<<Self as HoldsStr<Tag>>::Str, CodecError>
+    where
+        Self: HoldsStr<Tag>;
 }
 
 /// Where `sub` lies inside `base`, as a byte range of `base`; `None` when it
@@ -186,7 +207,7 @@ pub fn subrange_of(base: &[u8], sub: &[u8]) -> Option<core::ops::Range<usize>> {
     (end <= base.len()).then_some(start..end)
 }
 
-/// Growable storage: heap containers, declared capacities advisory.
+/// Growable storage: heap containers, for every field.
 ///
 /// The profile for hosts with an allocator, where the on-wire protocol places
 /// no ceiling on a payload and the application must not invent one.
@@ -194,13 +215,22 @@ pub fn subrange_of(base: &[u8], sub: &[u8]) -> Option<core::ops::Range<usize>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Heap;
 
-/// Non-allocating storage: every container fixed at its declared capacity.
+/// Non-allocating storage: every field held inline at its bound.
 ///
 /// The profile for MCU tiers and for real-time paths inside otherwise
-/// heap-capable programs. Declared capacities are hard bounds, and exceeding
-/// one is [`CodecError::CapacityExceeded`] rather than an allocation.
+/// heap-capable programs. It answers for a field in the generated tree, from
+/// the bound the document states, and exceeding what it holds is
+/// [`CodecError::CapacityExceeded`] rather than an allocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Inline;
+
+/// The bytes [`Heap`] holds: growable, for a field of any bound.
+#[cfg(feature = "alloc")]
+pub type GrowBytes = HeapBytes<{ usize::MAX }>;
+
+/// The text [`Heap`] holds: growable, for a field of any bound.
+#[cfg(feature = "alloc")]
+pub type GrowStr = HeapStr<{ usize::MAX }>;
 
 /// The storage profile a build treats as the default: [`Heap`] where an
 /// allocator is available, [`Inline`] on the heap-free tier.
@@ -213,26 +243,23 @@ pub type DefaultStorage = Heap;
 #[cfg(not(feature = "alloc"))]
 pub type DefaultStorage = Inline;
 
+// The tag is unused here: every field of this profile grows, whatever its bound.
 #[cfg(feature = "alloc")]
-impl CodecStorage for Heap {
-    // The declared capacity is deliberately unused here: on this profile it is
-    // advisory, and dropping it from the container type is what makes the
-    // growable form growable.
-    type List<T, const N: usize>
+impl<Tag> HoldsList<Tag> for Heap {
+    type List<T>
         = alloc::vec::Vec<T>
     where
         T: core::fmt::Debug + Clone + PartialEq;
-    type Str<const N: usize> = HeapStr<N>;
-    type Bytes<const N: usize> = HeapBytes<N>;
 }
 
-impl CodecStorage for Inline {
-    type List<T, const N: usize>
-        = heapless::Vec<T, N>
-    where
-        T: core::fmt::Debug + Clone + PartialEq;
-    type Str<const N: usize> = InlineStr<N>;
-    type Bytes<const N: usize> = InlineBytes<N>;
+#[cfg(feature = "alloc")]
+impl<Tag> HoldsStr<Tag> for Heap {
+    type Str = GrowStr;
+}
+
+#[cfg(feature = "alloc")]
+impl<Tag> HoldsBytes<Tag> for Heap {
+    type Bytes = GrowBytes;
 }
 
 // ── list containers ──────────────────────────────────────────────
@@ -398,8 +425,12 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn both_profiles_resolve_in_one_binary() {
-        fn text<S: CodecStorage>(src: &str) -> Result<S::Str<8>, CodecError> {
-            <S::Str<8> as SceStr>::from_view(src)
+        struct Note;
+        impl HoldsStr<Note> for Inline {
+            type Str = InlineStr<8>;
+        }
+        fn text<S: HoldsStr<Note>>(src: &str) -> Result<S::Str, CodecError> {
+            <S::Str as SceStr>::from_view(src)
         }
         assert_eq!(text::<Heap>("ok").unwrap().as_str(), "ok");
         assert_eq!(text::<Inline>("ok").unwrap().as_str(), "ok");

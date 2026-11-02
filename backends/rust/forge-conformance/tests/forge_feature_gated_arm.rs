@@ -50,6 +50,16 @@ mod gated_arm_codecs {
             "/codec_feature_gated_arm_no_catch_all.rs"
         ));
     }
+    pub mod codec_gated_held_a {
+        include!(concat!(env!("OUT_DIR"), "/codec_gated_held_a.rs"));
+    }
+    #[cfg(feature = "gated-arm")]
+    pub mod codec_gated_held_b {
+        include!(concat!(env!("OUT_DIR"), "/codec_gated_held_b.rs"));
+    }
+    pub mod codec_feature_gated_arm_held {
+        include!(concat!(env!("OUT_DIR"), "/codec_feature_gated_arm_held.rs"));
+    }
 }
 
 use gated_arm_codecs::codec_feature_gated_arm::{
@@ -67,6 +77,31 @@ const ARM_B_FRAME: [u8; 3] = [0x02, 0x12, 0x34];
 /// A frame the peek-byte arm B writes: the header byte with tag 0x01, then a
 /// two-byte payload.
 const PEEK_ARM_B_FRAME: [u8; 3] = [0x01, 0x12, 0x34];
+
+/// The owned form of a variant whose arms hold bytes, in each profile: the
+/// codec's storage trait asks for what a gated arm asks only where the arm is
+/// compiled, so both builds generate one that `Inline` and `Heap` satisfy
+/// (docs/adr/0077 §7).
+#[test]
+fn a_variant_of_a_gated_arm_has_an_owned_form_in_every_profile() {
+    use gated_arm_codecs::codec_feature_gated_arm_held::CodecFeatureGatedArmHeld;
+    use sce_forge_runtime::codec::{Heap, Inline};
+
+    let frame = [0x00, 0x02, 0xAA, 0xBB];
+    let mut cursor = SceCursor::new(&frame);
+    let held = CodecFeatureGatedArmHeld::decode(&mut cursor)
+        .expect("the arm every build holds decodes")
+        .try_into_owned_in::<Inline>()
+        .expect("two bytes fit its bound");
+    assert_eq!(held.encode_to_vec(), frame);
+
+    let mut cursor = SceCursor::new(&frame);
+    let grown = CodecFeatureGatedArmHeld::decode(&mut cursor)
+        .expect("the arm every build holds decodes")
+        .try_into_owned_in::<Heap>()
+        .expect("a growable profile holds it");
+    assert_eq!(grown.encode_to_vec(), frame);
+}
 
 /// Arm A is the default arm in every build: the default value is arm A's, and
 /// it decodes back into arm A.

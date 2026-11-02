@@ -302,6 +302,9 @@ fn main() {
         &[
             "codec_feature_gated_arm",
             "codec_feature_gated_arm_no_catch_all",
+            "codec_gated_held_a",
+            "codec_gated_held_b",
+            "codec_feature_gated_arm_held",
         ],
         &source_fixtures,
         &out_dir,

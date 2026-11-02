@@ -7124,9 +7124,9 @@ pub(crate) const ORIGIN_PARAM: &str = "origin";
 ///
 /// Every container the mirror owns is the storage profile's choice, so field
 /// types are written against the parameter: a scalar `Bytes` / `String`
-/// projects to `S::Bytes<N>` / `S::Str<N>` and a bounded list to
-/// `S::List<Body, N>`, with `N` the field's declared `sce:max-size` /
-/// `sce:max-count`. The mirror therefore needs no `alloc` gate at all — the
+/// projects to what `S` answers for the field's tag (`HoldsBytes`, `HoldsStr`)
+/// and a bounded list likewise (`HoldsList`), so no capacity is written here
+/// (docs/adr/0077 §7). The mirror therefore needs no `alloc` gate at all — the
 /// non-allocating profile is a type, so a list- or embed-bearing codec has an
 /// owned form on the heap-free tier too, and a heap-capable consumer can
 /// still pin a value to non-allocating storage. Rust-only.
@@ -7174,10 +7174,113 @@ fn rust_owned_list_entry(
     })
 }
 
+/// The type a storage profile answers for the variable field `field` of the
+/// codec `codec` by (docs/adr/0077 §7). The field's name is in it so that a
+/// deployment's file, which is the only other place that names one, reads as
+/// the document does.
+pub(crate) fn rust_storage_tag(codec: &str, field: &str) -> String {
+    format!(
+        "{}{}Field",
+        filters::to_pascal_case(codec.to_string()),
+        filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The trait a site names for what the owned form of the codec `codec` asks of
+/// a storage profile.
+pub(crate) fn rust_storage_trait(codec: &str) -> String {
+    format!("{}Storage", filters::to_pascal_case(codec.to_string()))
+}
+
+/// One variable field as the storage macro takes it: its tag, which of the
+/// profile's traits answers for it, and what `Inline` holds of it.
+pub(crate) fn rust_storage_field(
+    codec: &str,
+    field: &str,
+    kind: &str,
+    capacity: u32,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": field,
+        "tag": rust_storage_tag(codec, field),
+        "kind": kind,
+        "capacity": capacity,
+    })
+}
+
 /// The storage profile's container that holds the entries `entry` of the list
-/// `f` in its owned form, sized to the list's bound.
-fn rust_owned_list(f: &CodecField, entry: &str) -> String {
-    format!("{STORAGE_PARAM}::List<{entry}, {}>", f.storage_entries())
+/// `f` of the codec `m` in its owned form.
+fn rust_owned_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
+    format!(
+        "<{STORAGE_PARAM} as {RUNTIME_CODEC}::HoldsList<{}>>::List<{entry}>",
+        rust_storage_tag(&m.name, &f.id)
+    )
+}
+
+/// What the storage macro declares for a codec, into `ctx`: its tags in
+/// `fields`, and the trait a site names, which asks for those, for `children`
+/// (the storage trait of each codec it holds, a child under a build feature
+/// through a trait of its own), and for what the derives on the owned form need.
+pub(crate) fn insert_rust_storage(
+    ctx: &mut serde_json::Map<String, serde_json::Value>,
+    codec: &str,
+    fields: Vec<serde_json::Value>,
+    children: &[(String, Option<String>)],
+) {
+    let name = filters::to_pascal_case(codec.to_string());
+    let mut bound = vec!["::core::fmt::Debug + Clone + PartialEq".to_string()];
+    bound.extend(fields.iter().map(|f| {
+        format!(
+            "{RUNTIME_CODEC}::Holds{}<{}>",
+            f["kind"].as_str().unwrap_or_default(),
+            f["tag"].as_str().unwrap_or_default()
+        )
+    }));
+    let mut gated = Vec::new();
+    for (i, (child, cfg)) in children.iter().enumerate() {
+        match cfg {
+            None => bound.push(child.clone()),
+            Some(cfg) => {
+                let helper = format!("{name}GatedChild{i}");
+                bound.push(helper.clone());
+                gated.push(serde_json::json!({
+                    "helper": helper,
+                    "bound": child,
+                    "cfg": cfg,
+                    "cfg_off": cfg
+                        .strip_prefix("#[cfg(")
+                        .and_then(|c| c.strip_suffix(")]"))
+                        .map(|c| format!("#[cfg(not({c}))]")),
+                }));
+            }
+        }
+    }
+    ctx.insert("runtime_codec".into(), RUNTIME_CODEC.into());
+    ctx.insert("storage_fields".into(), fields.into());
+    ctx.insert("storage_gated".into(), gated.into());
+    ctx.insert("storage_bound".into(), bound.join(" + ").into());
+}
+
+/// The variable fields of a positional codec, as [`rust_storage_field`] takes
+/// them: each field the owned form holds in a container of the profile's.
+fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
+    m.fields
+        .iter()
+        .filter_map(|f| {
+            let (kind, capacity) = if f.is_repeat() || f.is_tlv_chain() {
+                ("List", f.storage_entries())
+            } else if f.is_embed() {
+                return None;
+            } else {
+                match f.sce_type {
+                    SceType::String => ("Str", f.storage_bytes()),
+                    SceType::Bytes => ("Bytes", f.storage_bytes()),
+                    _ => return None,
+                }
+            };
+            Some(rust_storage_field(&m.name, &f.id, kind, capacity))
+        })
+        .collect()
 }
 
 fn rust_owned_field_keys(
@@ -7207,10 +7310,9 @@ fn rust_owned_field_keys(
     let opt = f.present_if.is_some();
 
     // Single-call constructors are spelled fully qualified at the destination
-    // storage (`<S::Bytes<N> as SceByteBuf>::from_slice`) rather than left to
-    // inference: the profile is what the field's declared `sce:max-size` /
-    // `sce:max-count` selects, so naming it keeps the generated call honest
-    // about which container is being built.
+    // storage rather than left to inference: the profile answers for the field
+    // by its tag, so naming it keeps the generated call honest about which
+    // container is being built.
     //
     // `call` spells the constructor's fallible call on a value expression, and
     // `point_free` the path an `Option` maps through where the call is that
@@ -7222,16 +7324,16 @@ fn rust_owned_field_keys(
     let mut call_path: Option<Ctor> = None;
 
     let (inner_ty, conv): (String, Conv) = if f.is_repeat() || f.is_tlv_chain() {
-        // The list's bound, which the profile's container holds as its declared
-        // capacity and a `Bounded` around it holds as a fact (docs/adr/0065 §6
-        // R2): a growable profile's container is not bounded by its capacity.
-        // A chain closed by an entry flag is one entry or more (R7).
+        // The list's bound, which a `Bounded` around the profile's container
+        // holds as a fact (docs/adr/0065 §6 R2): a growable profile's container
+        // is not bounded by its capacity. A chain closed by an entry flag is
+        // one entry or more (R7).
         let bounds = crate::forge::codec_totality::list_bound_args(f);
         let (entry, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
         (
             format!(
                 "{RUNTIME_CODEC}::Bounded<{}, {bounds}>",
-                rust_owned_list(f, &entry)
+                rust_owned_list(m, f, &entry)
             ),
             Conv::List(elem),
         )
@@ -7275,18 +7377,17 @@ fn rust_owned_field_keys(
         match f.sce_type {
             SceType::Bytes | SceType::String => {
                 let text = matches!(f.sce_type, SceType::String);
-                let max = f.storage_bytes();
-                let container = format!(
-                    "{STORAGE_PARAM}::{}<{max}>",
-                    if text { "Str" } else { "Bytes" }
-                );
+                let tag = rust_storage_tag(&m.name, &f.id);
+                let kind = if text { "Str" } else { "Bytes" };
+                let container =
+                    format!("<{STORAGE_PARAM} as {RUNTIME_CODEC}::Holds{kind}<{tag}>>::{kind}");
                 // The origin form names the profile's `OriginStorage` and
-                // spells the capacity as a turbofish: the constructor is
-                // generic over it, and nothing at the call site would
-                // otherwise infer it (the field type is `S::Bytes<N>`, an
-                // associated type that cannot be run backwards).
+                // spells the tag as a turbofish: the constructor is generic
+                // over it, and nothing at the call site would otherwise infer
+                // it (the field's type is an associated type, which cannot be
+                // run backwards).
                 let origin_path = format!(
-                    "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{max}>",
+                    "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{tag}>",
                     if text { "str_from" } else { "bytes_from" }
                 );
                 let ctor = match crate::forge::codec_totality::byte_bound_args(f, &m.fields) {
@@ -7875,7 +7976,7 @@ fn rust_group_storage(
                     // refines.
                     if holds_chain(group, f) {
                         return rust_owned_list_entry(f, &m.name, imports, l, false)
-                            .map(|(entry, _)| rust_owned_list(f, &entry));
+                            .map(|(entry, _)| rust_owned_list(m, f, &entry));
                     }
                     let mut value = (*f).clone();
                     value.present_if = None;
@@ -7885,9 +7986,7 @@ fn rust_group_storage(
             // A group whose elements take the storage profile's containers is
             // named once for the owned form, `{Group}Owned<S>`, as the form's
             // own types are, so its field reads as one type and not as the
-            // whole instantiation. An alias does not check the bounds of its
-            // parameter, so its containers are named through the profile's
-            // trait.
+            // whole instantiation.
             let inner = if args.is_empty() {
                 ty.clone()
             } else {
@@ -7898,8 +7997,8 @@ fn rust_group_storage(
                         "/// The group `{ty}` as `{struct_name}Owned` holds it, in the storage\n\
                          /// profile `{STORAGE_PARAM}`.\n\
                          #[allow(dead_code)]\n\
-                         pub type {alias}<{STORAGE_PARAM}> = {};",
-                        qualify_storage(&format!("{ty}<{}>", args.join(", ")))
+                         pub type {alias}<{STORAGE_PARAM}> = {ty}<{}>;",
+                        args.join(", ")
                     )
                     .into(),
                 );
@@ -8058,29 +8157,6 @@ fn rust_group_storage(
         stored.push(serde_json::Value::Object(entry));
     }
     Ok((stored, wire))
-}
-
-/// `ty` with each container of the storage profile named through the profile's
-/// trait (`<S as CodecStorage>::List<..>` for `S::List<..>`): the spelling a type
-/// alias needs, since an alias does not check the bound its parameter would
-/// give the shorter path.
-fn qualify_storage(ty: &str) -> String {
-    let short = format!("{STORAGE_PARAM}::");
-    let qualified = format!("<{STORAGE_PARAM} as {RUNTIME_CODEC}::CodecStorage>::");
-    let mut out = String::with_capacity(ty.len());
-    let mut rest = ty;
-    while let Some(at) = rest.find(&short) {
-        let before = rest[..at].chars().next_back();
-        out.push_str(&rest[..at]);
-        if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == ':') {
-            out.push_str(&short);
-        } else {
-            out.push_str(&qualified);
-        }
-        rest = &rest[at + short.len()..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// The list a `Bounded` type `ty` holds (`Bounded<L, MAX, MIN>`, spelled with
@@ -11345,10 +11421,21 @@ fn render_codec(
         // without a default (defaults are illegal on impl blocks); `_args`
         // applies it. There is no `alloc` gate: the non-allocating profile is
         // a type, so the mirror compiles on the heap-free tier too.
-        let storage_decl = format!(
-            "<{STORAGE_PARAM}: {RUNTIME_CODEC}::CodecStorage = {RUNTIME_CODEC}::DefaultStorage>"
-        );
-        let storage_impl = format!("<{STORAGE_PARAM}: {RUNTIME_CODEC}::CodecStorage>");
+        let storage_trait = rust_storage_trait(&m.name);
+        let children: Vec<(String, Option<String>)> = imports
+            .iter()
+            .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
+            .map(|i| {
+                (
+                    format!("super::{}::{}Storage", i.namespace, i.type_name),
+                    import_cfgs.get(&i.alias).cloned(),
+                )
+            })
+            .collect();
+        insert_rust_storage(&mut ctx, &m.name, rust_storage_fields(m), &children);
+        let storage_decl =
+            format!("<{STORAGE_PARAM}: {storage_trait} = {RUNTIME_CODEC}::DefaultStorage>");
+        let storage_impl = format!("<{STORAGE_PARAM}: {storage_trait}>");
         let storage_args = format!("<{STORAGE_PARAM}>");
         ctx.insert("owned_generics_decl".into(), storage_decl.clone().into());
         ctx.insert("owned_generics_impl".into(), storage_impl.clone().into());
@@ -11408,10 +11495,7 @@ fn render_codec(
             }
             .into(),
         );
-        ctx.insert(
-            "codec_storage_path".into(),
-            format!("{RUNTIME_CODEC}::CodecStorage").into(),
-        );
+        ctx.insert("codec_storage_path".into(), storage_trait.clone().into());
         // The origin-aware projection (`try_into_owned_in_origin`), rendered
         // only when the document asks for it. It takes a profile that is an
         // `OriginStorage` and the origin its decoded bytes came from; a
@@ -11425,7 +11509,7 @@ fn render_codec(
         ctx.insert("origin_ref_type".into(), origin_ref.into());
         ctx.insert(
             "origin_generics_impl".into(),
-            format!("<{STORAGE_PARAM}: {origin_storage_path}>").into(),
+            format!("<{STORAGE_PARAM}: {storage_trait} + {origin_storage_path}>").into(),
         );
         ctx.insert(
             "variant_into_owned_origin_call".into(),

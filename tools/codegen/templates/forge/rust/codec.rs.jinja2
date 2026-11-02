@@ -3,6 +3,7 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/forge_rust_flag_accessors.jinja2' as flags %}
+{%- import '_macros/forge_rust_storage.jinja2' as storage %}
 {#- A codec that dispatches to a body or holds a bounded list / embedded body
     decodes into its destination (`decode_into` is the body, `decode` wraps it);
     any other shape keeps its body in `decode` and gets a `decode_into` that
@@ -667,11 +668,13 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 // `let v: {{ struct_name }}Owned = {{ struct_name }}Owned {{ '{' }} .. {{ '}' }};`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 {% for stmt in owned_imports %}
 {{ stmt }}
 {% endfor %}
+{{ storage.declare(struct_name, runtime_codec, storage_fields, storage_gated, storage_bound) }}
 {% for field in fields %}
 {% if field.rs_owned_alias is defined %}
 {{ field.rs_owned_alias }}
@@ -827,7 +830,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
     pub fn {{ owned_in_fn }}{{ owned_generics_impl }}(self) -> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {
         Ok({{ struct_name }}Owned {
 {% for field in fields %}

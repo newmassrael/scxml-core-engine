@@ -233,7 +233,7 @@ impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfo<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoSource for CodecExtEncodingInfoOwned<S> {
+impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoSource for CodecExtEncodingInfoOwned<S> {
     fn combined_id_has_schema(&self) -> CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'_, 64>> {
         match &self.combined_id_has_schema {
             CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: schema.as_bytes() },
@@ -351,25 +351,42 @@ impl<'a> CodecExtEncodingInfo<'a> {
 // `let v: CodecExtEncodingInfoOwned = CodecExtEncodingInfoOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+/// The field `schema` of `CodecExtEncodingInfo`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecExtEncodingInfoSchemaField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<64>;
+}
+
+/// What `CodecExtEncodingInfoOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecExtEncodingInfoStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>> CodecExtEncodingInfoStorage for S {}
+
 /// The group `CodecExtEncodingInfoCombinedIdHasSchema` as `CodecExtEncodingInfoOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecExtEncodingInfoCombinedIdHasSchemaOwned<S> = CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<64>, 64>>;
+pub type CodecExtEncodingInfoCombinedIdHasSchemaOwned<S> = CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecExtEncodingInfoSchemaField>>::Bytes, 64>>;
 
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecExtEncodingInfoOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecExtEncodingInfoOwned<S: CodecExtEncodingInfoStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub combined_id: u32,
     pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchemaOwned<S>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
+impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -394,8 +411,8 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecExtEncodingInfoOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecExtEncodingInfoStorage>(self) -> Result<CodecExtEncodingInfoOwned<S>, CodecError> {
         Ok(CodecExtEncodingInfoOwned {
             combined_id: self.combined_id,
             combined_id_has_schema: match self.combined_id_has_schema { CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema } => CodecExtEncodingInfoCombinedIdHasSchema::HasSchema { schema: ::sce_forge_runtime::codec::Bounded::copied(schema)? }, CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size } => CodecExtEncodingInfoCombinedIdHasSchema::NotHasSchema { schema_size }, },
@@ -410,7 +427,7 @@ impl<'a> CodecExtEncodingInfo<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
+impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -457,13 +474,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecExtEncodingInfoOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecExtEncodingInfoStorage>(&self) -> Result<CodecExtEncodingInfoOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
+impl<S: CodecExtEncodingInfoStorage> CodecExtEncodingInfoOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecExtEncodingInfo::encode`] writes, without the projection.

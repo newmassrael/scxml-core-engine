@@ -216,9 +216,8 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
             ));
         }
         format!(
-            "impl<{param}: {runtime}::CodecStorage> {trait_name} for {name}Owned<{param}> {{\n{items}}}\n\n",
+            "impl<{param}: {name}Storage> {trait_name} for {name}Owned<{param}> {{\n{items}}}\n\n",
             param = cbor_codec::RUST_STORAGE_PARAM,
-            runtime = cbor_codec::RUST_RUNTIME_CODEC,
         )
     } else {
         String::new()

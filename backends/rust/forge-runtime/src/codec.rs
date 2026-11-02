@@ -260,8 +260,9 @@ where
 // zero-copy `&'a [u8]` / `&'a str` / `heapless::Vec<_, N>`; its lifetime-free
 // owned mirror needs containers that hold those by value. *Which* containers
 // is a policy the owner picks per value rather than a property of the build,
-// so the mirror is `{Codec}Owned<S>` over a [`crate::storage::CodecStorage`]
-// profile — see that module for why the profile is a type parameter and not a
+// so the mirror is `{Codec}Owned<S>` over a storage profile, which answers
+// [`crate::storage::HoldsList`] and its kin field by field — see that module
+// for why the profile is a type parameter and not a
 // second generated type. Re-exported here so generated codec output spells
 // one module path for the cursor, the sink and the storage policy alike.
 pub use crate::storage::*;

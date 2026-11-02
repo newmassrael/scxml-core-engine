@@ -201,7 +201,7 @@ impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasic<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicOwned<S> {
+impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicOwned<S> {
     fn msg_id(&self) -> u8 {
         self.msg_id
     }
@@ -305,17 +305,34 @@ impl<'a> CodecDmaAlignedBasic<'a> {
 // `let v: CodecDmaAlignedBasicOwned = CodecDmaAlignedBasicOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+/// The field `aligned_payload` of `CodecDmaAlignedBasic`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecDmaAlignedBasicAlignedPayloadField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecDmaAlignedBasicAlignedPayloadField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<64>;
+}
+
+/// What `CodecDmaAlignedBasicOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecDmaAlignedBasicStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecDmaAlignedBasicAlignedPayloadField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecDmaAlignedBasicAlignedPayloadField>> CodecDmaAlignedBasicStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecDmaAlignedBasicOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecDmaAlignedBasicOwned<S: CodecDmaAlignedBasicStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub msg_id: u8,
     pub reserved: u8,
-    pub aligned_payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<64>, 64>,
+    pub aligned_payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecDmaAlignedBasicAlignedPayloadField>>::Bytes, 64>,
 }
 
 #[allow(dead_code)]
@@ -331,8 +348,8 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecDmaAlignedBasicOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecDmaAlignedBasicStorage>(self) -> Result<CodecDmaAlignedBasicOwned<S>, CodecError> {
         Ok(CodecDmaAlignedBasicOwned {
             msg_id: self.msg_id,
             reserved: self.reserved,
@@ -348,7 +365,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicOwned<S> {
+impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -385,13 +402,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecDmaAlignedBasicOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecDmaAlignedBasicStorage>(&self) -> Result<CodecDmaAlignedBasicOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicOwned<S> {
+impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecDmaAlignedBasic::encode`] writes, without the projection.

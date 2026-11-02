@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0072, docs/adr/0077 §7): a variant over two
+     arms that hold bytes, the second under the build feature `gated-arm`. Its
+     storage trait asks for each arm's, and an attribute cannot go on one
+     supertrait, so the gated arm's is asked for through a trait that asks
+     nothing in a build without the feature. Read by
+     tests/forge_feature_gated_arm.rs, which compiles this in both builds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_feature_gated_arm_held">
+  <sce:import src="codec_gated_held_a.scxml" kind="codec" as="codec_gated_held_a"/>
+  <sce:import src="codec_gated_held_b.scxml" kind="codec" as="codec_gated_held_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="1"/>
+      </sce:peek-byte>
+      <sce:arm value="0x00" type="codec_gated_held_a" default="true"/>
+      <sce:arm value="0x01" type="codec_gated_held_b" feature="gated-arm"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

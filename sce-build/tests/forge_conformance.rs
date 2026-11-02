@@ -2906,22 +2906,23 @@ mod tests {
     use crate::codec_origin_choice::{CodecOriginChoice, CodecOriginChoiceOwnedVariant};
     use crate::codec_origin_envelope::CodecOriginEnvelope;
     use ::sce_forge_runtime::codec::{
-        subrange_of, CodecError, CodecStorage, Heap, OriginStorage, SceByteBuf, SceCursor, SceStr,
+        subrange_of, CodecError, GrowStr, HoldsBytes, HoldsList, HoldsStr, OriginStorage,
+        SceByteBuf, SceCursor, SceStr,
     };
     use std::sync::Arc;
 
     /// Bytes that name the frame they live in, and where.
     #[derive(Debug, Clone)]
-    struct Shared<const N: usize> {
+    struct Shared {
         frame: Arc<Vec<u8>>,
         range: core::ops::Range<usize>,
     }
-    impl<const N: usize> PartialEq for Shared<N> {
+    impl PartialEq for Shared {
         fn eq(&self, other: &Self) -> bool {
             self.as_slice() == other.as_slice()
         }
     }
-    impl<const N: usize> SceByteBuf for Shared<N> {
+    impl SceByteBuf for Shared {
         fn from_slice(b: &[u8]) -> Result<Self, CodecError> {
             Ok(Self { frame: Arc::new(b.to_vec()), range: 0..b.len() })
         }
@@ -2932,17 +2933,21 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq)]
     struct Sharing;
-    impl CodecStorage for Sharing {
-        type List<T, const N: usize> = Vec<T> where T: core::fmt::Debug + Clone + PartialEq;
-        type Str<const N: usize> = <Heap as CodecStorage>::Str<N>;
-        type Bytes<const N: usize> = Shared<N>;
+    impl<Tag> HoldsList<Tag> for Sharing {
+        type List<T> = Vec<T> where T: core::fmt::Debug + Clone + PartialEq;
+    }
+    impl<Tag> HoldsStr<Tag> for Sharing {
+        type Str = GrowStr;
+    }
+    impl<Tag> HoldsBytes<Tag> for Sharing {
+        type Bytes = Shared;
     }
     impl OriginStorage for Sharing {
         type Origin = Arc<Vec<u8>>;
-        fn bytes_from<const N: usize>(
+        fn bytes_from<Tag>(
             origin: &Arc<Vec<u8>>,
             view: &[u8],
-        ) -> Result<Shared<N>, CodecError> {
+        ) -> Result<<Self as HoldsBytes<Tag>>::Bytes, CodecError> {
             match subrange_of(&origin[..], view) {
                 Some(range) if !view.is_empty() => {
                     Ok(Shared { frame: Arc::clone(origin), range })
@@ -2951,11 +2956,11 @@ mod tests {
                 _ => Shared::from_slice(view),
             }
         }
-        fn str_from<const N: usize>(
+        fn str_from<Tag>(
             _origin: &Arc<Vec<u8>>,
             view: &str,
-        ) -> Result<<Heap as CodecStorage>::Str<N>, CodecError> {
-            <<Heap as CodecStorage>::Str<N> as SceStr>::from_view(view)
+        ) -> Result<<Self as HoldsStr<Tag>>::Str, CodecError> {
+            <GrowStr as SceStr>::from_view(view)
         }
     }
 
@@ -2978,7 +2983,7 @@ mod tests {
             .expect("project");
 
         // Three nested leaves, each in the frame at the offset it was read.
-        let at = |bytes: &Shared<16>, offset: usize, len: usize| {
+        let at = |bytes: &Shared, offset: usize, len: usize| {
             assert_eq!(bytes.as_slice().len(), len);
             assert_eq!(
                 bytes.as_slice().as_ptr(),
@@ -5563,6 +5568,46 @@ fn forge_codec_tlv_chain_missing_depth_rejects() {
         ),
         "must surface CodecTlvChainDepthUnspecified naming the codec + field; got: {:?}",
         err.error
+    );
+}
+
+/// A field's place in the document is its place on the wire, whichever element
+/// declares it. Read a `<data>` before every `<sce:flags>`, and a codec that
+/// mixes them decodes its header from the frame's second byte with no error.
+#[test]
+fn a_codec_reads_its_fields_in_the_order_the_document_writes_them() {
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="mixed_elements">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="1"/>
+    </sce:flags>
+    <data id="len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="tail" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let output = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("mixed_elements"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("a codec may mix the elements that declare its fields");
+    let code = output
+        .files
+        .iter()
+        .map(|(_, code)| code.as_str())
+        .collect::<String>();
+    let at = |field: &str| {
+        code.find(&format!("    pub {field}: u8,"))
+            .unwrap_or_else(|| panic!("no field `{field}`:\n{code}"))
+    };
+    assert!(
+        at("header") < at("len") && at("len") < at("tail"),
+        "the fields are not in document order:\n{code}"
     );
 }
 
@@ -20473,7 +20518,7 @@ mod tests {
         // Bytes past the bound are refused where the value is built, with the
         // error a decode of them gives.
         assert_eq!(
-            Bounded::<<::sce_forge_runtime::codec::DefaultStorage as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>, 32>::from_slice(&[0u8; 33]).err(),
+            Bounded::<<::sce_forge_runtime::codec::DefaultStorage as ::sce_forge_runtime::codec::HoldsBytes<crate::codec_tail::CodecTailPayloadField>>::Bytes, 32>::from_slice(&[0u8; 33]).err(),
             Some(CodecError::LengthOutOfRange)
         );
         // Re-borrow + encode round-trips through the borrowed view.
@@ -20561,8 +20606,8 @@ mod tests {
     .expect_err("an owned literal whose storage profile nothing pins must not compile");
 
     // E0283 specifically: "type annotations needed" arising from an
-    // AMBIGUOUS type — several `CodecStorage` impls could satisfy the
-    // projection and nothing chooses one. The prose "type annotations
+    // AMBIGUOUS type — several profiles could satisfy the projection and
+    // nothing chooses one. The prose "type annotations
     // needed" is shared with E0282 (nothing known at all) and E0284
     // (const), so matching on it would let a different inference failure
     // pass as this one. Pinning the code is the whole point of the

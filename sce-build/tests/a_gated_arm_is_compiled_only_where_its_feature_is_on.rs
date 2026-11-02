@@ -166,12 +166,18 @@ fn every_rust_item_of_a_gated_arm_carries_its_cfg_and_no_other_does() {
 
     // Every `#[cfg]` of the feature stands in front of something the gated
     // arms alone use.
-    for pair in lines.windows(2) {
+    for (at, pair) in lines.windows(2).enumerate() {
         if pair[0].trim() != CFG {
             continue;
         }
         let next = pair[1];
-        let follows_a_gated_item = GATED.iter().any(|arm| heads_arm(next, arm))
+        // The trait a storage bound asks for a gated arm through, and its impl.
+        let storage_of_a_gated_arm = next.contains("GatedChild")
+            || lines
+                .get(at + 2)
+                .is_some_and(|after| after.starts_with("pub trait CodecZenohRequestGatedChild"));
+        let follows_a_gated_item = storage_of_a_gated_arm
+            || GATED.iter().any(|arm| heads_arm(next, arm))
             || heads_tag(next, 0x01)
             || heads_tag(next, 0x02)
             || next.starts_with("use super::codec_zenoh_msg_put::")
@@ -225,6 +231,63 @@ fn an_import_only_a_gated_arm_uses_is_under_its_feature() {
             "`{import}`, which every build uses, is under a cfg"
         );
     }
+}
+
+/// The storage trait of the owned form asks for a gated arm's only where the
+/// arm is compiled: an attribute cannot go on a supertrait, so the arm's is
+/// asked for through a trait that asks for nothing in a build without the
+/// feature (docs/adr/0077 §7). An import every build uses is a plain supertrait.
+#[test]
+fn a_storage_trait_asks_for_a_gated_arm_where_the_arm_is_compiled() {
+    let code = generate(Language::Rust, &ForgeCompileOptions::default());
+    let lines: Vec<&str> = code.lines().collect();
+    for child in GATED {
+        let storage = format!("super::{}::{child}Storage", snake(child));
+        let at = lines
+            .iter()
+            .position(|l| {
+                l.starts_with("pub trait CodecZenohRequestGatedChild")
+                    && l.ends_with(&format!(": {storage} {{}}"))
+            })
+            .unwrap_or_else(|| panic!("no gated trait asks for {storage}"));
+        // The attribute, then the `dead_code` allowance, then the trait.
+        assert_eq!(lines[at - 2].trim(), CFG, "{child}'s trait is not gated");
+        let helper = lines[at]
+            .trim_start_matches("pub trait ")
+            .split(':')
+            .next()
+            .expect("the trait has a name");
+        let empty = format!("pub trait {helper} {{}}");
+        let off = lines
+            .iter()
+            .position(|l| *l == empty)
+            .unwrap_or_else(|| panic!("no empty trait `{empty}` for a build without it"));
+        assert_eq!(lines[off - 2].trim(), CFG_OFF, "`{empty}` is not gated off");
+    }
+    let whole = lines
+        .iter()
+        .find(|l| l.starts_with("pub trait CodecZenohRequestStorage:"))
+        .expect("the codec has a storage trait");
+    assert!(
+        whole.contains("super::codec_zenoh_query::CodecZenohQueryStorage"),
+        "the arm every build compiles is not a plain supertrait:\n{whole}"
+    );
+    assert!(
+        !whole.contains("CodecZenohMsgPutStorage"),
+        "a gated arm's trait is a plain supertrait:\n{whole}"
+    );
+}
+
+/// The module of the codec named `name`.
+fn snake(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        if c.is_ascii_uppercase() && !out.is_empty() {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
 }
 
 /// The line before the one that is `wanted`, trimmed.

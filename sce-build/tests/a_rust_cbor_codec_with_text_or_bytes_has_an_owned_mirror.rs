@@ -18,9 +18,10 @@
 //!
 //! * A map whose every string and byte string states a bound (`sce:max-size`, or
 //!   the `sce:length` of an exact byte string) has `{Name}Owned<S>`: each such
-//!   entry is held in the profile's `S::Str<N>` or `S::Bytes<N>` at the entry's
-//!   bound, inside a `Bounded` of its bounds (docs/adr/0077 §3), every other entry
-//!   as the view holds it, and an entry that may be absent stays an `Option` of it.
+//!   entry is held in what the profile answers for its tag, which on `Inline` is
+//!   the entry's bound, inside a `Bounded` of its bounds (docs/adr/0077 §3, §7),
+//!   every other entry as the view holds it, and an entry that may be absent stays
+//!   an `Option` of it.
 //! * `try_into_owned_in::<S>()` copies each of them with `Bounded::copied_text` or
 //!   `Bounded::copied` and a `?`, which carries the bounds over and refuses only for
 //!   a profile whose capacity is below them; `try_into_owned()` is the default
@@ -34,8 +35,8 @@
 //!   container is given for the element, and the fact a log is judged by.
 //! * With `generate --owned-origin` the mirror gains `try_into_owned_in_origin`, as
 //!   every other generated owned form does: a string is built by the profile's
-//!   `OriginStorage::str_from::<N>` and a byte string by `bytes_from::<N>`, each
-//!   at the entry's capacity and given the origin the view was decoded from, an
+//!   `OriginStorage::str_from::<Tag>` and a byte string by `bytes_from::<Tag>`, each
+//!   for the entry's tag and given the origin the view was decoded from, an
 //!   entry that may be absent only when present, and every other entry as the
 //!   copying projection moves it. The text is appended after the module the default
 //!   output is, and a map with no mirror is the same with the option on.
@@ -167,12 +168,16 @@ fn the_owned_form_holds_each_entry_in_a_container_of_its_bound() {
             // The view still borrows, and the mirror is a type of its own with the
             // positional codec's derives and its profile parameter and default.
             "pub struct ProbeCbor<'a> {",
-            "#[allow(dead_code)]\n#[derive(Debug, Clone, PartialEq)]\npub struct ProbeCborOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
-            "    /// Map key 1, required.\n    pub note: ::sce_forge_runtime::codec::Bounded<S::Str<8>, 8>,",
-            "    /// Map key 2, required.\n    pub blob: ::sce_forge_runtime::codec::Bounded<S::Bytes<12>, 12>,",
-            "    /// Map key 3, required.\n    pub tag: ::sce_forge_runtime::codec::Bounded<S::Bytes<4>, 4, 4>,",
-            "    /// Map key 4.\n    pub label: Option<::sce_forge_runtime::codec::Bounded<S::Str<5>, 5>>,",
-            "    /// Map key 5.\n    pub extra: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<6>, 6>>,",
+            "#[allow(dead_code)]\n#[derive(Debug, Clone, PartialEq)]\npub struct ProbeCborOwned<S: ProbeCborStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
+            "    /// Map key 1, required.\n    pub note: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<ProbeCborNoteField>>::Str, 8>,",
+            "    /// Map key 2, required.\n    pub blob: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<ProbeCborBlobField>>::Bytes, 12>,",
+            "    /// Map key 3, required.\n    pub tag: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<ProbeCborTagField>>::Bytes, 4, 4>,",
+            "    /// Map key 4.\n    pub label: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<ProbeCborLabelField>>::Str, 5>>,",
+            "    /// Map key 5.\n    pub extra: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<ProbeCborExtraField>>::Bytes, 6>>,",
+            // What the inline profile holds each at: its bound, or an exact length.
+            "impl ::sce_forge_runtime::codec::HoldsStr<ProbeCborNoteField> for ::sce_forge_runtime::codec::Inline {\n    type Str = ::sce_forge_runtime::codec::InlineStr<8>;\n}",
+            "impl ::sce_forge_runtime::codec::HoldsBytes<ProbeCborBlobField> for ::sce_forge_runtime::codec::Inline {\n    type Bytes = ::sce_forge_runtime::codec::InlineBytes<12>;\n}",
+            "impl ::sce_forge_runtime::codec::HoldsBytes<ProbeCborTagField> for ::sce_forge_runtime::codec::Inline {\n    type Bytes = ::sce_forge_runtime::codec::InlineBytes<4>;\n}",
             "    pub level: u8,",
             "    pub urgent: Option<bool>,",
         ],
@@ -218,7 +223,7 @@ fn the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are(
         &code,
         &[
             "impl<'a> ProbeCbor<'a> {",
-            "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+            "pub fn try_into_owned_in<S: ProbeCborStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
             "        Ok(ProbeCborOwned {",
             "            note: ::sce_forge_runtime::codec::Bounded::copied_text(self.note)?,",
             "            blob: ::sce_forge_runtime::codec::Bounded::copied(self.blob)?,",
@@ -229,7 +234,7 @@ fn the_projection_copies_each_entry_within_its_bound_and_the_others_as_they_are(
             "            urgent: self.urgent,",
             // The default profile's form, and the move between profiles.
             "pub fn try_into_owned(self) -> Result<ProbeCborOwned, CodecError> {\n        self.try_into_owned_in()\n    }",
-            "pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<ProbeCborOwned<D>, CodecError> {\n        self.as_borrowed().try_into_owned_in::<D>()\n    }",
+            "pub fn transcode_in<D: ProbeCborStorage>(&self) -> Result<ProbeCborOwned<D>, CodecError> {\n        self.as_borrowed().try_into_owned_in::<D>()\n    }",
         ],
     );
 }
@@ -241,7 +246,7 @@ fn the_owned_form_is_written_through_the_source_interface_as_the_view_is() {
         &code,
         &[
             // The interface says each entry of the owned form as the view's does.
-            "impl<S: ::sce_forge_runtime::codec::CodecStorage> ProbeCborSource for ProbeCborOwned<S> {",
+            "impl<S: ProbeCborStorage> ProbeCborSource for ProbeCborOwned<S> {",
             "    fn note(&self) -> ::sce_forge_runtime::codec::Text<'_, 8> {\n        ::sce_forge_runtime::codec::Bounded::as_text(&self.note)\n    }",
             "    fn blob(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 12> {\n        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.blob)\n    }",
             "    fn tag(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4, 4> {\n        ::sce_forge_runtime::codec::Bounded::as_bytes(&self.tag)\n    }",
@@ -281,8 +286,8 @@ fn the_origin_projection_has_the_signature_every_other_owned_form_has() {
         &[
             // The same method, over the same origin parameter, for a profile that is an
             // `OriginStorage`; the copying projection is still there beside it.
-            "pub fn try_into_owned_in_origin<S: ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<ProbeCborOwned<S>, CodecError> {\n        Ok(ProbeCborOwned {",
-            "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
+            "pub fn try_into_owned_in_origin<S: ProbeCborStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<ProbeCborOwned<S>, CodecError> {\n        Ok(ProbeCborOwned {",
+            "pub fn try_into_owned_in<S: ProbeCborStorage>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
         ],
     );
 }
@@ -296,9 +301,9 @@ fn the_origin_projection_builds_text_and_bytes_through_the_profile_at_each_capac
             // A string by `str_from` and a byte string by `bytes_from`, at the capacity
             // of the entry, which for an exact byte string is its length, and given the
             // origin; the other entries move as they do in the copying projection.
-            "            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<8>(origin, self.note.into_inner()))?,",
-            "            blob: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<12>(origin, self.blob.into_inner()))?,",
-            "            tag: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<4>(origin, self.tag.into_inner()))?,",
+            "            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<ProbeCborNoteField>(origin, self.note.into_inner()))?,",
+            "            blob: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<ProbeCborBlobField>(origin, self.blob.into_inner()))?,",
+            "            tag: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<ProbeCborTagField>(origin, self.tag.into_inner()))?,",
             "            level: self.level,\n            urgent: self.urgent,\n        })",
         ],
     );
@@ -310,8 +315,8 @@ fn the_origin_projection_builds_an_optional_entry_only_when_it_is_present() {
     assert_holds(
         &code,
         &[
-            "            label: self.label.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<5>(origin, _v.into_inner()))).transpose()?,",
-            "            extra: self.extra.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<6>(origin, _v.into_inner()))).transpose()?,",
+            "            label: self.label.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<ProbeCborLabelField>(origin, _v.into_inner()))).transpose()?,",
+            "            extra: self.extra.map(|_v| ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<ProbeCborExtraField>(origin, _v.into_inner()))).transpose()?,",
         ],
     );
 }
@@ -334,10 +339,7 @@ fn the_default_output_has_no_origin_projection() {
         );
     }
     // The copying projection is the one the default output has.
-    assert_holds(
-        &code,
-        &["pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>"],
-    );
+    assert_holds(&code, &["pub fn try_into_owned_in<S: ProbeCborStorage>"]);
 }
 
 #[test]

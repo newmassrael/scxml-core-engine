@@ -328,7 +328,7 @@ impl<'a> CodecChainHasMarkerSource for CodecChainHasMarker<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSource for CodecChainHasMarkerOwned<S> {
+impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerSource for CodecChainHasMarkerOwned<S> {
     fn extensions_has_0x12(&self) -> CodecChainHasMarkerExtensionsHas0x12<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4>, ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 256>> {
         match &self.extensions_has_0x12 {
             CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: extensions.list_iter(), slices: slices.list_iter() },
@@ -469,21 +469,56 @@ impl<'a> CodecChainHasMarker<'a> {
 // `let v: CodecChainHasMarkerOwned = CodecChainHasMarkerOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 use super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceOwned;
+/// The field `extensions` of `CodecChainHasMarker`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecChainHasMarkerExtensionsField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// The field `payload` of `CodecChainHasMarker`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecChainHasMarkerPayloadField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<256>;
+}
+
+/// The field `slices` of `CodecChainHasMarker`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecChainHasMarkerSlicesField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecChainHasMarkerOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecChainHasMarkerStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> + ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> + ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceStorage> CodecChainHasMarkerStorage for S {}
+
 /// The group `CodecChainHasMarkerExtensionsHas0x12` as `CodecChainHasMarkerOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecChainHasMarkerExtensionsHas0x12Owned<S> = CodecChainHasMarkerExtensionsHas0x12<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohExtEntryOwned<S>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecChainHasMarkerSliceOwned<S>, 4>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<256>, 256>>;
+pub type CodecChainHasMarkerExtensionsHas0x12Owned<S> = CodecChainHasMarkerExtensionsHas0x12<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField>>::List<CodecChainHasMarkerSliceOwned<S>>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField>>::Bytes, 256>>;
 
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecChainHasMarkerOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecChainHasMarkerOwned<S: CodecChainHasMarkerStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12Owned<S>,
     pub payload_len: Option<u64>,
@@ -491,7 +526,7 @@ pub struct CodecChainHasMarkerOwned<S: ::sce_forge_runtime::codec::CodecStorage 
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
+impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -520,8 +555,8 @@ impl<'a> CodecChainHasMarker<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecChainHasMarkerOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecChainHasMarkerStorage>(self) -> Result<CodecChainHasMarkerOwned<S>, CodecError> {
         Ok(CodecChainHasMarkerOwned {
             header: self.header,
             extensions_has_0x12: match self.extensions_has_0x12 { CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: { let (_r, _p) = extensions.into_parts(); ::sce_forge_runtime::codec::Placed::from_list(::sce_forge_runtime::storage::try_collect_list(_r, |_e| _e.try_into_owned_in::<S>())?, _p).expect("the projection keeps each entry's identifier") }, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())? }, CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Chain::from_list(::sce_forge_runtime::storage::try_collect_list(_l.into_inner(), |_e| _e.try_into_owned_in::<S>())?).expect("the projection keeps each entry's identifier")), None => None }, payload: ::sce_forge_runtime::codec::Bounded::copied(payload)? }, },
@@ -538,7 +573,7 @@ impl<'a> CodecChainHasMarker<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
+impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -593,13 +628,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecChainHasMarkerOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecChainHasMarkerStorage>(&self) -> Result<CodecChainHasMarkerOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
+impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `try_as_borrowed` followed by
     /// [`CodecChainHasMarker::encode`] writes, without the projection.

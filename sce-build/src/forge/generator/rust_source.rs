@@ -3015,9 +3015,9 @@ impl<'a> Plan<'a> {
                 format!("impl{lt} {} for {}View{lt}", self.trait_name, self.name())
             }
             Form::Owned => format!(
-                "impl<S: {storage}::CodecStorage> {} for {}Owned<S>",
+                "impl<S: {name}Storage> {} for {name}Owned<S>",
                 self.trait_name,
-                self.name()
+                name = self.name()
             ),
         };
         format!("{head} {{\n{items}}}\n\n")

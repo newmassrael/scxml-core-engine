@@ -322,7 +322,7 @@ impl<'a> CodecZenohQuerySource for CodecZenohQuery<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQuerySource for CodecZenohQueryOwned<S> {
+impl<S: CodecZenohQueryStorage> CodecZenohQuerySource for CodecZenohQueryOwned<S> {
     fn header(&self) -> u8 {
         self.header
     }
@@ -449,24 +449,50 @@ impl<'a> CodecZenohQuery<'a> {
 // `let v: CodecZenohQueryOwned = CodecZenohQueryOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
+/// The field `parameters` of `CodecZenohQuery`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohQueryParametersField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohQueryParametersField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<256>;
+}
+
+/// The field `extensions` of `CodecZenohQuery`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohQueryExtensionsField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecZenohQueryExtensionsField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 8> where T: ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecZenohQueryOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecZenohQueryStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohQueryParametersField> + ::sce_forge_runtime::codec::HoldsList<CodecZenohQueryExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohQueryParametersField> + ::sce_forge_runtime::codec::HoldsList<CodecZenohQueryExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohQueryStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohQueryOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecZenohQueryOwned<S: CodecZenohQueryStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub consolidation: Option<u8>,
     pub parameters_len: Option<u64>,
-    pub parameters: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<256>, 256>>,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 8>, 8>>,
+    pub parameters: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohQueryParametersField>>::Bytes, 256>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohQueryExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 8>>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryOwned<S> {
+impl<S: CodecZenohQueryStorage> CodecZenohQueryOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -503,8 +529,8 @@ impl<'a> CodecZenohQuery<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohQueryOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecZenohQueryStorage>(self) -> Result<CodecZenohQueryOwned<S>, CodecError> {
         Ok(CodecZenohQueryOwned {
             header: self.header,
             consolidation: self.consolidation,
@@ -522,7 +548,7 @@ impl<'a> CodecZenohQuery<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryOwned<S> {
+impl<S: CodecZenohQueryStorage> CodecZenohQueryOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -568,13 +594,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohQueryOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecZenohQueryStorage>(&self) -> Result<CodecZenohQueryOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohQueryOwned<S> {
+impl<S: CodecZenohQueryStorage> CodecZenohQueryOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `try_as_borrowed` followed by
     /// [`CodecZenohQuery::encode`] writes, without the projection.

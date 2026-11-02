@@ -336,7 +336,7 @@ impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestSource for CodecZenohInterestOwned<S> {
+impl<S: CodecZenohInterestStorage> CodecZenohInterestSource for CodecZenohInterestOwned<S> {
     fn header_current_or_future(&self) -> Option<CodecZenohInterestHeaderCurrentOrFuture<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource>> {
         self.header_current_or_future.as_ref().map(|_g| match _g {
             CodecZenohInterestHeaderCurrentOrFuture::Current { body } => CodecZenohInterestHeaderCurrentOrFuture::Current { body },
@@ -459,10 +459,27 @@ impl<'a> CodecZenohInterest<'a> {
 // `let v: CodecZenohInterestOwned = CodecZenohInterestOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 use super::codec_zenoh_interest_body::CodecZenohInterestBodyOwned;
+/// The field `extensions` of `CodecZenohInterest`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohInterestExtensionsField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecZenohInterestOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecZenohInterestStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_zenoh_interest_body::CodecZenohInterestBodyStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_zenoh_interest_body::CodecZenohInterestBodyStorage> CodecZenohInterestStorage for S {}
+
 /// The group `CodecZenohInterestHeaderCurrentOrFuture` as `CodecZenohInterestOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
@@ -473,15 +490,15 @@ pub type CodecZenohInterestHeaderCurrentOrFutureOwned<S> = CodecZenohInterestHea
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohInterestOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecZenohInterestOwned<S: CodecZenohInterestStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub id: u64,
     pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFutureOwned<S>>,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<S::List<CodecZenohExtEntryOwned<S>, 4>, 4, 1>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 4, 1>>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestOwned<S> {
+impl<S: CodecZenohInterestStorage> CodecZenohInterestOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -518,8 +535,8 @@ impl<'a> CodecZenohInterest<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohInterestOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecZenohInterestStorage>(self) -> Result<CodecZenohInterestOwned<S>, CodecError> {
         Ok(CodecZenohInterestOwned {
             header: self.header,
             id: self.id,
@@ -536,7 +553,7 @@ impl<'a> CodecZenohInterest<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestOwned<S> {
+impl<S: CodecZenohInterestStorage> CodecZenohInterestOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -598,13 +615,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohInterestOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecZenohInterestStorage>(&self) -> Result<CodecZenohInterestOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInterestOwned<S> {
+impl<S: CodecZenohInterestStorage> CodecZenohInterestOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `try_as_borrowed` followed by
     /// [`CodecZenohInterest::encode`] writes, without the projection.

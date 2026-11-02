@@ -379,3 +379,33 @@ Landing: the commit that adds this section.
   reads `TooManyElements`. An encode's refusal was already that on both.
 - A conformance reject vector that named `tlv-chain-overflow` names `too-many-elements`. The pseudocode line reads
   `tlv-chain max-depth <n> terminate <s>`.
+
+## A storage profile answers field by field (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `CodecStorage` is gone. A profile implements `HoldsList<Tag>`, `HoldsStr<Tag>` and `HoldsBytes<Tag>`, and each variable
+  field of a codec has a tag type, `{Codec}{Field}Field`, in the codec's module. A profile that grows everything answers
+  for every tag:
+
+  ```rust
+  impl<Tag> HoldsList<Tag> for MyProfile {
+      type List<T> = Vec<T> where T: Debug + Clone + PartialEq;
+  }
+  impl<Tag> HoldsStr<Tag> for MyProfile { type Str = GrowStr; }
+  impl<Tag> HoldsBytes<Tag> for MyProfile { type Bytes = MyBytes; }
+  ```
+
+- A container no longer takes a capacity from the profile, so `Bytes<const N>` becomes one type. `Heap` holds
+  `GrowBytes` and `GrowStr`, and `HeapBytes<N>` and `HeapStr<N>` stay as types of their own, where `N` was advisory.
+- `OriginStorage` no longer requires a storage trait, and its constructors take the tag where they took `N`:
+  `fn bytes_from<Tag>(origin, view) -> Result<<Self as HoldsBytes<Tag>>::Bytes, CodecError>`, and `str_from` likewise.
+  Write the return type as that projection, not as your container: the trait's `where Self: HoldsBytes<Tag>` keeps the
+  compiler from normalizing it in the comparison. The body may build the container.
+- A bound on a storage parameter names the codec: `S: {Codec}Storage`, where it was `S: CodecStorage`. That trait asks for
+  what the codec and every codec it holds ask, so a site names one trait. A site generic over several codecs names each.
+- `Inline` still holds each field at its bound. Nothing a program does with `{Codec}Owned<Inline>` or `{Codec}Owned<Heap>`
+  changes, and the wire does not.
+- Codec documents that mix `<data>` with `<sce:field>`, `<sce:flags>` or the other `sce:` field elements now read their
+  fields in document order. They were read `<data>` first, so such a codec decoded from the wrong offsets with no error.
+  No shipped document mixes them. Check yours: the wire of one that does changes to what its `sce:byte` says.

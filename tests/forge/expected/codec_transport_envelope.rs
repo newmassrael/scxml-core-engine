@@ -433,7 +433,7 @@ impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelope<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeSource for CodecTransportEnvelopeOwned<S> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeSource for CodecTransportEnvelopeOwned<S> {
     fn header(&self) -> u8 {
         self.header
     }
@@ -583,25 +583,33 @@ impl<'a> CodecTransportEnvelope<'a> {
 // `let v: CodecTransportEnvelopeOwned = CodecTransportEnvelopeOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_init_body::CodecZenohInitBodyOwned;
 use super::codec_zenoh_open_body::CodecZenohOpenBodyOwned;
 use super::codec_zenoh_frame::CodecZenohFrameOwned;
 use super::codec_zenoh_fragment::CodecZenohFragmentOwned;
 use super::codec_zenoh_join::CodecZenohJoinOwned;
+/// What `CodecTransportEnvelopeOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecTransportEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage> CodecTransportEnvelopeStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecTransportEnvelopeOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecTransportEnvelopeOwned<S: CodecTransportEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub body: CodecTransportEnvelopeOwnedVariant<S>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -634,7 +642,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S>
 #[allow(clippy::large_enum_variant)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecTransportEnvelopeOwnedVariant<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub enum CodecTransportEnvelopeOwnedVariant<S: CodecTransportEnvelopeStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     CodecZenohInitBody(CodecZenohInitBodyOwned<S>),
     CodecZenohOpenBody(CodecZenohOpenBodyOwned<S>),
     CodecZenohClose(CodecZenohClose),
@@ -654,7 +662,7 @@ impl<'a> CodecTransportEnvelopeVariant<'a> {
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTransportEnvelopeOwnedVariant<S>, CodecError> {
+    pub fn try_into_owned_in<S: CodecTransportEnvelopeStorage>(self) -> Result<CodecTransportEnvelopeOwnedVariant<S>, CodecError> {
         Ok(match self {
             CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b.try_into_owned_in::<S>()?),
             CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b.try_into_owned_in::<S>()?),
@@ -674,7 +682,7 @@ impl<'a> CodecTransportEnvelopeVariant<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwnedVariant<S> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwnedVariant<S> {
     /// Re-borrow this owned variant body back into its borrowed mirror —
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
@@ -762,8 +770,8 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTransportEnvelopeOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecTransportEnvelopeStorage>(self) -> Result<CodecTransportEnvelopeOwned<S>, CodecError> {
         Ok(CodecTransportEnvelopeOwned {
             header: self.header,
             body: self.body.try_into_owned_in::<S>()?,
@@ -778,7 +786,7 @@ impl<'a> CodecTransportEnvelope<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -814,13 +822,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S>
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecTransportEnvelopeOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecTransportEnvelopeStorage>(&self) -> Result<CodecTransportEnvelopeOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S> {
+impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecTransportEnvelope::encode`] writes, without the projection.

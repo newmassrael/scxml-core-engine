@@ -176,7 +176,7 @@ impl<'a> CodecZenohUndeclQueryableSource for CodecZenohUndeclQueryable<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohUndeclQueryableSource for CodecZenohUndeclQueryableOwned<S> {
+impl<S: CodecZenohUndeclQueryableStorage> CodecZenohUndeclQueryableSource for CodecZenohUndeclQueryableOwned<S> {
     fn id(&self) -> u32 {
         self.id
     }
@@ -282,15 +282,23 @@ impl<'a> CodecZenohUndeclQueryable<'a> {
 // `let v: CodecZenohUndeclQueryableOwned = CodecZenohUndeclQueryableOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprOwned;
+/// What `CodecZenohUndeclQueryableOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecZenohUndeclQueryableStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage> CodecZenohUndeclQueryableStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohUndeclQueryableOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecZenohUndeclQueryableOwned<S: CodecZenohUndeclQueryableStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub id: u32,
     pub ext_keyexpr: Option<CodecZenohDeclExtKeyexprOwned<S>>,
 }
@@ -308,8 +316,8 @@ impl<'a> CodecZenohUndeclQueryable<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohUndeclQueryableOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecZenohUndeclQueryableStorage>(self) -> Result<CodecZenohUndeclQueryableOwned<S>, CodecError> {
         Ok(CodecZenohUndeclQueryableOwned {
             id: self.id,
             ext_keyexpr: self.ext_keyexpr.map(|_v| _v.try_into_owned_in::<S>()).transpose()?,
@@ -324,7 +332,7 @@ impl<'a> CodecZenohUndeclQueryable<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohUndeclQueryableOwned<S> {
+impl<S: CodecZenohUndeclQueryableStorage> CodecZenohUndeclQueryableOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -363,13 +371,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohUndeclQueryableOwned
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohUndeclQueryableOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecZenohUndeclQueryableStorage>(&self) -> Result<CodecZenohUndeclQueryableOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohUndeclQueryableOwned<S> {
+impl<S: CodecZenohUndeclQueryableStorage> CodecZenohUndeclQueryableOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecZenohUndeclQueryable::encode`] writes, without the projection.

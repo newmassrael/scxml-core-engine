@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0072, docs/adr/0077 §7): the arm of
+     codec_feature_gated_arm_held every build compiles. It holds bytes, so it
+     has an owned form and a storage trait.
+
+     Wire shape:
+       byte 0 : header, kind 0 in bit 0.
+       byte 1 : the payload's length.
+       then the payload.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_gated_held_a">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="1" value="0x00"/>
+    </sce:flags>
+    <data id="len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref" sce:length-field="len" sce:max-size="8"/>
+  </datamodel>
+</scxml>

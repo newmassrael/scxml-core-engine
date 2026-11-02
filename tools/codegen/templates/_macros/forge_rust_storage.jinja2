@@ -1,0 +1,52 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#- What a codec's owned form asks of a storage profile (docs/adr/0077 §7): a tag
+    type for each variable field, what `Inline` holds it in, and one trait a site
+    names for all of it. A supertrait is implied where the trait is named, and a
+    struct's `where` clause is not. A deployment answers for the tags from a file
+    of its own, so no capacity of one enters this tree.
+
+    A child codec compiled under a build feature cannot be a plain supertrait,
+    since an attribute does not go on one: it is reached through a trait of its
+    own, which asks for nothing in a build without the feature (docs/adr/0072). #}
+{%- macro declare(struct_name, runtime, fields, gated, bound) %}
+{% for field in fields %}
+/// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct {{ field.tag }};
+
+impl {{ runtime }}::Holds{{ field.kind }}<{{ field.tag }}> for {{ runtime }}::Inline {
+{% if field.kind == "List" %}
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, {{ field.capacity }}> where T: ::core::fmt::Debug + Clone + PartialEq;
+{% elif field.kind == "Str" %}
+    type Str = {{ runtime }}::InlineStr<{{ field.capacity }}>;
+{% else %}
+    type Bytes = {{ runtime }}::InlineBytes<{{ field.capacity }}>;
+{% endif %}
+}
+
+{% endfor %}
+{% for child in gated %}
+{{ child.cfg }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}: {{ child.bound }} {}
+
+{{ child.cfg }}
+impl<S: {{ child.bound }}> {{ child.helper }} for S {}
+
+{{ child.cfg_off }}
+#[allow(dead_code)]
+pub trait {{ child.helper }} {}
+
+{{ child.cfg_off }}
+impl<S> {{ child.helper }} for S {}
+
+{% endfor %}
+/// What `{{ struct_name }}Owned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait {{ struct_name }}Storage: {{ bound }} {}
+
+impl<S: {{ bound }}> {{ struct_name }}Storage for S {}
+{% endmacro %}

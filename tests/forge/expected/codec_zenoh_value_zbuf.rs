@@ -239,7 +239,7 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbuf<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufSource for CodecZenohValueZbufOwned<S> {
+impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufSource for CodecZenohValueZbufOwned<S> {
     fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.list_iter(), value_len: *value_len },
@@ -373,20 +373,46 @@ impl<'a> CodecZenohValueZbuf<'a> {
 // `let v: CodecZenohValueZbufOwned = CodecZenohValueZbufOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
 use super::codec_zenoh_value_slice::CodecZenohValueSliceOwned;
+/// The field `value` of `CodecZenohValueZbuf`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohValueZbufValueField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
+}
+
+/// The field `slices` of `CodecZenohValueZbuf`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohValueZbufSlicesField;
+
+impl ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> for ::sce_forge_runtime::codec::Inline {
+    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: ::core::fmt::Debug + Clone + PartialEq;
+}
+
+/// What `CodecZenohValueZbufOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecZenohValueZbufStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> + ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> + super::codec_zenoh_value_slice::CodecZenohValueSliceStorage {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> + ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> + super::codec_zenoh_value_slice::CodecZenohValueSliceStorage> CodecZenohValueZbufStorage for S {}
+
 /// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::List<CodecZenohValueSliceOwned<S>, 4>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::CodecStorage>::Bytes<32>, 32>>;
+pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 32>>;
 
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohValueZbufOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecZenohValueZbufOwned<S: CodecZenohValueZbufStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub after_shm: CodecZenohValueZbufAfterShmOwned<S>,
     pub slice_count: Option<u64>,
 }
@@ -404,8 +430,8 @@ impl<'a> CodecZenohValueZbuf<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohValueZbufOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecZenohValueZbufStorage>(self) -> Result<CodecZenohValueZbufOwned<S>, CodecError> {
         Ok(CodecZenohValueZbufOwned {
             after_shm: match self.after_shm { CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding, slices: ::sce_forge_runtime::codec::try_collect_bounded(slices, |_e| _e.try_into_owned_in::<S>())?, value_len }, CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: ::sce_forge_runtime::codec::Bounded::copied(value)? }, },
             slice_count: self.slice_count,
@@ -420,7 +446,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
+impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -475,13 +501,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohValueZbufOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecZenohValueZbufStorage>(&self) -> Result<CodecZenohValueZbufOwned<D>, CodecError> {
         self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueZbufOwned<S> {
+impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `try_as_borrowed` followed by
     /// [`CodecZenohValueZbuf::encode`] writes, without the projection.

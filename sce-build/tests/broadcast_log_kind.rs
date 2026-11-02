@@ -1594,22 +1594,26 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
     let cases = [
         (
             r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Str<16>, 16>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<EventRecordNoteField>>::Str, 16>,",
+            "type Str = ::sce_forge_runtime::codec::InlineStr<16>;",
         ),
         (
             r#"<data id="note" sce:type="bytes" sce:key="1" sce:max-size="32" sce:direction="out"/>"#,
-            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Bytes<32>, 32>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<EventRecordNoteField>>::Bytes, 32>,",
+            "type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;",
         ),
         (
             r#"<data id="note" sce:type="bytes" sce:key="1" sce:length="8" sce:direction="out"/>"#,
-            "    pub note: ::sce_forge_runtime::codec::Bounded<S::Bytes<8>, 8, 8>,",
+            "    pub note: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<EventRecordNoteField>>::Bytes, 8, 8>,",
+            "type Bytes = ::sce_forge_runtime::codec::InlineBytes<8>;",
         ),
         (
             r#"<data id="note" sce:type="optional&lt;string&gt;" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
-            "    pub note: Option<::sce_forge_runtime::codec::Bounded<S::Str<16>, 16>>,",
+            "    pub note: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<EventRecordNoteField>>::Str, 16>>,",
+            "type Str = ::sce_forge_runtime::codec::InlineStr<16>;",
         ),
     ];
-    for (entry, field) in cases {
+    for (entry, field, held) in cases {
         let codec = cbor_codec_with(entry);
         let code = generated_log(
             compile_documents(
@@ -1640,9 +1644,10 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
         assert_holds(
             &module,
             &[
-                "pub struct EventRecordOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
+                "pub struct EventRecordOwned<S: EventRecordStorage = ::sce_forge_runtime::codec::DefaultStorage> {",
                 field,
-                "pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<EventRecordOwned<S>, CodecError> {",
+                held,
+                "pub fn try_into_owned_in<S: EventRecordStorage>(self) -> Result<EventRecordOwned<S>, CodecError> {",
             ],
         );
     }

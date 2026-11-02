@@ -201,7 +201,7 @@ impl<'a> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasic<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasicOwned<S> {
+impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasicOwned<S> {
     fn carrier(&self) -> u8 {
         self.carrier
     }
@@ -301,20 +301,37 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
 // `let v: CodecLengthRefDottedBasicOwned = CodecLengthRefDottedBasicOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+/// The field `payload` of `CodecLengthRefDottedBasic`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecLengthRefDottedBasicPayloadField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecLengthRefDottedBasicPayloadField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<15>;
+}
+
+/// What `CodecLengthRefDottedBasicOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecLengthRefDottedBasicStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecLengthRefDottedBasicPayloadField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecLengthRefDottedBasicPayloadField>> CodecLengthRefDottedBasicStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecLengthRefDottedBasicOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecLengthRefDottedBasicOwned<S: CodecLengthRefDottedBasicStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub carrier: u8,
-    pub payload: ::sce_forge_runtime::codec::Bounded<S::Bytes<15>, 15>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecLengthRefDottedBasicPayloadField>>::Bytes, 15>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecLengthRefDottedBasicOwned<S> {
+impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -343,8 +360,8 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecLengthRefDottedBasicOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecLengthRefDottedBasicStorage>(self) -> Result<CodecLengthRefDottedBasicOwned<S>, CodecError> {
         Ok(CodecLengthRefDottedBasicOwned {
             carrier: self.carrier,
             payload: ::sce_forge_runtime::codec::Bounded::copied(self.payload)?,
@@ -359,7 +376,7 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecLengthRefDottedBasicOwned<S> {
+impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -395,13 +412,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecLengthRefDottedBasicOwned
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecLengthRefDottedBasicOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecLengthRefDottedBasicStorage>(&self) -> Result<CodecLengthRefDottedBasicOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecLengthRefDottedBasicOwned<S> {
+impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecLengthRefDottedBasic::encode`] writes, without the projection.

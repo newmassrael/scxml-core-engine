@@ -186,7 +186,7 @@ impl<'a> CodecTlvEntrySource for CodecTlvEntry<'a> {
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntrySource for CodecTlvEntryOwned<S> {
+impl<S: CodecTlvEntryStorage> CodecTlvEntrySource for CodecTlvEntryOwned<S> {
     fn entry_type(&self) -> u8 {
         self.entry_type
     }
@@ -310,17 +310,34 @@ impl<'a> CodecTlvEntry<'a> {
 // `let v: CodecTlvEntryOwned = CodecTlvEntryOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+/// The field `entry_body` of `CodecTlvEntry`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecTlvEntryEntryBodyField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecTlvEntryEntryBodyField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
+}
+
+/// What `CodecTlvEntryOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecTlvEntryStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTlvEntryEntryBodyField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTlvEntryEntryBodyField>> CodecTlvEntryStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecTlvEntryOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecTlvEntryOwned<S: CodecTlvEntryStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub entry_type: u8,
     pub entry_len: u8,
-    pub entry_body: ::sce_forge_runtime::codec::Bounded<S::Bytes<32>, 32>,
+    pub entry_body: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecTlvEntryEntryBodyField>>::Bytes, 32>,
 }
 
 #[allow(dead_code)]
@@ -336,8 +353,8 @@ impl<'a> CodecTlvEntry<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecTlvEntryOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecTlvEntryStorage>(self) -> Result<CodecTlvEntryOwned<S>, CodecError> {
         Ok(CodecTlvEntryOwned {
             entry_type: self.entry_type,
             entry_len: self.entry_len,
@@ -353,7 +370,7 @@ impl<'a> CodecTlvEntry<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
+impl<S: CodecTlvEntryStorage> CodecTlvEntryOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -390,13 +407,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecTlvEntryOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecTlvEntryStorage>(&self) -> Result<CodecTlvEntryOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
+impl<S: CodecTlvEntryStorage> CodecTlvEntryOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecTlvEntry::encode`] writes, without the projection.

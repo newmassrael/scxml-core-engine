@@ -2650,43 +2650,52 @@ fn parse_codec(
     let mut fields = Vec::new();
     let mut input_length: Option<u32> = None;
 
-    for data in data_children(&datamodel) {
-        let dir = sce_attr(&data, "direction");
+    // <sce:field> elements (used in both standalone and inline codec) and
+    // <sce:flags> containers (RFC §synth-5-B flags primitive — same wire shape as a
+    // plain unsigned-int field plus named-bit accessors emitted by codegen) sit
+    // among the <data> elements. <sce:repeat> containers (RFC §synth-5-B B2) sit
+    // alongside; their bit_size = Repeat carries the count_ref + body alias for the
+    // streaming codec to iterate the imported codec's encode/decode.
+    //
+    // A field's place in this list is its place on the wire, so they are read in
+    // document order, whichever element each one is.
+    let codec_fields: &'static [&'static str] = &["field", "flags", "repeat", "tlv-chain", "embed"];
+    let mut children: Vec<_> = data_children(&datamodel)
+        .chain(sce_children_among(&datamodel, codec_fields))
+        .collect();
+    children.sort_by_key(|child| child.range().start);
+    for child in children {
+        let element = child.tag_name().name();
+        if element == "data" {
+            let data = child;
+            let dir = sce_attr(&data, "direction");
 
-        if dir.as_deref() == Some("in") {
-            judge_input_frame_type(&data, label.diagnostic_label)?;
-            if let Some(len_str) = sce_attr(&data, "length") {
-                input_length = Some(parse_int(&len_str).ok_or_else(|| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: "Codec input".into(),
-                            attr: "sce:length".into(),
-                            value: len_str,
-                            detail: "expected integer".into(),
-                        },
-                    )
-                })?);
+            if dir.as_deref() == Some("in") {
+                judge_input_frame_type(&data, label.diagnostic_label)?;
+                if let Some(len_str) = sce_attr(&data, "length") {
+                    input_length = Some(parse_int(&len_str).ok_or_else(|| {
+                        located(
+                            &data,
+                            label.diagnostic_label,
+                            ValidationError::NumericParse {
+                                element: "Codec input".into(),
+                                attr: "sce:length".into(),
+                                value: len_str,
+                                detail: "expected integer".into(),
+                            },
+                        )
+                    })?);
+                }
+                continue;
+            }
+
+            // Output fields with byte layout (on <data> elements).
+            if sce_attr(&data, "byte").is_some() {
+                fields.push(parse_codec_field_from_node(&data, label.diagnostic_label)?);
             }
             continue;
         }
-
-        // Output fields with byte layout (on <data> elements).
-        if sce_attr(&data, "byte").is_some() {
-            fields.push(parse_codec_field_from_node(&data, label.diagnostic_label)?);
-        }
-    }
-
-    // Also check for <sce:field> elements (used in both standalone and inline codec)
-    // and <sce:flags> containers (RFC §synth-5-B flags primitive — same wire shape as a
-    // plain unsigned-int field plus named-bit accessors emitted by codegen).
-    // <sce:repeat> containers (RFC §synth-5-B B2) sit alongside; their
-    // bit_size = Repeat carries the count_ref + body alias for the
-    // streaming codec to iterate the imported codec's encode/decode.
-    let codec_fields: &'static [&'static str] = &["field", "flags", "repeat", "tlv-chain", "embed"];
-    for child in sce_children_among(&datamodel, codec_fields) {
-        match child.tag_name().name() {
+        match element {
             "field" => {
                 fields.push(parse_codec_field_from_node(&child, label.diagnostic_label)?);
             }

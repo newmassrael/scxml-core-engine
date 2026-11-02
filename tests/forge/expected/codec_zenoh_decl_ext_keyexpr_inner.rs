@@ -248,7 +248,7 @@ impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInner<'
     }
 }
 
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerOwned<S> {
+impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerOwned<S> {
     fn inner_header(&self) -> u8 {
         self.inner_header
     }
@@ -363,21 +363,38 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
 // `let v: CodecZenohDeclExtKeyexprInnerOwned = CodecZenohDeclExtKeyexprInnerOwned { .. };`
 // — because the fields reach the profile through its associated container
 // types, which cannot be run backwards to recover the profile from a value.
-// Naming it once is also what lets each field's declared capacity infer,
-// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
+// Naming it once is also what lets each field's container infer, so no call
+// site repeats a capacity. A capacity is not in this file at all except as
+// what `Inline` holds: a deployment answers for the same tags from its own.
+/// The field `suffix` of `CodecZenohDeclExtKeyexprInner`, which a storage profile
+/// answers for by this type.
+#[allow(dead_code)]
+pub struct CodecZenohDeclExtKeyexprInnerSuffixField;
+
+impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField> for ::sce_forge_runtime::codec::Inline {
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<128>;
+}
+
+/// What `CodecZenohDeclExtKeyexprInnerOwned` and the codecs it holds ask of a storage
+/// profile.
+#[allow(dead_code)]
+pub trait CodecZenohDeclExtKeyexprInnerStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField> {}
+
+impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField>> CodecZenohDeclExtKeyexprInnerStorage for S {}
+
 // Same pub-API policy as the borrowed view above: the owned mirror and its
 // projections are cross-crate surface, and which of them a given in-repo
 // fixture happens to call says nothing about their value.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohDeclExtKeyexprInnerOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
+pub struct CodecZenohDeclExtKeyexprInnerOwned<S: CodecZenohDeclExtKeyexprInnerStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub inner_header: u8,
     pub id: u64,
-    pub suffix: Option<::sce_forge_runtime::codec::Bounded<S::Bytes<128>, 128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField>>::Bytes, 128>>,
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
+impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so owned consumers read `{Codec}Owned` with the same API as
@@ -406,8 +423,8 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
     /// in their types (docs/adr/0077 §3), and the inline and growable profiles
     /// hold each field at its bound, so the projection does not fail on them.
     /// A profile whose capacity is below a bound raises
-    /// `CodecError::TooManyElements` for a value it cannot hold.
-    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohDeclExtKeyexprInnerOwned<S>, CodecError> {
+    /// `CodecError::CapacityExceeded` for a value it cannot hold.
+    pub fn try_into_owned_in<S: CodecZenohDeclExtKeyexprInnerStorage>(self) -> Result<CodecZenohDeclExtKeyexprInnerOwned<S>, CodecError> {
         Ok(CodecZenohDeclExtKeyexprInnerOwned {
             inner_header: self.inner_header,
             id: self.id,
@@ -423,7 +440,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
+impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
     /// the inverse of `try_into_owned_in`. `encode` lives only on the
     /// borrowed view (the owned form is read-only), so an owned consumer
@@ -460,13 +477,13 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerO
     /// bytes are copied once and every destination capacity is enforced, so
     /// a value that cannot fit the target profile is rejected here rather
     /// than truncated.
-    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohDeclExtKeyexprInnerOwned<D>, CodecError> {
+    pub fn transcode_in<D: CodecZenohDeclExtKeyexprInnerStorage>(&self) -> Result<CodecZenohDeclExtKeyexprInnerOwned<D>, CodecError> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
 
 #[allow(dead_code)]
-impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
+impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerOwned<S> {
     /// Encode `self` into the caller-owned sink, straight from the owned
     /// fields: the bytes `as_borrowed` followed by
     /// [`CodecZenohDeclExtKeyexprInner::encode`] writes, without the projection.
