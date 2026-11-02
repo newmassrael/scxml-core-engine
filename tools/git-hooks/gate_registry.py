@@ -793,6 +793,9 @@ GATES: dict[str, dict] = {
             # start the suite that runs it.
             "backends/kotlin/mls-replay/**",
             "backends/kotlin/peer-replay/**",
+            # The Kotlin binding of the peer core's C ABI, which the peer
+            # core's Kotlin replay and the world's Kotlin device are built on.
+            "backends/kotlin/peer/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

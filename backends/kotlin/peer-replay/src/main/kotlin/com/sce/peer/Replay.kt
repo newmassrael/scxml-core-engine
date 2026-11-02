@@ -17,7 +17,6 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.NativeLong
 import com.sun.jna.Pointer
-import com.sun.jna.Structure
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.LongByReference
 import java.io.File
@@ -41,47 +40,8 @@ private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused"
 private val KINDS = mapOf("sync" to 0, "resync" to 1, "reread" to 2)
 private val PROFILES = mapOf("untrusted" to 0, "trusted_hub" to 1)
 
-/** `ScePeerBuf` of `include/sce_peer.h`: a buffer the library made (a `size_t` is a C long here). */
-@Structure.FieldOrder("ptr", "len")
-open class Buf : Structure() {
-    @JvmField var ptr: Pointer? = null
-    @JvmField var len: NativeLong = NativeLong(0)
-}
-
-/** The same buffer passed by value, as `sce_peer_buf_free` takes it. */
-class BufValue : Buf(), Structure.ByValue
-
-/** What `include/sce_peer.h` declares of the calls a replay makes (a `uint8_t *` is a byte array). */
-@Suppress("FunctionName")
-interface ScePeerLib : Library {
-    fun sce_peer_abi_version(): Int
-    fun sce_peer_last_error(): String?
-    fun sce_peer_buf_free(buf: BufValue)
-    fun sce_peer_open(list: String): Pointer?
-    fun sce_peer_invited(list: String, genesis: ByteArray): Pointer?
-    fun sce_peer_free(peer: Pointer)
-    fun sce_peer_set_identity(peer: Pointer, node: Long, seed: ByteArray): Int
-    fun sce_peer_set_administrator(peer: Pointer, seed: ByteArray): Int
-    fun sce_peer_open_list(peer: Pointer, profile: Int, genesis: ByteArray): Int
-    fun sce_peer_grant(peer: Pointer, node: Long, role: Int, key: ByteArray): Int
-    fun sce_peer_remove_member(peer: Pointer, node: Long): Int
-    fun sce_peer_standing(peer: Pointer, out: Buf): Int
-    fun sce_peer_outbound(peer: Pointer, event: String, data: String, kept: IntByReference, reason: Buf): Int
-    fun sce_peer_start(peer: Pointer, kind: Int): Int
-    fun sce_peer_poll_request(peer: Pointer, out: Buf): Int
-    fun sce_peer_respond(peer: Pointer, response: String): Int
-    fun sce_peer_fail(peer: Pointer, reason: String): Int
-    fun sce_peer_take_outcome(peer: Pointer, out: Buf): Int
-    fun sce_peer_save_sealed_under(peer: Pointer, key: ByteArray, state: Buf): Int
-    fun sce_peer_restore_sealed(
-        peer: Pointer,
-        node: Long,
-        state: ByteArray,
-        len: NativeLong,
-        key: ByteArray,
-        kept: LongByReference,
-    ): Int
-}
+// The ABI's declarations (`ScePeerLib`, `Buf`, `BufValue`) are the binding's, `:sce-kotlin-peer`,
+// in this package: the replay calls the functions as the header names them, and declares none.
 
 /**
  * How a host keeps the data key of a sealed state: wrapped with a key it holds, beside the state.

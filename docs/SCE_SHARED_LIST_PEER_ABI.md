@@ -37,7 +37,11 @@ reviewer learns one set of rules:
 A Swift host reaches the header as the Clang module `CScePeer` (`include/module.modulemap`), a Kotlin
 host through JNA, a Python host through ctypes, a Go host through cgo, a C or C++ host by including
 it. Each writes its thin binding over the same header; no second interface language defines the
-boundary.
+boundary. The Kotlin binding is a library of its own, `backends/kotlin/peer` (`:sce-kotlin-peer`):
+the header's functions and numbers declared once for JNA, and the core, a link and a cancellation as
+classes that free their handles (`PeerCore`, `PeerLink`, `PeerCancel`), with a host's transport given
+as a Kotlin function (`HostTransport`). The Kotlin replay below and the world's Kotlin device are
+built on it, and an application's Kotlin lane is built on it as they are.
 
 ## 1. Buffers
 
@@ -366,8 +370,8 @@ Because the core does no I/O a lane replays it with no relay: it makes the same 
 request, outcome, standing, genesis, sealed state and refusal reason with the recording, and gives the
 core the recorded answers. The Kotlin lane keeps the data key between the two steps wrapped, as a host
 does (section 6).
-Rust, C, C++, Python (ctypes), Go (cgo), Kotlin (JNA, `backends/kotlin/peer-replay`) and Swift (the
-module map) replay the same file
+Rust, C, C++, Python (ctypes), Go (cgo), Kotlin (JNA through the binding, `backends/kotlin/peer-replay`)
+and Swift (the module map) replay the same file
 (`a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario`); a lane whose toolchain is
 missing is skipped unless `SCE_REQUIRE_TOOLS` is set, and the Kotlin lane needs
 `./gradlew :sce-kotlin-peer-replay:installDist`.

@@ -21,6 +21,9 @@ group = "com.sce"
 version = "1.0.0"
 
 dependencies {
+    // The ABI's declarations are the binding's (backends/kotlin/peer), which every Kotlin host of
+    // the core shares: the replay calls the functions the header names and declares none of them.
+    implementation(project(":sce-kotlin-peer"))
     implementation(libs.jna)
     implementation(libs.kotlinx.serialization.json)
 }

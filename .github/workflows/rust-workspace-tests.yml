@@ -75,6 +75,9 @@ on:
       # one alone has to start the suite that runs it.
       - 'backends/kotlin/mls-replay/**'
       - 'backends/kotlin/peer-replay/**'
+      # The Kotlin binding of the peer core's C ABI, which the peer core's
+      # Kotlin replay and the world's Kotlin device are built on.
+      - 'backends/kotlin/peer/**'
       - 'tools/codegen/templates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -169,6 +172,9 @@ on:
       # one alone has to start the suite that runs it.
       - 'backends/kotlin/mls-replay/**'
       - 'backends/kotlin/peer-replay/**'
+      # The Kotlin binding of the peer core's C ABI, which the peer core's
+      # Kotlin replay and the world's Kotlin device are built on.
+      - 'backends/kotlin/peer/**'
       - 'tools/codegen/templates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
