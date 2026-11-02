@@ -28,7 +28,7 @@
     {
       "device": 0,
       "op": "standing",
-      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3}"
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3,\"waiting\":0}"
     },
     {
       "device": 0,
@@ -40,7 +40,7 @@
     {
       "device": 0,
       "op": "standing",
-      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"1\",\"owed\":0,\"role\":3}"
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"1\",\"owed\":0,\"role\":3,\"waiting\":0}"
     },
     {
       "device": 0,
@@ -110,11 +110,32 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 1,
       "op": "make"
+    },
+    {
+      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
+      "device": 1,
+      "event": "record_list.write",
+      "kept": "waiting",
+      "op": "outbound",
+      "reason": "record_list.write: the membership log has not begun"
+    },
+    {
+      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
+      "device": 1,
+      "event": "record_list.write",
+      "kept": "waiting",
+      "op": "outbound",
+      "reason": "record_list.write: the membership log has not begun"
+    },
+    {
+      "device": 1,
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":null,\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[],\"node\":\"2\",\"owed\":0,\"role\":0,\"waiting\":1}"
     },
     {
       "device": 1,
@@ -144,25 +165,32 @@
     {
       "device": 1,
       "op": "request",
+      "text": "{\"data\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"cursor\":\"4\",\"new\":true,\"ok\":\"accepted\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
       "text": "{\"cursor\":\"0\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
     },
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"3\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"}],\"v\":1}"
+      "text": "{\"more\":false,\"next\":\"4\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":1}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]]}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
       "device": 1,
-      "event": "record_list.write",
-      "kept": "taken",
-      "op": "outbound",
-      "reason": ""
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
@@ -219,17 +247,7 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"cursor\":\"3\",\"heads\":[],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "request",
-      "text": "{\"data\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "respond",
-      "text": "{\"cursor\":\"4\",\"new\":true,\"ok\":\"accepted\",\"v\":1}"
+      "text": "{\"cursor\":\"4\",\"heads\":[[\"2\",\"1\",\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":1}"
     },
     {
       "device": 1,
@@ -254,17 +272,17 @@
     {
       "device": 1,
       "op": "request",
-      "text": "{\"cursor\":\"3\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
+      "text": "{\"cursor\":\"4\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
     },
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"6\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.supersede\",\"k\":\"op\"}],\"v\":1}"
+      "text": "{\"more\":false,\"next\":\"6\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.supersede\",\"k\":\"op\"}],\"v\":1}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":2,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -304,25 +322,25 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 1,
       "key": "0707070707070707070707070707070707070707070707070707070707070707",
       "op": "save",
-      "state": "5343455331db417a1a61ac28741392042d7d5b3454680adf9a88a85416cb0045560dfc8c3bf9f71fc79a4fe97934cc1d4917b80141f39c1fadfce301071185746db3f3026cd2d238a4409ecd0e1f531a812cdf870ccdbd53bc547593f51c51db205e016d215a6dcb4a31ff00f6e917f1d3362a5c0ec7a55e63519b112abe5386122b97d262fb3c6bff20c65b788947ef86afd6f224c46d62906087735034a931947dc4d6ec938e6fec3582c01f7887bcc56cfd530356bece8b32d25159baf74ed913b617a1a344bb16bbe9e6b4fbf9206cd9370faeffdf216e8cdcdb7e9703d20765e95d79c4c9ee6a14f2897feab6e2e6c8633b5ed8ce586ec3d6bbf1faf685a2bc544af09f5b6bf98a25c4cd6ea95ace8ae04b56f62c8e6888320a6b343888d6190c81d92831ded3c71a37000b32b9f4a63c086ffcb02426cc0344082c607332d4b314077042d01aab0154f75ea0260ef41a9b507978bf2fe8410110194ef34c96c39ce47d503bb5c66aa146bbafcd78f7fae94223489cec30c424b81818098c97622a062e4d83050c89411462c516d70b80a677c3d2efcc194d59bed22364a57607233ca7c63b1fadfcf6466c924d45a2a84fe9c4cbd17ee23c00052c5ef777b0ef3ec81744ca9de6503744e9c5e71b7b17b088c8dcf023971b4b1ccd71eb3126cbe997f6e44faf9f1f91d4e62629d8feb465c7ad772b88984850f41efa274ebb449303293a777d3f385f8464693f7bf34bce24da57b56aa33a846513402894b9f40b4278a16a99618af61eadfdaef01b7c0a1c8d3997b8a4e169e62a10a7019a7fe3c1bb68420a5449f7c371c7e72bfbe932a43289948f7850d15305ccf6b7bdda9b71e01b011875e77e48c05ff62e5afd48f86c5c09ac713f9f4ae5250bf479b19ff7b01f425fb6ff174ae0272260c28e13bbb82dfeae8366863c2103901c959ddb4b6fdbf864477c02bdfe1ef7a202cf36d81169fe700e9bcaeb377b088d5a1b2ae831cafcd4ab78a358948d9dd1c579c2cd29470656a637152a9d81f9ceacfc397ffe7d12f17f927e67267b29ac238f8941085e3c48795f906fa8fc55430f3126820fa2c03b648080083724ef926c3b893032d29028e82207c7744a45a2fbd7566a7ee945eb6d6fed48f8527743d194bdcb9e1b416f5df322e40ca65044eb0bcc8093072ef91dd8cd5637656a806921d47b0990b796e2b38cffd46e22f2dedf1944239cda079c287ae49cd5126a0354440ec2c895f72e56c869074403766b5c203af62b253909b5cf7b36ed36df89a0ddaff14a04ebfdb4d2bc51323457384562e6ad82ca4f575405ce7292345c650f2b99adfbce1f43ec1de955f6428ab86e25a2d42d45fc5f48b4fd81203a4f3fff250c98c2c71bc9ef648741ccad9733accfdc9e4ce997b84857bd852938d022d4eb046004f302e65d4c065ee44e05671e2542030a1b9f5748fc5f553f3dd40df0302c4349f472431d16bf7513f74beef59f46d9ddac690f00e21617a13ba60799c3345cb256c7310a34d96a2c0d39bfad67403b4691cc05bb3f093a9020bbc8e2b4cd31772c13ab8fadb5a713db251f7e5f6df0f4bc96574dbc7e48798753e325884c42415e9a385c252749de438695831baca7303ab9cd5424f1366f9e382ed099e1da36093ba3b7de78d3a36cacf1f0d1d2fb834d0bffaeb0cda02f193efa1b554312f4e4590b4eee88e0572efb2719f0f051e1edfd03fe4dc76b4bbdd361dff3ddcf80457662f79c64cdbbb497bd98a173cdd3e64e79e58f3afcf9e9692c2e174062386c435a7127a4100795f7f83a1b6d45902e23c8b39177198e9f602b27524848ae8721a100efad0b47389a9da50fd80cc5c86a139cd38223ba32630b85e0eb6a188bf08556c33708bc89caed6dc42744c672295a6edc26d36991c0c283d704a756427e565102a2bb7d57ac529b924c2ac16849b7b0544a6be80f4193881a8efd5b6567958404d9928a6cfff3de09aea293651c576b425995d64d4c252604f6858fba2b3a718edd744c7849b95dbe4c386e65297e156f2eb0c51e564c2102834dfe5e608a0a77a68f9d71037203b9d0446be10db8c030b69049d65d1f4c0894041713889502a90a74bc9d5cb0f7a24e1e24c80799992d683c23689c1257c25f88fa0d8a4ea1cbf3279749c0c7a7dfc94d8cf26f5cb1268bb1025eca500890b9d9aecb0dce70f06f8ed1b92e5fa5dd2f25e4a72921235514b7fa0c77d2ae6dac345d43fe7122dc462240d61268ba0dc6a91f3a4ddc776107f177e8ebf14f3f76e212097ad91728a56a34e86aa1ae032e4076ac524ef584b5705bb7ae181c7aa1771449b5408176fa6970b8bb898d70439f45709920d06770fbe6f4f14d10bd596cdfa45db92e23ff4e0ce00726270b371321eb7ad5d35f328b805118715e6c8270e3ec7a3b30088eba7f43167e9dc8d572aae7e2118bec6cb650615ad7e28911a26e27432086cea48f4f4fd9311551dcf64aa10311c559ee69a2356f08b11d6be20668c7578aaf1488652cd1efe79ce56fa630002bc7f6566b567d1ddb074379359631d59e9342fcf7efb664d0ecf699d8616e33cc043c4884b2bdf79e4f44cb737fa62e7d4e6cc8f23c2f90c8e2213f90de0d095127eff5984cf16f2bedb7cf7d043822ae2522ed0ff8f24ec48fd97a4b2cba50ba246dceb32c0ebb20007ed6771eb257851727b3c0019b256aa921ae72e9d190cac861fb1de8e516f7382aaeff617d6ca82705acafa54ebc59da1164e22bdca8478418e1d417523e63a0c1e10ec44d91e846d5da03cd385db78aa4b1c6576bc6dd7edf49ad3e2fd0299778c32023b7d56e9c49e1c6a9441825f83f032a3d48f8c269b422146f459e6a1f86925993d891c876cac42518dde532a74e209d96f8991926e38fbc3ac62b6fdcb3683d06f2c3553ca1d344db081a7f493f0754d7856aeb60f3d3fea5fe50ee75fd6046222fa41c81465db7e810e1ec73e4fa819a0ff7c7f07d3c85d8ff23edc74721ce1c55de9572974cf81fbdc7d6d3f4ac5d0ccf6526d233758ed6c7fcb05a5e4fbe2e15ef7f494dc27c0d216b478091e6847bfe754e5fa52134e25312f10bb16eff367323cb7e9a13e7d8e76ac34137d618127cd653661b8eb39b2f7d26469a1aa61110b62cdb5a2ff0cd9d3e980c0373de498126ee4d20e51cd548123fad3c38b0d0c5d1005d3215aae63b38d47e21958be7c55ecd2ea057c23861360e0383cf428e4cf4a4123cbbeaff06f37fdfa8ecd6df4c9b5481ad5a0b8f17e4c870819362a9333cf2d510cce1b0c429fc16e11a19be9ddbc4946357fb391d923be889b0836467d4cd10ecac11e92caa83796d2089eef9c6f1d8f399b3181bbccf948658b5d04279b880d8a725782efb79dd4ad8b520e9b2aa0011d8b4cf53a86a9db7426f9c277a56c58280d92f1629b06a1d6bd5eb0dbbdff77dbaf5f8eb270e0a4153a44971d16499d1013bbae9406470f6bc6ac7141e160da2fea64010b60a57dc667ea766185da5acfa24a29a67413ec10d4e514067cff9731b53e7352ba620e971cef7066b4b027886b416245ac9e3f8a8ab5d89ac4fca097c0abece79bde952b278bfe21cd3389f4e590cb2f3fb14daee9f2ffe8f261ac70b3c3ef0fc16cd50945eb74133b167150619190c7876902fec2a1810414a58cfd6bc0734ff3f697a7c07b7a38253e89f24dab8630d7b96621628447c84fd028d0b12cca90e3ebdbd024c857ec902ee97ed30fb7701e4a2d5b943c1c83cda83c4829388a9a10accb6fa64bae1d369a50fd65c54ed5265c2689d583907e7c127ceb946ba9f03c9c270a53e6af084a32544e9f7d28278f214dbc099cc971a7885a199111d4b62aec757c57ee0532b0f339fcee5d44bed4cafca1651a9136ac07ad30924456730e64b4938df392bb6d6fdf67e42e74fcf15d80159a72742e426d177d859ad8599e2677a19138db59c0f4b4905af6569e6b82a79be5827ed179b92dfdf4a98107f2fda3522664acd100f71a482d37b8cb4e980e35ed55e4829c8d385de01d502933dc2eb588a17e26eefecc8ed3524e5a509811d686930e6e39b9399968542eca5b988eeb964d0ffb2be0f1bb8f7d52d3f8aff0be216b9e1ce4df57c765158d84baff22b920287b49d8cc16042dcb767313ce61069da64f9d6eb33ec4eb1f3c4b148fa8f71ef8139c4093fa8aee89b54c8460bee7cdf0c3ef265ef"
+      "state": "5343455331f61eb899885a02ad7fd86669f6e1f1dbedcd6605ca77e19885d8037724ad318bbe93aa9fc388a53bddaff374b3922fe710e0f1f5ce348dca6fda43dcd25a91b9d07528a0bf39395695e50401759845d47ab5244c596cc714d5943bf9a947efbde72dc9fb28309686bbb1a75b0f569e3a990a2927944a682a65ef5fba03575599a34aa5ca4993d9add81de9f5d1fa92189029779e978cb0936e3b1ca6e5bffaa8cd6caf81d46e9fc096924741a5006f25105c41462112f5356932c9c8b43b59d06e661d258d413510196bf12ae7ee26c0a3b5616d9d809e774787c66003858a6b0ee4639683e032b5e50c561ed8ee99ba91da84c40bd8e53aa5bb7d9f7d42ebefa2b445f2ac69dc3d4e614c7bb986ca2c80f4455c7851afd9c2f799f2d2294dc6156482c8b2882e67bdbc54e334f18b5f487df5e5c6ed49c3012b41601c168bfc8639e2db1f2eb36282461ad47e2770b19c52c597b68fff3ea89a7a89e4ba3f2e41f2706e2713b396eef399e5334ceef2e94ff1139ad29387e7307c8f6c2cba381e7d6f51eeb2d8493b8b86e19f2b63507fce2aa2de4b9e6d5d7dfd58ba04b53e11c71f5d065860d7ec2866eb3d7c9632ee2eb480ac815752babc2cc1989856381af5d45d911342b91799a8cd4bd494a1a9a629537e873cb488409608836da974dac67a4f1bc26715816c15f0c91ca4b6d43774adc272a56055d52ddebf7b15f0ff1d942063957656dbea55f76fcdee61d2b5643f446c139ac12515e3928378b2d7707f46739ad66b892e4edb81c2cb5b3eab18745e410b344d2fc9d0200659035ef8185813d4c6487b0c5ba4b1cd853011836b444c88191e229999985b775adcbe2510397acf859e23708a75ad3fa89b94282dc80f322191114aff7cbf4d831db11f4c1dbebb1fa73e904bd8b7906a259eeb6bf42b8c0f792a67675ff37d208a8c51c4eb2f26e5e3c6566cfbc997ab28c583360fada708855e20e4e88a99a1f077a28af85f11f864f39802768b9566b8362610941174aaf940601fa07c0554bf903b3a3b5381fe7d175630173bc91c4b9a222bb610856eab7e66c10e593962b5d595a97e901d05f0b35bd3f102a2b9c28385e39316918cd8e93a44289c395ff831c75e349d00ae0fba18cca5cd315dd661ba47b504c56ee3ae95fc99b36b00860012785ac75a0cba7c1560e95729bfacb00cc2a5421957ba14b25c0732b3b3d96d59be9fa5a66c07d425631407e3863275b1e240d9e7c51366d5e7df7bf4e5192871af042115e391a085c96239bc4c0c14921c73a5dccafb4d9873c90851f15dd58cde4db19e459cea5e0ff1fd0305706d80369748504ed83c2b9365b7fb3cc4df279dcddf505f7f1c7ecc2d8f3cfa240d2f69d93ec462c906cc90891727d0f29cbf521cddd36901db6cc7c30766387b4f17256de710b314d07f87ba300a7a1949766058cb824e6948b7237ef993e02980c88ca6172a9b0ba29c6a7b5519b2eb5f3389db49cf6c6087bf8de5b1171ff89e496cb0baed0b41f7475c8b1a338586c2ac1b667e4de7a140a077e6f8fd8fe1fb16a2fd10069aa47634044a0cc5e57ee85ca53a0d77695f730e99b104b0f145103b85e4d28e38c44ca740b17c7875301c20b8ec0d57d805e4870d4eaf213a2fdbd543532a0f3b1759dcc83dfe66682c5a7f14e37feb3fca625d0071e2b5f449664449ba2e81d7dc84bd5b101539fcbd45dd2f3256ce73a1cf0c342a4269683ca3f7ccd6da6f982667f6c2e418db25cc497a215eced8258299f26451da141cc7409ba1e310f364b345c799fe6a2e39809944562469859fe2b72307487df34222b754d248fdc8fbcdae191a456321573c414d19c5a789fbb7d4c0b946979141ab291bc7c397186f54afbf42dd88a53d143d06d48b227ff7b8bc9161db72f023c2757bbe05aa0ea238dae0e6d3bc3edea704a7810b1aeb677af25bd8ac84839d5f10ee87c5d60140f860875a5a7493c72423172cb356d18a368015d2bb67bcaddcb7087c41dcf2ec6733718e4e249da817b3d7437e04864ca446c226340b74362058b45fe1753544e632c301f2ca228ac2edf2dbf7351599e62e221337f56d8be9ef2b8250698aff2ca6e92d0f9f99d02cacb0769039b5a15a641dc0b75b8806f79028e455938aabf23773700a1485a117691f876f79d8f7e0935cdb0d081bb3e7940489addef3d277457d832dfa4841413f04889725919001018e6a0517ad6d478157240e272a284317193767a732a8ccaa97724d3e9cb6414da7dc2d02938992fff2caa75442b976f5028e9a7dcf8ea8f5e1c7a2a08da2356d90798740cd7f1e5661d63b5cdc728ecaf6b3a963e67076f34be60fba322ed7cd94bb0d3e25d381a53bb7da43e603d218960ae2cd203c0372726747ebfd9579a6c17247e5db6b39d17f2e111f0dbf87c6b951e6cbdd46a5a48a6644db7ee0abf1949db41a59fb0bc66be1b66e26c98b75f1eccd695ee99564465bae4bde88eb3c3453fdf5b9dc6da7ed8f2246e892068ace76c9e2955225750486c8ae404113092587646d4dac86fdbacd415328d3cb6d74ea4e49ad87e5c4b35b9625f0feb7b967ffb69cc532f2d9f22f3f873499c653c206328a21a99373f59b330b9aa84734fc758dbe7d4b4161ea87c3c88035928166cebce1e662a039bb55040b8712b4239d9c1a13400a504c3da2a603d1bca6d40367ae0071b7d3392adbdd960e8661393852a21c2aeacfe974cb044da561de1435aee542c9d5ce9388ff7ec82b6e5c99574e757e091493924fc543fd4ce15d179c7b2f802e99df7a1a26f93e66945819c3122bc14de60b2d1cae93722f514c613dab5ebb71015310aa7d051dbeec8e722919ced0e23c6ede1692c3496ab97917342e468853f73f7405bb241a2d3e56d5efc6d74b4ac7e703733739b09dab4db379f2acce75ddadbcaf8ab70150cc53b8e12b8c4087cd37f51ee4ab0ef56241eddb55d4114c1f4d028aafb09bc79cd024156721d5fd0a131ddfd6fc1d2c5e3478de3191e4c141c9219abd0dd0d11ec3ecf7899851eac372d4dac55f770cc2a3219ee85267325b074f9336431d1701394d1ea1a0232002585b12bbfd562826eb24b8eb331fe298b1da69ebe5ca78f887da28ea9750e6143ba2f64fa139901a945f4c85c325c6f54473d383e902954a731d98e55e739b660040ca904abc3d414b4d37d7288e0b4dc315277ad46390ad857c0a792c62a4efd66403e187ac2239b672934535a07e9d96603b3ead73864a118d41a57df54417e83b1485d550a99bd971e1575b296d0eebb1ce819c0ed7c9fe21f991ce7bac4a2636646913dcef23ba729ae4c5da06ba85809c2a01fad6c732fc8b4d9eaaf3d75632c061bb3ff02fef74c9c50a20c6e69615d70be1b3eddab9dd796db095a3566f199f0f22d9170ebf32d7816bc2a14e14c8694b709c4a51ee6241a3e72c726c26b0051e3bfbe0eea1c2ebae939e2b622794afbe84f24bf5819332cc4ee5ed9fd3058d03e4e2bef141e09c9f89d31dc04c3c27e7f8b70bbf93ecfaeafac93f5c134ce34f5f9e72aa0e44e2c3c49592a86a73014916a4ebb8d03175cda4f3efb34e0867b7765a5d00f2484a72d94ccfe3fd17a5be349c5fc44bf152a33db316e408409d79d283d739b2e4c545b8301627d14794c6d3b9578c0bb0dab1f4dcaef035c55ed035639cc09087c88986790b1e12c6761c666b416b22b5774e949df9b9fb3ce27473ae99a60cd81411fa950425a4f04cfe3ab716a8a3437114107c6cb25cd1903f2cfbb137c15dee2b3bcdf769348f116755cbd1665b83219de016a5b6faa06df3cef971851e2aa680ef3e7f9866883b97f8d30b702b88163502871e55b92b2fc5e689c67c9d5133d8b4f8ec453e2e2bab05611a29d2a62798a73f03b2bb7a6eab07c971b4d954b74b5b30835bc30ec911e40abd0efa7c422ac413e11f763efa964dc08e31bbb01fc08f63ee8e1c72bcb73a8cc4fcf24dee17bc3dd61113b89534a23fe3ecedb39af3e72b7d884b6343f1098305acfecb91e0de21e7199f070a6cccf17c4321ee008d7b73881b45094c9e71d6e9fc5c2a9c73f5fc7b519109e6b6ccb54df23aa183b42c312f66d6c2a7a77a61631af285928510f82399cd51d5c0e819191d7f08d552d49a6f679517bd318313c420783df2280061fd5c5368dc5fcd64b287a4b00885ace0b04ee50850e80c67137aa54ef075fe6583897af30ac072ab5cdae383fdfda4dd76b54f36fa0bd336521ca4fa80b07f36bdd10f60"
     },
     {
       "count": 3,
       "device": 1,
       "key": "0707070707070707070707070707070707070707070707070707070707070707",
       "op": "restore",
-      "state": "5343455331db417a1a61ac28741392042d7d5b3454680adf9a88a85416cb0045560dfc8c3bf9f71fc79a4fe97934cc1d4917b80141f39c1fadfce301071185746db3f3026cd2d238a4409ecd0e1f531a812cdf870ccdbd53bc547593f51c51db205e016d215a6dcb4a31ff00f6e917f1d3362a5c0ec7a55e63519b112abe5386122b97d262fb3c6bff20c65b788947ef86afd6f224c46d62906087735034a931947dc4d6ec938e6fec3582c01f7887bcc56cfd530356bece8b32d25159baf74ed913b617a1a344bb16bbe9e6b4fbf9206cd9370faeffdf216e8cdcdb7e9703d20765e95d79c4c9ee6a14f2897feab6e2e6c8633b5ed8ce586ec3d6bbf1faf685a2bc544af09f5b6bf98a25c4cd6ea95ace8ae04b56f62c8e6888320a6b343888d6190c81d92831ded3c71a37000b32b9f4a63c086ffcb02426cc0344082c607332d4b314077042d01aab0154f75ea0260ef41a9b507978bf2fe8410110194ef34c96c39ce47d503bb5c66aa146bbafcd78f7fae94223489cec30c424b81818098c97622a062e4d83050c89411462c516d70b80a677c3d2efcc194d59bed22364a57607233ca7c63b1fadfcf6466c924d45a2a84fe9c4cbd17ee23c00052c5ef777b0ef3ec81744ca9de6503744e9c5e71b7b17b088c8dcf023971b4b1ccd71eb3126cbe997f6e44faf9f1f91d4e62629d8feb465c7ad772b88984850f41efa274ebb449303293a777d3f385f8464693f7bf34bce24da57b56aa33a846513402894b9f40b4278a16a99618af61eadfdaef01b7c0a1c8d3997b8a4e169e62a10a7019a7fe3c1bb68420a5449f7c371c7e72bfbe932a43289948f7850d15305ccf6b7bdda9b71e01b011875e77e48c05ff62e5afd48f86c5c09ac713f9f4ae5250bf479b19ff7b01f425fb6ff174ae0272260c28e13bbb82dfeae8366863c2103901c959ddb4b6fdbf864477c02bdfe1ef7a202cf36d81169fe700e9bcaeb377b088d5a1b2ae831cafcd4ab78a358948d9dd1c579c2cd29470656a637152a9d81f9ceacfc397ffe7d12f17f927e67267b29ac238f8941085e3c48795f906fa8fc55430f3126820fa2c03b648080083724ef926c3b893032d29028e82207c7744a45a2fbd7566a7ee945eb6d6fed48f8527743d194bdcb9e1b416f5df322e40ca65044eb0bcc8093072ef91dd8cd5637656a806921d47b0990b796e2b38cffd46e22f2dedf1944239cda079c287ae49cd5126a0354440ec2c895f72e56c869074403766b5c203af62b253909b5cf7b36ed36df89a0ddaff14a04ebfdb4d2bc51323457384562e6ad82ca4f575405ce7292345c650f2b99adfbce1f43ec1de955f6428ab86e25a2d42d45fc5f48b4fd81203a4f3fff250c98c2c71bc9ef648741ccad9733accfdc9e4ce997b84857bd852938d022d4eb046004f302e65d4c065ee44e05671e2542030a1b9f5748fc5f553f3dd40df0302c4349f472431d16bf7513f74beef59f46d9ddac690f00e21617a13ba60799c3345cb256c7310a34d96a2c0d39bfad67403b4691cc05bb3f093a9020bbc8e2b4cd31772c13ab8fadb5a713db251f7e5f6df0f4bc96574dbc7e48798753e325884c42415e9a385c252749de438695831baca7303ab9cd5424f1366f9e382ed099e1da36093ba3b7de78d3a36cacf1f0d1d2fb834d0bffaeb0cda02f193efa1b554312f4e4590b4eee88e0572efb2719f0f051e1edfd03fe4dc76b4bbdd361dff3ddcf80457662f79c64cdbbb497bd98a173cdd3e64e79e58f3afcf9e9692c2e174062386c435a7127a4100795f7f83a1b6d45902e23c8b39177198e9f602b27524848ae8721a100efad0b47389a9da50fd80cc5c86a139cd38223ba32630b85e0eb6a188bf08556c33708bc89caed6dc42744c672295a6edc26d36991c0c283d704a756427e565102a2bb7d57ac529b924c2ac16849b7b0544a6be80f4193881a8efd5b6567958404d9928a6cfff3de09aea293651c576b425995d64d4c252604f6858fba2b3a718edd744c7849b95dbe4c386e65297e156f2eb0c51e564c2102834dfe5e608a0a77a68f9d71037203b9d0446be10db8c030b69049d65d1f4c0894041713889502a90a74bc9d5cb0f7a24e1e24c80799992d683c23689c1257c25f88fa0d8a4ea1cbf3279749c0c7a7dfc94d8cf26f5cb1268bb1025eca500890b9d9aecb0dce70f06f8ed1b92e5fa5dd2f25e4a72921235514b7fa0c77d2ae6dac345d43fe7122dc462240d61268ba0dc6a91f3a4ddc776107f177e8ebf14f3f76e212097ad91728a56a34e86aa1ae032e4076ac524ef584b5705bb7ae181c7aa1771449b5408176fa6970b8bb898d70439f45709920d06770fbe6f4f14d10bd596cdfa45db92e23ff4e0ce00726270b371321eb7ad5d35f328b805118715e6c8270e3ec7a3b30088eba7f43167e9dc8d572aae7e2118bec6cb650615ad7e28911a26e27432086cea48f4f4fd9311551dcf64aa10311c559ee69a2356f08b11d6be20668c7578aaf1488652cd1efe79ce56fa630002bc7f6566b567d1ddb074379359631d59e9342fcf7efb664d0ecf699d8616e33cc043c4884b2bdf79e4f44cb737fa62e7d4e6cc8f23c2f90c8e2213f90de0d095127eff5984cf16f2bedb7cf7d043822ae2522ed0ff8f24ec48fd97a4b2cba50ba246dceb32c0ebb20007ed6771eb257851727b3c0019b256aa921ae72e9d190cac861fb1de8e516f7382aaeff617d6ca82705acafa54ebc59da1164e22bdca8478418e1d417523e63a0c1e10ec44d91e846d5da03cd385db78aa4b1c6576bc6dd7edf49ad3e2fd0299778c32023b7d56e9c49e1c6a9441825f83f032a3d48f8c269b422146f459e6a1f86925993d891c876cac42518dde532a74e209d96f8991926e38fbc3ac62b6fdcb3683d06f2c3553ca1d344db081a7f493f0754d7856aeb60f3d3fea5fe50ee75fd6046222fa41c81465db7e810e1ec73e4fa819a0ff7c7f07d3c85d8ff23edc74721ce1c55de9572974cf81fbdc7d6d3f4ac5d0ccf6526d233758ed6c7fcb05a5e4fbe2e15ef7f494dc27c0d216b478091e6847bfe754e5fa52134e25312f10bb16eff367323cb7e9a13e7d8e76ac34137d618127cd653661b8eb39b2f7d26469a1aa61110b62cdb5a2ff0cd9d3e980c0373de498126ee4d20e51cd548123fad3c38b0d0c5d1005d3215aae63b38d47e21958be7c55ecd2ea057c23861360e0383cf428e4cf4a4123cbbeaff06f37fdfa8ecd6df4c9b5481ad5a0b8f17e4c870819362a9333cf2d510cce1b0c429fc16e11a19be9ddbc4946357fb391d923be889b0836467d4cd10ecac11e92caa83796d2089eef9c6f1d8f399b3181bbccf948658b5d04279b880d8a725782efb79dd4ad8b520e9b2aa0011d8b4cf53a86a9db7426f9c277a56c58280d92f1629b06a1d6bd5eb0dbbdff77dbaf5f8eb270e0a4153a44971d16499d1013bbae9406470f6bc6ac7141e160da2fea64010b60a57dc667ea766185da5acfa24a29a67413ec10d4e514067cff9731b53e7352ba620e971cef7066b4b027886b416245ac9e3f8a8ab5d89ac4fca097c0abece79bde952b278bfe21cd3389f4e590cb2f3fb14daee9f2ffe8f261ac70b3c3ef0fc16cd50945eb74133b167150619190c7876902fec2a1810414a58cfd6bc0734ff3f697a7c07b7a38253e89f24dab8630d7b96621628447c84fd028d0b12cca90e3ebdbd024c857ec902ee97ed30fb7701e4a2d5b943c1c83cda83c4829388a9a10accb6fa64bae1d369a50fd65c54ed5265c2689d583907e7c127ceb946ba9f03c9c270a53e6af084a32544e9f7d28278f214dbc099cc971a7885a199111d4b62aec757c57ee0532b0f339fcee5d44bed4cafca1651a9136ac07ad30924456730e64b4938df392bb6d6fdf67e42e74fcf15d80159a72742e426d177d859ad8599e2677a19138db59c0f4b4905af6569e6b82a79be5827ed179b92dfdf4a98107f2fda3522664acd100f71a482d37b8cb4e980e35ed55e4829c8d385de01d502933dc2eb588a17e26eefecc8ed3524e5a509811d686930e6e39b9399968542eca5b988eeb964d0ffb2be0f1bb8f7d52d3f8aff0be216b9e1ce4df57c765158d84baff22b920287b49d8cc16042dcb767313ce61069da64f9d6eb33ec4eb1f3c4b148fa8f71ef8139c4093fa8aee89b54c8460bee7cdf0c3ef265ef"
+      "state": "5343455331f61eb899885a02ad7fd86669f6e1f1dbedcd6605ca77e19885d8037724ad318bbe93aa9fc388a53bddaff374b3922fe710e0f1f5ce348dca6fda43dcd25a91b9d07528a0bf39395695e50401759845d47ab5244c596cc714d5943bf9a947efbde72dc9fb28309686bbb1a75b0f569e3a990a2927944a682a65ef5fba03575599a34aa5ca4993d9add81de9f5d1fa92189029779e978cb0936e3b1ca6e5bffaa8cd6caf81d46e9fc096924741a5006f25105c41462112f5356932c9c8b43b59d06e661d258d413510196bf12ae7ee26c0a3b5616d9d809e774787c66003858a6b0ee4639683e032b5e50c561ed8ee99ba91da84c40bd8e53aa5bb7d9f7d42ebefa2b445f2ac69dc3d4e614c7bb986ca2c80f4455c7851afd9c2f799f2d2294dc6156482c8b2882e67bdbc54e334f18b5f487df5e5c6ed49c3012b41601c168bfc8639e2db1f2eb36282461ad47e2770b19c52c597b68fff3ea89a7a89e4ba3f2e41f2706e2713b396eef399e5334ceef2e94ff1139ad29387e7307c8f6c2cba381e7d6f51eeb2d8493b8b86e19f2b63507fce2aa2de4b9e6d5d7dfd58ba04b53e11c71f5d065860d7ec2866eb3d7c9632ee2eb480ac815752babc2cc1989856381af5d45d911342b91799a8cd4bd494a1a9a629537e873cb488409608836da974dac67a4f1bc26715816c15f0c91ca4b6d43774adc272a56055d52ddebf7b15f0ff1d942063957656dbea55f76fcdee61d2b5643f446c139ac12515e3928378b2d7707f46739ad66b892e4edb81c2cb5b3eab18745e410b344d2fc9d0200659035ef8185813d4c6487b0c5ba4b1cd853011836b444c88191e229999985b775adcbe2510397acf859e23708a75ad3fa89b94282dc80f322191114aff7cbf4d831db11f4c1dbebb1fa73e904bd8b7906a259eeb6bf42b8c0f792a67675ff37d208a8c51c4eb2f26e5e3c6566cfbc997ab28c583360fada708855e20e4e88a99a1f077a28af85f11f864f39802768b9566b8362610941174aaf940601fa07c0554bf903b3a3b5381fe7d175630173bc91c4b9a222bb610856eab7e66c10e593962b5d595a97e901d05f0b35bd3f102a2b9c28385e39316918cd8e93a44289c395ff831c75e349d00ae0fba18cca5cd315dd661ba47b504c56ee3ae95fc99b36b00860012785ac75a0cba7c1560e95729bfacb00cc2a5421957ba14b25c0732b3b3d96d59be9fa5a66c07d425631407e3863275b1e240d9e7c51366d5e7df7bf4e5192871af042115e391a085c96239bc4c0c14921c73a5dccafb4d9873c90851f15dd58cde4db19e459cea5e0ff1fd0305706d80369748504ed83c2b9365b7fb3cc4df279dcddf505f7f1c7ecc2d8f3cfa240d2f69d93ec462c906cc90891727d0f29cbf521cddd36901db6cc7c30766387b4f17256de710b314d07f87ba300a7a1949766058cb824e6948b7237ef993e02980c88ca6172a9b0ba29c6a7b5519b2eb5f3389db49cf6c6087bf8de5b1171ff89e496cb0baed0b41f7475c8b1a338586c2ac1b667e4de7a140a077e6f8fd8fe1fb16a2fd10069aa47634044a0cc5e57ee85ca53a0d77695f730e99b104b0f145103b85e4d28e38c44ca740b17c7875301c20b8ec0d57d805e4870d4eaf213a2fdbd543532a0f3b1759dcc83dfe66682c5a7f14e37feb3fca625d0071e2b5f449664449ba2e81d7dc84bd5b101539fcbd45dd2f3256ce73a1cf0c342a4269683ca3f7ccd6da6f982667f6c2e418db25cc497a215eced8258299f26451da141cc7409ba1e310f364b345c799fe6a2e39809944562469859fe2b72307487df34222b754d248fdc8fbcdae191a456321573c414d19c5a789fbb7d4c0b946979141ab291bc7c397186f54afbf42dd88a53d143d06d48b227ff7b8bc9161db72f023c2757bbe05aa0ea238dae0e6d3bc3edea704a7810b1aeb677af25bd8ac84839d5f10ee87c5d60140f860875a5a7493c72423172cb356d18a368015d2bb67bcaddcb7087c41dcf2ec6733718e4e249da817b3d7437e04864ca446c226340b74362058b45fe1753544e632c301f2ca228ac2edf2dbf7351599e62e221337f56d8be9ef2b8250698aff2ca6e92d0f9f99d02cacb0769039b5a15a641dc0b75b8806f79028e455938aabf23773700a1485a117691f876f79d8f7e0935cdb0d081bb3e7940489addef3d277457d832dfa4841413f04889725919001018e6a0517ad6d478157240e272a284317193767a732a8ccaa97724d3e9cb6414da7dc2d02938992fff2caa75442b976f5028e9a7dcf8ea8f5e1c7a2a08da2356d90798740cd7f1e5661d63b5cdc728ecaf6b3a963e67076f34be60fba322ed7cd94bb0d3e25d381a53bb7da43e603d218960ae2cd203c0372726747ebfd9579a6c17247e5db6b39d17f2e111f0dbf87c6b951e6cbdd46a5a48a6644db7ee0abf1949db41a59fb0bc66be1b66e26c98b75f1eccd695ee99564465bae4bde88eb3c3453fdf5b9dc6da7ed8f2246e892068ace76c9e2955225750486c8ae404113092587646d4dac86fdbacd415328d3cb6d74ea4e49ad87e5c4b35b9625f0feb7b967ffb69cc532f2d9f22f3f873499c653c206328a21a99373f59b330b9aa84734fc758dbe7d4b4161ea87c3c88035928166cebce1e662a039bb55040b8712b4239d9c1a13400a504c3da2a603d1bca6d40367ae0071b7d3392adbdd960e8661393852a21c2aeacfe974cb044da561de1435aee542c9d5ce9388ff7ec82b6e5c99574e757e091493924fc543fd4ce15d179c7b2f802e99df7a1a26f93e66945819c3122bc14de60b2d1cae93722f514c613dab5ebb71015310aa7d051dbeec8e722919ced0e23c6ede1692c3496ab97917342e468853f73f7405bb241a2d3e56d5efc6d74b4ac7e703733739b09dab4db379f2acce75ddadbcaf8ab70150cc53b8e12b8c4087cd37f51ee4ab0ef56241eddb55d4114c1f4d028aafb09bc79cd024156721d5fd0a131ddfd6fc1d2c5e3478de3191e4c141c9219abd0dd0d11ec3ecf7899851eac372d4dac55f770cc2a3219ee85267325b074f9336431d1701394d1ea1a0232002585b12bbfd562826eb24b8eb331fe298b1da69ebe5ca78f887da28ea9750e6143ba2f64fa139901a945f4c85c325c6f54473d383e902954a731d98e55e739b660040ca904abc3d414b4d37d7288e0b4dc315277ad46390ad857c0a792c62a4efd66403e187ac2239b672934535a07e9d96603b3ead73864a118d41a57df54417e83b1485d550a99bd971e1575b296d0eebb1ce819c0ed7c9fe21f991ce7bac4a2636646913dcef23ba729ae4c5da06ba85809c2a01fad6c732fc8b4d9eaaf3d75632c061bb3ff02fef74c9c50a20c6e69615d70be1b3eddab9dd796db095a3566f199f0f22d9170ebf32d7816bc2a14e14c8694b709c4a51ee6241a3e72c726c26b0051e3bfbe0eea1c2ebae939e2b622794afbe84f24bf5819332cc4ee5ed9fd3058d03e4e2bef141e09c9f89d31dc04c3c27e7f8b70bbf93ecfaeafac93f5c134ce34f5f9e72aa0e44e2c3c49592a86a73014916a4ebb8d03175cda4f3efb34e0867b7765a5d00f2484a72d94ccfe3fd17a5be349c5fc44bf152a33db316e408409d79d283d739b2e4c545b8301627d14794c6d3b9578c0bb0dab1f4dcaef035c55ed035639cc09087c88986790b1e12c6761c666b416b22b5774e949df9b9fb3ce27473ae99a60cd81411fa950425a4f04cfe3ab716a8a3437114107c6cb25cd1903f2cfbb137c15dee2b3bcdf769348f116755cbd1665b83219de016a5b6faa06df3cef971851e2aa680ef3e7f9866883b97f8d30b702b88163502871e55b92b2fc5e689c67c9d5133d8b4f8ec453e2e2bab05611a29d2a62798a73f03b2bb7a6eab07c971b4d954b74b5b30835bc30ec911e40abd0efa7c422ac413e11f763efa964dc08e31bbb01fc08f63ee8e1c72bcb73a8cc4fcf24dee17bc3dd61113b89534a23fe3ecedb39af3e72b7d884b6343f1098305acfecb91e0de21e7199f070a6cccf17c4321ee008d7b73881b45094c9e71d6e9fc5c2a9c73f5fc7b519109e6b6ccb54df23aa183b42c312f66d6c2a7a77a61631af285928510f82399cd51d5c0e819191d7f08d552d49a6f679517bd318313c420783df2280061fd5c5368dc5fcd64b287a4b00885ace0b04ee50850e80c67137aa54ef075fe6583897af30ac072ab5cdae383fdfda4dd76b54f36fa0bd336521ca4fa80b07f36bdd10f60"
     },
     {
       "device": 1,
       "op": "standing",
-      "text": "{\"administrator\":false,\"awaits_own_chain\":true,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2}"
+      "text": "{\"administrator\":false,\"awaits_own_chain\":true,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
@@ -336,82 +354,18 @@
       "data": "{\"counter\":0,\"field\":3,\"id\":2,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"3000\"}",
       "device": 1,
       "event": "record_list.write",
-      "kept": "refused",
+      "kept": "waiting",
       "op": "outbound",
       "reason": "record_list.write: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
     },
     {
       "device": 1,
-      "kind": "sync",
-      "op": "start"
-    },
-    {
-      "device": 1,
-      "op": "request",
-      "text": "{\"from\":\"3\",\"op\":\"entries\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "respond",
-      "text": "{\"entries\":[],\"len\":\"3\",\"ok\":\"entries\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "request",
-      "text": "{\"op\":\"heads\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "respond",
-      "text": "{\"cursor\":\"6\",\"heads\":[[\"2\",\"3\",\"0yyRTxR99ywkc8QNgmCWBwvShzn_NuNWbgbAFMIPwkk\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "request",
-      "text": "{\"cursor\":\"6\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "respond",
-      "text": "{\"more\":false,\"next\":\"6\",\"ok\":\"feed\",\"records\":[],\"v\":1}"
-    },
-    {
-      "device": 1,
-      "op": "outcome",
-      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
-    },
-    {
-      "device": 1,
       "op": "standing",
-      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2}"
-    },
-    {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
-      "device": 1,
-      "event": "record_list.write",
-      "kept": "held",
-      "op": "outbound",
-      "reason": ""
-    },
-    {
-      "data": "{\"atCounter\":0,\"atWallTime\":\"2000\",\"by\":\"2\",\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"wallTime\":\"1000\"}",
-      "device": 1,
-      "event": "record_list.supersede",
-      "kept": "held",
-      "op": "outbound",
-      "reason": ""
-    },
-    {
-      "data": "{\"counter\":0,\"field\":3,\"id\":2,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"3000\"}",
-      "device": 1,
-      "event": "record_list.write",
-      "kept": "taken",
-      "op": "outbound",
-      "reason": ""
+      "text": "{\"administrator\":false,\"awaits_own_chain\":true,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":1}"
     },
     {
       "device": 1,
-      "kind": "resync",
+      "kind": "sync",
       "op": "start"
     },
     {
@@ -447,6 +401,75 @@
     {
       "device": 1,
       "op": "request",
+      "text": "{\"cursor\":\"6\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"0yyRTxR99ywkc8QNgmCWBwvShzn_NuNWbgbAFMIPwkk\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"e6mRQXxXNsa8Km3kgxRi7LRZ9YlusZLCGpl3w_VyvwyM28ca9YadGEjMgGLUhLuMbyHbIUzNMzcJot25H5RPAA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "outcome",
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]]}"
+    },
+    {
+      "device": 1,
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
+    },
+    {
+      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
+      "device": 1,
+      "event": "record_list.write",
+      "kept": "held",
+      "op": "outbound",
+      "reason": ""
+    },
+    {
+      "data": "{\"atCounter\":0,\"atWallTime\":\"2000\",\"by\":\"2\",\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"wallTime\":\"1000\"}",
+      "device": 1,
+      "event": "record_list.supersede",
+      "kept": "held",
+      "op": "outbound",
+      "reason": ""
+    },
+    {
+      "data": "{\"counter\":0,\"field\":3,\"id\":2,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"3000\"}",
+      "device": 1,
+      "event": "record_list.write",
+      "kept": "held",
+      "op": "outbound",
+      "reason": ""
+    },
+    {
+      "device": 1,
+      "kind": "resync",
+      "op": "start"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"from\":\"3\",\"op\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"entries\":[],\"len\":\"3\",\"ok\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"op\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"cursor\":\"7\",\"heads\":[[\"2\",\"4\",\"Y66Dy2wKTUAYFfiA_uYI9PaZ04CZhwgFZaBm4GVLEO8\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
       "text": "{\"cursor\":\"0\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
     },
     {
@@ -457,7 +480,7 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -517,7 +540,7 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -527,7 +550,7 @@
     {
       "device": 0,
       "op": "standing",
-      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3}"
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3,\"waiting\":0}"
     },
     {
       "device": 0,
@@ -577,7 +600,7 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":3,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"40\",\"wallTime\":\"4000\"}",
@@ -615,12 +638,12 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[[\"2\",\"5\"]],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":true,\"refused\":[\"node 2 has role 0 in this list and this needs 1\"],\"reread\":false,\"restored\":[],\"stalled\":true,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[[\"2\",\"5\"]],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":true,\"refused\":[\"node 2 has role 0 in this list and this needs 1\"],\"reread\":false,\"restored\":[],\"stalled\":true,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 1,
       "op": "standing",
-      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"2\",\"owed\":0,\"role\":0}"
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"2\",\"owed\":0,\"role\":0,\"waiting\":0}"
     },
     {
       "device": 0,
@@ -660,8 +683,8 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     }
   ],
-  "version": 3
+  "version": 4
 }
