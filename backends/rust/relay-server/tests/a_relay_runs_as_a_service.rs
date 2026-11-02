@@ -75,6 +75,7 @@ fn sce_relay(args: &[&str]) -> Output {
         .args(args)
         .env_remove("JOURNAL_STREAM")
         .env_remove("NOTIFY_SOCKET")
+        .env_remove("CREDENTIALS_DIRECTORY")
         .output()
         .unwrap()
 }
@@ -184,6 +185,7 @@ impl Running {
             .args(["serve", "--config", configuration.to_str().unwrap()])
             .env("NOTIFY_SOCKET", format!("@{name}"))
             .env_remove("JOURNAL_STREAM")
+            .env_remove("CREDENTIALS_DIRECTORY")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()

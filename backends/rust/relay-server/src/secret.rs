@@ -5,10 +5,19 @@
 //! the private key of its certificate. Each is read only when its owner alone may read it (as
 //! `ssh` reads a private key), and is made that way: a key another user of the machine could read
 //! is a key that has leaked, and a relay that started anyway would hide it.
+//!
+//! A key the service manager hands the relay as a credential is the exception: systemd copies it
+//! into a directory only the service can enter (`$CREDENTIALS_DIRECTORY`) and may grant the
+//! service's user its read by an access-control entry, which shows in the file's mode as a group
+//! that may read. The directory is what keeps it, and its mode is not judged; the file it was
+//! copied from is the operator's to keep at 0600.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
+
+/// The variable in which the service manager names the directory of a service's credentials.
+pub const CREDENTIALS_VARIABLE: &str = "CREDENTIALS_DIRECTORY";
 
 /// Why a secret was not read or made. The text names the file and what is wrong, never what it
 /// holds.
@@ -43,8 +52,9 @@ fn error(kind: SecretErrorKind, message: String) -> SecretError {
     SecretError { kind, message }
 }
 
-/// The bytes of the secret `what` kept at `path`, when only its owner may read it.
-pub fn read(path: &Path, what: &str) -> Result<Vec<u8>, SecretError> {
+/// The bytes of the secret `what` kept at `path`, when only its owner may read it, or when it is
+/// in `credentials`, the directory of the service's credentials (see the module's text).
+pub fn read(path: &Path, what: &str, credentials: Option<&Path>) -> Result<Vec<u8>, SecretError> {
     let unreadable = |why: io::Error| {
         error(
             SecretErrorKind::Unreadable,
@@ -58,7 +68,8 @@ pub fn read(path: &Path, what: &str) -> Result<Vec<u8>, SecretError> {
             format!("{what} at {} is not a file", path.display()),
         ));
     }
-    if let Some(mode) = exposed_mode(&metadata) {
+    let credential = credentials.is_some_and(|directory| path.starts_with(directory));
+    if let Some(mode) = exposed_mode(&metadata).filter(|_| !credential) {
         return Err(error(
             SecretErrorKind::Exposed,
             format!(
@@ -159,7 +170,7 @@ mod tests {
         let dir = scratch("made");
         let path = dir.join("key");
         create(&path, "the key", b"one").unwrap();
-        assert_eq!(read(&path, "the key").unwrap(), b"one");
+        assert_eq!(read(&path, "the key", None).unwrap(), b"one");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -176,14 +187,14 @@ mod tests {
     fn a_secret_that_is_not_there_says_which_file() {
         let dir = scratch("absent");
         let path = dir.join("nothing");
-        let refused = read(&path, "the authority's key").unwrap_err();
+        let refused = read(&path, "the authority's key", None).unwrap_err();
         assert_eq!(refused.kind, SecretErrorKind::Unreadable);
         assert!(
             refused.message.contains("the authority's key")
                 && refused.message.contains(&path.display().to_string()),
             "{refused}"
         );
-        let refused = read(&dir, "the authority's key").unwrap_err();
+        let refused = read(&dir, "the authority's key", None).unwrap_err();
         assert!(refused.message.contains("is not a file"), "{refused}");
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -197,7 +208,7 @@ mod tests {
         create(&path, "the key", b"do-not-print-this").unwrap();
         for mode in [0o640, 0o604, 0o620, 0o644] {
             fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
-            let refused = read(&path, "the key").unwrap_err();
+            let refused = read(&path, "the key", None).unwrap_err();
             assert_eq!(refused.kind, SecretErrorKind::Exposed, "{mode:o}");
             assert!(
                 refused.message.contains(&format!("{mode:04o}")),
@@ -206,7 +217,32 @@ mod tests {
             assert!(!refused.message.contains("do-not-print-this"));
         }
         fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
-        assert_eq!(read(&path, "the key").unwrap(), b"do-not-print-this");
+        assert_eq!(read(&path, "the key", None).unwrap(), b"do-not-print-this");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A credential the service manager granted the service's user by an access-control entry shows
+    /// a group that may read: it is read, and the same mode outside that directory is not.
+    #[cfg(unix)]
+    #[test]
+    fn a_credential_of_the_service_manager_is_read_whatever_its_mode_shows() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials = scratch("credentials");
+        let path = credentials.join("authority.key");
+        create(&path, "the key", b"granted").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o440)).unwrap();
+        assert_eq!(
+            read(&path, "the key", Some(credentials.as_path())).unwrap(),
+            b"granted"
+        );
+        let elsewhere = scratch("elsewhere");
+        let refused = read(&path, "the key", Some(elsewhere.as_path())).unwrap_err();
+        assert_eq!(refused.kind, SecretErrorKind::Exposed);
+        assert_eq!(
+            read(&path, "the key", None).unwrap_err().kind,
+            SecretErrorKind::Exposed
+        );
+        fs::remove_dir_all(&credentials).unwrap();
+        fs::remove_dir_all(&elsewhere).unwrap();
     }
 }

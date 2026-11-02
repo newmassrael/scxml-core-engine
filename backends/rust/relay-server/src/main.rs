@@ -255,8 +255,14 @@ fn secret_refusal(error: SecretError) -> Refusal {
     Refusal::new(status, error.message)
 }
 
+/// The directory of the service's credentials, when the service manager handed it any.
+fn credentials() -> Option<PathBuf> {
+    std::env::var_os(secret::CREDENTIALS_VARIABLE).map(PathBuf::from)
+}
+
 fn read_authority(path: &Path) -> Result<Authority, Refusal> {
-    let bytes = secret::read(path, "the authority's key").map_err(secret_refusal)?;
+    let bytes = secret::read(path, "the authority's key", credentials().as_deref())
+        .map_err(secret_refusal)?;
     let not_a_key = |why: &dyn std::fmt::Display| {
         Refusal::new(
             exit::CONFIG,
@@ -293,7 +299,12 @@ fn read_tls(files: &TlsFiles) -> Result<Arc<ServerConfig>, Refusal> {
             files.chain.display()
         )));
     }
-    let pem = secret::read(&files.key, "the certificate's private key").map_err(secret_refusal)?;
+    let pem = secret::read(
+        &files.key,
+        "the certificate's private key",
+        credentials().as_deref(),
+    )
+    .map_err(secret_refusal)?;
     let key = PrivateKeyDer::from_pem_slice(&pem).map_err(|why| {
         refusal(format!(
             "the private key at {} is not a PEM private key: {why}",
