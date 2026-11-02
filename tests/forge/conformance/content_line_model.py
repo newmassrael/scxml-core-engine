@@ -63,6 +63,12 @@ def fails(name: str):
     return ("fails", name)
 
 
+def past(n: int, bound: int | None) -> bool:
+    """Whether `n` is past `bound`; nothing is past a bound the document does
+    not state."""
+    return bound is not None and n > bound
+
+
 def is_control(byte: int) -> bool:
     return (byte < 0x20 and byte != 0x09) or byte == 0x7F
 
@@ -107,8 +113,13 @@ class Entry:
     type: str
     text: bool
     required: bool
+    #: Each bound is `None` where the document states none: the protocol bounds
+    #: that by nothing (docs/adr/0077 §7), and no reader or writer judges it.
     max_size: int | None
     max_count: int | None
+    #: `sce:repeated="true"`: the property occurs on several lines, a list of
+    #: them, which `sce:max-count` bounds where it is written.
+    repeated: bool = False
     #: `sce:separator` and `sce:max-values` (docs/adr/0014): the value of one line
     #: is a list cut at the separator.
     separator: str | None = None
@@ -157,6 +168,7 @@ def load(path: Path = RESOURCE):
                 required=not optional,
                 max_size=int(size) if size else None,
                 max_count=int(count) if count else None,
+                repeated=data.attrib.get(SCE + "repeated") == "true",
                 separator=data.attrib.get(SCE + "separator"),
                 max_values=int(values) if values else None,
                 vocabulary=(
@@ -201,7 +213,7 @@ def split_head(body: bytes):
     return m.group(0), sep, m.end() + 1
 
 
-def read_text(raw: bytes, text: bool, max_size: int):
+def read_text(raw: bytes, text: bool, max_size: int | None):
     """A string value, byte by byte: the first failure in line order."""
     out = bytearray()
     i = 0
@@ -219,7 +231,7 @@ def read_text(raw: bytes, text: bool, max_size: int):
             c = mapped
         elif is_control(c):
             return fails("line-bad-value")
-        if len(out) == max_size:
+        if past(len(out) + 1, max_size):
             return fails("line-too-long")
         out.append(c)
     try:
@@ -286,7 +298,7 @@ def read_values(raw: bytes, entry: "Entry"):
     any other is unescaped and held to `sce:max-size`."""
     values = []
     for index, part in enumerate(split_values(raw, ord(entry.separator), entry.text)):
-        if index >= entry.max_values:
+        if past(index + 1, entry.max_values):
             return fails("line-too-many")
         if part == b"":
             return fails("line-bad-value")
@@ -341,7 +353,7 @@ class Model:
         #: A repeated property that declares a parameter, or whose line holds a
         #: list of values, reads each line into a record (docs/adr/0014).
         self.records = {
-            v.id for v in self.values if v.max_count and (self.params_of[v.id] or v.separator)
+            v.id for v in self.values if v.repeated and (self.params_of[v.id] or v.separator)
         }
         #: The entries a decoded object names at its top: a record's parameters are
         #: members of its records and not entries of the object.
@@ -350,7 +362,7 @@ class Model:
 
     def initial(self, entry: Entry):
         """What a decoded object holds for `entry` when no line gave it a value."""
-        return [] if (entry.max_count or entry.separator) else None
+        return [] if (entry.repeated or entry.separator) else None
 
     # -- decode --------------------------------------------------------
 
@@ -420,8 +432,8 @@ class Model:
         return ("ok", got)
 
     def read_line(self, entry: Entry, body: bytes, head, got, appeared):
-        if entry.max_count:
-            if len(got[entry.id]) >= entry.max_count:
+        if entry.repeated:
+            if past(len(got[entry.id]) + 1, entry.max_count):
                 return fails("line-too-many")
         elif entry.id in appeared:
             return fails("line-too-many")
@@ -481,7 +493,7 @@ class Model:
             record = {p.id: seen.get(p.id) for p in self.params_of[entry.id]}
             record["values" if entry.separator else "value"] = read[1]
             got[entry.id].append(record)
-        elif entry.max_count:
+        elif entry.repeated:
             got[entry.id].append(read[1])
         else:
             got[entry.id] = read[1]
@@ -496,7 +508,7 @@ class Model:
             params = self.params_of[entry.id]
             if entry.id in self.records:
                 records = decoded.get(entry.id) or []
-                if len(records) > entry.max_count:
+                if past(len(records), entry.max_count):
                     return fails("line-too-many")
                 if entry.required and not records:
                     return fails("line-required-missing")
@@ -507,9 +519,9 @@ class Model:
                         return line
                     out += line[1]
                 continue
-            if entry.max_count:
+            if entry.repeated:
                 values = decoded.get(entry.id) or []
-                if len(values) > entry.max_count:
+                if past(len(values), entry.max_count):
                     return fails("line-too-many")
                 if entry.required and not values:
                     return fails("line-required-missing")
@@ -552,7 +564,7 @@ class Model:
                 units += [bytes([b]) for b in text.encode()]
                 continue
             raw = pv.encode("utf-8")
-            if len(raw) > p.max_size:
+            if past(len(raw), p.max_size):
                 return fails("line-too-long")
             if any(b == 0x22 or is_control(b) for b in raw):
                 return fails("line-bad-value")
@@ -567,7 +579,7 @@ class Model:
         if entry.separator:
             if not value:
                 return fails("line-required-missing")
-            if len(value) > entry.max_values:
+            if past(len(value), entry.max_values):
                 return fails("line-too-many")
             for index, item in enumerate(value):
                 if index:
@@ -601,7 +613,7 @@ class Model:
         TEXT and holds the separator: either would be read back as other than it
         was (docs/adr/0014)."""
         raw = value.encode("utf-8")
-        if len(raw) > entry.max_size:
+        if past(len(raw), entry.max_size):
             return fails("line-too-long")
         if any(is_control(b) and not (entry.text and b == 0x0A) for b in raw):
             return fails("line-bad-value")
@@ -956,7 +968,7 @@ def draw_decoded(rng: SplitMix64, entries: list[Entry]) -> dict:
     for e in entries:
         if e.id in ("uid", "dtstart", "dtstartTzid", "organizerCn"):
             continue
-        if e.max_count:
+        if e.repeated:
             out[e.id] = [draw_text(rng, e.max_size) for _ in range(rng.between(0, e.max_count))]
         elif rng.below(3) == 0:
             continue
@@ -1870,6 +1882,125 @@ class EnumsWritten(Written):
             self.reject("fuzz: " + why, data, failure)
 
 
+# ── The open fixture (docs/adr/0077 §7) ─────────────────────────────────
+
+OPEN_FIXTURE = "codec_content_line_open"
+OPEN_RESOURCE = Path("tests/forge/resources/codec_content_line_open.scxml")
+OPEN_SEED = 0xE116_0005
+
+
+def guest(value, cn=None):
+    """A line record of ATTENDEE: its one parameter and its one value."""
+    return {"attendeeCn": cn, "value": value}
+
+
+def open_of(**fields):
+    """A full `decoded` object of the open fixture: one attendee, the one line a
+    component needs, unless a field says otherwise."""
+    out = {
+        "uid": "u",
+        "description": None,
+        "attendee": [guest("mailto:a@x")],
+        "categories": [],
+        "resources": [],
+    }
+    out.update(fields)
+    return out
+
+
+def ocomponent(*lines: bytes) -> bytes:
+    return COMPONENT_HEAD + b"".join(lines) + COMPONENT_TAIL
+
+
+_OUID = b"UID:u\r\n"
+_GUEST = b"ATTENDEE:mailto:a@x\r\n"
+
+#: Each case holds more than any number a default once stood in for a bound
+#: the protocol does not state: 256 octets of a text, 64 lines, 8 values.
+OPEN_CASES = [
+    ("the smallest component: one attendee", open_of()),
+    ("a description of 300 octets, folded", open_of(description="d" * 300)),
+    (
+        "a description that escapes every TEXT special",
+        open_of(description="a,b;c\\d\ne" * 40),
+    ),
+    (
+        "seventy attendees, some named, one address and one name of 300 octets",
+        open_of(
+            attendee=[
+                guest(
+                    "mailto:" + "v" * 293 if n == 1 else f"mailto:a{n}@x",
+                    "n" * 300 if n == 0 else (f"N{n}" if n % 3 else None),
+                )
+                for n in range(70)
+            ]
+        ),
+    ),
+    (
+        "twenty categories on one line, one of 300 octets",
+        open_of(categories=[f"c{n}" for n in range(19)] + ["k" * 300]),
+    ),
+    ("two resources, the most a component holds, one of 300 octets", open_of(resources=["r" * 300, "s"])),
+]
+
+OPEN_ACCEPTS = [
+    (
+        "the lines are read in any order, with names in any case",
+        open_of(attendee=[guest("b", "B"), guest("a")], resources=["x"], categories=["p", "q"]),
+        ocomponent(b"resources:x\r\n", b"attendee;cn=B:b\r\n", b"Categories:p,q\r\n", b"uid:u\r\n", b"ATTENDEE:a\r\n"),
+    ),
+]
+
+OPEN_REJECTS = [
+    ("the attendees absent", ocomponent(_OUID), "line-required-missing"),
+    ("a third RESOURCES line past two", ocomponent(_OUID, _GUEST, b"RESOURCES:a\r\n" * 3), "line-too-many"),
+    ("a UID of 17 octets past 16", ocomponent(b"UID:" + b"u" * 17 + b"\r\n", _GUEST), "line-too-long"),
+    ("an empty CATEGORIES part", ocomponent(_OUID, _GUEST, b"CATEGORIES:a,,b\r\n"), "line-bad-value"),
+    ("the CATEGORIES line twice", ocomponent(_OUID, _GUEST, b"CATEGORIES:a\r\n" * 2), "line-too-many"),
+    ("a stray backslash in the description", ocomponent(_OUID, _GUEST, b"DESCRIPTION:a\\q\r\n"), "line-bad-escape"),
+    ("a control character in an attendee", ocomponent(_OUID, b"ATTENDEE:a\x01b\r\n"), "line-bad-value"),
+    ("an empty line among the properties", ocomponent(_OUID, _GUEST, b"\r\n"), "line-malformed"),
+    ("the END line missing", COMPONENT_HEAD + _OUID + _GUEST, "need-more-bytes"),
+]
+
+
+def draw_open(rng: SplitMix64) -> dict:
+    """A drawn `decoded` of the open fixture that the codec writes. The sizes are
+    kept small so the vectors stay readable; the hand cases hold the large ones."""
+    return {
+        "uid": draw_text(rng, 16),
+        "description": draw_text(rng, 120, TEXT) if rng.below(2) else None,
+        "attendee": [
+            guest(draw_text(rng, 40), draw_text(rng, 30, PARAM) if rng.below(2) else None)
+            for _ in range(rng.between(1, 6))
+        ],
+        "categories": [draw_nonempty(rng, 20, TEXT) for _ in range(rng.between(0, 6))],
+        "resources": [draw_text(rng, 40) for _ in range(rng.between(0, 2))],
+    }
+
+
+class OpenWritten(Written):
+    """The open fixture's cases and rejects, each held to the model."""
+
+    def __init__(self, path: Path = OPEN_RESOURCE):
+        super().__init__(path)
+
+    def build(self):
+        for note, decoded in OPEN_CASES:
+            self.round_trip(note, decoded)
+        for note, decoded, data in OPEN_ACCEPTS:
+            self.accept(note, decoded, data)
+        for why, data, failure in OPEN_REJECTS:
+            self.reject(why, data, failure)
+        rng = SplitMix64(OPEN_SEED)
+        for _ in range(30):
+            self.round_trip("fuzz: a drawn value written and read back", draw_open(rng))
+        for _ in range(20):
+            decoded = draw_open(rng)
+            written = self.model.encode(decoded)[1]
+            self.accept("fuzz: the same component read from a reshaped input", decoded, reshape(rng, written))
+
+
 # ── Splicing into numerical_reference.json ──────────────────────────────
 
 
@@ -1884,6 +2015,7 @@ WRITERS = (
     (RECORDS_FIXTURE, RecordsWritten),
     (REQUIRED_FIXTURE, RequiredWritten),
     (ENUMS_FIXTURE, EnumsWritten),
+    (OPEN_FIXTURE, OpenWritten),
 )
 
 

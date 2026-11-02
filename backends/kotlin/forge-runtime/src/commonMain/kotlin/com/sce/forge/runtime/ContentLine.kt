@@ -109,6 +109,27 @@ internal class Scan(private val raw: ByteArray, private val limit: Int, var pos:
 /** One logical line of the input, with its folds still inside it. */
 private class RawLine(val from: Int, val to: Int, val terminated: Boolean)
 
+/**
+ * The bytes of one value as it is read. It grows as the line does: a value's
+ * bound is the most it may hold and never a size to allocate, and it is
+ * [ContentLine.UNBOUNDED] where the protocol states none (docs/adr/0077 §7).
+ */
+private class ValueBytes {
+    var array = ByteArray(16)
+        private set
+    var size = 0
+        private set
+
+    fun add(byte: Int) {
+        if (size == array.size) array = array.copyOf(array.size * 2)
+        array[size++] = byte.toByte()
+    }
+
+    fun clear() {
+        size = 0
+    }
+}
+
 /** The name of a line and what follows it, as indexes into the input. */
 private class Head(val nameEnd: Int, val separator: Int, val restStart: Int)
 
@@ -371,20 +392,19 @@ class ContentLineProperty internal constructor(
      */
     fun readParamString(maxSize: Int): String? {
         if (phase != Phase.PARAM_VALUE) return ContentLine.refuse(CodecError.LineMalformed)
-        val buf = ByteArray(maxSize)
-        var n = 0
+        val buf = ValueBytes()
         val more = scanParamValue { b ->
             when {
                 ContentLine.isControl(b) -> {
                     ContentLine.lastError = CodecError.LineBadValue
                     false
                 }
-                n == maxSize -> {
+                buf.size == maxSize -> {
                     ContentLine.lastError = CodecError.LineTooLong
                     false
                 }
                 else -> {
-                    buf[n++] = b.toByte()
+                    buf.add(b)
                     true
                 }
             }
@@ -393,12 +413,12 @@ class ContentLineProperty internal constructor(
         if (more > 0) return ContentLine.refuse(CodecError.LineBadValue)
         paramFrom = -1
         phase = Phase.AT_SEPARATOR
-        return utf8(buf, n)
+        return utf8(buf)
     }
 
-    private fun utf8(buf: ByteArray, n: Int): String? =
+    private fun utf8(buf: ValueBytes): String? =
         try {
-            buf.decodeToString(0, n, throwOnInvalidSequence = true)
+            buf.array.decodeToString(0, buf.size, throwOnInvalidSequence = true)
         } catch (_: CharacterCodingException) {
             ContentLine.refuse(CodecError.LineBadValue)
         }
@@ -423,8 +443,7 @@ class ContentLineProperty internal constructor(
      */
     fun readString(maxSize: Int, text: Boolean): String? {
         if (!beginValue()) return null
-        val buf = ByteArray(maxSize)
-        var n = 0
+        val buf = ValueBytes()
         while (true) {
             val b = scan.bump()
             if (b < 0) break
@@ -442,10 +461,10 @@ class ContentLineProperty internal constructor(
             } else {
                 byte = b
             }
-            if (n == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
-            buf[n++] = byte.toByte()
+            if (buf.size == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
+            buf.add(byte)
         }
-        return utf8(buf, n)
+        return utf8(buf)
     }
 
     /**
@@ -460,15 +479,14 @@ class ContentLineProperty internal constructor(
     fun readStrings(separator: Char, maxValues: Int, maxSize: Int, text: Boolean): MutableList<String>? {
         if (!beginValue()) return null
         val values = mutableListOf<String>()
-        val buf = ByteArray(maxSize)
-        var n = 0
+        val buf = ValueBytes()
         while (true) {
             val b = scan.bump()
             if (b < 0 || b == separator.code) {
-                if (n == 0) return ContentLine.refuse(CodecError.LineBadValue)
-                values.add(utf8(buf, n) ?: return null)
+                if (buf.size == 0) return ContentLine.refuse(CodecError.LineBadValue)
+                values.add(utf8(buf) ?: return null)
                 if (b < 0) return values
-                n = 0
+                buf.clear()
                 // A separator opens another part, which may not pass the bound.
                 if (values.size >= maxValues) return ContentLine.refuse(CodecError.LineTooMany)
                 continue
@@ -487,8 +505,8 @@ class ContentLineProperty internal constructor(
             } else {
                 byte = b
             }
-            if (n == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
-            buf[n++] = byte.toByte()
+            if (buf.size == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
+            buf.add(byte)
         }
     }
 

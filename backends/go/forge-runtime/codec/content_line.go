@@ -530,7 +530,9 @@ func (p *ContentLineProperty) ReadStrings(separator byte, maxValues, maxSize int
 	if err := p.beginValue(); err != nil {
 		return nil, err
 	}
-	values := make([]string, 0, maxValues)
+	// The list grows as the line is read: maxValues is the most it may hold,
+	// not a size to allocate, and is Unbounded where the protocol states none.
+	var values []string
 	buf := make([]byte, 0, 16)
 	for {
 		b := p.scan.bump()

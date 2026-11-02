@@ -19,6 +19,11 @@
    is taken from the number by the enum's `from_underlying`, which a closed enum
    answers `None` for a carrier it does not declare, so a closed enum is
    unwrapped and an open one, whose conversion is total, is not. #}
+{#- The codec's value type: at the default profile where `Inline` holds every
+    entry, and at the growing profile where the protocol bounds one by nothing,
+    since such a codec has no default profile (docs/adr/0077 §7). #}
+{% set line_profile = "In::<::sce_forge_runtime::codec::Heap>" if f.grows else "" %}
+{% set codec_type = (f.name | to_pascal_case) ~ line_profile %}
 {% macro lift(m, raw) -%}
 fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_case }}::from_underlying({{ raw | rust_unmarshal(m.type) }}){% if not m.enum_open %}.expect("a case names a declared variant"){% endif %}
 {%- endmacro %}
@@ -45,7 +50,7 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
         }
 
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&expected_bytes);
-        let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+        let round_tripped = {{ codec_type }}::decode(&mut cursor)
             .expect("{{ f.name }} case {i} decode must succeed");
 {% for field in f.fields %}
 {% if field.members %}
@@ -157,7 +162,7 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
 {% endfor %}
 
         if !case["decode_only"].as_bool().unwrap_or(false) {
-            let mut value = {{ f.name | to_pascal_case }}::new();
+            let mut value = {{ codec_type }}::new();
 {% for field in f.fields %}
 {% if field.members %}
             for r in decoded["{{ field.name }}"]
@@ -166,7 +171,7 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
             {
                 ::sce_forge_runtime::codec::SceList::try_push(
                     &mut value.{{ field.name | to_snake_case }},
-                    fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line {
+                    fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line{{ line_profile }} {
 {% for m in field.members %}
 {% if m.enum_document and m.optional %}
                         {{ m.name | to_snake_case }}: if r["{{ m.name }}"].is_null() {
@@ -278,7 +283,7 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
     {
         let wire: [u8; {{ r.encoded | length }}] = [{{ r.encoded | join(", ") }}];
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&wire);
-        let outcome = {{ f.name | to_pascal_case }}::decode(&mut cursor);
+        let outcome = {{ codec_type }}::decode(&mut cursor);
         match outcome {
             Ok(accepted) => panic!(
                 "{{ f.name }} reject {{ loop.index0 }} ({{ r.why }}): decode returned Ok({accepted:?})"

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a content-line codec whose texts and lists the protocol
+  bounds by nothing (SCE_FORGE.md §4.6.4, docs/adr/0077 §7).
+
+  An iCalendar DESCRIPTION is as long, and an ATTENDEE repeats as often, as its
+  sender writes it, so the document states no `sce:max-size`, `sce:max-count` or
+  `sce:max-values` of them. Each shape is here once, beside one bound that is
+  stated, so a reader and a writer are seen to judge the bound where it is
+  written and nothing where it is not:
+
+    description  a TEXT of no size
+    attendee     a required repeated property of no count, a record per line
+                 with a parameter of no size
+    categories   one line holding a TEXT list of no count, each value of no size
+    resources    a repeated property of two lines at most, each of no size
+
+  The same document is the model's input (content_line_model.py), so a change to
+  it moves the vectors with it. C11 holds each text and list in an array of its
+  bound, and refuses this codec by name.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:encode-may-fail="true" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"
+       name="codec_content_line_open">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="uid" sce:type="string" sce:property="UID" sce:max-size="16"/>
+    <data id="description" sce:type="optional&lt;string&gt;" sce:property="DESCRIPTION" sce:value="text"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:repeated="true"/>
+    <data id="attendeeCn" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:param="CN"/>
+    <data id="categories" sce:type="optional&lt;string&gt;" sce:property="CATEGORIES" sce:value="text" sce:separator=","/>
+    <data id="resources" sce:type="optional&lt;string&gt;" sce:property="RESOURCES" sce:repeated="true" sce:max-count="2"/>
+  </datamodel>
+</scxml>

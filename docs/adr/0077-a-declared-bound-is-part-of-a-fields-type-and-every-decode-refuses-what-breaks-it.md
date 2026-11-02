@@ -439,6 +439,13 @@ are one value held two ways. So:
     `ContentLineEntry::unbounded` is the one answer of which declaration an entry lacks: C11 refuses the codec by it,
     the largest encoded size is `None` by it, and a broadcast log's element is refused by it. C11's deployment
     capacity for a content-line entry is the landing after.
+  - *Held on every backend:* the conformance fixture `codec_content_line_open` states no bound of a text, a line of
+    values, a repeated property and a parameter, beside two it does state, and its vectors go past every number a
+    default once stood in for (256 octets, 64 lines, 8 values), which a test of the vectors holds. Rust, C++, Go,
+    Kotlin and Python read and write it; C11 is left out by its refusal. Its first run found two readers that
+    allocated a value's bound up front, Go's list of values and Kotlin's text buffer: with no bound that is the
+    largest integer, so they failed. A bound is a refusal threshold and never an allocation; both now grow as the line
+    is read.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

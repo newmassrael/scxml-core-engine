@@ -2957,6 +2957,18 @@
       ]
     },
     {
+      "name": "codec_content_line_open",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        { "name": "uid", "type": "string", "compare": "equality" },
+        { "name": "description", "type": "string", "compare": "equality" },
+        { "name": "attendee", "type": "string", "compare": "equality" },
+        { "name": "categories", "type": "string", "compare": "equality" },
+        { "name": "resources", "type": "string", "compare": "equality" }
+      ]
+    },
+    {
       "name": "codec_flags_basic",
       "kind": "codec",
       "ref_section": "codecs",

@@ -713,6 +713,12 @@ pub enum FixtureSpec {
         /// states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         content_line: bool,
+        /// `Inline` holds no container of some entry of the codec: the
+        /// protocol bounds it by nothing (docs/adr/0077 §7), so a fragment
+        /// that names a storage profile names the growing one. Derived from
+        /// the same parse the generator reads; fixtures.json never states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        grows: bool,
         /// The document declares `sce:encode-may-fail` (docs/adr/0065): its
         /// `encode_to_vec` returns a `Result` the fragment unwraps, where a
         /// codec whose encode is total returns its bytes. Derived from the
@@ -1448,9 +1454,17 @@ impl Manifest {
                     has_test_vectors,
                     cbor,
                     content_line,
+                    grows,
                     encode_may_fail,
                     encode_refuses_bound,
                 } => {
+                    if *grows {
+                        return Err(format!(
+                            "fixture {}: codec `grows` is derived from the SCXML (the \
+                             bounds its entries state); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                     if *encode_may_fail {
                         return Err(format!(
                             "fixture {}: codec `encode_may_fail` is derived from the \
@@ -3460,6 +3474,7 @@ pub fn render_harness(
                 has_test_vectors,
                 cbor,
                 content_line,
+                grows,
                 encode_may_fail,
                 encode_refuses_bound,
             } => {
@@ -3472,6 +3487,12 @@ pub fn render_harness(
                         content_line,
                         encode_may_fail,
                     )?;
+                    if *content_line {
+                        // A content-line codec imports enums alone, so whether
+                        // `Inline` holds it is its own entries' answer.
+                        let model = read_codec_model(&scxml_path, &fixture_name)?;
+                        *grows = !model.inline_holds_with(|_| true);
+                    }
                     if !*cbor && !*content_line {
                         let model = read_codec_model(&scxml_path, &fixture_name)?;
                         *encode_refuses_bound = crate::forge::generator::encode_refuses_a_bound(

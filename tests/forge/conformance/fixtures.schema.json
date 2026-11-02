@@ -503,6 +503,10 @@
                 "$ref": "#/definitions/StructField"
               }
             },
+            "grows": {
+              "description": "`Inline` holds no container of some entry of the codec: the protocol bounds it by nothing (docs/adr/0077 §7), so a fragment that names a storage profile names the growing one. Derived from the same parse the generator reads; fixtures.json never states it.",
+              "type": "boolean"
+            },
             "has_test_vectors": {
               "description": "RFC §synth-5-B test-vector flag: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. The per-backend codec sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only; Cpp/Kotlin/Go/Python have no codec sidecar template, so the flag is forced false for them. ⚠ This gate is the codec's own and no longer mirrors the algorithm's: the algorithm sidecar's language gate was DELETED when its closure rotation completed, so `FixtureSpec::Algorithm`'s field of the same name is now true on all 6 backends. Do not read one as evidence for the other. Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
               "type": "boolean"

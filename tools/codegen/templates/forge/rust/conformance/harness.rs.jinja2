@@ -43,7 +43,9 @@ mod fixtures {
 
 {% for f in fixtures %}
 {% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" %}
-use fixtures::{{ f.name }}::{{ f.name | to_pascal_case }};
+{#- A codec `Inline` does not hold has no default profile and so no `{Name}`:
+    its fragment names `{Name}In` at the growing profile (docs/adr/0077 §7). #}
+use fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{% if f.grows %}In{% endif %};
 {% endif %}
 {% endfor %}
 

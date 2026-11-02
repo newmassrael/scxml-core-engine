@@ -146,7 +146,7 @@ fn main() {
             .any(|(_, code)| code.contains(&source_trait));
         if let Some(mut sweep) = codec_sweep(&fixture.name, loaded.text()) {
             if has_source && sweep.plain {
-                (sweep.view, sweep.owned) = forms(&output.files, &fixture.name);
+                (sweep.view, sweep.owned, sweep.value) = forms(&output.files, &fixture.name);
                 sweeps.push(sweep);
             }
         }
@@ -286,7 +286,7 @@ fn main() {
         }));
         if let Some(mut sweep) = codec_sweep(&fixture.name, &fixture.text) {
             if has_source && sweep.plain {
-                (sweep.view, sweep.owned) = forms(&fixture.files, &fixture.name);
+                (sweep.view, sweep.owned, sweep.value) = forms(&fixture.files, &fixture.name);
                 sweeps.push(sweep);
             }
         }
@@ -508,6 +508,17 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
               REC:v2\r\nEND:VEVENT\r\n",
         ],
     ),
+    // Texts and lists of no bound (docs/adr/0077 §7): a TEXT description, two
+    // attendee records, one named, a line of categories and the two resources
+    // the one stated bound allows.
+    (
+        "codec_content_line_open",
+        &[
+            b"BEGIN:VEVENT\r\nUID:o1\r\nDESCRIPTION:a\\, b\r\nATTENDEE;CN=Lee:mailto:l@x\r\n\
+              ATTENDEE:mailto:m@x\r\nCATEGORIES:p,q,r\r\nRESOURCES:room\r\nRESOURCES:desk\r\n\
+              END:VEVENT\r\n",
+        ],
+    ),
     // A chain a later field is gated on. The first frame holds an entry of kind
     // 7 and none of kind 9, so the priority and the checksum are on the wire;
     // the second is wide and holds a 9, so the checksum is not.
@@ -570,19 +581,38 @@ struct SourceSweep {
     /// name), and an owned form: each is swept as a source of the same value.
     view: bool,
     owned: bool,
+    /// The value type the sweep decodes into, relative to the codec's module:
+    /// the codec's name at its default profile, or `{Name}In<Heap>` for a codec
+    /// `Inline` does not hold, which has no default profile (docs/adr/0077 §7).
+    value: String,
 }
 
-/// Whether the generated `files` of the codec `name` hold a view type of its own
-/// and an owned type.
-fn forms(files: &[(String, String)], name: &str) -> (bool, bool) {
+/// The forms the generated `files` of the codec `name` hold: whether a view
+/// type of its own and an owned type, and the value type a sweep names.
+fn forms(files: &[(String, String)], name: &str) -> (bool, bool, String) {
     let ty = sce_build::filters::to_pascal_case(name.to_string());
     let (view, owned) = (
         format!("pub struct {ty}View"),
         format!("pub struct {ty}Owned"),
     );
+    // The name is declared by itself, a struct or an alias, and not only as
+    // the prefix of `{ty}In`, `{ty}Wire` or another item.
+    let declares = |code: &str| {
+        ["pub struct ", "pub type "].iter().any(|item| {
+            [" ", "<", ";"]
+                .iter()
+                .any(|after| code.contains(&format!("{item}{ty}{after}")))
+        })
+    };
+    let value = if files.iter().any(|(_, code)| declares(code)) {
+        ty.clone()
+    } else {
+        format!("{ty}In<::sce_forge_runtime::codec::Heap>")
+    };
     (
         files.iter().any(|(_, code)| code.contains(&view)),
         files.iter().any(|(_, code)| code.contains(&owned)),
+        value,
     )
 }
 
@@ -612,6 +642,7 @@ fn codec_sweep(name: &str, text: &str) -> Option<SourceSweep> {
         plain: m.flag_inputs.is_empty() && !caller_tag,
         view: false,
         owned: false,
+        value: String::new(),
     })
 }
 
@@ -650,8 +681,9 @@ fn write_source_sweeps(out_dir: &str, modules: &[String], sweeps: &[SourceSweep]
             String::new()
         };
         text.push_str(&format!(
-            "sweep_codec!({name}, codecs::{name}::{ty}, codecs::{name}::{ty}Wire, &{pool:?}, vec![{seeds}], [{view}], [{owned}]);\n",
+            "sweep_codec!({name}, codecs::{name}::{value}, codecs::{name}::{ty}Wire, &{pool:?}, vec![{seeds}], [{view}], [{owned}]);\n",
             name = sweep.name,
+            value = sweep.value,
             seeds = seeds.join(", ")
         ));
     }

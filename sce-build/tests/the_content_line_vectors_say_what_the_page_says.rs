@@ -31,11 +31,12 @@ use sce_build::forge::parser::{parse_forge, parse_forge_with_imports};
 use sce_build::DocumentLabel;
 use serde_json::Value;
 
-const FIXTURES: [&str; 4] = [
+const FIXTURES: [&str; 5] = [
     "codec_content_line_event",
     "codec_content_line_records",
     "codec_content_line_required_lists",
     "codec_content_line_enums",
+    "codec_content_line_open",
 ];
 
 fn reference() -> Value {
@@ -90,7 +91,7 @@ fn owner_of<'a>(entries: &'a [ContentLineEntry], e: &ContentLineEntry) -> &'a Co
 /// Whether the lines of `owner` are read as records: a repeated property that
 /// declares a parameter, or whose line holds a list of values.
 fn reads_records(entries: &[ContentLineEntry], owner: &ContentLineEntry) -> bool {
-    owner.max_count.is_some()
+    owner.repeated
         && (owner.separator.is_some()
             || entries
                 .iter()
@@ -231,7 +232,7 @@ fn the_cases_reach_every_entry_and_every_bound_of_the_fixture() {
                         .is_some_and(|v| v.len() == values),
                     _ => false,
                 };
-                let single_line_list = e.max_count.is_none();
+                let single_line_list = !e.repeated;
                 assert!(
                     cases.iter().any(|c| {
                         let v = &c["decoded"][&e.id];
@@ -277,6 +278,71 @@ fn the_cases_reach_every_entry_and_every_bound_of_the_fixture() {
             );
         }
     }
+}
+
+/// What the protocol bounds by nothing is reached past every number a default
+/// once stood in for its bound (docs/adr/0077 §7): 256 octets of a text, 64
+/// lines of a property, 8 values of a line. A vector set that stayed under them
+/// would pass on a backend that still held one.
+#[test]
+fn what_has_no_bound_is_reached_past_any_number_a_default_stood_in_for() {
+    const TEXT: usize = 256;
+    const LINES: usize = 64;
+    const VALUES: usize = 8;
+    let mut reached = 0;
+    for name in FIXTURES {
+        let entries = entries_of(name);
+        let f = fixture(name);
+        let cases = array(&f, "cases");
+        for e in &entries {
+            if e.present_type() == &SceType::String && e.max_size.is_none() {
+                let widest = cases
+                    .iter()
+                    .flat_map(|c| occurrences(&entries, e, &c["decoded"]))
+                    .filter_map(|v| v.as_str().map(str::len))
+                    .max()
+                    .unwrap_or(0);
+                assert!(
+                    widest > TEXT,
+                    "{name}: `{}` has no size, and no case carries more than {TEXT} octets of it",
+                    e.id
+                );
+                reached += 1;
+            }
+            if e.param.is_none() && e.repeated && e.max_count.is_none() {
+                let most = cases
+                    .iter()
+                    .filter_map(|c| c["decoded"][&e.id].as_array().map(Vec::len))
+                    .max()
+                    .unwrap_or(0);
+                assert!(
+                    most > LINES,
+                    "{name}: `{}` has no count, and no case holds more than {LINES} lines of it",
+                    e.id
+                );
+                reached += 1;
+            }
+            if e.separator.is_some() && e.max_values.is_none() {
+                let most = cases
+                    .iter()
+                    .map(|c| occurrences(&entries, e, &c["decoded"]).len())
+                    .max()
+                    .unwrap_or(0);
+                assert!(
+                    most > VALUES,
+                    "{name}: `{}` has no count of values, and no case holds more than {VALUES}",
+                    e.id
+                );
+                reached += 1;
+            }
+        }
+    }
+    // The open fixture holds seven: five texts (one a parameter, one in a list of
+    // values), a list of lines and a list of values. Fewer is a sweep that lost it.
+    assert!(
+        reached >= 7,
+        "only {reached} unbounded containers were judged"
+    );
 }
 
 #[test]
