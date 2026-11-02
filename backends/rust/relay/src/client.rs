@@ -490,8 +490,9 @@ enum AfterLog {
     Retake { pull: Pull, before: u64 },
 }
 
-/// The relay given what it lacks: its heads asked for, the operations of each device past the
-/// relay's head given, then the proof of conflicts not given yet, then the host's checkpoints.
+/// The relay given what it lacks: its heads asked for, what it holds of this host's own person's
+/// chain past what the host holds read back, the operations of each device past the relay's head
+/// given, then the proof of conflicts not given yet, then the host's checkpoints.
 struct Push {
     stage: PushStage,
     then: AfterPush,
@@ -499,6 +500,20 @@ struct Push {
 
 enum PushStage {
     Heads,
+    /// The relay's heads came (`heads`): what they name of this host's own person's chain past what
+    /// the host holds is read back first (`RoundMachine::read_own`). `after` is the number the
+    /// last reading began at, so that a reading that brought nothing is not made again.
+    Own {
+        heads: Vec<Head>,
+        after: Option<u64>,
+    },
+    /// The operations of `node`, this host's person, numbered `from` to `to` were asked for.
+    OwnAsked {
+        heads: Vec<Head>,
+        node: u64,
+        from: u64,
+        to: u64,
+    },
     Devices(Devices),
     Evidence {
         items: Vec<(String, String)>,
@@ -865,6 +880,25 @@ impl RoundMachine {
                     then,
                 })
             }
+            PushStage::Own { heads, after } => self.read_own(heads, after, then),
+            // `OwnAsked` is left by its answer, so it is not met here; were it, it asks again.
+            PushStage::OwnAsked {
+                heads,
+                node,
+                from,
+                to,
+            } => {
+                self.ask(Request::Operations { node, from, to });
+                Phase::Push(Push {
+                    stage: PushStage::OwnAsked {
+                        heads,
+                        node,
+                        from,
+                        to,
+                    },
+                    then,
+                })
+            }
             PushStage::Devices(devices) => self.drive_devices(devices, then),
             PushStage::Evidence { items, next } => {
                 // What shows that a device signed conflicting operations is given to the relay
@@ -962,6 +996,44 @@ impl RoundMachine {
         }
     }
 
+    /// The relay's heads came. What they name of this host's own person's chain past what the host
+    /// holds (a device whose state came back from a store older than its last operation) is read
+    /// back before the relay is given anything, so that the device's next operation is numbered past
+    /// every one it made; in a round only, since a publication tells the machine nothing, and what it
+    /// took in would not be told again. Once the host holds the chain as far as the relay does, a
+    /// wait for it ends ([`Trust::confirm_own_chain`]); a reading that brought nothing new is not
+    /// made again, and the device goes on waiting. Then the operations the relay lacks are given.
+    fn read_own(&mut self, heads: Vec<Head>, after: Option<u64>, then: AfterPush) -> Phase {
+        let reading = matches!(self.mode, Mode::Round { .. });
+        match self.trust.own_chain_behind(&heads) {
+            Some((node, from, to)) if reading && after.is_none_or(|last| from > last) => {
+                self.ask(Request::Operations { node, from, to });
+                Phase::Push(Push {
+                    stage: PushStage::OwnAsked {
+                        heads,
+                        node,
+                        from,
+                        to,
+                    },
+                    then,
+                })
+            }
+            _ => {
+                self.trust.confirm_own_chain(&heads);
+                let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
+                Phase::Push(Push {
+                    stage: PushStage::Devices(Devices {
+                        theirs,
+                        heads: self.trust.heads(),
+                        device: 0,
+                        ops: None,
+                    }),
+                    then,
+                })
+            }
+        }
+    }
+
     /// The devices are done: the proof of conflicts the trust holds is given next.
     fn evidence(&self, then: AfterPush) -> Phase {
         Phase::Push(Push {
@@ -977,18 +1049,10 @@ impl RoundMachine {
         let Push { stage, then } = push;
         match stage {
             PushStage::Heads => match response {
-                Response::Heads { heads, .. } => {
-                    let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
-                    Phase::Push(Push {
-                        stage: PushStage::Devices(Devices {
-                            theirs,
-                            heads: self.trust.heads(),
-                            device: 0,
-                            ops: None,
-                        }),
-                        then,
-                    })
-                }
+                Response::Heads { heads, .. } => Phase::Push(Push {
+                    stage: PushStage::Own { heads, after: None },
+                    then,
+                }),
                 // The relay will not let this device read yet (it is not a member), in which case
                 // there is nothing to read either.
                 Response::Refused {
@@ -1004,6 +1068,54 @@ impl RoundMachine {
                 }
                 other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
             },
+            // Each operation read back is taken in as from anyone, and told to the machine when the
+            // host did not hold it: it is the device's own, and a machine whose state came back with
+            // the trust's holds it no more than the trust did. A resync's reading of the feed, from
+            // the start, tells the machine every operation, these included, so a resync tells none
+            // of them here.
+            PushStage::OwnAsked { heads, from, .. } => match response {
+                Response::Operations { operations } => {
+                    let resync = matches!(self.mode, Mode::Round { redeliver: true });
+                    let mut read = Round::default();
+                    for (event, data) in operations {
+                        take(
+                            &self.trust,
+                            &mut self.state.parked,
+                            &Record::Operation { event, data },
+                            false,
+                            &mut read,
+                        );
+                    }
+                    if !resync {
+                        self.round.events.append(&mut read.events);
+                    }
+                    self.round.refused.append(&mut read.refused);
+                    Phase::Push(Push {
+                        stage: PushStage::Own {
+                            heads,
+                            after: Some(from),
+                        },
+                        then,
+                    })
+                }
+                // Not read back: the device goes on waiting for its chain, and the round goes on.
+                Response::Refused { reason, .. } => {
+                    self.round.refused.push(reason);
+                    Phase::Push(Push {
+                        stage: PushStage::Own {
+                            heads,
+                            after: Some(from),
+                        },
+                        then,
+                    })
+                }
+                other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+            },
+            // Nothing is asked in it, so no answer is given to it.
+            PushStage::Own { heads, after } => Phase::Push(Push {
+                stage: PushStage::Own { heads, after },
+                then,
+            }),
             PushStage::Devices(devices) => {
                 let Devices {
                     theirs,
@@ -1487,22 +1599,32 @@ fn take(
 /// What became of what a machine sent, kept by a host that has no hub ([`keep`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kept {
-    /// Signed and remembered: the operation is in the host's [`Trust`], and a courier carries it to
-    /// the relay.
+    /// Signed and remembered: a new operation of the host's chain is in its [`Trust`], and a
+    /// courier carries it to the relay.
     Taken,
+    /// The host holds it already, as the operation it made or admitted before for the same write or
+    /// note: nothing is signed, the operation keeps its number and its signature, and a courier
+    /// gives the relay nothing it has. What a machine built again from its host's own log sends.
+    Held,
     /// It is not an event that is signed: nothing is kept, and a relay carries nothing of it.
     NotSigned,
-    /// The host would not sign it, and why.
+    /// The host would not sign it, and why: among the reasons, another content under a stamp the
+    /// device signed, and a state that came back from a store before the device's own chain was
+    /// read back from the relay ([`Trust::await_own_chain`]).
     Refused(String),
 }
 
-/// Sign and remember what a machine sent to `target`, as the host of a machine that has no hub
-/// does: the one place a send becomes an operation of the host's chain, whether through [`Keep`]
-/// behind a Mesh endpoint or through a host that is given the machine's sends itself.
-pub fn keep(trust: &Trust, target: &str, event: &str, data: &str) -> Kept {
-    let mut sealer = trust.clone();
-    match sealer.seal(target, event, data) {
-        Ok(Some(_)) => Kept::Taken,
+/// Sign and remember what a machine sent, as the host of a machine that has no hub does: the one
+/// place a send becomes an operation of the host's chain ([`Trust::seal_sent`]), whether through
+/// [`Keep`] behind a Mesh endpoint or through a host that is given the machine's sends itself. What
+/// is signed does not depend on whether the machine addressed the event to `#hub` or to `#people`:
+/// the event alone is signed. A write or a note the host holds already is signed once
+/// ([`Kept::Held`]), so a host may give it a machine's sends again, as many times as the machine
+/// makes them.
+pub fn keep(trust: &Trust, event: &str, data: &str) -> Kept {
+    match trust.seal_sent(event, data) {
+        Ok(Some(sealed)) if sealed.signed => Kept::Taken,
+        Ok(Some(_)) => Kept::Held,
         Ok(None) => Kept::NotSigned,
         Err(reason) => Kept::Refused(reason),
     }
@@ -1522,10 +1644,13 @@ impl Keep {
 }
 
 impl Sealer for Keep {
-    fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
-        match keep(&self.inner, target, event, data) {
+    fn seal(&mut self, _target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
+        match keep(&self.inner, event, data) {
             Kept::Taken => Err(format!(
                 "{event}: kept for the relay, which carries what a member signed"
+            )),
+            Kept::Held => Err(format!(
+                "{event}: held already, and signed once; the relay carries the operation as it was made"
             )),
             Kept::NotSigned => Err(format!(
                 "{event}: this host has no hub, and a relay carries only what a member signed"

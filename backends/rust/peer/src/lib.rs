@@ -12,7 +12,8 @@
 //!
 //! - the machine's outbound `record_list.write` and `record_list.supersede`, as the event's name
 //!   and its JSON payload, are signed and remembered ([`Peer::outbound`]); the core says whether it
-//!   took one, found it is no event that is signed, or refused it and why;
+//!   took one, held it already (a machine built again from its host's log sends its writes again,
+//!   and a write is signed once), found it is no event that is signed, or refused it and why;
 //! - a round with the relay ([`Peer::start`]) is a sequence of request texts the core gives
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
@@ -46,10 +47,6 @@ use serde_json::{json, Value};
 
 /// The version of what [`Peer::save`] writes.
 pub const SAVE_VERSION: u64 = 1;
-
-/// Where the trust layer is told an outbound event goes. What it signs does not depend on whether the
-/// machine addressed the event to `#hub` or to `#people`: the event alone is signed.
-const OUTBOUND: &str = "#hub";
 
 /// What a round, or a publication, came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,8 +232,16 @@ impl Peer {
     /// round carries it to the relay; what is not signed is kept nowhere; what the trust will not
     /// sign is refused with the reason. The one place this is done is the relay's client
     /// ([`keep`]), which a host with a Mesh endpoint reaches through `Keep`.
+    ///
+    /// **A replay writes nothing twice.** An application that keeps its own log of commands and
+    /// builds its machine again from it gives the core the machine's sends again: a write or a note
+    /// the device signed already is [`Kept::Held`], the operation it holds with its number and its
+    /// signature, and nothing new reaches the relay. A write under a stamp the device signed with
+    /// another content is refused, since it would be the device signing two things for one write.
+    /// After [`Self::restore`], a send the device holds no operation for is refused until a round
+    /// has read the device's own chain back from the relay (see there).
     pub fn outbound(&mut self, event: &str, data: &str) -> Kept {
-        keep(&self.trust, OUTBOUND, event, data)
+        keep(&self.trust, event, data)
     }
 
     /// Begin a round of `kind`. Its requests are taken by [`Self::poll_request`].
@@ -331,6 +336,22 @@ impl Peer {
     /// appended, each operation and checkpoint the log verifies is kept ([`Trust::restore_from_text`],
     /// whose count is returned), and the relay's client goes on from its state. An exchange that
     /// ran is dropped.
+    ///
+    /// **A restored device signs nothing new until its own chain is read back.** The core cannot
+    /// tell the last save from an older one (a backup, a copy of the store, a save the device ran
+    /// past before it was stopped), and a device that published operations past what the text holds
+    /// would sign its next one at a number it used already, which every host that holds both takes
+    /// as the device signing two histories and freezes it for. So the trust waits
+    /// ([`Trust::await_own_chain`]): [`Self::outbound`] refuses, with that reason, a send that would
+    /// make a new operation, and still gives what the device holds as [`Kept::Held`]. The next
+    /// round reads the relay's heads, asks for the device's own operations the relay holds past what
+    /// the core does (`Operations`, the device's node), takes them in and tells them to the machine,
+    /// and the wait ends once the core holds the chain as far as the relay does
+    /// ([`Trust::confirm_own_chain`]); the device then signs at the number after its last. The rule
+    /// is the core's and not its host's, so that no host can forget it, and it asks the relay
+    /// nothing the protocol did not already serve. A host that rebuilds its machine from its own log
+    /// after a restore makes that round first, then gives the core the machine's sends, then makes a
+    /// [`RoundKind::Resync`] to tell the rebuilt machine the list.
     pub fn restore(&mut self, text: &str) -> Result<usize, PeerError> {
         let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
         let value: Value = serde_json::from_str(text).map_err(|_| unreadable("it is not JSON"))?;
@@ -360,6 +381,7 @@ impl Peer {
             })?;
         }
         let kept = self.trust.restore_from_text(held);
+        self.trust.await_own_chain();
         self.running = None;
         self.outcome = None;
         self.state = state;
