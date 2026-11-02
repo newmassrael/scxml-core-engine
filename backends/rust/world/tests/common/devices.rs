@@ -678,6 +678,12 @@ impl Devices {
     /// holds a device of the group, and they are admitted by
     /// [`Self::admit_through_the_group`]. The relay keeps `limits`, and every path is the
     /// default one.
+    ///
+    /// The order is a host's: alice's device gives the relay the list it opened before the
+    /// others are told of it, since an invitation is sent once the list is there to be read
+    /// ([`Self::open_at_the_relay`]); and under [`Keying::Clear`] every invited device reads the
+    /// list, its grant with it, before its person writes, since a core signs nothing for a
+    /// device the log it holds does not let write.
     pub fn new(seed: u64, bob: Option<&ExternalMachine>, keying: Keying, limits: Limits) -> Self {
         let grouped = keying == Keying::Group;
         let authority = Authority::new([3; 32], "the-relay");
@@ -771,7 +777,35 @@ impl Devices {
             forged: BTreeMap::new(),
         };
         devices.quiet();
+        devices.open_at_the_relay();
+        if !grouped {
+            devices.settle();
+        }
         devices
+    }
+
+    /// Alice's device gives the relay the list it opened: rounds of hers alone, each after the
+    /// wait the relay asks for when it refuses one for her allowance, until one ends. Until
+    /// then the relay holds no grant of an invited device, and refuses it anything it reads.
+    ///
+    /// # Panics
+    ///
+    /// When a round of hers fails for anything but her allowance, or none ends in [`PASSES`].
+    fn open_at_the_relay(&mut self) {
+        for _ in 0..PASSES {
+            let ran = self.rounds(&["alice"], Begin::Round(RoundKind::Sync));
+            let came = &ran["alice"];
+            match (&came.failed, came.retry_after_ms) {
+                (None, _) => return,
+                (Some(_), Some(after)) => self
+                    .world
+                    .advance_ms(i64::try_from(after).unwrap_or(i64::MAX / 2) + BETWEEN_PASSES_MS),
+                (Some(failure), None) => {
+                    panic!("alice's device did not give the relay the list: {failure:?}")
+                }
+            }
+        }
+        panic!("alice's device did not give the relay the list in {PASSES} rounds");
     }
 
     /// The names of the devices, in the order of their nodes.
@@ -1078,13 +1112,12 @@ impl Devices {
     }
 
     /// Bob and carol admitted to the list and to its group, each from the key package its
-    /// device left with the relay, by alice's device in one act each, each act given to the
-    /// relay by a round of hers before the next, and every device brought to rest: what an
-    /// administrator's device does to admit a device to a list keyed by its group. Bob joins at
-    /// the epoch that admits him and applies the one that admits carol; carol joins at that one.
+    /// device left with the relay (which holds the list since [`Self::new`]), by alice's device
+    /// in one act each, each act given to the relay by a round of hers before the next, and
+    /// every device brought to rest: what an administrator's device does to admit a device to a
+    /// list keyed by its group. Bob joins at the epoch that admits him and applies the one that
+    /// admits carol; carol joins at that one.
     pub fn admit_through_the_group(&mut self) {
-        let opened = self.rounds(&["alice"], Begin::Round(RoundKind::Sync));
-        assert_eq!(opened["alice"].failed, None, "the relay holds the list");
         let left = self.rounds(&["bob", "carol"], Begin::KeyPackage);
         for (name, ran) in &left {
             assert_eq!(ran.failed, None, "{name} left a key package");
