@@ -143,8 +143,8 @@ fn field_unlowered(
     if let BitSize::Repeat { count_ref } = &f.bit_size {
         return repeat_unlowered(m, f, count_ref, element);
     }
-    if f.is_tlv_chain() {
-        return what("a TLV chain");
+    if let BitSize::TlvChain { entry_binds, .. } = &f.bit_size {
+        return chain_unlowered(f, entry_binds, element);
     }
     if f.is_embed() {
         return embed_unlowered(m, f, element);
@@ -275,6 +275,34 @@ fn repeat_unlowered(
     None
 }
 
+/// What of the chain `f` (a `<sce:tlv-chain>`) the Swift codec does not lower yet; `None` for one
+/// it does.
+///
+/// It is an `Array` of the struct the entry codec is written as, read one entry after another until
+/// the frame ends or the entry says it is the last, and at most as many as the document's `max-depth`
+/// (`terminate_on`). The entry codec's unit must be written (`element`). A chain that hands its
+/// entries an input read off the entry before is named, as is one whose later fields are gated on
+/// the kinds of entry it holds, which the gate refuses ([`present_if_unlowered`]).
+fn chain_unlowered(
+    f: &CodecField,
+    entry_binds: &[TlvEntryFlagBind],
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let what = |text: &str| Some(format!("field '{}': {text}", f.id));
+    let Some(alias) = f.tlv_chain_body_alias.as_deref() else {
+        return what("a chain with no entry codec");
+    };
+    if !entry_binds.is_empty() {
+        return what("a chain that hands its entries an input read off the entry before");
+    }
+    if let Some(why) = element(alias) {
+        return what(&format!(
+            "a chain of '{alias}', which has no Swift lowering ({why})"
+        ));
+    }
+    None
+}
+
 /// What of the embedded codec `f` (a `<sce:embed>`) of `m` the Swift codec does not lower yet;
 /// `None` for one it does.
 ///
@@ -329,7 +357,12 @@ fn is_variable(f: &CodecField) -> bool {
 fn is_sequential(m: &CodecModel) -> bool {
     m.variant.is_some()
         || m.fields.iter().any(|f| {
-            f.is_vle() || is_variable(f) || f.is_repeat() || f.is_embed() || f.present_if.is_some()
+            f.is_vle()
+                || is_variable(f)
+                || f.is_repeat()
+                || f.is_embed()
+                || f.is_tlv_chain()
+                || f.present_if.is_some()
         })
 }
 
@@ -761,16 +794,47 @@ pub(super) fn render(
     // The struct each list's entries or embedded codec are, by the alias the field names its codec
     // by: the unit of an imported codec is a type of the same module, named as the document is.
     let mut element_types = std::collections::HashMap::new();
-    for f in m.fields.iter().filter(|f| f.is_repeat() || f.is_embed()) {
+    for f in m
+        .fields
+        .iter()
+        .filter(|f| f.is_repeat() || f.is_embed() || f.is_tlv_chain())
+    {
         if let Some(alias) = f
             .repeat_body_alias
             .as_deref()
             .or(f.embed_body_alias.as_deref())
+            .or(f.tlv_chain_body_alias.as_deref())
         {
             element_types.insert(
                 f.id.clone(),
                 resolve_repeat_body_type(&m.name, alias, imports, Language::Swift)?,
             );
+            // An entry that says it is the last does so through a flag of its own carrier, which its
+            // struct holds as a `Bool` when the flag is one bit wide.
+            if let BitSize::TlvChain {
+                terminate_on: TlvTerminateStrategy::EntryFlag { flag_name },
+                ..
+            } = &f.bit_size
+            {
+                let one_bit = imports
+                    .iter()
+                    .find(|import| import.alias == alias)
+                    .is_some_and(|import| {
+                        import
+                            .codec_fields
+                            .iter()
+                            .flat_map(|g| g.flags.iter())
+                            .any(|flag| flag.name == *flag_name && flag.width.max(1) == 1)
+                    });
+                if !one_bit {
+                    return Err(ForgeError::from(GenerateError::unsupported(format!(
+                        "codec '{}': field '{}': a chain closed by the flag `{flag_name}` of \
+                         '{alias}', which is not a flag of one bit that codec carries has no \
+                         Swift lowering yet",
+                        m.name, f.id
+                    ))));
+                }
+            }
         }
     }
     // What the codec an embed, a list or a variant names is handed for each flag input it declares,
@@ -826,6 +890,43 @@ pub(super) fn render(
                         "element": element,
                         "length": length,
                         "inner": format!("{}_inner", f.id),
+                        "decode_args": decode_args,
+                        "encode_args": encode_args,
+                    },
+                });
+            }
+            if let BitSize::TlvChain {
+                max_depth,
+                terminate_on,
+                ..
+            } = &f.bit_size
+            {
+                let element = element_types
+                    .get(&f.id)
+                    .expect("a chain this renderer is given names an entry codec")
+                    .clone();
+                let (decode_args, encode_args) =
+                    thread(f.tlv_chain_body_alias.as_deref().unwrap_or_default());
+                let accessor = match terminate_on {
+                    TlvTerminateStrategy::ExhaustOrDepth => serde_json::Value::Null,
+                    TlvTerminateStrategy::EntryFlag { flag_name } => {
+                        serde_json::Value::String(flag_property(flag_name))
+                    }
+                };
+                return serde_json::json!({
+                    "id": f.id,
+                    "swift_type": format!("[{element}]{optional}"),
+                    "offset": f.byte_offset,
+                    "default": if present.is_some() { "nil" } else { "[]" },
+                    "flags": Vec::<serde_json::Value>::new(),
+                    "bits": serde_json::Value::Null,
+                    "present": present,
+                    "chain": {
+                        "element": element,
+                        "items": format!("{}_items", f.id),
+                        "more": format!("{}_more", f.id),
+                        "max_depth": max_depth,
+                        "accessor": accessor,
                         "decode_args": decode_args,
                         "encode_args": encode_args,
                     },

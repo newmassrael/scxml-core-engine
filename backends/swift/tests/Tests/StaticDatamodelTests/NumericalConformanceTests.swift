@@ -4813,6 +4813,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecChainFlagEntry.frameLength
 }
 
+// MARK: - codec: codec_chain_flag_carrier
+
+@Test func codecChainFlagCarrierMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainFlagCarrier.frameLength
+}
+
+// MARK: - codec: codec_chain_flag_forward
+
+@Test func codecChainFlagForwardMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainFlagForward.frameLength
+}
+
 // MARK: - codec: codec_chain_prev_entry
 
 @Test func codecChainPrevEntryMatchesReference() throws {
@@ -5037,6 +5053,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecScoutZidBody.frameLength
 }
 
+// MARK: - codec: codec_tlv_chain_basic
+
+@Test func codecTlvChainBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecTlvChainBasic.frameLength
+}
+
+// MARK: - codec: codec_tlv_chain_present_if_basic
+
+@Test func codecTlvChainPresentIfBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecTlvChainPresentIfBasic.frameLength
+}
+
 // MARK: - codec: codec_tlv_entry
 
 @Test func codecTlvEntryMatchesReference() throws {
@@ -5149,6 +5181,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecZenohDeclaration.frameLength
 }
 
+// MARK: - codec: codec_zenoh_declare
+
+@Test func codecZenohDeclareMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohDeclare.frameLength
+}
+
 // MARK: - codec: codec_zenoh_encoding
 
 @Test func codecZenohEncodingMatchesReference() throws {
@@ -5163,6 +5203,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtEntry.frameLength
+}
+
+// MARK: - codec: codec_zenoh_ext_envelope
+
+@Test func codecZenohExtEnvelopeMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohExtEnvelope.frameLength
 }
 
 // MARK: - codec: codec_zenoh_ext_unit
@@ -5205,6 +5253,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecZenohInitBody.frameLength
 }
 
+// MARK: - codec: codec_zenoh_interest
+
+@Test func codecZenohInterestMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohInterest.frameLength
+}
+
 // MARK: - codec: codec_zenoh_interest_body
 
 @Test func codecZenohInterestBodyMatchesReference() throws {
@@ -5219,6 +5275,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohJoin.frameLength
+}
+
+// MARK: - codec: codec_zenoh_msg_del
+
+@Test func codecZenohMsgDelMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohMsgDel.frameLength
+}
+
+// MARK: - codec: codec_zenoh_err
+
+@Test func codecZenohErrMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohErr.frameLength
+}
+
+// MARK: - codec: codec_zenoh_msg_put
+
+@Test func codecZenohMsgPutMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohMsgPut.frameLength
+}
+
+// MARK: - codec: codec_zenoh_reply
+
+@Test func codecZenohReplyMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohReply.frameLength
+}
+
+// MARK: - codec: codec_zenoh_network_envelope
+
+@Test func codecZenohNetworkEnvelopeMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohNetworkEnvelope.frameLength
+}
+
+// MARK: - codec: codec_zenoh_oam
+
+@Test func codecZenohOamMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohOam.frameLength
 }
 
 // MARK: - codec: codec_zenoh_open_body
@@ -5243,6 +5347,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPushBody.frameLength
+}
+
+// MARK: - codec: codec_zenoh_query
+
+@Test func codecZenohQueryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohQuery.frameLength
+}
+
+// MARK: - codec: codec_zenoh_request
+
+@Test func codecZenohRequestMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohRequest.frameLength
+}
+
+// MARK: - codec: codec_zenoh_response
+
+@Test func codecZenohResponseMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohResponse.frameLength
+}
+
+// MARK: - codec: codec_zenoh_response_final
+
+@Test func codecZenohResponseFinalMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohResponseFinal.frameLength
 }
 
 // MARK: - codec: codec_zenoh_scout

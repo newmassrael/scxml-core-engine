@@ -45,6 +45,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// The arm the tag selects, whose struct holds the rest of the frame. The tag is the field it was
     /// read from; an encode writes that field as it stands, and the arm after it, so the two are
     /// kept in step by whoever holds the value.
+{% elif f.chain %}
+    /// Entries of `{{ f.chain.element }}`, one after another, at most {{ f.chain.max_depth }}: {% if f.chain.accessor %}until one says it is the last{% else %}to the end of the frame{% endif %}. A frame
+    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
 {% elif f.embed %}
     /// A `{{ f.embed.element }}` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands{% if f.embed.length %}, read from as many bytes as the document says an earlier field gives it, of which it need not take all{% endif %}.
@@ -150,6 +153,32 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            frame.{{ f.id }} = {{ c.value }}
 {% endfor %}
 {{ pad }}        }
+{% elif f.chain and f.chain.accessor %}
+{{ pad }}        var {{ f.chain.items }}: [{{ f.chain.element }}] = []
+{{ pad }}        var {{ f.chain.more }} = false
+{{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
+{{ pad }}            let entry = try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }})
+{{ pad }}            {{ f.chain.more }} = entry.{{ f.chain.accessor }}
+{{ pad }}            {{ f.chain.items }}.append(entry)
+{{ pad }}            if !{{ f.chain.more }} { break }
+{{ pad }}        }
+{{ pad }}        if {{ f.chain.more }} && reader.remaining == 0 {
+{{ pad }}            throw CodecError.needMoreBytes
+{{ pad }}        }
+{{ pad }}        if {{ f.chain.more }} {
+{{ pad }}            throw CodecError.tooManyElements
+{{ pad }}        }
+{{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
+{% elif f.chain %}
+{{ pad }}        var {{ f.chain.items }}: [{{ f.chain.element }}] = []
+{{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
+{{ pad }}            if reader.remaining == 0 { break }
+{{ pad }}            {{ f.chain.items }}.append(try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }}))
+{{ pad }}        }
+{{ pad }}        if reader.remaining > 0 {
+{{ pad }}            throw CodecError.tooManyElements
+{{ pad }}        }
+{{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
@@ -232,6 +261,12 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        do {
 {{ pad }}            var piece = BytesSink()
 {{ pad }}            try {{ src }}.encode(into: &piece{{ f.embed.encode_args }})
+{{ pad }}            frame += piece.bytes
+{{ pad }}        }
+{% elif f.chain %}
+{{ pad }}        for entry in {{ src }} {
+{{ pad }}            var piece = BytesSink()
+{{ pad }}            try entry.encode(into: &piece{{ f.chain.encode_args }})
 {{ pad }}            frame += piece.bytes
 {{ pad }}        }
 {% elif f.list %}

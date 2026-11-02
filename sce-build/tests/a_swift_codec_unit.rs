@@ -733,9 +733,55 @@ fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_unga
 
 #[test]
 fn a_gate_on_the_entries_of_a_chain_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/codec_tlv_chain_present_if_basic.scxml")
-        .expect_err("a chain is not written");
-    assert!(refusal.contains("has no Swift lowering yet"), "{refusal}");
+    let refusal = swift_of("tests/forge/resources/codec_chain_has_marker.scxml")
+        .expect_err("a gate on the entries of a chain is not written");
+    assert!(
+        refusal.contains("a `sce:present-if` on the entries of a chain")
+            && refusal.contains("has no Swift lowering yet"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn a_chain_to_the_end_of_the_frame_is_read_while_bytes_are_left_to_its_depth() {
+    let code = swift_of("tests/forge/resources/codec_tlv_chain_basic.scxml")
+        .expect("a chain to the end of the frame is written");
+    assert!(
+        code.contains("\n    public var extensions: [CodecTlvEntry] = []\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("for _ in 0..<8 {\n            if reader.remaining == 0 { break }\n            extensions_items.append(try CodecTlvEntry.decode(&reader))\n        }\n        if reader.remaining > 0 {\n            throw CodecError.tooManyElements\n        }"),
+        "an entry past the depth is refused and not left on the wire unread: {code}"
+    );
+    assert!(
+        code.contains(
+            "if self.extensions.count > 8 {\n            throw CodecError.tooManyElements"
+        ),
+        "an encode refuses a chain past its depth: {code}"
+    );
+}
+
+#[test]
+fn a_chain_closed_by_an_entry_flag_is_read_until_an_entry_clears_it() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_err.scxml")
+        .expect("a chain closed by an entry flag is written");
+    assert!(
+        code.contains("public var extensions: [CodecZenohExtEntry]? = nil"),
+        "a gated chain is optional: {code}"
+    );
+    assert!(
+        code.contains("let entry = try CodecZenohExtEntry.decode(&reader)\n                extensions_more = entry.Z\n                extensions_items.append(entry)\n                if !extensions_more { break }"),
+        "{code}"
+    );
+    assert!(
+        code.contains("if extensions_more && reader.remaining == 0 {\n                throw CodecError.needMoreBytes\n            }\n            if extensions_more {\n                throw CodecError.tooManyElements\n            }"),
+        "an entry that promises another leaves the frame short, or is one past the depth: {code}"
+    );
+    assert!(
+        code.contains("value.count < 1 || value.count > 4"),
+        "a chain closed by a flag holds at least one entry: {code}"
+    );
 }
 
 #[test]
@@ -852,7 +898,6 @@ fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),
         ("codec_content_line_enums", "content-line"),
-        ("codec_chain_flag_carrier", "field '"),
         ("codec_chain_has_envelope", "field '"),
     ] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
