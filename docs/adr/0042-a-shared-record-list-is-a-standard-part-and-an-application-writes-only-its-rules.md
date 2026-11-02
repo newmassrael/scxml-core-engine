@@ -1,6 +1,6 @@
 # ADR 0042 - A shared record list is a standard part, and an application writes only its rules
 
-- Status: Accepted (2026-10-20); step 1 in progress
+- Status: Accepted (2026-10-20); step 1 verified (2026-11-02), steps 2 and 3 not started
 - Date: 2026-10-20
 - Scope: a new standard statechart `sce:std/shared/record_list.scxml` and its schemas under
   `stdlib/shared/`; `sce-build/tests/fixtures/static_datamodel/todo_peer.scxml` and the documents
@@ -99,9 +99,22 @@ write or supersede, a resync, a settle that changes nothing live is not announce
 
 ## Status of the plan
 
-Step 1 is built and not yet verified: the standard part, its schemas, its announcements and its
-scenarios, on the backends `todo_peer` runs on. `todo_peer` is untouched. Steps 2 and 3 are not
-started.
+Step 1 is verified (2026-11-02): the standard part, its schemas, its announcements and its
+scenarios run on every backend `todo_peer` runs on, and every one passed in the hosted runs of
+`03b425b091` and `55b8746d41`, both of which hold the last change to `stdlib/shared/` and to the
+scenarios (`83c95878f1`):
+
+| Backend | Where | What passed |
+|---|---|---|
+| Rust | Rust Workspace Tests, `cargo test --workspace` | `static_scenarios`: the seven `record_list_*` scenarios and the three of `todo_peer` |
+| Kotlin | W3C SCXML Compliance Tests, Kotlin job | `StaticScenarioTest`: the seven `recordList*` scenarios and the three of `todoPeer` |
+| Python | W3C SCXML Compliance Tests, Python job | `test_static_scenarios.py`: the standard record list's scenarios |
+| Go | W3C SCXML Compliance Tests, Go job | the `static_datamodel` package, whose `static_scenarios_test.go` replays them |
+| C11 | W3C SCXML Compliance Tests, C11 job | `c11_integration_static_scalars`, which replays them (`test_static_scalars.c`) |
+| C++ | C++ Test Suite | `static_datamodel_lowered` (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`) |
+
+`todo_peer` is untouched. Steps 2 and 3 are not started; ADR 0079 makes them the first steps of a
+device's peer core.
 
 ## Revisions made in building it
 
