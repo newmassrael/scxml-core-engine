@@ -83,6 +83,11 @@ extern "C" {
 #define SCE_PEER_PROFILE_UNTRUSTED 0
 #define SCE_PEER_PROFILE_TRUSTED_HUB 1
 
+/* Which authorities a link of sce_peer_link_wss_believing believes: the ones it is given alone, or
+ * those and the public ones. */
+#define SCE_PEER_ROOTS_ONLY 0
+#define SCE_PEER_ROOTS_AND_PUBLIC 1
+
 typedef struct ScePeer ScePeer;
 
 /* A buffer the library made; give it back with sce_peer_buf_free. */
@@ -172,7 +177,11 @@ int32_t sce_peer_restore_sealed(ScePeer *peer, uint64_t node, const uint8_t *sta
  * run's cancellation and tell the link the network changed.
  *
  * A link is the relay's WebSocket binding (base "ws://host:port" or "wss://host:port", and the token
- * the device's login earned), or a transport the host carries itself: exchange is called on the thread
+ * the device's login earned), believing the public certificate authorities, or, made with
+ * sce_peer_link_wss_believing, the authorities in the len bytes at authorities (one or more
+ * certificates in PEM, or one in DER, as a file of the application holds them), alone
+ * (SCE_PEER_ROOTS_ONLY) or with the public ones (SCE_PEER_ROOTS_AND_PUBLIC); or a transport the host
+ * carries itself: exchange is called on the thread
  * that runs, one call at a time, with the request (len bytes of UTF-8, not NUL-terminated), the time
  * it may take (UINT64_MAX when there is no deadline) and a reply; it gives the response, or the reason
  * it has none, with sce_peer_reply, and returns SCE_PEER_TRANSPORT_*. It calls nothing else of the
@@ -188,6 +197,8 @@ typedef int32_t (*ScePeerExchangeFn)(void *context, const uint8_t *request, size
 typedef void (*ScePeerReleaseFn)(void *context);
 
 ScePeerLink *sce_peer_link_wss(const char *base, const char *token);
+ScePeerLink *sce_peer_link_wss_believing(const char *base, const char *token, const uint8_t *authorities, size_t len,
+                                         int32_t roots /* SCE_PEER_ROOTS_* */);
 ScePeerLink *sce_peer_link_host(ScePeerExchangeFn exchange, ScePeerReleaseFn release, void *context);
 void sce_peer_link_free(ScePeerLink *link);
 int32_t sce_peer_link_network_changed(const ScePeerLink *link);

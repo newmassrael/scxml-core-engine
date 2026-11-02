@@ -316,9 +316,16 @@ believes are decided in one place.
   ABI.
 - **A client believes Mozilla's certificate authorities**, compiled in from `webpki-roots`
   (`WssLink::new`, and the Mesh's client), **or only the authorities a deployment names**, for a relay
-  under a private one (`WssLink::believing` with `tls::Roots::Only`, each a DER certificate). A
-  certificate they did not issue fails the exchange as the link's failure (`TransportError::Link`,
-  whose reason names the certificate), never a panic. TLS 1.3 and 1.2 are offered.
+  under a private one (`WssLink::believing` with `tls::Roots::Only`, each a DER certificate), **or
+  both** (`tls::Roots::PublicAnd`): a deployment that starts under its own authority and later puts its
+  relays under a public one, or keeps some under each, ships applications that reach every one of them,
+  where `Only` would strand the applications it shipped on the day the certificate changed. A lane
+  names the authorities through the C ABI (`sce_peer_link_wss_believing`) as the bytes of a file it
+  ships, an Android raw resource or a file of an iOS bundle read whole, in PEM (one or more
+  certificates, how an authority is most often handed out) or one certificate in DER; `tls::authorities`
+  reads either, so that no lane parses a certificate. A certificate they did not issue fails the
+  exchange as the link's failure (`TransportError::Link`, whose reason names the certificate), never a
+  panic. TLS 1.3 and 1.2 are offered.
 - **The server terminates TLS when it is given a certificate**: `serve::serve_tls` completes each
   connection's handshake with the configuration `tls::server_config` makes from the deployer's
   certificate chain and key before the upgrade, and closes a connection whose handshake fails.
@@ -330,7 +337,7 @@ believes are decided in one place.
   application's `Context` before the first verification, a JNI call that a lane binding the ABI
   through JNA has no handle for, and the crate's Kotlin component added to the application's Gradle
   build; a verification before that initialisation panics inside the library, the failure this
-  decision removes. On iOS it needs no initialisation. Taking it later adds a third value of `Roots`
+  decision removes. On iOS it needs no initialisation. Taking it later adds another value of `Roots`
   and, for Android, a call of the ABI the host makes once with those handles.
 
 `a_relay_is_reached_over_tls` holds an exchange over `wss://` against a relay in the test's process,

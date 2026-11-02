@@ -13,11 +13,14 @@
 //! Android and iOS.
 //!
 //! A client believes the public certificate authorities ([`Roots::Public`]: Mozilla's set, compiled
-//! in from `webpki-roots`), or only the authorities a deployment names ([`Roots::Only`]), for a
-//! server under a private one. The operating system's own store is not read: on Android reading it
-//! needs the application's JVM and context handed to the library and a Kotlin component added to
-//! the application's build, and a dial made before the host handed them over panics inside the
-//! library.
+//! in from `webpki-roots`), only the authorities a deployment names ([`Roots::Only`]), for a server
+//! under a private one, or both ([`Roots::PublicAnd`]), for a deployment that moves its servers
+//! from a private authority to a public one, or keeps some under each, while the applications it
+//! shipped keep reaching every one of them. A deployment hands its authority out as a file
+//! ([`authorities`] reads one in PEM or DER). The operating system's own store is not read: on
+//! Android reading it needs the application's JVM and context handed to the library and a Kotlin
+//! component added to the application's build, and a dial made before the host handed them over
+//! panics inside the library.
 
 use alloc::string::ToString;
 use alloc::sync::Arc;
@@ -25,6 +28,7 @@ use alloc::vec::Vec;
 use std::sync::OnceLock;
 
 use rustls::crypto::CryptoProvider;
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::RootCertStore;
 
@@ -38,6 +42,44 @@ pub enum Roots {
     Public,
     /// These authorities' certificates alone (each DER), for a server under a private authority.
     Only(Vec<Vec<u8>>),
+    /// The public certificate authorities and these (each DER): for a deployment whose servers are
+    /// under a private authority and a public one, or move from the one to the other, so that an
+    /// application it shipped reaches every one of them.
+    PublicAnd(Vec<Vec<u8>>),
+}
+
+/// The text a PEM file of certificates begins with, after any blank space.
+const PEM_BEGIN: &[u8] = b"-----BEGIN";
+
+/// The certificates of the authorities `bytes` holds, each DER: one or more in PEM
+/// (`-----BEGIN CERTIFICATE-----`), as an authority is most often handed out and as a mobile
+/// application most readily ships it (an Android raw resource, a file of an iOS bundle), or one in
+/// DER. Sections of PEM that are not certificates are passed over; PEM that holds no certificate,
+/// or that does not decode, is refused, and so is nothing at all. Bytes that are not PEM are taken as
+/// one DER certificate, which [`client_config`] refuses when it is not one.
+pub fn authorities(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
+    let start = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let text = &bytes[start..];
+    if text.is_empty() {
+        return Err(Error::General("no certificate was given".to_string()));
+    }
+    if !text.starts_with(PEM_BEGIN) {
+        return Ok(alloc::vec![bytes.to_vec()]);
+    }
+    let certificates = CertificateDer::pem_slice_iter(text)
+        .map(|certificate| {
+            certificate
+                .map(|der| der.as_ref().to_vec())
+                .map_err(|why| Error::General(alloc::format!("the PEM does not decode: {why}")))
+        })
+        .collect::<Result<Vec<Vec<u8>>, Error>>()?;
+    if certificates.is_empty() {
+        return Err(Error::General("the PEM holds no certificate".to_string()));
+    }
+    Ok(certificates)
 }
 
 /// The cryptography every TLS connection of the bindings runs on: `ring`'s.
@@ -55,19 +97,34 @@ pub fn client_config(roots: &Roots) -> Result<Arc<ClientConfig>, Error> {
             if let Some(config) = PUBLIC.get() {
                 return Ok(config.clone());
             }
-            let mut store = RootCertStore::empty();
-            store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let made = client_believing(store)?;
+            let made = client_believing(public_store())?;
             Ok(PUBLIC.get_or_init(|| made).clone())
         }
         Roots::Only(authorities) => {
-            let mut store = RootCertStore::empty();
-            for authority in authorities {
-                store.add(CertificateDer::from(authority.as_slice()))?;
-            }
-            client_believing(store)
+            client_believing(with_authorities(RootCertStore::empty(), authorities)?)
+        }
+        Roots::PublicAnd(authorities) => {
+            client_believing(with_authorities(public_store(), authorities)?)
         }
     }
+}
+
+/// The public certificate authorities: Mozilla's set, as `webpki-roots` compiled it in.
+fn public_store() -> RootCertStore {
+    let mut store = RootCertStore::empty();
+    store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    store
+}
+
+/// `store` with `authorities` (each DER) added; one that is not a certificate is refused.
+fn with_authorities(
+    mut store: RootCertStore,
+    authorities: &[Vec<u8>],
+) -> Result<RootCertStore, Error> {
+    for authority in authorities {
+        store.add(CertificateDer::from(authority.as_slice()))?;
+    }
+    Ok(store)
 }
 
 fn client_believing(store: RootCertStore) -> Result<Arc<ClientConfig>, Error> {
@@ -113,6 +170,86 @@ mod tests {
         assert!(client_config(&Roots::Only(alloc::vec![b"not a certificate".to_vec()])).is_err());
         let issued = certified();
         assert!(client_config(&Roots::Only(alloc::vec![issued.cert.der().to_vec()])).is_ok());
+    }
+
+    /// `der` as a PEM certificate: standard base64 in lines of 64 between the markers, as a file an
+    /// authority is handed out as.
+    fn pem_of(der: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut body = String::new();
+        for chunk in der.chunks(3) {
+            let n = chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (i, byte)| n | (u32::from(*byte) << (16 - 8 * i)));
+            for i in 0..4 {
+                if i <= chunk.len() {
+                    body.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
+                } else {
+                    body.push('=');
+                }
+            }
+        }
+        let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+        for line in body.as_bytes().chunks(64) {
+            pem.push_str(core::str::from_utf8(line).unwrap());
+            pem.push('\n');
+        }
+        pem.push_str("-----END CERTIFICATE-----\n");
+        pem
+    }
+
+    #[test]
+    fn a_deployments_authority_is_read_from_pem_or_der() {
+        let issued = certified();
+        let der = issued.cert.der().to_vec();
+        assert_eq!(authorities(&der).unwrap(), alloc::vec![der.clone()]);
+        assert_eq!(
+            authorities(pem_of(&der).as_bytes()).unwrap(),
+            alloc::vec![der.clone()]
+        );
+        // Two in one file, after blank space, with a section that is no certificate between them.
+        let other = certified().cert.der().to_vec();
+        let bundle = alloc::format!(
+            "\n  {}-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n{}",
+            pem_of(&der),
+            pem_of(&other)
+        );
+        assert_eq!(
+            authorities(bundle.as_bytes()).unwrap(),
+            alloc::vec![der.clone(), other]
+        );
+        assert!(authorities(b"").is_err(), "nothing");
+        assert!(authorities(b" \n\t").is_err(), "blank space");
+        assert!(
+            authorities(b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n").is_err(),
+            "PEM with no certificate"
+        );
+        assert!(
+            authorities(b"-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n").is_err(),
+            "PEM that does not decode"
+        );
+        // Bytes that are not PEM are one certificate in DER, which a configuration judges.
+        let not_one = authorities(b"not a certificate").unwrap();
+        assert!(client_config(&Roots::Only(not_one)).is_err());
+    }
+
+    #[test]
+    fn the_public_roots_and_a_deployments_authority_are_believed_together() {
+        let issued = certified();
+        let der = issued.cert.der().to_vec();
+        let both = with_authorities(public_store(), core::slice::from_ref(&der)).unwrap();
+        assert_eq!(both.len(), public_store().len() + 1);
+        let config = client_config(&Roots::PublicAnd(alloc::vec![der])).unwrap();
+        assert!(!Arc::ptr_eq(
+            &config,
+            &client_config(&Roots::Public).unwrap()
+        ));
+        assert!(client_config(&Roots::PublicAnd(
+            alloc::vec![b"not a certificate".to_vec()]
+        ))
+        .is_err());
     }
 
     #[test]

@@ -367,6 +367,15 @@ when it is called production.
   version policy makes a new number. The recorded scenario now has bob's write before his first round kept
   and taken, and his restored write kept and taken by the round that reads his chain back; it is recorded
   again from a fresh run.
+- **A link that believes a deployment's own authority, through the ABI** (2026-11-02), which step 5 left
+  to Rust: `sce_peer_link_wss_believing` takes the bytes of a file the application ships (an Android raw
+  resource, a file of an iOS bundle), one or more certificates in PEM or one in DER, read by one function
+  of the TLS module (`tls::authorities`) so that no lane parses a certificate, and believes them alone
+  (`SCE_PEER_ROOTS_ONLY`, `tls::Roots::Only`) or with the public authorities (`SCE_PEER_ROOTS_AND_PUBLIC`,
+  a new `tls::Roots::PublicAnd`). Both are wanted: a first deployment may run its relay under its own
+  authority, and one that later moves it under a public authority, or keeps relays under each, strands
+  every application it shipped believing its own authority alone on the day the certificate changes. A
+  function added alone: the ABI stays version 4. The Kotlin binding has it (`PeerLink.wssBelieving`).
 
 ## Alternatives considered
 

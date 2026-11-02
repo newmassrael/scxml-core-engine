@@ -16,7 +16,8 @@
 //! are the texts, written down in `docs/SCE_SHARED_LIST_PEER_ABI.md`.
 //!
 //! A lane that does not carry the texts itself runs an exchange over a link the library holds
-//! ([`ScePeerLink`]): the relay's WebSocket binding ([`sce_peer_link_wss`]), or a transport the host
+//! ([`ScePeerLink`]): the relay's WebSocket binding ([`sce_peer_link_wss`], and
+//! [`sce_peer_link_wss_believing`] for a relay under a deployment's own authority), or a transport the host
 //! writes as one function the library calls ([`sce_peer_link_host`]). [`sce_peer_run`] runs the
 //! exchange to its end on the calling thread, a background worker's, by a deadline and until a
 //! cancellation another thread raises ([`ScePeerCancel`]); the host tells the link when the network
@@ -45,6 +46,7 @@ use sce_rust_peer::{
     drive, CourierError, DataKey, Device, Driven, GroupStep, Kept, Outcome, Peer, PeerError,
     Profile, Publication, Round, RoundKind, Signal, Standing, Transport, TransportError,
 };
+use sce_rust_relay::tls::{self, Roots};
 use sce_rust_relay::wss::WssLink;
 use sce_rust_relay::{Code, Notice};
 use sce_rust_trust::{encoding, Identity, PublicKey};
@@ -116,6 +118,11 @@ pub const SCE_PEER_ROUND_REREAD: i32 = 2;
 /// Whether the hub of a list [`sce_peer_open_list`] opens is trusted ([`Profile`]).
 pub const SCE_PEER_PROFILE_UNTRUSTED: i32 = 0;
 pub const SCE_PEER_PROFILE_TRUSTED_HUB: i32 = 1;
+
+/// Which authorities a link of [`sce_peer_link_wss_believing`] believes ([`Roots`]): the ones it is
+/// given alone, or those and the public ones.
+pub const SCE_PEER_ROOTS_ONLY: i32 = 0;
+pub const SCE_PEER_ROOTS_AND_PUBLIC: i32 = 1;
 
 /// The core of one device of one list, and the list's name, which the group's device is made for.
 pub struct ScePeer {
@@ -1141,6 +1148,55 @@ pub unsafe extern "C" fn sce_peer_link_wss(
         // SAFETY: the promises in the function's contract.
         let (base, token) = unsafe { (text(base)?, text(token)?) };
         let link = WssLink::new(base, token).map_err(|error| {
+            fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                format!("no link to the relay: {error}"),
+            )
+        })?;
+        Ok(ScePeerLink::over(Box::new(link)))
+    })
+}
+
+/// A link as [`sce_peer_link_wss`] makes it, which believes the certificate authorities in the `len`
+/// bytes at `authorities` for a `wss://` relay's certificate: one or more certificates in PEM, as a
+/// deployment hands its authority out and as an application ships it (an Android raw resource, a
+/// file of an iOS bundle, read whole), or one in DER. With `roots` `SCE_PEER_ROOTS_ONLY` it believes
+/// them alone, for a relay under a private authority; with `SCE_PEER_ROOTS_AND_PUBLIC` the public
+/// authorities too, for a deployment whose relays are under either, or move from the one to the
+/// other ([`Roots`]). The bytes are read here and not kept. Null when it fails: an address that is
+/// not a WebSocket's, bytes that hold no certificate, a certificate that is not one, a `roots` that
+/// is neither.
+///
+/// # Safety
+/// `base` and `token` are NUL-terminated strings; `authorities` points at `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_wss_believing(
+    base: *const c_char,
+    token: *const c_char,
+    authorities: *const u8,
+    len: usize,
+    roots: i32,
+) -> *mut ScePeerLink {
+    made(|| {
+        // SAFETY: the promises in the function's contract.
+        let (base, token, given) = unsafe { (text(base)?, text(token)?, bytes(authorities, len)?) };
+        let believed = tls::authorities(given).map_err(|error| {
+            fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                format!("no authority to believe: {error}"),
+            )
+        })?;
+        let roots = match roots {
+            SCE_PEER_ROOTS_ONLY => Roots::Only(believed),
+            SCE_PEER_ROOTS_AND_PUBLIC => Roots::PublicAnd(believed),
+            other => {
+                return Err(fail(
+                    SCE_PEER_ERR_BAD_ARGUMENT,
+                    format!("{other} is not a choice of authorities"),
+                ))
+            }
+        };
+        let link = WssLink::believing(base, token, &roots).map_err(|error| {
             fail(
                 SCE_PEER_ERR_BAD_ARGUMENT,
                 format!("no link to the relay: {error}"),

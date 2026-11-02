@@ -4,7 +4,9 @@
 // through the C ABI. What is asked: that a link is made and freed, and the boundary refuses what it
 // is not given; that a round runs over the relay's WebSocket binding against a relay in this process,
 // carries a write from one device to another, and the link tells its host it connected; that a
-// `wss://` link refuses a relay's certificate no public authority issued and the outcome says why;
+// `wss://` link refuses a relay's certificate no public authority issued and the outcome says why,
+// and one made believing a deployment's own authority, given as a file's bytes in PEM or in DER,
+// alone or with the public authorities, reaches the relay;
 // that a round over a transport the host carries itself (one function the library calls) asks what a host
 // carrying the texts by hand asks and comes to the same outcome, says when the host's transport
 // failed or the token was refused, is told the time it may take, and that the host's context is
@@ -382,6 +384,149 @@ fn a_wss_link_refuses_a_certificate_no_public_authority_issued_and_says_why() {
         assert_eq!(notices_of(link), None, "it never connected");
 
         sce_peer_link_free(link);
+        sce_peer_free(alice);
+    }
+}
+
+/// `der` as a PEM certificate, as a deployment hands its authority out: base64 in the standard
+/// alphabet, padded, in lines of 64, between the markers.
+fn pem_of(der: &[u8]) -> Vec<u8> {
+    // The trust layer writes bytes in the URL alphabet with no padding; PEM is the standard one.
+    let mut body: String = sce_rust_trust::encoding::encode(der)
+        .chars()
+        .map(|c| match c {
+            '-' => '+',
+            '_' => '/',
+            other => other,
+        })
+        .collect();
+    let pad = (4 - body.len() % 4) % 4;
+    for _ in 0..pad {
+        body.push('=');
+    }
+    let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+    for line in body.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(line).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END CERTIFICATE-----\n");
+    pem.into_bytes()
+}
+
+/// A `wss://` link made through the ABI believes the authority a deployment names, from the bytes
+/// of a file an application ships: given in PEM and believed alone, the relay's certificate is
+/// believed and alice's round carries the log and a write; given in DER with the public authorities,
+/// bob's round reads the write. A link that believes the public authorities alone refuses the same
+/// certificate (`a_wss_link_refuses_a_certificate_no_public_authority_issued_and_says_why`). Bytes
+/// that hold no certificate or are not one, a null pointer, no choice of authorities and an address
+/// that is not a WebSocket's are refused when the link is made, and say why.
+#[test]
+fn a_wss_link_believes_the_authority_it_is_given_through_the_abi() {
+    let issued = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
+    let certificate = issued.cert.der().to_vec();
+    let tls = sce_rust_relay::tls::server_config(
+        vec![certificate.clone()],
+        issued.key_pair.serialize_der(),
+    )
+    .unwrap();
+    let authority = Authority::new([4; 32], "the-relay");
+    let relay = Arc::new(Mutex::new(
+        Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
+    ));
+    // The relay's clock: a second further at each reading, so that no device spends its allowance.
+    let now = Arc::new(AtomicU64::new(0));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = {
+        let now = now.clone();
+        Arc::new(move || now.fetch_add(1000, Ordering::SeqCst))
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let base = std::ffi::CString::new(format!("wss://{}", listener.local_addr().unwrap())).unwrap();
+    runtime.spawn(serve_tls(listener, tls, relay, clock, 64 * 1024));
+    let token_of =
+        |node: u64| std::ffi::CString::new(authority.issue("home", node, u64::MAX)).unwrap();
+    let (alice_token, bob_token) = (token_of(ALICE), token_of(BOB));
+    let pem = pem_of(&certificate);
+
+    // SAFETY: each call below passes live handles, NUL-terminated texts, and pointers that are null
+    // or valid for the length given.
+    unsafe {
+        let (alice, genesis) = alice();
+        sends(alice, &write(1, ALICE, 1000, 10));
+        let alice_link = sce_peer_link_wss_believing(
+            base.as_ptr(),
+            alice_token.as_ptr(),
+            pem.as_ptr(),
+            pem.len(),
+            SCE_PEER_ROOTS_ONLY,
+        );
+        assert!(!alice_link.is_null(), "{}", last_error());
+        let given = round_over(alice, alice_link, 30_000);
+        assert_eq!(given["outcome"], "ended", "{given}");
+        assert_eq!(given["pushed"], 3 + 1, "the log and the write: {given}");
+        assert_eq!(
+            notices_of(alice_link),
+            Some(serde_json::json!([{"notice": "connected"}]))
+        );
+
+        let bob = bob(genesis);
+        let bob_link = sce_peer_link_wss_believing(
+            base.as_ptr(),
+            bob_token.as_ptr(),
+            certificate.as_ptr(),
+            certificate.len(),
+            SCE_PEER_ROOTS_AND_PUBLIC,
+        );
+        assert!(!bob_link.is_null(), "{}", last_error());
+        let told = round_over(bob, bob_link, 30_000);
+        assert_eq!(told["outcome"], "ended", "{told}");
+        assert_eq!(writes_in(&told), 1, "{told}");
+
+        let none: [u8; 0] = [];
+        let not_one = b"not a certificate";
+        let wss = base.as_c_str();
+        // The address, the authorities' bytes and their length, the choice, and why it is refused.
+        type Refusal<'a> = (&'a std::ffi::CStr, *const u8, usize, i32, &'a str);
+        let refusals: [Refusal; 5] = [
+            (wss, none.as_ptr(), 0, SCE_PEER_ROOTS_ONLY, "no certificate"),
+            (wss, std::ptr::null(), 4, SCE_PEER_ROOTS_ONLY, "null"),
+            (wss, pem.as_ptr(), pem.len(), 7, "choice of authorities"),
+            (
+                wss,
+                not_one.as_ptr(),
+                not_one.len(),
+                SCE_PEER_ROOTS_ONLY,
+                "not usable",
+            ),
+            (
+                c"http://127.0.0.1:1",
+                pem.as_ptr(),
+                pem.len(),
+                SCE_PEER_ROOTS_ONLY,
+                "ws://",
+            ),
+        ];
+        for (address, authorities, len, roots, why) in refusals {
+            let refused = sce_peer_link_wss_believing(
+                address.as_ptr(),
+                bob_token.as_ptr(),
+                authorities,
+                len,
+                roots,
+            );
+            assert!(refused.is_null(), "{why}");
+            assert!(last_error().contains(why), "{why}: {}", last_error());
+        }
+
+        sce_peer_link_free(bob_link);
+        sce_peer_link_free(alice_link);
+        sce_peer_free(bob);
         sce_peer_free(alice);
     }
 }

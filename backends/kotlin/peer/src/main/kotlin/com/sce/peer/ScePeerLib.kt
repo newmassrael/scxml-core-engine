@@ -69,6 +69,10 @@ object ScePeerAbi {
     const val PROFILE_UNTRUSTED = 0
     const val PROFILE_TRUSTED_HUB = 1
 
+    /** Which authorities a link of `sce_peer_link_wss_believing` believes: the ones given alone, or those and the public ones. */
+    const val ROOTS_ONLY = 0
+    const val ROOTS_AND_PUBLIC = 1
+
     /** The roles a grant gives. */
     const val ROLE_READER = 1
     const val ROLE_WRITER = 2
@@ -152,6 +156,7 @@ interface ScePeerLib : Library {
         kept: LongByReference?,
     ): Int
     fun sce_peer_link_wss(base: String, token: String): Pointer?
+    fun sce_peer_link_wss_believing(base: String, token: String, authorities: ByteArray, len: NativeLong, roots: Int): Pointer?
     fun sce_peer_link_host(exchange: ExchangeFn, release: ReleaseFn?, context: Pointer?): Pointer?
     fun sce_peer_link_free(link: Pointer)
     fun sce_peer_link_network_changed(link: Pointer): Int

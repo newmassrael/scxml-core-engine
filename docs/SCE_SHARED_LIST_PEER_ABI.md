@@ -27,7 +27,9 @@ reviewer learns one set of rules:
   refused, so `sce_peer_outbound` gives an answer a lane of version 3 does not know
   (`SCE_PEER_KEPT_WAITING`, section 4), a changed meaning of an output that the policy above makes
   a new number; the outcome holds `taken` and `dropped` (section 5), the standing `waiting`
-  (section 8), and the sealed state is the core's version 4, which holds what waits (section 6);
+  (section 8), and the sealed state is the core's version 4, which holds what waits (section 6).
+  The link that believes a deployment's own authority (`sce_peer_link_wss_believing`,
+  `SCE_PEER_ROOTS_*`, section 11) is a function added alone, and moves no number;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -125,6 +127,7 @@ log is written (section 7).
 | `sce_peer_save_sealed_under(peer, key, state)` | `Peer::save_sealed_under` | the same, under a 32-byte data key the host gives: one it drew itself, or a recording's fixed key |
 | `sce_peer_restore_sealed(peer, node, state, len, key, count)` | `Peer::restore_sealed` | takes a sealed state back for the device of `node`, under the unwrapped data key, into a core just made for the list and given nothing else |
 | `sce_peer_link_wss(base, token)` | `WssLink::new` | a link to the relay over its WebSocket binding (section 11); null on failure |
+| `sce_peer_link_wss_believing(base, token, authorities, len, roots)` | `WssLink::believing` | the same, believing the certificate authorities in the bytes given (PEM or DER), alone or with the public ones (section 11); null on failure |
 | `sce_peer_link_host(exchange, release, context)` | a `Transport` over the host's function | a link whose transport the host carries itself (section 11); null when `exchange` is null |
 | `sce_peer_link_free(link)` | | frees a link, releasing a host's context; null is ignored |
 | `sce_peer_link_network_changed(link)` | the link's `Transport::network` raised | the device's network changed; any thread, at any time |
@@ -454,9 +457,19 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
   initialises nothing, on Android as anywhere; and it believes Mozilla's certificate authorities,
   compiled into the library, not the device's trust store. A relay whose certificate none of them
   issued fails the run as the link's (`failure: "link"`, with a `reason` that names the
-  certificate). A relay under a private authority is reached from Rust (`WssLink::believing`); the
-  ABI has no call that names one yet. What was chosen and why, the device's store included, is
+  certificate). What was chosen and why, the device's store included, is
   `docs/SCE_SHARED_LIST_RELAY.md` section 9 (decided 2026-11-02).
+- `sce_peer_link_wss_believing(base, token, authorities, len, roots)` is the same link, believing
+  for a `wss://` relay the certificate authorities in the `len` bytes at `authorities`: one or more
+  certificates in PEM, as a deployment hands its authority out, or one in DER, so that a lane gives
+  the bytes of the file it ships (an Android raw resource, a file of an iOS bundle, read whole) and
+  parses nothing. `roots` is `SCE_PEER_ROOTS_ONLY` (0) for those authorities alone, a relay under a
+  private authority, or `SCE_PEER_ROOTS_AND_PUBLIC` (1) for those and the public ones, a deployment
+  whose relays are under either or move from the one to the other: an application it shipped
+  believing its own authority alone would stop reaching a relay the day its certificate came from a
+  public authority. The bytes are read when the link is made and not kept. Null, with why, when the
+  bytes hold no certificate or one that is not a certificate, when `roots` is neither, and for an
+  address `sce_peer_link_wss` refuses.
 - `sce_peer_link_host(exchange, release, context)` is a transport the host carries itself, for a
   host whose platform has the only usable network stack, or a test. `exchange` is
   `int32_t (*)(void *context, const uint8_t *request, size_t len, uint64_t timeout_ms, ScePeerReply

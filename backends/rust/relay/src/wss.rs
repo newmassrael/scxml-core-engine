@@ -79,8 +79,9 @@ impl WssLink {
     }
 
     /// [`WssLink::new`] believing `roots` for a `wss://` relay's certificate: a relay under a
-    /// private authority is reached with [`Roots::Only`] and that authority's certificate. An
-    /// authority that is not a certificate is refused here.
+    /// private authority is reached with [`Roots::Only`] and that authority's certificate, and a
+    /// deployment whose relays are under either a private authority or a public one with
+    /// [`Roots::PublicAnd`]. An authority that is not a certificate is refused here.
     pub fn believing(base: &str, token: &str, roots: &Roots) -> io::Result<Self> {
         let base = base.trim_end_matches('/');
         if !(base.starts_with("ws://") || base.starts_with("wss://")) {

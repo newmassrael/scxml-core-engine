@@ -239,6 +239,20 @@ class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("
         }
 
         /**
+         * The relay's WebSocket binding at [base], presenting [token], believing the certificate
+         * authorities in [authorities] for a `wss://` relay (`sce_peer_link_wss_believing`): the
+         * bytes of a file the application ships (an Android raw resource read whole), one or more
+         * certificates in PEM or one in DER; with [alsoPublic], the public authorities too.
+         */
+        fun wssBelieving(lib: ScePeerLib, base: String, token: String, authorities: ByteArray, alsoPublic: Boolean = false): PeerLink {
+            val roots = if (alsoPublic) ScePeerAbi.ROOTS_AND_PUBLIC else ScePeerAbi.ROOTS_ONLY
+            val handle =
+                lib.sce_peer_link_wss_believing(base, token, authorities, NativeLong(authorities.size.toLong()), roots)
+                    ?: throw ScePeerException(ScePeerAbi.ERR_BAD_ARGUMENT, "link_wss_believing: ${lib.sce_peer_last_error()}")
+            return PeerLink(lib, handle, null)
+        }
+
+        /**
          * A link whose every exchange [transport] carries (`sce_peer_link_host`). It is called on the
          * thread that runs, and a failure it throws is the link's failure, with its words.
          */
