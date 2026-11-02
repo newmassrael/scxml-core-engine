@@ -342,7 +342,8 @@ ping from a thread of the process says nothing of it.
   covers only members. Creating a list and a joining device's key package (both before the device is
   in the log) would need an admission rule as well: an administrator's signed admission of a node the
   relay checks against the log, or creation open to anyone up to `max_lists`. That is an addition to
-  the protocol, the peer core and its C ABI, and a policy, and is not built.
+  the protocol, the peer core and its C ABI, and a policy, and is not built. ADR 0080 (Proposed)
+  sets out the design for the owner to accept or amend.
 - **A private authority on a phone** waits on the ABI call that names one (section 4, option 2).
 - **Reloading a renewed certificate** without a restart is not built: a restart takes seconds and the
   devices dial again.
