@@ -554,7 +554,9 @@
        (sce:component, the name between BEGIN: and END:) whose entries are the
        <data sce:property> elements: a property's value, or with sce:param one
        of its parameters. sce:value="text" makes a string an RFC 5545 TEXT
-       (escaped); sce:max-count makes a property a bounded list of its lines. -->
+       (escaped); sce:repeated="true" makes a property a list of its lines, and
+       sce:max-count, beside it, bounds that list where the protocol does
+       (docs/adr/0077 section 7). -->
   <xs:attribute name="component" type="xs:string"/>
   <xs:attribute name="property" type="xs:string"/>
   <xs:attribute name="param" type="xs:string"/>
@@ -562,6 +564,14 @@
     <xs:simpleType>
       <xs:restriction base="xs:string">
         <xs:enumeration value="text"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+  <xs:attribute name="repeated">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="true"/>
+        <xs:enumeration value="false"/>
       </xs:restriction>
     </xs:simpleType>
   </xs:attribute>

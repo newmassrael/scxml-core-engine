@@ -493,10 +493,10 @@ const CONTENT_LINE_RECORDS_FORMAT_1: &str = r#"<scxml xmlns="http://www.w3.org/2
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="24"/>
-    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="40"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:repeated="true" sce:max-count="3" sce:max-size="40"/>
     <data id="attendeeCn" sce:type="string" sce:property="ATTENDEE" sce:param="CN" sce:max-size="24"/>
     <data id="attendeeRole" sce:type="string" sce:property="ATTENDEE" sce:param="ROLE" sce:required="true" sce:max-size="16"/>
-    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="3" sce:max-size="20" sce:separator="," sce:max-values="3"/>
+    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:repeated="true" sce:max-count="3" sce:max-size="20" sce:separator="," sce:max-values="3"/>
     <data id="exdateTzid" sce:type="string" sce:property="EXDATE" sce:param="TZID" sce:max-size="24"/>
     <data id="categories" sce:type="string" sce:property="CATEGORIES" sce:value="text" sce:max-size="12" sce:separator="," sce:max-values="4"/>
     <data id="geo" sce:type="string" sce:property="GEO" sce:max-size="16" sce:separator=";" sce:max-values="2"/>

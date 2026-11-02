@@ -2546,9 +2546,7 @@ fn derive_codec_shape(
         let record_member_of = |entry: &crate::forge::model::ContentLineEntry| {
             entry.param.as_ref()?;
             entries.iter().find(|o| {
-                o.param.is_none()
-                    && o.property.eq_ignore_ascii_case(&entry.property)
-                    && o.max_count.is_some()
+                o.param.is_none() && o.property.eq_ignore_ascii_case(&entry.property) && o.repeated
             })
         };
         // What a member of a record is in `decoded`: a string, or the carrier of
@@ -2602,9 +2600,9 @@ fn derive_codec_shape(
             }
             field.enum_document = entry_document(entry)?;
             field.enum_open = entry_open(entry)?;
-            field.list = entry.max_count.is_some() || entry.separator.is_some();
+            field.list = entry.repeated || entry.separator.is_some();
             field.optional = !entry.is_required() && !field.list;
-            field.members = if entry.max_count.is_some()
+            field.members = if entry.repeated
                 && (entry.separator.is_some()
                     || entries
                         .iter()

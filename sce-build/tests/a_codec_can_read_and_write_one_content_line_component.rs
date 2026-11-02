@@ -49,7 +49,7 @@ const EVENT: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" s
     <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:max-size="32"/>
     <data id="dtstartTzid" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:param="TZID" sce:max-size="64"/>
     <data id="rrule" sce:type="optional&lt;string&gt;" sce:property="RRULE" sce:max-size="256"/>
-    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="64" sce:max-size="32"/>
+    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:repeated="true" sce:max-count="64" sce:max-size="32"/>
     <data id="sequence" sce:type="optional&lt;uint32&gt;" sce:property="SEQUENCE"/>
     <data id="allDay" sce:type="optional&lt;bool&gt;" sce:property="X-ALL-DAY"/>"#;
 
@@ -147,7 +147,9 @@ fn the_page_shows_a_content_line_codec_and_reads_it_back() {
         "{page}"
     );
     assert!(
-        page.contains("entry exdate: optional<string> property EXDATE max-size 32 max-count 64"),
+        page.contains(
+            "entry exdate: optional<string> property EXDATE max-size 32 repeated max-count 64"
+        ),
         "{page}"
     );
     let back = unpseudo::parse(&page).expect("the page reads back");
@@ -359,15 +361,26 @@ fn a_bound_and_a_text_mark_are_held_to_the_kind_they_qualify() {
     // A list is at least two lines, of a string value.
     let why = refusal(&document(
         "",
-        r#"    <data id="l" sce:type="string" sce:property="L" sce:max-count="1" sce:max-size="4"/>"#,
+        r#"    <data id="l" sce:type="string" sce:property="L" sce:repeated="true" sce:max-count="1" sce:max-size="4"/>"#,
     ));
     assert!(why.contains("sce:max-count"), "{why}");
 
     let why = refusal(&document(
         "",
-        r#"    <data id="l" sce:type="uint8" sce:property="L" sce:max-count="4"/>"#,
+        r#"    <data id="l" sce:type="uint8" sce:property="L" sce:repeated="true" sce:max-count="4"/>"#,
     ));
-    assert!(why.contains("sce:max-count"), "{why}");
+    assert!(why.contains("sce:repeated"), "{why}");
+
+    // A bound on the lines of a property needs the mark that it repeats: the
+    // two are apart (docs/adr/0077 §7).
+    let why = refusal(&document(
+        "",
+        r#"    <data id="l" sce:type="string" sce:property="L" sce:max-count="4" sce:max-size="4"/>"#,
+    ));
+    assert!(
+        why.contains("sce:max-count") && why.contains("sce:repeated"),
+        "{why}"
+    );
 }
 
 #[test]
@@ -378,9 +391,9 @@ fn a_codec_with_no_property_is_refused() {
 
 /// A repeated property declares the parameters its lines carry, and `sce:separator`
 /// with `sce:max-values` makes the value of a line a list (docs/adr/0014).
-const RECORDS: &str = r#"    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="64" sce:max-size="32" sce:separator="," sce:max-values="8"/>
+const RECORDS: &str = r#"    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:repeated="true" sce:max-count="64" sce:max-size="32" sce:separator="," sce:max-values="8"/>
     <data id="exdateTzid" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:param="TZID" sce:max-size="64"/>
-    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:max-count="100" sce:max-size="256"/>
+    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:repeated="true" sce:max-count="100" sce:max-size="256"/>
     <data id="attendeeCn" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:param="CN" sce:max-size="64"/>
     <data id="categories" sce:type="optional&lt;string&gt;" sce:property="CATEGORIES" sce:value="text" sce:max-size="32" sce:separator="," sce:max-values="4"/>"#;
 
@@ -438,7 +451,7 @@ fn a_repeated_property_takes_parameters_and_a_line_may_hold_a_list_of_values() {
 fn a_required_parameter_of_a_repeated_property_is_required_of_each_line() {
     let m = codec(&document(
         "",
-        r#"    <data id="a" sce:type="optional&lt;string&gt;" sce:property="A" sce:max-count="3" sce:max-size="8"/>
+        r#"    <data id="a" sce:type="optional&lt;string&gt;" sce:property="A" sce:repeated="true" sce:max-count="3" sce:max-size="8"/>
     <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8"/>"#,
     ));
     let content = m.content_line.as_ref().expect("a content-line codec");
@@ -617,9 +630,9 @@ fn enum_document(entries: &str) -> String {
 
 const ENUM_ENTRIES: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:max-size="16"/>
     <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:property="STATUS"/>
-    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="40"/>
+    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:repeated="true" sce:max-count="3" sce:max-size="40"/>
     <data id="attendeePartstat" sce:type="enum:Status" sce:property="ATTENDEE" sce:param="PARTSTAT"/>
-    <data id="phase" sce:type="optional&lt;enum:Status&gt;" sce:property="PHASE" sce:max-count="2"/>"#;
+    <data id="phase" sce:type="optional&lt;enum:Status&gt;" sce:property="PHASE" sce:repeated="true" sce:max-count="2"/>"#;
 
 #[test]
 fn an_enum_entry_is_a_value_a_repeated_value_or_a_parameter() {
@@ -671,7 +684,7 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
     assert!(why.contains("Nope"), "{why}");
     // A list of an enum is two lines at least, as a list of strings is.
     let why = refusal(&enum_document(
-        r#"    <data id="phase" sce:type="enum:Status" sce:property="PHASE" sce:max-count="1"/>"#,
+        r#"    <data id="phase" sce:type="enum:Status" sce:property="PHASE" sce:repeated="true" sce:max-count="1"/>"#,
     ));
     assert!(why.contains("sce:max-count"), "{why}");
 }

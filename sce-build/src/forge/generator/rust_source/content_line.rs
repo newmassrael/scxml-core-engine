@@ -176,7 +176,7 @@ impl Plan<'_> {
             )
         } else if self.model.reads_values(e) {
             self.items_type("&str")
-        } else if e.max_count.is_some() {
+        } else if e.repeated {
             self.items_type(&self.value_type(e))
         } else if e.is_required() {
             self.value_type(e)
@@ -279,7 +279,7 @@ impl Plan<'_> {
             }
             body.push(format!("    {}", self.write_value(e)));
             body.push("}".to_string());
-        } else if e.max_count.is_some() {
+        } else if e.repeated {
             if e.is_required() {
                 body.push(format!(
                     "if src.{accessor}().next().is_none() {{\n    {}\n}}",
@@ -374,7 +374,7 @@ impl Plan<'_> {
             ));
             let read = if self.model.reads_records(e) {
                 format!("self.{acc}.iter()")
-            } else if self.model.reads_values(e) || e.max_count.is_some() {
+            } else if self.model.reads_values(e) || e.repeated {
                 self.read_items(e, &acc)
             } else {
                 self.read_scalar(e, &acc, !e.is_required())

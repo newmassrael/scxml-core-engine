@@ -2480,17 +2480,61 @@ fn parse_content_line_entry(
             attr: "sce:max-size".into(),
         }));
     }
-    if let Some(count) = max_count {
-        if param.is_some() || !(sce_type == SceType::String || is_enum) || count < 2 {
+    // `sce:repeated="true"` says the property may occur on several lines, and
+    // `sce:max-count` bounds how many where the protocol bounds it: the mark of
+    // a list and its bound are two things, as `sce:separator` and
+    // `sce:max-values` are (docs/adr/0077 §7).
+    let repeated = match sce_attr(node, "repeated").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(other) => {
+            return Err(refuse(ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:repeated".into(),
+                value: other.to_string(),
+                allowed: vec!["true".into(), "false".into()],
+            }))
+        }
+    };
+    if repeated && (param.is_some() || !(sce_type == SceType::String || is_enum)) {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:repeated".into(),
+            value: "true".into(),
+            rule: "on a string or enum property entry only: a parameter holds one value, and \
+                   a repeated integer or bool property is a later addition"
+                .into(),
+        }));
+    }
+    match (repeated, max_count) {
+        (false, Some(count)) => {
             return Err(refuse(ValidationError::AttributeRuleViolated {
                 element,
                 attr: "sce:max-count".into(),
                 value: count.to_string(),
-                rule: "at least 2, on a string or enum property entry only: a list of the \
-                       values of a repeated property"
+                rule: "a bound on the lines of a repeated property, which needs \
+                       sce:repeated=\"true\" to say the property repeats"
                     .into(),
             }));
         }
+        (true, None) => {
+            // A repeated property the protocol bounds by nothing is admitted
+            // once every backend holds a list of no bound; until then the bound
+            // is required (docs/adr/0077 §7).
+            return Err(refuse(ValidationError::MissingAttribute {
+                element,
+                attr: "sce:max-count".into(),
+            }));
+        }
+        (true, Some(count)) if count < 2 => {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:max-count".into(),
+                value: count.to_string(),
+                rule: "at least 2: a property of one line is not repeated".into(),
+            }));
+        }
+        _ => {}
     }
 
     // The property's value entry is one entry; a parameter names one declared
@@ -2522,10 +2566,7 @@ fn parse_content_line_entry(
             // A required parameter of a repeated property is required of each line
             // that exists, whether or not the property is (docs/adr/0014), so it needs
             // no required property to be missing from.
-            if field_type.optional_elem().is_none()
-                && !owner.is_required()
-                && owner.max_count.is_none()
-            {
+            if field_type.optional_elem().is_none() && !owner.is_required() && !owner.repeated {
                 return Err(refuse(ValidationError::AttributeRuleViolated {
                     element,
                     attr: "sce:type".into(),
@@ -2561,6 +2602,7 @@ fn parse_content_line_entry(
         sce_type: field_type,
         text,
         max_size,
+        repeated,
         max_count,
         separator,
         max_values,
@@ -12377,7 +12419,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // Names the bound a `capacity`, a `returns-max-size` or a field's `max-size` is, so
     // that a build can give it another number than the one written (`crate::limits`).
     "limit",
-    // The most lines of a repeated property a content-line codec holds.
+    // The most lines of a repeated property a content-line codec holds, beside
+    // `repeated`.
     "max-count",
     "max-delta",
     "max-iter",
@@ -12406,6 +12449,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "quantity",
     "range-max",
     "range-min",
+    // A content-line property that may occur on several lines, whose bound, where
+    // the protocol states one, is `max-count` (docs/adr/0077 §7).
+    "repeated",
     "req",
     // A codec entry the decode refuses a map or component without, in format 1
     // of a CBOR or content-line codec (SCE_FORGE.md §4.6). Not part of format 2,

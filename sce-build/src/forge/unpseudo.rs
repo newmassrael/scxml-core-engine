@@ -2440,6 +2440,7 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             sce_type,
             text: false,
             max_size: None,
+            repeated: false,
             max_count: None,
             separator: None,
             max_values: None,
@@ -2454,6 +2455,7 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             match *word {
                 "text" => entry.text = true,
                 "max-size" => entry.max_size = Some(number("max-size")?),
+                "repeated" => entry.repeated = true,
                 "max-count" => entry.max_count = Some(number("max-count")?),
                 "max-values" => entry.max_values = Some(number("max-values")?),
                 "separator" => {

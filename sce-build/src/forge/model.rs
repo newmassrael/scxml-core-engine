@@ -3280,8 +3280,13 @@ pub struct ContentLineEntry {
     /// `sce:max-size`: the most bytes a `string` entry holds, after unescaping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
-    /// `sce:max-count`: the most lines of the property a component holds
-    /// (at least 2); the entry is then a bounded list of values.
+    /// `sce:repeated="true"`: the property may occur on several lines of a
+    /// component, and the entry is a list of them (docs/adr/0014, 0077 §7).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub repeated: bool,
+    /// `sce:max-count` (at least 2), beside [`Self::repeated`]: the most lines
+    /// of the property the protocol lets a component hold; `None` where it
+    /// states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_count: Option<u32>,
     /// `sce:separator` (`,` or `;`): the value of one line is a list of values
@@ -3340,7 +3345,7 @@ impl ContentLineModel {
     /// the property are members of each record, not members of the codec.
     pub fn reads_records(&self, entry: &ContentLineEntry) -> bool {
         entry.param.is_none()
-            && entry.max_count.is_some()
+            && entry.repeated
             && (entry.separator.is_some() || self.parameters_of(entry).next().is_some())
     }
 
@@ -3348,7 +3353,7 @@ impl ContentLineModel {
     /// property that occurs once (docs/adr/0014, decision 2). The field is a list
     /// of values, and the parameters of the property stay members of the codec.
     pub fn reads_values(&self, entry: &ContentLineEntry) -> bool {
-        entry.param.is_none() && entry.max_count.is_none() && entry.separator.is_some()
+        entry.param.is_none() && !entry.repeated && entry.separator.is_some()
     }
 
     /// The parameter entries declared for `entry`'s property, in declaration order.

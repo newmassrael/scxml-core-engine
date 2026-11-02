@@ -3379,6 +3379,9 @@ fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
             if let Some(n) = e.max_size {
                 let _ = write!(line, " max-size {n}");
             }
+            if e.repeated {
+                line.push_str(" repeated");
+            }
             if let Some(n) = e.max_count {
                 let _ = write!(line, " max-count {n}");
             }

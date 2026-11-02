@@ -260,7 +260,7 @@ fn entries_context(
                 "max_size": e.max_size,
                 "max_count": e.max_count,
                 // One value a line, on several lines.
-                "is_list": e.max_count.is_some() && !is_records,
+                "is_list": e.repeated && !is_records,
                 // One line holding a list of values (docs/adr/0014).
                 "is_values": model.reads_values(e),
                 // Several lines, each a record of its parameters and its value or

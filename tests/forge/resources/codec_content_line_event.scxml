@@ -29,7 +29,7 @@
     <data id="organizer" sce:type="optional&lt;string&gt;" sce:property="ORGANIZER" sce:max-size="40"/>
     <data id="organizerCn" sce:type="optional&lt;string&gt;" sce:property="ORGANIZER" sce:param="CN" sce:max-size="24"/>
     <data id="rrule" sce:type="optional&lt;string&gt;" sce:property="RRULE" sce:max-size="40"/>
-    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="3" sce:max-size="20"/>
+    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:repeated="true" sce:max-count="3" sce:max-size="20"/>
     <data id="sequence" sce:type="optional&lt;uint16&gt;" sce:property="SEQUENCE"/>
     <data id="priority" sce:type="optional&lt;int32&gt;" sce:property="PRIORITY"/>
     <data id="allDay" sce:type="optional&lt;bool&gt;" sce:property="X-ALL-DAY"/>

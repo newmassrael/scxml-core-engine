@@ -664,3 +664,16 @@ Landing: the commit that adds this section.
     with a list of no bound, from the previous two sections, did not compile in a `no_std` build. Every codec `Inline`
     holds keeps its default.
 
+## A repeated content-line property says it repeats (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `sce:repeated="true"` marks a content-line property that may occur on several lines, and `sce:max-count` bounds the
+  lines beside it. Add `sce:repeated="true"` to every entry that writes `sce:max-count`: one that writes `sce:max-count`
+  alone is refused (`validation/attribute-rule-violated`, naming `sce:repeated`). `sce:max-count` meant both until now,
+  which left a property the protocol repeats with no bound no spelling.
+- The generated code is unchanged: a repeated property is the same list as before.
+- `sce:max-count` is still required beside `sce:repeated`, as `sce:max-size` on a text and `sce:max-values` beside
+  `sce:separator` are; a content-line list or text with no bound is the next landing.
+- The pseudocode line of a repeated entry reads `repeated max-count N`.
+
