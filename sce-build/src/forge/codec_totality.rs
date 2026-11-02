@@ -195,6 +195,10 @@ impl InputImports for Resolved<'_> {
         codec_roles::Contexts(self.0).says_input(alias, input)
     }
 
+    fn says_input_partly(&mut self, alias: &str, input: &str) -> bool {
+        codec_roles::Contexts(self.0).says_input_partly(alias, input)
+    }
+
     fn entry_shape(&mut self, alias: &str) -> Option<codec_roles::EntryShape> {
         codec_roles::Contexts(self.0).entry_shape(alias)
     }
@@ -990,6 +994,9 @@ mod tests {
         fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
             false
         }
+        fn says_input_partly(&mut self, _alias: &str, _input: &str) -> bool {
+            false
+        }
         fn entry_shape(&mut self, _alias: &str) -> Option<codec_roles::EntryShape> {
             None
         }
@@ -1201,6 +1208,9 @@ mod tests {
                 Vec::new()
             }
             fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
+                false
+            }
+            fn says_input_partly(&mut self, _alias: &str, _input: &str) -> bool {
                 false
             }
             fn entry_shape(&mut self, _alias: &str) -> Option<codec_roles::EntryShape> {

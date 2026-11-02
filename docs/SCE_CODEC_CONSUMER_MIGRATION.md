@@ -308,9 +308,22 @@ Landing: the commit that adds this section.
 - A codec whose only refusal was that a held arm could say the input otherwise is now total: its `encode_to_vec`
   returns `Vec<u8>`, and its `sce:encode-may-fail` is untrue and refused. Run the check of the introduction over every
   document and drop each declaration it reports as untrue; a parent that held only such codecs drops its own.
-- A variant with an arm that does not say the input is unchanged: the parent hands the input, and the arm that says
-  it is held to it.
 - The other backends do not change: their encode is still handed every input.
+
+## A flag input some arms of a variant read is said by those arms (ADR 0065 §6 R4e)
+
+Landing: the commit that adds this section.
+
+- In Rust, a codec whose `<sce:variant>` hands a flag input to some arms only now says it too. Its `encode`, `measure`
+  and `encode_source` no longer take the input, and `{Codec}::input_{i}(src)` returns `Option<bool>`: the arm's input,
+  or `None` for a value in an arm that does not read it. `decode` still takes it.
+- A codec that hands such an input on to a body, always there, says it the same way.
+- A codec whose only refusal was that bind is now total, and its `sce:encode-may-fail` is untrue and refused. Run the
+  check of the introduction and drop what it reports. The extension entries with one ZBuf arm are the case in the
+  tree; the chain that holds one keeps its declaration.
+- A carrier flag bound to such a body stays the value's: it is checked against the body where the body says the input,
+  and a disagreement is `PresentIfMismatch`. A broadcast log's `publish` still takes such an input.
+- The other backends do not change.
 
 ## A deployment says what its storing forms hold (ADR 0077 §7)
 

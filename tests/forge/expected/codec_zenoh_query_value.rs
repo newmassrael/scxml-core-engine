@@ -194,7 +194,6 @@ impl<'a> CodecZenohQueryValue<'a> {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecZenohQueryValueSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
-        Self::count_source(src)?;
         Self::write_source(src, w)
     }
 
@@ -202,10 +201,17 @@ impl<'a> CodecZenohQueryValue<'a> {
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohQueryValueSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
         let _k_exts: usize = src.exts().len();
-        let mut _prev_after_shm: u8 = 0;
+        {
+            let mut _prev: bool = false;
+            for _e in src.exts() {
+                if CodecZenohValueEntry::input_after_shm(&_e).is_some_and(|_s| _s != _prev) {
+                    return Err(CodecError::PresentIfMismatch);
+                }
+                _prev = (u64::from(super::codec_zenoh_value_entry::CodecZenohValueEntrySource::header(&_e)) & 0xF) == 4u64;
+            }
+        }
         for (_i, _e) in src.exts().enumerate() {
-            CodecZenohValueEntry::write_source_in(&_e, w, _prev_after_shm, &super::codec_zenoh_value_entry::CodecZenohValueEntryOverrides::header_z(_i + 1 < _k_exts))?;
-            _prev_after_shm = u8::from((u64::from(super::codec_zenoh_value_entry::CodecZenohValueEntrySource::header(&_e)) & 0xF) == 4u64);
+            CodecZenohValueEntry::write_source_in(&_e, w, &super::codec_zenoh_value_entry::CodecZenohValueEntryOverrides::header_z(_i + 1 < _k_exts))?;
         }
         Ok(())
     }

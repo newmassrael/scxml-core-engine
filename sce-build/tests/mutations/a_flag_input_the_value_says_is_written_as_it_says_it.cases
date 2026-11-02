@@ -33,6 +33,20 @@ edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                            filters::to_snake_case(format!("{name}{}", &arms[&arm.alias][..0]))''')
 PY
 
+# A value that says nothing of an input disagrees with nothing (§6 R4e). Refused
+# instead, every chain with a unit or a number entry refuses a frame it decoded.
+mutation_case "a value that says nothing of an input is refused" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                format!("{read}.is_some_and(|_s| _s != {value})")''',
+     r'''                format!("{read}.is_none_or(|_s| _s != {value})")''')
+PY
+
+mutation_case "an arm that does not read the input says it is clear" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''                    said.push("_ => None,".to_string());''',
+     r'''                    said.push("_ => Some(false),".to_string());''')
+PY
+
 mutation_case "a bound flag keeps the bit the value presents" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                    Derivation::BoundInput { binders } => {

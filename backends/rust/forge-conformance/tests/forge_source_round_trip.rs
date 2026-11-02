@@ -607,6 +607,74 @@ mod said_inputs {
     }
 }
 
+// A carrier flag bound to an input its body says in some values only (docs/adr/0065
+// §6 R4e): the flag is the value's, held to the arm where the arm says the input.
+mod some_arms_say {
+    use super::codecs::codec_every_arm_says_near::CodecEveryArmSaysNearParts;
+    use super::codecs::codec_some_arms_say::{
+        CodecSomeArmsSay, CodecSomeArmsSayParts, CodecSomeArmsSayPartsBody as Body,
+    };
+    use super::codecs::codec_some_arms_say_parent::{
+        CodecSomeArmsSayParent, CodecSomeArmsSayParentParts,
+    };
+    use super::codecs::codec_some_arms_say_plain::CodecSomeArmsSayPlainParts;
+    use sce_forge_runtime::codec::{Bounded, CodecError, VecSink};
+
+    fn encoded(header: u8, value: &CodecSomeArmsSayParts<'_>) -> (Result<(), CodecError>, Vec<u8>) {
+        let parent = CodecSomeArmsSayParentParts {
+            header,
+            body: value,
+        };
+        let mut bytes = Vec::new();
+        let answer = CodecSomeArmsSayParent::encode_source(&parent, &mut VecSink::new(&mut bytes));
+        (answer, bytes)
+    }
+
+    #[test]
+    fn the_input_is_the_arms_and_none_from_an_arm_that_does_not_read_it() {
+        let says = |body| CodecSomeArmsSay::input_n(&CodecSomeArmsSayParts { body });
+        let with = CodecEveryArmSaysNearParts {
+            id: 7,
+            suffix: Some(Bounded::new(&b"a"[..]).expect("within the bound")),
+        };
+        assert_eq!(says(Body::CodecEveryArmSaysNear(&with)), Some(true));
+        let plain = CodecSomeArmsSayPlainParts { id: 7 };
+        assert_eq!(says(Body::CodecSomeArmsSayPlain(&plain)), None);
+    }
+
+    #[test]
+    fn a_flag_is_held_to_the_arm_that_says_it_before_the_first_byte() {
+        let without = CodecEveryArmSaysNearParts {
+            id: 7,
+            suffix: None,
+        };
+        let value = CodecSomeArmsSayParts {
+            body: Body::CodecEveryArmSaysNear(&without),
+        };
+        // `N` is bit 5: the arm has no suffix, so a set bit says otherwise.
+        let (answer, bytes) = encoded(0x20, &value);
+        assert_eq!(answer, Err(CodecError::PresentIfMismatch));
+        assert!(bytes.is_empty(), "a refusal leaves the sink untouched");
+
+        let (answer, bytes) = encoded(0x00, &value);
+        assert_eq!(answer, Ok(()));
+        assert_eq!(bytes, [0x40, 7]);
+    }
+
+    #[test]
+    fn a_flag_is_the_values_own_in_an_arm_that_does_not_read_it() {
+        let plain = CodecSomeArmsSayPlainParts { id: 7 };
+        let value = CodecSomeArmsSayParts {
+            body: Body::CodecSomeArmsSayPlain(&plain),
+        };
+        for (header, written) in [(0x00, 0x00), (0x20, 0x20)] {
+            let (answer, bytes) = encoded(header, &value);
+            assert_eq!(answer, Ok(()));
+            assert_eq!(bytes, [written, 7]);
+        }
+    }
+}
+
 // A flag input every arm of a variant says (docs/adr/0065 §6 R4d): a value holds
 // one arm, so the input is the one that arm says, and a parent writes the flag it
 // binds to the input from it. The arms say it at opposite polarities.
@@ -783,6 +851,56 @@ mod groups {
             &CodecZenohValueZbufParts { after_shm: plain }
         ));
         assert_eq!(encode(plain), [0x03, 1, 2, 3]);
+    }
+
+    // An input one arm of a variant reads (docs/adr/0065 §6 R4e): that arm says it,
+    // and a value in another arm has no bit the input could change, so it says
+    // nothing and the encode is handed nothing.
+    #[test]
+    fn an_input_one_arm_reads_is_said_by_that_arm_alone() {
+        use super::codecs::codec_zenoh_ext_unit::CodecZenohExtUnitParts;
+        use super::codecs::codec_zenoh_value_entry::{
+            CodecZenohValueEntry, CodecZenohValueEntryParts, CodecZenohValueEntryPartsBody as Body,
+        };
+        let entry = |body| CodecZenohValueEntryParts { header: 0x00, body };
+
+        let unit = CodecZenohExtUnitParts {};
+        assert_eq!(
+            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohExtUnit(&unit))),
+            None
+        );
+
+        let plain = CodecZenohValueZbufParts {
+            after_shm: AfterShm::NotAfterShm {
+                value: (&[1u8]).into(),
+            },
+        };
+        assert_eq!(
+            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohValueZbuf(&plain))),
+            Some(false)
+        );
+
+        let none: Bounded<&[CodecZenohValueSliceParts<'_>], 4> =
+            Bounded::new(&[][..]).expect("no entries");
+        let sliced = CodecZenohValueZbufParts {
+            after_shm: AfterShm::AfterShm {
+                encoding: 0,
+                slices: none,
+                value_len: 0,
+            },
+        };
+        assert_eq!(
+            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohValueZbuf(&sliced))),
+            Some(true)
+        );
+
+        // The encode takes no input: the arm's own layout decides the bytes.
+        let mut bytes = Vec::new();
+        let Ok(()) = CodecZenohValueEntry::encode_source(
+            &entry(Body::CodecZenohValueZbuf(&plain)),
+            &mut VecSink::new(&mut bytes),
+        );
+        assert_eq!(bytes, [0x40, 0x01, 1]);
     }
 
     // A disjunction holds its fields in an arm for each assignment of its flags

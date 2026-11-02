@@ -13424,7 +13424,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -13505,15 +13505,15 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
         "dispatcher decode must NOT pass bare `header`;\n{disp_rust}"
     );
     // Encode site: arm_a says `N` itself (its one gated field), so it is
-    // handed nothing; the dispatcher, which is handed `n`, holds the arm
-    // to it before writing (docs/adr/0065 §6 R4a).
+    // handed nothing, and neither is the dispatcher: it says `N` by that arm,
+    // and arm_b does not read it (docs/adr/0065 §6 R4e).
     assert!(
         disp_rust.contains("B5nuChainArmA::write_source(_b, w)?"),
         "dispatcher encode must thread the sink alone to arm_a; got:\n{disp_rust}"
     );
     assert!(
-        disp_rust.contains("B5nuChainArmA::input_n(_b) != _h"),
-        "dispatcher encode must hold arm_a's `N` to its own `n`; got:\n{disp_rust}"
+        disp_rust.contains("Some(B5nuChainArmA::input_n(_b))"),
+        "dispatcher must say `N` by the arm that reads it; got:\n{disp_rust}"
     );
     assert!(
         !disp_rust.contains("b.encode(w, self.header)"),
@@ -13569,7 +13569,7 @@ fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String,
         r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -21488,7 +21488,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_axis1_arm_a.scxml" kind="codec" as="codec_axis1_arm_a">
     <sce:flag-bind input="N" source="N"/>
   </sce:import>
@@ -22088,7 +22088,7 @@ fn axis1_inversion_multi_flag_input_order() {
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big">
+       sce:kind="codec" sce:default-endian="big">
   <sce:import src="codec_multi_arm_a.scxml" kind="codec" as="codec_multi_arm_a">
     <sce:flag-bind input="N" source="N"/>
     <sce:flag-bind input="M" source="M"/>
@@ -22192,12 +22192,18 @@ fn axis1_inversion_multi_flag_input_order() {
         "dispatcher decode signature MUST emit (n, m, p) in flag-input declaration \
          order; got:\n{dispatcher_body}"
     );
+    // The arm that reads the three inputs says them, so the encode is handed none
+    // (docs/adr/0065 §6 R4e); the decode, above, still is.
     assert!(
-        dispatcher_body
-            .contains("pub fn encode<S: SceSink>(&self, w: &mut S, n: u8, m: u8, p: u8)"),
-        "dispatcher encode signature MUST emit (n, m, p) in same declaration order \
-         as decode; got:\n{dispatcher_body}"
+        dispatcher_body.contains("pub fn encode<S: SceSink>(&self, w: &mut S) ->"),
+        "dispatcher encode takes no input the arm says; got:\n{dispatcher_body}"
     );
+    for input in ["n", "m", "p"] {
+        assert!(
+            dispatcher_body.contains(&format!("CodecMultiArmA::input_{input}(_b)")),
+            "dispatcher reads `{input}` off the arm that says it; got:\n{dispatcher_body}"
+        );
+    }
 
     // Round-trip sidecar — encode with N=1, M=0, P=1 ⇒ wire layout
     // [header=0xA0, disp_tag=0x00, x, optN, optP] (5 bytes; optM

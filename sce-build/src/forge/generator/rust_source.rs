@@ -884,6 +884,7 @@ impl<'a> Plan<'a> {
                 embed,
                 alias,
                 input,
+                partly: _,
             } => {
                 let field = self
                     .m()
@@ -934,6 +935,35 @@ impl<'a> Plan<'a> {
                     said.join(" ")
                 )
             }
+            InputSource::SomeArms { arms } => {
+                let all_arms = self.arms();
+                let mut said: Vec<String> = all_arms
+                    .iter()
+                    .filter(|arm| arms.contains_key(&arm.alias))
+                    .map(|arm| {
+                        let input = &arms[&arm.alias];
+                        let read = format!(
+                            "{}::input_{}(_b)",
+                            arm.child.type_name,
+                            filters::to_snake_case(input.clone())
+                        );
+                        let said = if self.child_says_input_partly(&arm.alias, input) {
+                            read
+                        } else {
+                            format!("Some({read})")
+                        };
+                        format!("{}{} => {said},", arm.cfg_prefix(), self.arm_pattern(arm))
+                    })
+                    .collect();
+                if said.len() < all_arms.len() {
+                    said.push("_ => None,".to_string());
+                }
+                format!(
+                    "match {}::body({value}) {{ {} }}",
+                    self.trait_name,
+                    said.join(" ")
+                )
+            }
         }
     }
 
@@ -976,12 +1006,22 @@ impl<'a> Plan<'a> {
                     )
                 }
                 InputSource::EveryArm { .. } => "the input the arm it holds says".to_string(),
+                InputSource::SomeArms { .. } => {
+                    "the input the arm it holds says, and `None` from an arm that does not read \
+                     it"
+                    .to_string()
+                }
+            };
+            let answer = if self.roles.says_input_partly(&input.name) {
+                "Option<bool>"
+            } else {
+                "bool"
             };
             out.push_str(&format!(
                 "\x20   /// The flag-input `{name}` that `src` says: {by}.\n\
                  \x20   /// A parent hands the decode this bit and derives it from here for the\n\
                  \x20   /// encode.\n\
-                 \x20   pub fn input_{snake}<S: {trait_name} + ?Sized>(src: &S) -> bool {{\n\
+                 \x20   pub fn input_{snake}<S: {trait_name} + ?Sized>(src: &S) -> {answer} {{\n\
                  \x20       {expr}\n\
                  \x20   }}\n\n",
                 name = input.name,
@@ -1031,12 +1071,20 @@ impl<'a> Plan<'a> {
         let child = self
             .child_of(&binder.alias)
             .expect("`check` found the codec a bind names");
-        let says = |entry: &str| {
-            format!(
+        // Whether `entry` says the input otherwise than `value`. A value that says
+        // nothing of it disagrees with nothing (docs/adr/0065 §6 R4e).
+        let partly = self.child_says_input_partly(&binder.alias, &binder.input);
+        let says_otherwise = |entry: &str, value: &str| {
+            let read = format!(
                 "{}::input_{}({entry})",
                 child.type_name,
                 filters::to_snake_case(binder.input.clone())
-            )
+            );
+            if partly {
+                format!("{read}.is_some_and(|_s| _s != {value})")
+            } else {
+                format!("{read} != {value}")
+            }
         };
         let element = binder.site.element(&binder.alias);
         let refuse = self.refuse(RefusalKind::PresentIfMismatch, element);
@@ -1068,7 +1116,7 @@ impl<'a> Plan<'a> {
                 };
                 let chain = field_of(field);
                 let walk = [
-                    format!("    if {} != _prev {{", says("&_e")),
+                    format!("    if {} {{", says_otherwise("&_e", "_prev")),
                     format!("        return Err({refuse});"),
                     "    }".to_string(),
                     format!(
@@ -1095,7 +1143,7 @@ impl<'a> Plan<'a> {
             BindSite::List { field } => {
                 let list = field_of(field);
                 let read = self.read_src(list);
-                let differs = format!("{} != _h", says("&_e"));
+                let differs = says_otherwise("&_e", "_h");
                 if list.present_if.is_some() {
                     format!("{read}.is_some_and(|mut _l| _l.any(|_e| {differs}))")
                 } else {
@@ -1106,9 +1154,9 @@ impl<'a> Plan<'a> {
                 let body = field_of(field);
                 let read = self.read_src(body);
                 if body.present_if.is_some() {
-                    format!("{read}.is_some_and(|_b| {} != _h)", says("_b"))
+                    format!("{read}.is_some_and(|_b| {})", says_otherwise("_b", "_h"))
                 } else {
-                    format!("{} != _h", says(&read))
+                    says_otherwise(&read, "_h")
                 }
             }
             BindSite::Arm => {
@@ -1118,10 +1166,10 @@ impl<'a> Plan<'a> {
                     .filter(|arm| arm.alias == binder.alias)
                     .map(|arm| {
                         format!(
-                            "{}{} => {} != _h,",
+                            "{}{} => {},",
                             arm.cfg_prefix(),
                             self.arm_pattern(arm),
-                            says("_b")
+                            says_otherwise("_b", "_h")
                         )
                     })
                     .collect();
@@ -1132,6 +1180,15 @@ impl<'a> Plan<'a> {
         lines.push(format!(
             "{{\n    let _h: bool = {handed};\n    if {differs} {{\n        return Err({refuse});\n    }}\n}}"
         ));
+    }
+
+    /// Whether the import `alias` says its input `input` in some of its values
+    /// only, so that reading it answers an `Option`.
+    fn child_says_input_partly(&self, alias: &str, input: &str) -> bool {
+        self.input
+            .imports
+            .iter()
+            .any(|i| i.alias == alias && i.codec_partly_says_inputs.iter().any(|s| s == input))
     }
 
     /// Whether the import `alias` says its input `input`, so that it is not

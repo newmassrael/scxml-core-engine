@@ -183,6 +183,9 @@ pub enum InputSource {
         embed: String,
         alias: String,
         input: String,
+        /// The body says it in some of its values only (§6 R4e), so this codec
+        /// does too.
+        partly: bool,
     },
     /// The group the input decides ([`GateGroup`]): the input is set exactly
     /// when the value holds the group's side present while it holds.
@@ -192,6 +195,22 @@ pub enum InputSource {
     /// the input in any value. `arms` maps the alias of each arm's codec to the
     /// input of it that is bound.
     EveryArm { arms: BTreeMap<String, String> },
+    /// The variant, some arm of which the codec hands the input on to, the
+    /// others not reading it (docs/adr/0065 §6 R4e): an arm that says it says it,
+    /// and a value in any other arm has no bit the input could change, so nothing
+    /// is left for the codec to be handed. `arms` is as above.
+    SomeArms { arms: BTreeMap<String, String> },
+}
+
+impl InputSource {
+    /// Whether a value can say nothing of the input, so that reading it off a
+    /// source answers an `Option` (docs/adr/0065 §6 R4e).
+    pub fn is_partial(&self) -> bool {
+        matches!(
+            self,
+            InputSource::SomeArms { .. } | InputSource::Forward { partly: true, .. }
+        )
+    }
 }
 
 /// What a gate reads: a flag-input of the codec, a one-bit flag of one of its
@@ -405,6 +424,9 @@ pub trait InputImports {
     /// Whether the codec imported as `alias` says its input `input` itself
     /// ([`CodecRoles::inputs`]).
     fn says_input(&mut self, alias: &str, input: &str) -> bool;
+    /// Whether it says `input` in some of its values only
+    /// ([`InputSource::is_partial`]).
+    fn says_input_partly(&mut self, alias: &str, input: &str) -> bool;
     /// What the codec imported as `alias` is made of ([`EntryShape`]), or
     /// `None` when it is no codec this one can read.
     fn entry_shape(&mut self, alias: &str) -> Option<EntryShape>;
@@ -577,6 +599,12 @@ impl InputImports for Contexts<'_> {
         self.0
             .iter()
             .any(|i| i.alias == alias && i.codec_says_inputs.iter().any(|s| s == input))
+    }
+
+    fn says_input_partly(&mut self, alias: &str, input: &str) -> bool {
+        self.0
+            .iter()
+            .any(|i| i.alias == alias && i.codec_partly_says_inputs.iter().any(|s| s == input))
     }
 
     fn entry_shape(&mut self, alias: &str) -> Option<EntryShape> {
@@ -796,6 +824,11 @@ impl CodecRoles {
         self.inputs.contains_key(name)
     }
 
+    /// Whether the value says the flag-input `name` in some of its values only.
+    pub fn says_input_partly(&self, name: &str) -> bool {
+        self.inputs.get(name).is_some_and(InputSource::is_partial)
+    }
+
     /// The group `field` is an element of.
     pub fn group_of(&self, field: &str) -> Option<&GateGroup> {
         self.groups.iter().find(|g| g.contains(field))
@@ -891,6 +924,7 @@ impl CodecRoles {
                 InputSource::Forward { embed, input, .. } => format!("input-of({embed}.{input})"),
                 InputSource::Group => format!("side-of(group {name})"),
                 InputSource::EveryArm { .. } => "input-of(every arm)".to_string(),
+                InputSource::SomeArms { .. } => "input-of(the arms that read it)".to_string(),
             };
             out.push_str(&format!("  input  {name}  said by the value  {by}\n"));
         }
@@ -1159,7 +1193,8 @@ pub fn classify_with(
 
     // A flag of this codec bound to an input that the codec of a body or an
     // arm says is derived from it, as a parent tag is. A list hands its one
-    // bound value to every entry, and is checked instead.
+    // bound value to every entry, and is checked instead, as is a body that says
+    // it in some of its values only: the flag is the value's where it says nothing.
     let held = held_codecs(model, inputs);
     let mut input_checks: Vec<InputCheck> = Vec::new();
     for held_codec in &held {
@@ -1177,22 +1212,27 @@ pub fn classify_with(
                     site: site.clone(),
                 };
                 match site {
-                    BindSite::Embed { .. } | BindSite::Arm => derive(
-                        ElementId::Flag {
-                            field: carrier.clone(),
-                            flag: flag.clone(),
-                        },
-                        Derivation::BoundInput {
-                            binders: vec![binder],
-                        },
-                    ),
-                    BindSite::List { .. } => input_checks.push(InputCheck {
-                        binder,
-                        against: InputValue::Carrier {
-                            carrier: carrier.clone(),
-                            flag: flag.clone(),
-                        },
-                    }),
+                    BindSite::Embed { .. } | BindSite::Arm
+                        if !held_codec.says_partly(&bind.input) =>
+                    {
+                        derive(
+                            ElementId::Flag {
+                                field: carrier.clone(),
+                                flag: flag.clone(),
+                            },
+                            Derivation::BoundInput {
+                                binders: vec![binder],
+                            },
+                        )
+                    }
+                    BindSite::Embed { .. } | BindSite::Arm | BindSite::List { .. } => input_checks
+                        .push(InputCheck {
+                            binder,
+                            against: InputValue::Carrier {
+                                carrier: carrier.clone(),
+                                flag: flag.clone(),
+                            },
+                        }),
                 }
             }
         }
@@ -1305,7 +1345,10 @@ pub fn classify_with(
                     (Some(InputSource::Forward { embed, .. }), BindSite::Embed { field }) => {
                         embed == field
                     }
-                    (Some(InputSource::EveryArm { .. }), BindSite::Arm) => true,
+                    (
+                        Some(InputSource::EveryArm { .. } | InputSource::SomeArms { .. }),
+                        BindSite::Arm,
+                    ) => true,
                     _ => false,
                 };
                 if !derived_from_it {
@@ -1861,11 +1904,17 @@ struct HeldCodec {
     binds: Vec<FlagBind>,
     /// The inputs it says, among those it is bound or supplied.
     said: Vec<String>,
+    /// Those of them it says in some of its values only.
+    partly: Vec<String>,
 }
 
 impl HeldCodec {
     fn says(&self, input: &str) -> bool {
         self.said.iter().any(|s| s == input)
+    }
+
+    fn says_partly(&self, input: &str) -> bool {
+        self.partly.iter().any(|s| s == input)
     }
 }
 
@@ -1883,6 +1932,7 @@ fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCod
             sites: vec![site],
             binds: Vec::new(),
             said: Vec::new(),
+            partly: Vec::new(),
         }),
     };
     for field in &model.fields {
@@ -1918,6 +1968,12 @@ fn held_codecs(model: &CodecModel, inputs: &mut dyn InputImports) -> Vec<HeldCod
         h.said = asked
             .into_iter()
             .filter(|input| inputs.says_input(&h.alias, input))
+            .collect();
+        h.partly = h
+            .said
+            .iter()
+            .filter(|input| inputs.says_input_partly(&h.alias, input))
+            .cloned()
             .collect();
     }
     held
@@ -1976,10 +2032,12 @@ fn said_inputs(
             }),
             ([], forwards, false) if every_arm_says(model, forwards) => {
                 Some(InputSource::EveryArm {
-                    arms: forwards
-                        .iter()
-                        .map(|(h, bind)| (h.alias.clone(), bind.input.clone()))
-                        .collect(),
+                    arms: bound_arms(forwards),
+                })
+            }
+            ([], forwards, false) if some_arm_says(model, forwards) => {
+                Some(InputSource::SomeArms {
+                    arms: bound_arms(forwards),
                 })
             }
             ([], [(h, bind)], false) if h.says(&bind.input) => match h.sites.as_slice() {
@@ -1993,6 +2051,7 @@ fn said_inputs(
                         embed: field.clone(),
                         alias: h.alias.clone(),
                         input: bind.input.clone(),
+                        partly: h.says_partly(&bind.input),
                     })
                 }
                 _ => None,
@@ -2007,31 +2066,52 @@ fn said_inputs(
 }
 
 /// Whether `forwards`, the binds that hand one input on, say it through the
-/// variant of `model`: each is held in arms alone and says the one input it is
-/// bound, and every arm, the default among them, is the codec of one of them.
-/// A value holds one arm, so one thing says the input in any value. A variant
-/// with an arm that says nothing is not this: that arm's value does not say the
-/// input, and the parent still has to be handed it.
-fn every_arm_says(model: &CodecModel, forwards: &[(&HeldCodec, &FlagBind)]) -> bool {
-    let Some(variant) = &model.variant else {
-        return false;
-    };
+/// variant of `model` alone: each is held in arms and nowhere else, and says the
+/// one input it is bound.
+fn arms_alone_say(model: &CodecModel, forwards: &[(&HeldCodec, &FlagBind)]) -> bool {
     let one_bind_each = forwards
         .iter()
         .map(|(h, _)| h.alias.as_str())
         .collect::<BTreeSet<_>>()
         .len()
         == forwards.len();
-    !forwards.is_empty()
+    model.variant.is_some()
+        && !forwards.is_empty()
         && one_bind_each
         && forwards
             .iter()
             .all(|(h, bind)| h.sites == [BindSite::Arm] && h.says(&bind.input))
+}
+
+/// Whether every value of `model` says the input `forwards` hand on: every arm,
+/// the default among them, is the codec of one of them and says it in all its
+/// values. A value holds one arm, so one thing says the input in any value.
+fn every_arm_says(model: &CodecModel, forwards: &[(&HeldCodec, &FlagBind)]) -> bool {
+    let Some(variant) = &model.variant else {
+        return false;
+    };
+    arms_alone_say(model, forwards)
+        && forwards.iter().all(|(h, bind)| !h.says_partly(&bind.input))
         && variant
             .arms
             .iter()
             .chain(variant.default_arm.iter())
             .all(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))
+}
+
+/// Whether the arms of `model` say the input `forwards` hand on and the others do
+/// not read it. An arm that is not handed an input has no bit it could change, so
+/// no value leaves a parent anything to hand.
+fn some_arm_says(model: &CodecModel, forwards: &[(&HeldCodec, &FlagBind)]) -> bool {
+    arms_alone_say(model, forwards)
+}
+
+/// The input each arm's codec is bound, by the alias it is imported as.
+fn bound_arms(forwards: &[(&HeldCodec, &FlagBind)]) -> BTreeMap<String, String> {
+    forwards
+        .iter()
+        .map(|(h, bind)| (h.alias.clone(), bind.input.clone()))
+        .collect()
 }
 
 /// Whether a clause of `gate` reads the flag-input `name`.

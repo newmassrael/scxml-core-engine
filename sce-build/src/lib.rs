@@ -5773,6 +5773,32 @@ fn codec_says_inputs_recursive(
     .collect()
 }
 
+/// [`codec_says_inputs_recursive`], split: the inputs `cm`'s value always says,
+/// and those it says in some of its values only (docs/adr/0065 §6 R4e).
+fn codec_says_inputs_by_extent(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> (Vec<String>, Vec<String>) {
+    let (partly, always): (Vec<_>, Vec<_>) = forge::codec_roles::classify_with(
+        cm,
+        &[],
+        &mut UnresolvedImports {
+            imports,
+            base_dir,
+            visited,
+        },
+    )
+    .inputs
+    .into_iter()
+    .partition(|(_, source)| source.is_partial());
+    (
+        always.into_iter().map(|(input, _)| input).collect(),
+        partly.into_iter().map(|(input, _)| input).collect(),
+    )
+}
+
 /// The values of `cm`'s variant arms whose body codec presents nothing, no
 /// field and no variant of its own: what a parent's gate on a chain of `cm`
 /// needs to tell an entry that holds nothing but its identifier
@@ -5828,6 +5854,19 @@ impl forge::codec_roles::InputImports for UnresolvedImports<'_> {
                 .iter()
                 .any(|said| said == input),
             )
+        })
+        .unwrap_or(false)
+    }
+
+    fn says_input_partly(&mut self, alias: &str, input: &str) -> bool {
+        with_resolved_import_codec(alias, self.imports, self.base_dir, self.visited, |inner| {
+            let (_, partly) = codec_says_inputs_by_extent(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            );
+            Some(partly.iter().any(|said| said == input))
         })
         .unwrap_or(false)
     }
@@ -6215,12 +6254,14 @@ fn validate_and_enrich_imports(
                 // its encode takes no argument for.
                 let mut inputs_visited: HashSet<PathBuf> = HashSet::new();
                 inputs_visited.insert(source.path.clone());
-                ctx.codec_says_inputs = codec_says_inputs_recursive(
+                let (always, partly) = codec_says_inputs_by_extent(
                     cm,
                     &parsed.imports,
                     &inner_base,
                     &mut inputs_visited,
                 );
+                ctx.codec_says_inputs = always.iter().chain(&partly).cloned().collect();
+                ctx.codec_partly_says_inputs = partly;
                 ctx.codec_parts_lifetime = forge::generator::source_parts_have_lifetime(cm);
                 // Owned→borrowed projection round: capture this import's
                 // *contribution* to a parent's `as_borrowed` fallibility —
@@ -7950,9 +7991,12 @@ fn validate_broadcast_log_cross_refs(
                 let sized = sized_codec(codec, imports, base_dir, &mut HashSet::new());
                 (
                     forge::codec_size::largest_encoded_bytes(&sized),
+                    // An input the element says in some values only stays the
+                    // caller's: a log stores a flag for every element.
                     broadcast_log_element_facts(
                         codec,
-                        codec_says_inputs_recursive(codec, imports, base_dir, &mut HashSet::new()),
+                        codec_says_inputs_by_extent(codec, imports, base_dir, &mut HashSet::new())
+                            .0,
                     ),
                 )
             }

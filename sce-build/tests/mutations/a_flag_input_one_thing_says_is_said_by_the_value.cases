@@ -48,10 +48,11 @@ edit("sce-build/src/forge/codec_roles.rs",
      r'''            ([], forwards, false) if every_arm_says(model, forwards) && forwards.is_empty() => {''')
 PY
 
-# An arm that says nothing leaves the input to the parent, so the arm that does say
-# it can disagree: the codec that declares the refusal stops refusing.
-mutation_case "an arm that says nothing counts as saying the input" <<'PY'
+# An arm that does not read an input has no bit it could change, so the arms that
+# read it say it for the codec (§6 R4e). Without this the value entry refuses again
+# and its statement that it is total is false.
+mutation_case "an input some arms read is not said by the value" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''            .all(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))''',
-     r'''            .any(|arm| forwards.iter().any(|(h, _)| h.alias == arm.body_alias))''')
+     r'''            ([], forwards, false) if some_arm_says(model, forwards) => {''',
+     r'''            ([], forwards, false) if some_arm_says(model, forwards) && forwards.is_empty() => {''')
 PY

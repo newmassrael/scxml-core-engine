@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4e): a carrier flag bound to an input
+     its body says in some values only. In a value of the arm that says it the flag
+     is held to the arm, and in a value of the other it is the value's own, so the
+     flag cannot be derived and the encode can refuse. Wire shape: one header byte,
+     then the arm's body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_some_arms_say_parent">
+  <sce:import src="codec_some_arms_say.scxml" kind="codec" as="codec_some_arms_say">
+    <sce:variant-dispatch flag="header.M"/>
+    <sce:flag-bind input="N" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_some_arms_say" sce:byte="1"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4e): a variant that hands a flag input
+     to one arm of two. That arm says the input, and a value in the other says
+     nothing: it has no bit the input could change. So the codec takes no input at
+     its encode, refuses nothing for it, and reads it as an Option. Imported by
+     codec_some_arms_say_parent.scxml. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_some_arms_say">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <sce:import src="codec_every_arm_says_near.scxml" kind="codec" as="codec_every_arm_says_near">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
+  <sce:import src="codec_some_arms_say_plain.scxml" kind="codec" as="codec_some_arms_say_plain"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_some_arms_say_plain"/>
+      <sce:arm value="0x01" type="codec_every_arm_says_near" default="true"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

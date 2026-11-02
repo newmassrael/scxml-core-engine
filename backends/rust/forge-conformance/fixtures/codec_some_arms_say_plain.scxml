@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4e): the arm of codec_some_arms_say
+     that reads no input, so a value in it has no bit the input could change. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_some_arms_say_plain">
+  <datamodel>
+    <sce:field id="id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

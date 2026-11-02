@@ -379,6 +379,11 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_says_inputs: Vec<String>,
 
+    /// Those of [`Self::codec_says_inputs`] the value says in some of its values
+    /// only (docs/adr/0065 §6 R4e), so reading one answers an `Option`.
+    #[serde(skip)]
+    pub codec_partly_says_inputs: Vec<String>,
+
     /// ADR 0058: `true` when the borrowed source of the imported codec
     /// (`{Codec}Parts`) carries a lifetime, which a parent that names it must
     /// name too. `false` for non-codec imports.
@@ -1237,6 +1242,7 @@ fn resolve_single_import(
         codec_has_source: false,
         codec_source_can_refuse: false,
         codec_says_inputs: Vec::new(),
+        codec_partly_says_inputs: Vec::new(),
         codec_parts_lifetime: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
@@ -40816,6 +40822,7 @@ mod tests {
             codec_has_source: false,
             codec_source_can_refuse: false,
             codec_says_inputs: Vec::new(),
+            codec_partly_says_inputs: Vec::new(),
             codec_parts_lifetime: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
@@ -41704,6 +41711,7 @@ mod tests {
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),
+                codec_partly_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
@@ -41760,6 +41768,7 @@ mod tests {
                 codec_has_source: false,
                 codec_source_can_refuse: false,
                 codec_says_inputs: Vec::new(),
+                codec_partly_says_inputs: Vec::new(),
                 codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,

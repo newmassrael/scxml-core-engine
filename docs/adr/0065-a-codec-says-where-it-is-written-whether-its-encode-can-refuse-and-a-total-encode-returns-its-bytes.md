@@ -311,12 +311,22 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     one arm, so exactly one thing says it in any value. R4a's rule is that rule, read over the arms.
     *Landed 2026-11-01, after R1.* `InputSource::EveryArm` holds, for each arm's codec, the input of it that is bound,
     since an arm may name the input otherwise, and `input_{i}` matches on the arm. No arm is held to a handed value,
-    since none is handed, and a parent derives the flag from the embedded variant by R4a's rule unchanged. A variant
-    with an arm that does not say the input is not this: a value in that arm says nothing, so the parent still hands
-    the input and the arm that says it is held to it. A second bind of one input on one arm's import is not this
-    either, since two inputs of one arm can disagree. A consumer's parent-tag dispatcher for its wire expressions is
-    the case that asked for this, and it and nine of the codecs above it became total. Its `request` did not: that
-    holds a query whose extension chain keeps its refusal, where one arm of three says an input the chain supplies.
+    since none is handed, and a parent derives the flag from the embedded variant by R4a's rule unchanged. A second
+    bind of one input on one arm's import is not this, since two inputs of one arm can disagree. A consumer's
+    parent-tag dispatcher for its wire expressions is the case that asked for this, and it and nine of the codecs above
+    it became total. Its `request` did not: that holds a query whose extension chain keeps its refusal, where one arm
+    of three says an input the chain supplies.
+  - **R4e, an input some arms read.** R4d's sum again, with the attribute undefined on the other arms. An arm the
+    codec does not hand the input to has no bit it could change, so a value in that arm has nothing to disagree with:
+    the input is "don't care" there, not unknown. The value says `Option<bool>`, and nothing is left for the codec to
+    be handed.
+    *Landed 2026-11-02.* `InputSource::SomeArms`, and `Forward { partly }` for a body that says an input this way, so a
+    codec that hands it on says it the same way. `input_{i}` answers an `Option`. Such a codec's encode takes no
+    argument and refuses nothing for it, so an extension entry with one ZBuf arm became total. The holder is another
+    matter: its flag or chain states a value for every entry, so `None` agrees and `Some` is held to that value. A
+    carrier flag bound to such a body is therefore checked and not derived, because a value in another arm leaves the
+    bit the value's own, and a chain keeps its refusal until its list holds its law in its type. A broadcast log stores
+    a flag for every element, so an element that says one partly is still handed it.
 
   Other backends keep their checks until they take the source interface. Their encode is still handed every input.
 - **R5, a shared count.** Lists that share one count are presented as one list whose entries carry each list's item,
