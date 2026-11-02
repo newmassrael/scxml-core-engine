@@ -4729,6 +4729,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecExtAttachment.frameLength
 }
 
+// MARK: - codec: codec_ext_encoding_info
+
+@Test func codecExtEncodingInfoMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecExtEncodingInfo.frameLength
+}
+
 // MARK: - codec: codec_ext_timestamp
 
 @Test func codecExtTimestampMatchesReference() throws {
@@ -4759,6 +4767,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPeekArmB.frameLength
+}
+
+// MARK: - codec: codec_present_if_basic
+
+@Test func codecPresentIfBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfBasic.frameLength
+}
+
+// MARK: - codec: codec_present_if_disjunction
+
+@Test func codecPresentIfDisjunctionMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfDisjunction.frameLength
+}
+
+// MARK: - codec: codec_present_if_length_ref
+
+@Test func codecPresentIfLengthRefMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfLengthRef.frameLength
+}
+
+// MARK: - codec: codec_present_if_negation
+
+@Test func codecPresentIfNegationMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfNegation.frameLength
+}
+
+// MARK: - codec: codec_present_if_tail
+
+@Test func codecPresentIfTailMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfTail.frameLength
+}
+
+// MARK: - codec: codec_present_if_vle
+
+@Test func codecPresentIfVleMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfVle.frameLength
 }
 
 // MARK: - codec: codec_repeat_elem
@@ -4799,6 +4855,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionOpen.frameLength
+}
+
+// MARK: - codec: codec_zenoh_decl_ext_keyexpr_inner
+
+@Test func codecZenohDeclExtKeyexprInnerMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohDeclExtKeyexprInner.frameLength
 }
 
 // MARK: - codec: codec_zenoh_ext_unit

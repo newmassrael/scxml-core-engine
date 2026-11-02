@@ -450,6 +450,73 @@ fn a_bit_field_that_does_not_fit_in_one_byte_is_refused_by_name() {
 }
 
 #[test]
+fn a_field_that_is_on_the_wire_on_a_flag_is_optional_and_read_only_when_the_flag_is_set() {
+    let code = swift_of("tests/forge/resources/codec_present_if_basic.scxml")
+        .expect("a gated field is written");
+    assert!(code.contains("public var seq: UInt16? = nil"), "{code}");
+    assert!(
+        code.contains(
+            "if (frame.flags & 0x1) != 0 {\n            frame.seq = try reader.readInteger(UInt16.self, .big)\n        }"
+        ),
+        "a decode reads the field only when the bit of the carrier it has read is set: {code}"
+    );
+    assert!(
+        code.contains(
+            "if let seq = self.seq {\n            appendInteger(seq, to: &frame, .big)\n        }"
+        ),
+        "an encode writes the field when it is given: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 1"),
+        "a field that may be absent adds nothing to the fewest bytes: {code}"
+    );
+}
+
+#[test]
+fn a_negated_clause_is_on_a_clear_bit_and_a_disjunction_on_any_clause() {
+    let negated = swift_of("tests/forge/resources/codec_present_if_negation.scxml")
+        .expect("a negated gate is written");
+    assert!(negated.contains("(frame.flags & 0x1) == 0"), "{negated}");
+    let either = swift_of("tests/forge/resources/codec_present_if_disjunction.scxml")
+        .expect("a disjunction is written");
+    assert!(
+        either.contains("(frame.flags & 0x1) != 0 || (frame.flags & 0x2) != 0"),
+        "any clause of a disjunction puts the field on the wire: {either}"
+    );
+}
+
+#[test]
+fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_ungated_one() {
+    let tail = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
+        .expect("a gated tail is written");
+    assert!(tail.contains(": [UInt8]? = nil"), "{tail}");
+    assert!(
+        tail.contains("Array(try reader.readSlice(reader.remaining))"),
+        "{tail}"
+    );
+    let vle = swift_of("tests/forge/resources/codec_present_if_vle.scxml")
+        .expect("a gated variable-length integer is written");
+    assert!(vle.contains("? = nil"), "{vle}");
+    assert!(vle.contains("try reader.readVle("), "{vle}");
+}
+
+#[test]
+fn a_gate_on_a_flag_input_or_a_chain_is_refused_by_name() {
+    for document in [
+        "codec_chain_flag_entry",
+        "codec_tlv_chain_present_if_basic",
+        "codec_repeat_present_if_basic",
+    ] {
+        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
+            .expect_err(&format!("{document} must be refused, not written"));
+        assert!(
+            refusal.contains("has no Swift lowering yet"),
+            "{document}: {refusal}"
+        );
+    }
+}
+
+#[test]
 fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),

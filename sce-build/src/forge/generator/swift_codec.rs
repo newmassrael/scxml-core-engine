@@ -103,8 +103,13 @@ fn flags_unlowered(m: &CodecModel) -> Option<String> {
 /// What of the field `f` of `m` the Swift codec does not lower yet.
 fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
-    if f.present_if.is_some() {
-        return what("a `sce:present-if` condition");
+    if let Some(predicate) = &f.present_if {
+        if let Some(reason) = present_if_unlowered(predicate) {
+            return what(&reason);
+        }
+        if !f.flags.is_empty() {
+            return what("a flags carrier that is present only on a condition");
+        }
     }
     if f.is_repeat() {
         return what("a repeat");
@@ -166,7 +171,41 @@ fn is_variable(f: &CodecField) -> bool {
 /// the fields after it, so it is read from the cursor in the order of the document, and each field
 /// begins where the last one ended; the `sce:byte` of a field is then its place in that order.
 fn is_sequential(m: &CodecModel) -> bool {
-    m.fields.iter().any(|f| f.is_vle() || is_variable(f))
+    m.fields
+        .iter()
+        .any(|f| f.is_vle() || is_variable(f) || f.present_if.is_some())
+}
+
+/// What of the predicate `predicate` the Swift codec does not lower yet: a clause on a flag input
+/// reads a parameter the codec does not take, and a clause on the entries of a chain reads a chain
+/// the codec does not hold. The carrier a local clause names, and its flag, exist and are unsigned
+/// integers: validation has refused a codec where they do not.
+fn present_if_unlowered(predicate: &PresentIfPredicate) -> Option<String> {
+    if predicate.scope != PresentIfScope::Local {
+        return Some("a `sce:present-if` on a flag input or on a chain".to_string());
+    }
+    predicate.or_with.as_deref().and_then(present_if_unlowered)
+}
+
+/// The Swift condition under which a field gated by `predicate` is on the wire: the bit a flag of
+/// an earlier carrier names is set (or clear, for a negated clause), and any clause of a
+/// disjunction holds. `holder` names the value whose carriers are read: the frame being decoded,
+/// or `self` when it is encoded. The mask is the one every backend tests, from the shared
+/// resolution of the predicate. [`present_if_unlowered`] has found nothing to refuse in it.
+fn present_if_condition(m: &CodecModel, predicate: &PresentIfPredicate, holder: &str) -> String {
+    let (mask, _, carrier) = present_if_carrier_info(&m.fields, predicate);
+    let PresentIfCarrier::Local(carrier) = carrier else {
+        unreachable!("a clause on a flag input is refused before its condition is written");
+    };
+    let test = format!(
+        "({holder}.{} & 0x{mask:X}) {} 0",
+        carrier.id,
+        if predicate.negate { "==" } else { "!=" }
+    );
+    match &predicate.or_with {
+        Some(rest) => format!("{test} || {}", present_if_condition(m, rest, holder)),
+        None => test,
+    }
 }
 
 /// What of the variable-length integer `f` the Swift codec does not lower yet; `None` for one it
@@ -222,6 +261,14 @@ fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
         if unsigned != Some(true) {
             return what(&format!(
                 "a length held in `{name}`, which is not an unsigned integer"
+            ));
+        }
+        if m.fields
+            .iter()
+            .any(|g| g.id == name && g.present_if.is_some())
+        {
+            return what(&format!(
+                "a length held in `{name}`, which is on the wire only on a condition"
             ));
         }
     }
@@ -303,6 +350,16 @@ pub(super) fn render(
         .fields
         .iter()
         .map(|f| {
+            // The condition under which a gated field is on the wire, as the decode of the frame
+            // and the encode of the value read it; `null` for a field that always is. A gated
+            // field is optional, `nil` when it is not on the wire.
+            let present = f.present_if.as_ref().map(|p| {
+                serde_json::json!({
+                    "decode": present_if_condition(m, p, "frame"),
+                    "encode": present_if_condition(m, p, "self"),
+                })
+            });
+            let optional = if present.is_some() { "?" } else { "" };
             if is_variable(f) {
                 let kind = match f.bit_size {
                     BitSize::Tail => "tail",
@@ -310,11 +367,12 @@ pub(super) fn render(
                 };
                 return serde_json::json!({
                     "id": f.id,
-                    "swift_type": "[UInt8]",
+                    "swift_type": format!("[UInt8]{optional}"),
                     "offset": f.byte_offset,
-                    "default": "[]",
+                    "default": if present.is_some() { "nil" } else { "[]" },
                     "flags": Vec::<serde_json::Value>::new(),
                     "bits": serde_json::Value::Null,
+                    "present": present,
                     "variable": {
                         "kind": kind,
                         "length_field": f.length_field.clone().unwrap_or_default(),
@@ -324,7 +382,9 @@ pub(super) fn render(
             }
             let (swift_type, width) =
                 integer(&f.sce_type).expect("a field this renderer is given is an integer");
-            if f.is_vle() {
+            if present.is_some() {
+                // On the wire only on a condition: it adds nothing to the fewest bytes.
+            } else if f.is_vle() {
                 frame_length += 1;
             } else if sequential {
                 frame_length += width / 8;
@@ -338,12 +398,15 @@ pub(super) fn render(
             // The carrier's value before anything is read into it: the bits the document's
             // `<sce:flag value=>` declarations set, and zero where it declares none.
             let default = match flag_default_carrier_value(f) {
+                _ if present.is_some() => "nil".to_string(),
                 0 => "0".to_string(),
                 bits => format!("0x{bits:X}"),
             };
             serde_json::json!({
                 "id": f.id,
-                "swift_type": swift_type,
+                "swift_type": format!("{swift_type}{optional}"),
+                "value_type": swift_type,
+                "present": present,
                 "offset": f.byte_offset,
                 "order": order,
                 "default": default,

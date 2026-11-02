@@ -22,6 +22,10 @@ public struct {{ struct_name }}: Equatable, Sendable {
     public static let frameLength = {{ frame_length }}
 {% for f in fields %}
 
+{% if f.present %}
+    /// On the wire only when `{{ f.present.encode | replace("self.", "") }}`; `nil` when it is not. An encode
+    /// writes it when it is not `nil`.
+{% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
     /// The bytes to the end of the frame. The size the document bounds them to is not held here,
     /// as it is not by the other managed backends.
@@ -86,14 +90,21 @@ public struct {{ struct_name }}: Equatable, Sendable {
         var reader = cursor
         var frame = {{ struct_name }}()
 {% for f in fields %}
+{% set pad = "    " if f.present else "" %}
+{% if f.present %}
+        if {{ f.present.decode }} {
+{% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
-        frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{{ pad }}        frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
 {% elif f.variable %}
-        frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{{ pad }}        frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
 {% elif f.vle %}
-        frame.{{ f.id }} = try reader.readVle({{ f.swift_type }}.self)
+{{ pad }}        frame.{{ f.id }} = try reader.readVle({{ f.value_type }}.self)
 {% else %}
-        frame.{{ f.id }} = try reader.readInteger({{ f.swift_type }}.self, .{{ f.order }})
+{{ pad }}        frame.{{ f.id }} = try reader.readInteger({{ f.value_type }}.self, .{{ f.order }})
+{% endif %}
+{% if f.present %}
+        }
 {% endif %}
 {% endfor %}
         cursor = reader
@@ -123,16 +134,24 @@ public struct {{ struct_name }}: Equatable, Sendable {
         {{ "var" if fields else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
 {% endif %}
 {% for f in fields %}
+{% set pad = "    " if f.present else "" %}
+{% set src = f.id if f.present else "self." ~ f.id %}
+{% if f.present %}
+        if let {{ f.id }} = self.{{ f.id }} {
+{% endif %}
 {% if f.variable %}
-        frame += self.{{ f.id }}
+{{ pad }}        frame += {{ src }}
 {% elif f.vle %}
-        appendVle(self.{{ f.id }}, to: &frame)
+{{ pad }}        appendVle({{ src }}, to: &frame)
 {% elif sequential %}
-        appendInteger(self.{{ f.id }}, to: &frame, .{{ f.order }})
+{{ pad }}        appendInteger({{ src }}, to: &frame, .{{ f.order }})
 {% elif f.bits %}
         frame[{{ f.offset }}] |= (self.{{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
 {% else %}
         storeInteger(self.{{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
+{% endif %}
+{% if f.present %}
+        }
 {% endif %}
 {% endfor %}
         try sink.writeBytes(frame)
