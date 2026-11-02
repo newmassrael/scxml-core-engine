@@ -6385,6 +6385,154 @@ fn what_cannot_hold_a_content_line_text_with_no_bound_refuses_it() {
     assert!(why.contains("past the field's bound 3"), "{why}");
 }
 
+/// A driver of the C11 form of [`OPEN_LINE`] at the capacities of
+/// [`narrow_deployment`]: eight bytes of the description, two attendees, two
+/// categories, every other text and list at its bound.
+const OPEN_LINE_C_DRIVER: &str = r#"#include <stdio.h>
+#include <string.h>
+
+#include "codec_open_line.h"
+
+static int failures = 0;
+#define CHECK(cond, what)                                                              \
+    do {                                                                               \
+        if (!(cond)) {                                                                 \
+            fprintf(stderr, "FAIL: %s\n", what);                                       \
+            ++failures;                                                                \
+        }                                                                              \
+    } while (0)
+
+static codec_open_line_t v;
+
+static sce_forge_codec_status_t decode(const char *text) {
+    sce_forge_cursor_t c = sce_forge_cursor_init((const uint8_t *)text, strlen(text));
+    return codec_open_line_decode(&c, &v);
+}
+
+int main(void) {
+    uint8_t out[CODEC_OPEN_LINE_MAX_BYTES];
+    size_t n = 0;
+    sce_forge_cursor_t back;
+    static codec_open_line_t again;
+
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:dddddddd\r\nATTENDEE:a\r\nATTENDEE:b\r\n"
+                 "CATEGORIES:p,q\r\nRESOURCES:r\r\nEND:VEVENT\r\n") == SCE_FORGE_CODEC_OK,
+          "a component inside every capacity");
+    CHECK(v.description_len == 8U && v.attendee_count == 2U && v.categories_count == 2U &&
+              v.resources_count == 1U,
+          "what it holds");
+    CHECK(codec_open_line_encode_to_buf(&v, out, sizeof out, &n) == SCE_FORGE_CODEC_OK,
+          "a buffer of MAX_BYTES holds what this node writes");
+    back = sce_forge_cursor_init(out, n);
+    CHECK(codec_open_line_decode(&back, &again) == SCE_FORGE_CODEC_OK &&
+              again.description_len == 8U && again.attendee_count == 2U,
+          "what is written is read back");
+
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:ddddddddd\r\nATTENDEE:a\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a description past its capacity, with no bound");
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:d\r\nATTENDEE:a\r\nATTENDEE:b\r\nATTENDEE:c\r\n"
+                 "END:VEVENT\r\n") == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a third attendee past two held");
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:d\r\nATTENDEE:a\r\nCATEGORIES:p,q,r\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a third category past two held");
+    /* A required entry that is absent is refused before a capacity, as the
+     * description is here. */
+    CHECK(decode("BEGIN:VEVENT\r\nATTENDEE:a\r\nATTENDEE:b\r\nATTENDEE:c\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_LINE_REQUIRED_MISSING,
+          "the description absent, after a third attendee past two held");
+
+    /* What the protocol refuses is refused first: the frame is read on past
+     * what this node cannot hold. */
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:ddddddddd\r\nATTENDEE:a\r\nRESOURCES:a\r\n"
+                 "RESOURCES:b\r\nRESOURCES:c\r\nRESOURCES:d\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_LINE_TOO_MANY,
+          "a fourth resource past its bound, after a description past its capacity");
+    CHECK(decode("BEGIN:VEVENT\r\nATTENDEE:a\r\nATTENDEE:b\r\nATTENDEE:c\r\nATTENDEE:d\x01\r\n"
+                 "END:VEVENT\r\n") == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a control character in an attendee past two held");
+    CHECK(decode("BEGIN:VEVENT\r\nDESCRIPTION:ddddddddd\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_LINE_REQUIRED_MISSING,
+          "the attendees absent, after a description past its capacity");
+    CHECK(decode("BEGIN:VEVENT\r\nATTENDEE:a\r\nCATEGORIES:p,q,,r\r\nEND:VEVENT\r\n") ==
+              SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "an empty category past two held");
+    return failures == 0 ? 0 : 1;
+}
+"#;
+
+/// C11 holds a content-line text and list the protocol states no bound of at
+/// the capacity a deployment gives it (docs/adr/0077 §7): each array is sized
+/// at it, a component inside it is read and written back through a buffer of
+/// `..._MAX_BYTES`, and one past it is read whole, so a refusal the protocol
+/// makes comes first and `CAPACITY_EXCEEDED` last, as in Rust.
+#[test]
+fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let mut opts = golden_options(Language::C11);
+    opts.codec_capacities = open_line_deployment().capacities;
+    let output = sce_build::compile_forge_with_imports(
+        OPEN_LINE,
+        sce_build::DocumentLabel::symmetric("codec_open_line"),
+        Language::C11,
+        dir.path(),
+        &opts,
+    )
+    .expect("C11 holds a content-line codec at the capacities it is given");
+    let header = &output.files[0].1;
+    for needle in [
+        "char description[8];",
+        "char attendee[2][64];",
+        "char categories[2][16];",
+        "char resources[3][16];",
+        "sce_forge_cl_property_read_string(&line, SIZE_MAX, 8U, true, v->description, &v->description_len)",
+        "sce_forge_cl_property_read_strings(&line, ',', SIZE_MAX, 2U, 16U, 16U,",
+    ] {
+        assert!(header.contains(needle), "{needle}\n{header}");
+    }
+    std::fs::write(dir.path().join("codec_open_line.h"), header).expect("write the header");
+    let driver = dir.path().join("driver.c");
+    std::fs::write(&driver, OPEN_LINE_C_DRIVER).expect("write the driver");
+    let binary = dir.path().join("driver");
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let backends_c = project_root().join("backends/c");
+    let compiled = std::process::Command::new(&cc)
+        .args([
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=address,undefined",
+            "-fno-sanitize-recover=all",
+            "-I",
+        ])
+        .arg(dir.path())
+        .arg("-I")
+        .arg(backends_c.join("forge-runtime/include"))
+        .arg("-I")
+        .arg(backends_c.join("runtime/include"))
+        .arg(&driver)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("the C compiler runs");
+    assert!(
+        compiled.status.success(),
+        "the driver compiles against the generated header:\n{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let run = std::process::Command::new(&binary)
+        .output()
+        .expect("the driver runs");
+    assert!(
+        run.status.success(),
+        "the driver's checks hold:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
 /// What cannot hold a map's text the protocol states no bound of says so,
 /// naming the entry (docs/adr/0077 §7): C11 with no capacity for it, and a
 /// deployment that gives it none. C11 given a capacity holds the text in an

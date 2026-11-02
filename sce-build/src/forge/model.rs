@@ -3306,6 +3306,18 @@ pub struct ContentLineEntry {
     pub capacity: LineCapacity,
 }
 
+/// What the largest encoding of a codec is measured at (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Measured {
+    /// The protocol's bounds: the largest frame of the language, on every node.
+    /// What a broadcast log's element is sized by.
+    Bound,
+    /// What this node's storing form holds: the deployment's capacity, or the
+    /// bound where it gives none. A node's encode writes no more than it holds,
+    /// so this is what a C11 caller sizes an `encode_to_buf` buffer by.
+    Held,
+}
+
 /// What a content-line entry holds a variable number of, each bounded by a
 /// declaration of its own and each sized by a capacity of its own
 /// (docs/adr/0077 §7).

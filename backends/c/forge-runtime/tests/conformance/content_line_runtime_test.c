@@ -60,7 +60,7 @@ static outcome_t read_all(const char *text, size_t len) {
             continue;
         }
         out.status =
-            sce_forge_cl_property_read_string(&line, 32, strcmp(name, "SUMMARY") == 0, out.value[out.count], &n);
+            sce_forge_cl_property_read_string(&line, 32, 32, strcmp(name, "SUMMARY") == 0, out.value[out.count], &n);
         if (out.status != SCE_FORGE_CODEC_OK) {
             break;
         }
@@ -184,7 +184,7 @@ static void a_text_unescapes_and_a_bad_escape_is_refused(void) {
     /* Without sce:value="text" a backslash is a byte like another. */
     (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)text, sizeof text - 1U, "VEVENT");
     (void)sce_forge_cl_reader_next(&reader, &line, &has);
-    CHECK(sce_forge_cl_property_read_string(&line, 8, false, buf, &n) == SCE_FORGE_CODEC_OK && n == 4U &&
+    CHECK(sce_forge_cl_property_read_string(&line, 8, 8, false, buf, &n) == SCE_FORGE_CODEC_OK && n == 4U &&
               memcmp(buf, "a\\nb", 4) == 0,
           "a backslash in a value that is not a TEXT");
 }
@@ -241,12 +241,13 @@ static void parameters_are_read_by_name_quoted_or_not_and_the_rest_are_skipped(v
             break;
         }
         if (sce_forge_cl_property_param_is(&line, "tzid")) {
-            got_tzid =
-                sce_forge_cl_property_read_param_string(&line, sizeof tzid, tzid, &tzid_len) == SCE_FORGE_CODEC_OK;
+            got_tzid = sce_forge_cl_property_read_param_string(&line, sizeof tzid, sizeof tzid, tzid, &tzid_len) ==
+                       SCE_FORGE_CODEC_OK;
         }
     }
     CHECK(got_tzid && tzid_len == 16U && memcmp(tzid, "Europe/Seoul:KST", 16) == 0, "the quoted parameter");
-    CHECK(sce_forge_cl_property_read_string(&line, sizeof value, false, value, &value_len) == SCE_FORGE_CODEC_OK &&
+    CHECK(sce_forge_cl_property_read_string(&line, sizeof value, sizeof value, false, value, &value_len) ==
+                  SCE_FORGE_CODEC_OK &&
               value_len == 15U && memcmp(value, "20260101T000000", 15) == 0,
           "the value after the parameters");
     has = true;
@@ -275,7 +276,8 @@ static void a_parameter_of_two_values_or_past_its_bound_is_refused_where_it_is_r
         (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)cases[i].text, strlen(cases[i].text), "VEVENT");
         (void)sce_forge_cl_reader_next(&reader, &line, &has);
         CHECK(sce_forge_cl_property_next_param(&line, &more) == SCE_FORGE_CODEC_OK && more, cases[i].text);
-        CHECK(sce_forge_cl_property_read_param_string(&line, sizeof buf, buf, &n) == cases[i].want, cases[i].text);
+        CHECK(sce_forge_cl_property_read_param_string(&line, sizeof buf, sizeof buf, buf, &n) == cases[i].want,
+              cases[i].text);
     }
 }
 
@@ -345,8 +347,9 @@ static void a_value_is_read_once(void) {
     char buf[4];
     size_t n = 0;
     sce_forge_cl_property_t p = property_of("a", storage, sizeof storage);
-    CHECK(sce_forge_cl_property_read_string(&p, 4, false, buf, &n) == SCE_FORGE_CODEC_OK, "the first read");
-    CHECK(sce_forge_cl_property_read_string(&p, 4, false, buf, &n) == SCE_FORGE_CODEC_LINE_MALFORMED, "a second read");
+    CHECK(sce_forge_cl_property_read_string(&p, 4, 4, false, buf, &n) == SCE_FORGE_CODEC_OK, "the first read");
+    CHECK(sce_forge_cl_property_read_string(&p, 4, 4, false, buf, &n) == SCE_FORGE_CODEC_LINE_MALFORMED,
+          "a second read");
 }
 
 /* What a writer writes, between `BEGIN:` and `END:`, into `buf`. */
@@ -522,7 +525,8 @@ static void what_is_written_is_read_back(void) {
         (void)sce_forge_cl_reader_begin(&reader, out.buf, n, "VEVENT");
         (void)sce_forge_cl_reader_next(&reader, &line, &has);
         CHECK(has &&
-                  sce_forge_cl_property_read_string(&line, sizeof back, true, back, &back_len) == SCE_FORGE_CODEC_OK &&
+                  sce_forge_cl_property_read_string(&line, sizeof back, sizeof back, true, back, &back_len) ==
+                      SCE_FORGE_CODEC_OK &&
                   back_len == strlen(values[k]) && memcmp(back, values[k], back_len) == 0,
               "the value read back");
         has = true;
@@ -550,7 +554,8 @@ static sce_forge_codec_status_t list_of(const char *value, char separator, size_
     const int n = snprintf(storage, sizeof storage, "BEGIN:VEVENT\r\nV:%s\r\nEND:VEVENT\r\n", value);
     (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)storage, (size_t)n, "VEVENT");
     (void)sce_forge_cl_reader_next(&reader, &line, &has);
-    s = sce_forge_cl_property_read_strings(&line, separator, max_values, 8, text, (char *)parts, lens, &count);
+    s = sce_forge_cl_property_read_strings(&line, separator, max_values, max_values, 8, 8, text, (char *)parts, lens,
+                                           &count);
     joined[0] = '\0';
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
@@ -808,6 +813,102 @@ static void a_carrier_no_variant_declares_has_no_text_and_is_not_written(void) {
     CHECK(sce_forge_writer_position(&out.sink) == before, "something of a refused enum reached the sink");
 }
 
+/* A value read with a bound and a capacity of its own (docs/adr/0077 §7). */
+
+/* The property `V` of `value` read as one string, `max_size` the bound and
+ * `capacity` what is held; the bytes held in `held`, NUL-ended. */
+static sce_forge_codec_status_t held_of(const char *value, size_t max_size, size_t capacity, char *held,
+                                        size_t held_size) {
+    char storage[512];
+    char buf[16];
+    sce_forge_cl_reader_t reader;
+    sce_forge_cl_property_t line;
+    bool has = false;
+    size_t n = 0;
+    sce_forge_codec_status_t s;
+    const int written = snprintf(storage, sizeof storage, "BEGIN:VEVENT\r\nV:%s\r\nEND:VEVENT\r\n", value);
+    (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)storage, (size_t)written, "VEVENT");
+    (void)sce_forge_cl_reader_next(&reader, &line, &has);
+    s = sce_forge_cl_property_read_string(&line, max_size, capacity < sizeof buf ? capacity : sizeof buf, false, buf,
+                                          &n);
+    if (n >= held_size) {
+        n = held_size - 1U;
+    }
+    memcpy(held, buf, n);
+    held[n] = '\0';
+    return s;
+}
+
+static void a_value_past_its_capacity_is_read_whole_and_refused_last(void) {
+    char held[16];
+    char long_value[301];
+    memset(long_value, 'x', 300);
+    long_value[300] = '\0';
+    CHECK(held_of("abcd", 8, 4, held, sizeof held) == SCE_FORGE_CODEC_OK && strcmp(held, "abcd") == 0,
+          "a value that fills its capacity");
+    CHECK(held_of("abcdef", 8, 4, held, sizeof held) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED && strcmp(held, "abcd") == 0,
+          "a value inside its bound and past its capacity");
+    CHECK(held_of("abcdefghi", 8, 4, held, sizeof held) == SCE_FORGE_CODEC_LINE_TOO_LONG,
+          "a value past its bound is the line's own refusal");
+    CHECK(held_of(long_value, SIZE_MAX, 4, held, sizeof held) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "300 bytes of a value with no bound");
+    /* The rest of a value past the capacity is still judged, and its own
+     * refusal comes before the capacity's. */
+    CHECK(held_of("abcd\xff", 8, 2, held, sizeof held) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a byte no UTF-8 text holds, past the capacity");
+    CHECK(held_of("ab\xc3", 8, 2, held, sizeof held) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a character cut short, past the capacity");
+    /* A character is held whole or not at all. */
+    CHECK(held_of("ab\xc3\xa9", 8, 3, held, sizeof held) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED &&
+              strcmp(held, "ab") == 0,
+          "a character that does not fit is not cut");
+}
+
+/* The property `V` of `value` read as a list holding `values_capacity` parts of
+ * 8 bytes, with no bound of either; the parts held joined with `|`. */
+static sce_forge_codec_status_t held_list_of(const char *value, size_t values_capacity, char *joined,
+                                             size_t joined_size) {
+    char storage[256];
+    sce_forge_cl_reader_t reader;
+    sce_forge_cl_property_t line;
+    bool has = false;
+    char parts[4][8];
+    size_t lens[4];
+    size_t count = 0;
+    size_t i;
+    size_t at = 0;
+    sce_forge_codec_status_t s;
+    const int n = snprintf(storage, sizeof storage, "BEGIN:VEVENT\r\nV:%s\r\nEND:VEVENT\r\n", value);
+    (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)storage, (size_t)n, "VEVENT");
+    (void)sce_forge_cl_reader_next(&reader, &line, &has);
+    s = sce_forge_cl_property_read_strings(&line, ',', SIZE_MAX, values_capacity, SIZE_MAX, sizeof parts[0], false,
+                                           (char *)parts, lens, &count);
+    for (i = 0; i < count && at + lens[i] + 2 < joined_size; ++i) {
+        if (i > 0) {
+            joined[at++] = '|';
+        }
+        memcpy(joined + at, parts[i], lens[i]);
+        at += lens[i];
+    }
+    joined[at] = '\0';
+    return s;
+}
+
+static void a_list_past_its_capacity_is_read_whole_and_refused_last(void) {
+    char got[64];
+    CHECK(held_list_of("a,b", 2, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a|b") == 0,
+          "a list that fills its capacity");
+    CHECK(held_list_of("a,b,c,d,e,f,g,h,i,j", 2, got, sizeof got) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED &&
+              strcmp(got, "a|b") == 0,
+          "ten values of a list with no bound, two held");
+    CHECK(held_list_of("a,b,c,,d", 2, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "an empty part past the capacity is still the line's refusal");
+    /* A part that does not fit ends the holding: the list holds no part after it. */
+    CHECK(held_list_of("a,bbbbbbbbb,c", 4, got, sizeof got) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED &&
+              strcmp(got, "a") == 0,
+          "a part past its size's capacity");
+}
+
 int main(void) {
     a_component_is_read_property_by_property_and_stops_after_its_end();
     names_are_matched_without_regard_to_case_and_lf_ends_a_line();
@@ -836,6 +937,8 @@ int main(void) {
     a_parameter_that_is_an_enum_is_matched_quoted_or_not();
     an_enum_is_written_as_the_text_its_enum_declares();
     a_carrier_no_variant_declares_has_no_text_and_is_not_written();
+    a_value_past_its_capacity_is_read_whole_and_refused_last();
+    a_list_past_its_capacity_is_read_whole_and_refused_last();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

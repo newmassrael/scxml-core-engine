@@ -20,7 +20,7 @@ use crate::forge::generator::{
     insert_rust_storage, rust_storage_field, rust_storage_tag, rust_storage_trait, ImportContext,
     LangCtx, ORIGIN_PARAM, OWNED_IN_ORIGIN_FN,
 };
-use crate::forge::model::{CborEntry, CodecModel, SceType};
+use crate::forge::model::{CborEntry, CodecModel, Measured, SceType};
 
 // ⚠ An entry's `name` is the backend's field identifier
 // (`LangCtx::codec_field_id` — snake_case in Rust), the same spelling a
@@ -530,18 +530,6 @@ fn render_c(
         .expect("C11 refuses a CBOR string it holds no number of before it renders");
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     render_in_key_order(&l, env, ctx)
-}
-
-/// What [`max_encoded_bytes`] measures a CBOR text or byte string at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Measured {
-    /// The protocol's bound, `sce:length` or `sce:max-size`: the largest frame
-    /// of the language, on every node (docs/adr/0077 §7).
-    Bound,
-    /// What this node's storing form holds, [`CborEntry::storage_bytes`]: the
-    /// deployment's capacity or the bound. A node's encode writes no more than
-    /// it holds.
-    Held,
 }
 
 /// The most bytes `m` encodes to: its map head and, for every entry, its key

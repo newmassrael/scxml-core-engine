@@ -726,3 +726,25 @@ Landing: the commit that adds this section.
 - A broadcast log whose element is such a codec is refused (`broadcast-log/element-size-unbounded`), naming the entry
   and the declaration it lacks, as one with a positional or CBOR field of no bound is.
 
+## C11 holds a content-line text or list at a deployment's capacity (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A deployment's `codecs:` block sizes a C11 content-line codec as it sizes a Rust one, by the id each container's tag
+  is named by (`<id>`, `<id>_value`, `<id>_values`). Each array is that capacity, or the bound where the deployment
+  gives none; a container with neither is refused at generation (`codegen/unsupported`), naming it. A codec C11
+  refused before for a text or list of no bound generates once its deployment gives each such container a capacity.
+- The runtime's readers take the bound and the capacity, as the CBOR ones do: `sce_forge_cl_property_read_string(p,
+  max_size, capacity, text, out, len)`, `sce_forge_cl_property_read_param_string(p, max_size, capacity, out, len)`
+  and `sce_forge_cl_property_read_strings(p, separator, max_values, values_capacity, max_size, size_capacity, text,
+  out, lens, count)`, where the parts are `size_capacity` apart. Pass `SIZE_MAX` for no bound, and the old size as
+  both where a caller held a value at its bound. A value past the capacity is read whole and answers
+  `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` after the line's own refusals; `sce_forge_cl_note_capacity(status, &over)` turns
+  that into a flag so a caller reads on. A character is held whole or not at all.
+- A generated decode of a component past a capacity reads it whole and answers `SCE_FORGE_CODEC_CAPACITY_EXCEEDED`
+  only when no rule refuses it, a required entry's absence included, as Rust does; `*out` then holds no value to
+  read. An encode refuses a length or a count past what its array holds, rather than read past it.
+- `{CODEC}_MAX_BYTES` of a content-line codec is measured at what is held, as a CBOR codec's is.
+- `sce_forge_cl_scan_param_value_as` takes a `sce_forge_cl_param_sink_t`, and `sce_forge_cl_scan_param_value` is gone:
+  read a string parameter with `sce_forge_cl_property_read_param_string`.
+

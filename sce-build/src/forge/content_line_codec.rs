@@ -22,7 +22,7 @@
 
 use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::generator::{ImportContext, LangCtx};
-use crate::forge::model::{CodecModel, ContentLineEntry, SceType};
+use crate::forge::model::{CodecModel, ContentLineEntry, LineHeld, Measured, SceType};
 use crate::generator::Language;
 
 /// Whether `lang` generates a content-line codec — the one answer the
@@ -48,10 +48,9 @@ pub fn lowers(lang: Language) -> bool {
 /// none of those shapes is a ground for refusing one.
 ///
 /// Beyond the language: C11 holds every text and list in an array the size of
-/// its bound, so an entry the protocol states no bound of has no C11 storage
-/// (docs/adr/0077 §7) — every other backend's text and list grow — and a
-/// deployment's capacity of a content-line entry is one C11 does not hold it
-/// at.
+/// what it holds, the deployment's capacity or the bound (docs/adr/0077 §7), so
+/// a container with neither has no C11 storage — every other backend's text
+/// and list grow.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
@@ -61,25 +60,20 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     }
     if lang == Language::C11 {
         let lines = m.content_line.as_ref()?;
-        for slot in lines.slots() {
-            let e = &lines.entries[slot.entry];
-            if e.bound(slot.held).is_none() {
-                return Some(format!(
-                    "codec '{}': content-line entry '{}' declares no {}, and C11 holds what \
-                     an entry holds in a fixed array of its bound",
-                    m.name,
-                    e.id,
-                    slot.held.declaration()
-                ));
-            }
-            if e.capacity.of(slot.held).is_some() {
-                return Some(format!(
-                    "codec '{}': the deployment gives content-line container '{}' a capacity, \
-                     and C11 holds a content-line entry in an array of its bound, not of a \
-                     capacity",
-                    m.name, slot.id
-                ));
-            }
+        if let Some(slot) = lines
+            .slots()
+            .into_iter()
+            .find(|s| lines.entries[s.entry].storage(s.held).is_none())
+        {
+            return Some(format!(
+                "codec '{}': content-line entry '{}' declares no {} and the deployment gives \
+                 '{}' no capacity, and C11 holds what an entry holds in a fixed array of its \
+                 capacity",
+                m.name,
+                lines.entries[slot.entry].id,
+                slot.held.declaration(),
+                slot.id
+            ));
         }
     }
     None
@@ -223,8 +217,8 @@ fn int_range(ty: &SceType) -> Option<(i64, u64)> {
 
 /// A bound as the language's reader and writer take it: the number, or the
 /// runtime's name for no bound where the protocol states none (docs/adr/0077
-/// §7). C11 holds every text and list in an array of its capacity and takes
-/// no such name; a codec it holds no number for is refused before it renders.
+/// §7). C11 takes a bound beside a capacity, both spelled by
+/// [`c11_held_keys`].
 pub(crate) fn bound_literal(lang: Language, bound: Option<u32>) -> String {
     match bound {
         Some(n) => n.to_string(),
@@ -570,6 +564,31 @@ fn mark_optional_params(entry: &mut serde_json::Value) {
     entry["optional_params"] = optional.into();
 }
 
+/// What a C11 codec holds of `e`, of each kind it holds a variable number of
+/// (docs/adr/0077 §7): `size_*` of a text, `values_*` of a line of values,
+/// `count_*` of a repeated property's lines. `*_bound` is the bound as the
+/// runtime's readers take it, `SIZE_MAX` where the protocol states none, and
+/// `*_cap` the capacity an array is sized at and a reader holds: the
+/// deployment's, or the bound. A container with neither is refused before this
+/// renders ([`refusal`]).
+fn c11_held_keys(item: &mut serde_json::Value, e: &ContentLineEntry) {
+    for held in e.held() {
+        let key = match held {
+            LineHeld::Text => "size",
+            LineHeld::Values => "values",
+            LineHeld::Lines => "count",
+        };
+        item[format!("{key}_bound")] = e
+            .bound(held)
+            .map_or_else(|| "SIZE_MAX".to_string(), |n| format!("{n}U"))
+            .into();
+        item[format!("{key}_cap")] = e
+            .storage(held)
+            .expect("C11 refuses a container it holds no number of before it renders")
+            .into();
+    }
+}
+
 /// How a C11 codec holds `item`, the context of an entry `e` or of one of its
 /// parameters, by the member paths its template reads and writes it through. The
 /// value of one that may be absent (`optional`) is the `value` of the struct
@@ -591,9 +610,10 @@ fn c11_hold(
     optional: bool,
     declarations: &mut Vec<String>,
 ) {
+    c11_held_keys(item, e);
     let name = item["name"].as_str().unwrap_or_default().to_string();
     let value = if optional {
-        let held = l.c11_codec_optional(e.present_type(), e.max_size);
+        let held = l.c11_codec_optional(e.present_type(), e.storage(LineHeld::Text));
         if !held.declaration.is_empty() && !declarations.contains(&held.declaration) {
             declarations.push(held.declaration);
         }
@@ -714,14 +734,20 @@ fn render_c(
         .map_or(0, |longest| longest + 1);
     ctx.insert("enum_word_cap".into(), word_cap.into());
     ctx.insert("entries".into(), entries.into());
-    let max_encoded_bytes = max_encoded_bytes_with(m, &|alias: &str| {
-        l.enum_texts(alias)
-            .iter()
-            .map(|row| row.text.len() as u64)
-            .max()
-            .unwrap_or(0)
-    })
-    .expect("C11 refuses a content-line entry with no bound before it renders");
+    // What this node writes at most: each text and list at what it holds, the
+    // deployment's capacity where it gives one.
+    let max_encoded_bytes = max_encoded_bytes_with(
+        m,
+        &|alias: &str| {
+            l.enum_texts(alias)
+                .iter()
+                .map(|row| row.text.len() as u64)
+                .max()
+                .unwrap_or(0)
+        },
+        Measured::Held,
+    )
+    .expect("C11 refuses a content-line entry it holds no number of before it renders");
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     l.render(env, "codec_content_line", ctx)
 }
@@ -734,11 +760,24 @@ fn render_c(
 ///
 /// `longest_text` answers, for the alias of an enum the codec imports, the
 /// length in bytes of the longest text of its variants. `None` for a string
-/// the protocol states no `sce:max-size` of.
-fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> Option<u64> {
+/// with nothing to measure it at ([`measure`]).
+fn value_width(
+    longest_text: &dyn Fn(&str) -> u64,
+    entry: &ContentLineEntry,
+    measured: Measured,
+) -> Option<u64> {
     match entry.present_type() {
         SceType::Enum(r) => Some(longest_text(&r.alias)),
-        _ => entry.max_size.map(u64::from),
+        _ => measure(entry, LineHeld::Text, measured).map(u64::from),
+    }
+}
+
+/// What `held` of `entry` is measured at: its bound, or what this node holds of
+/// it (docs/adr/0077 §7). `None` where there is nothing to measure it at.
+fn measure(entry: &ContentLineEntry, held: LineHeld, measured: Measured) -> Option<u32> {
+    match measured {
+        Measured::Bound => entry.bound(held),
+        Measured::Held => entry.storage(held),
     }
 }
 
@@ -755,12 +794,16 @@ fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> 
 /// pass that judges a broadcast log's element
 /// ([`crate::forge::codec_size`]) both read this one function.
 ///
-/// `None` where an entry has no bound of something it holds a variable number
-/// of ([`ContentLineEntry::unbounded`]): the protocol states no largest
-/// encoding, and a caller that needs one refuses the codec by that entry.
+/// Measured at the bound, it is the largest frame of the language; held, the
+/// largest this node writes, which a C11 caller sizes a buffer by. `None` where
+/// an entry has nothing to measure it at: at the bound, one the protocol bounds
+/// by nothing ([`ContentLineEntry::unbounded`]), and held, one the deployment
+/// gives no capacity besides; a caller that needs a number refuses the codec by
+/// that entry.
 pub(crate) fn max_encoded_bytes_with(
     m: &CodecModel,
     longest_text: &dyn Fn(&str) -> u64,
+    measured: Measured,
 ) -> Option<u64> {
     let Some(model) = m.content_line.as_ref() else {
         return Some(0);
@@ -777,21 +820,23 @@ pub(crate) fn max_encoded_bytes_with(
         {
             // `;` + name + `=` + the quotes + the value.
             let name = param.param.as_deref().map_or(0, str::len) as u64;
-            logical += 1 + name + 1 + 2 + value_width(longest_text, param)?;
+            logical += 1 + name + 1 + 2 + value_width(longest_text, param, measured)?;
         }
         let value = match entry.present_type() {
             // An enum's text is letters, digits and hyphens: nothing is escaped.
-            SceType::Enum(_) => value_width(longest_text, entry)?,
+            SceType::Enum(_) => value_width(longest_text, entry, measured)?,
             SceType::String => {
-                // A line that holds a list carries every value at its bound and a
-                // separator between each (docs/adr/0014); the separator is not
+                // A line that holds a list carries every value at its largest and
+                // a separator between each (docs/adr/0014); the separator is not
                 // escaped, so it counts as one octet.
                 let values = if entry.separator.is_some() {
-                    u64::from(entry.max_values?)
+                    u64::from(measure(entry, LineHeld::Values, measured)?)
                 } else {
                     1
                 };
-                value_width(longest_text, entry)? * if entry.text { 2 } else { 1 } * values
+                value_width(longest_text, entry, measured)?
+                    * if entry.text { 2 } else { 1 }
+                    * values
                     + (values - 1)
             }
             SceType::Bool => 5,
@@ -800,7 +845,7 @@ pub(crate) fn max_encoded_bytes_with(
         logical += 1 + value;
         let physical = logical + 2 + 3 * (logical / 70 + 1);
         let lines = if entry.repeated {
-            u64::from(entry.max_count?)
+            u64::from(measure(entry, LineHeld::Lines, measured)?)
         } else {
             1
         };

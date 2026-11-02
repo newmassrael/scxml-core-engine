@@ -25,16 +25,17 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance --test a_codec_can_read_and_write_one_content_line_component
-mutation_targets sce-build/src/forge/content_line_codec.rs sce-build/src/forge/generator/rust_source/content_line.rs sce-build/src/forge/model.rs sce-build/src/forge/codec_totality.rs sce-build/src/forge/cbor_codec.rs
+mutation_targets sce-build/src/forge/content_line_codec.rs sce-build/src/forge/generator/rust_source/content_line.rs sce-build/src/forge/model.rs sce-build/src/forge/codec_totality.rs sce-build/src/forge/cbor_codec.rs tools/codegen/templates/forge/c/codec_content_line.h.jinja2
 mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_codec_can_read_and_write_one_content_line_component.rs
 
-# C11 given an entry with no bound sizes an array by nothing. Killed by
+# C11 given a container with neither a bound nor a capacity sizes an array by
+# nothing. Killed by
 # `a_codec_with_no_bound_generates_where_storage_grows_and_c11_refuses_it_by_name`
 # and `what_cannot_hold_a_content_line_text_with_no_bound_refuses_it`.
-mutation_case "C11 takes a content-line entry with no bound" <<'PY'
+mutation_case "C11 takes a content-line container it holds no number of" <<'PY'
 edit("sce-build/src/forge/content_line_codec.rs",
-     r'''            if e.bound(slot.held).is_none() {''',
-     r'''            if false {''')
+     r'''            .find(|s| lines.entries[s.entry].storage(s.held).is_none())''',
+     r'''            .find(|_| false)''')
 PY
 
 # A Heap value or a source past `sce:max-count` is written as a frame the
@@ -88,6 +89,37 @@ mutation_case "every repeated property counts its lines" <<'PY'
 edit("sce-build/src/forge/content_line_codec.rs",
      r'''        entry["counts_lines"] = (e.repeated && (e.max_count.is_some() || e.is_required())).into();''',
      r'''        entry["counts_lines"] = e.repeated.into();''')
+PY
+
+# C11 given a capacity for a content-line container sizes its array at the
+# bound, or refuses it. Killed by
+# `c11_holds_a_content_line_text_with_no_bound_at_its_capacity`.
+mutation_case "C11 holds a content-line container at its bound" <<'PY'
+edit("sce-build/src/forge/content_line_codec.rs",
+     r'''        item[format!("{key}_cap")] = e
+            .storage(held)''',
+     r'''        item[format!("{key}_cap")] = e
+            .bound(held)''')
+PY
+
+# A C11 decode answers a capacity before a rule the protocol makes, so one frame
+# has two answers across C11 and Rust. Killed by
+# `c11_holds_a_content_line_text_with_no_bound_at_its_capacity` (the description
+# absent after a third attendee).
+mutation_case "C11 answers a capacity before every other refusal" <<'PY'
+edit("tools/codegen/templates/forge/c/codec_content_line.h.jinja2",
+     r'''            if (held) {
+                v->{{ e.name }}_count++;
+            } else {
+                over = true;
+            }
+{% else %}''',
+     r'''            if (held) {
+                v->{{ e.name }}_count++;
+            } else {
+                return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+            }
+{% else %}''')
 PY
 
 # A C11 map whose text is held at a capacity reports a largest frame that does

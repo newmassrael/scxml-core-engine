@@ -9,24 +9,35 @@
 {{ i }}    return s;
 {{ i }}}
 {% endmacro %}
+{#- One step that reads into what this node holds: a value past a capacity is
+    read whole and noted in `over`, and the decode reads on, answering
+    SCE_FORGE_CODEC_CAPACITY_EXCEEDED once every other refusal has had its turn
+    (docs/adr/0077 §7); any other refusal returns its status. #}
+{% macro note(call, i) %}
+{{ i }}s = sce_forge_cl_note_capacity({{ call }}, &over);
+{{ i }}if (s != SCE_FORGE_CODEC_OK) {
+{{ i }}    return s;
+{{ i }}}
+{% endmacro %}
 {#- The read of one property's value into its holder; a refusal returns its
     status, this backend's decode convention. The line grammar — unfolding, TEXT
     escapes, quoting — is the runtime's (`sce_forge_cl_*`); this spells none of
-    it. #}
+    it. A text and a list are read to their bound (`*_bound`) into what is held
+    of them (`*_cap`). A line of a list is read into row `at`. #}
 {% macro read_value(e) %}
 {% if e.separator %}
-{#- A list of values on one line: the rows of the holder are `max_size` apart,
+{#- A list of values on one line: the rows of the holder are `size_cap` apart,
     and a record keeps its own holder in `rec`. #}
 {% set h = "rec->" if e.is_records else "v->" %}
 {% set n = e.value_member if e.is_records else e.name %}
-{{ step("sce_forge_cl_property_read_strings(&line, '" ~ e.separator ~ "', " ~ e.max_values ~ "U, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", (char *)" ~ h ~ n ~ ", " ~ h ~ n ~ "_len, &" ~ h ~ n ~ "_count)", "            ") }}
+{{ note("sce_forge_cl_property_read_strings(&line, '" ~ e.separator ~ "', " ~ e.values_bound ~ ", " ~ e.values_cap ~ "U, " ~ e.size_bound ~ ", " ~ e.size_cap ~ "U, " ~ ("true" if e.text else "false") ~ ", (char *)" ~ h ~ n ~ ", " ~ h ~ n ~ "_len, &" ~ h ~ n ~ "_count)", "            ") }}
 {% elif e.kind == "enum" %}
 {#- The text names a carrier and the enum's own conversion takes it to a variant,
     so a closed and an open enum are read by one rule (docs/adr/0015): a closed
     enum's conversion answers false for a carrier it does not declare. A record
     keeps its value in `rec`, a list in the next row of its array, any other
     entry in the member its value is held in. #}
-{% set target = ("rec->" ~ e.value_member) if e.is_records else (("v->" ~ e.name ~ "[v->" ~ e.name ~ "_count]") if e.is_list else ("v->" ~ e.value_ref)) %}
+{% set target = ("rec->" ~ e.value_member) if e.is_records else (("v->" ~ e.name ~ "[at]") if e.is_list else ("v->" ~ e.value_ref)) %}
 {{ step("sce_forge_cl_property_read_enum(&line, kTexts_" ~ e.enum_alias ~ ", sizeof kTexts_" ~ e.enum_alias ~ " / sizeof kTexts_" ~ e.enum_alias ~ "[0], enum_word, " ~ e.enum_cap ~ "U, &raw_u)", "            ") }}
 {% if e.enum_is_open %}
             {{ target }} = {{ e.enum_from }}(({{ e.carrier_type }})raw_u);
@@ -35,16 +46,12 @@
                 return SCE_FORGE_CODEC_LINE_BAD_VALUE;
             }
 {% endif %}
-{% if e.is_list %}
-            v->{{ e.name }}_count++;
-{% endif %}
 {% elif e.is_records %}
-{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", rec->" ~ e.value_member ~ ", &rec->" ~ e.value_member ~ "_len)", "            ") }}
+{{ note("sce_forge_cl_property_read_string(&line, " ~ e.size_bound ~ ", " ~ e.size_cap ~ "U, " ~ ("true" if e.text else "false") ~ ", rec->" ~ e.value_member ~ ", &rec->" ~ e.value_member ~ "_len)", "            ") }}
 {% elif e.kind == "string" and e.is_list %}
-{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ "[v->" ~ e.name ~ "_count], &v->" ~ e.name ~ "_len[v->" ~ e.name ~ "_count])", "            ") }}
-            v->{{ e.name }}_count++;
+{{ note("sce_forge_cl_property_read_string(&line, " ~ e.size_bound ~ ", " ~ e.size_cap ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ "[at], &v->" ~ e.name ~ "_len[at])", "            ") }}
 {% elif e.kind == "string" %}
-{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.data_ref ~ ", &" ~ (("v->" ~ e.len_ref) if e.len_ref else "text_len") ~ ")", "            ") }}
+{{ note("sce_forge_cl_property_read_string(&line, " ~ e.size_bound ~ ", " ~ e.size_cap ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.data_ref ~ ", &" ~ (("v->" ~ e.len_ref) if e.len_ref else "text_len") ~ ")", "            ") }}
 {% elif e.kind == "bool" %}
 {{ step("sce_forge_cl_property_read_bool(&line, &v->" ~ e.value_ref ~ ")", "            ") }}
 {% elif e.kind == "uint" %}
@@ -56,12 +63,14 @@
 {% endif %}
 {% endmacro %}
 {#- The write of one property's value, its name and parameters already
-    written, at indent `i`; `element` is the value's holder. #}
+    written, at indent `i`; `element` is the value's holder. A text and a list
+    are held to what their arrays hold, which is inside their bound: a length
+    or a count past it is refused, never read past its array. #}
 {% macro write_value(e, i, element, length) %}
 {% if e.separator %}
-{{ step("sce_forge_cl_writer_strings(&out, (const char *)" ~ element ~ ", " ~ length ~ ", " ~ element ~ "_count, '" ~ e.separator ~ "', " ~ ("true" if e.text else "false") ~ ", " ~ e.max_size ~ "U, " ~ e.max_values ~ "U)", i) }}
+{{ step("sce_forge_cl_writer_strings(&out, (const char *)" ~ element ~ ", " ~ length ~ ", " ~ element ~ "_count, '" ~ e.separator ~ "', " ~ ("true" if e.text else "false") ~ ", " ~ e.size_cap ~ "U, " ~ e.values_cap ~ "U)", i) }}
 {% elif e.kind == "string" %}
-{{ step("sce_forge_cl_writer_string(&out, " ~ element ~ ", " ~ length ~ ", " ~ ("true" if e.text else "false") ~ ", " ~ e.max_size ~ "U)", i) }}
+{{ step("sce_forge_cl_writer_string(&out, " ~ element ~ ", " ~ length ~ ", " ~ ("true" if e.text else "false") ~ ", " ~ e.size_cap ~ "U)", i) }}
 {% elif e.kind == "bool" %}
 {{ step("sce_forge_cl_writer_bool(&out, " ~ element ~ ")", i) }}
 {% elif e.kind == "enum" %}
@@ -92,10 +101,10 @@
 {{ i }}}
 {% endif %}
 {% elif p.required %}
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.max_size ~ "U)", i) }}
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.size_cap ~ "U)", i) }}
 {% else %}
 {{ i }}if ({{ holder }}{{ p.present_ref }}) {
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.max_size ~ "U)", i ~ "    ") }}
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.size_cap ~ "U)", i ~ "    ") }}
 {{ i }}}
 {% endif %}
 {% endfor %}
@@ -154,8 +163,11 @@ static const sce_forge_cl_enum_text_t kTexts_{{ t.alias }}[] = {
 /* One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4). Decode
  * reads the properties this codec declares in any order and skips the rest;
  * encode writes the entries present in declaration order, folded at 75 octets.
- * A required string is held in a fixed array the size of its bound, with its
- * length beside it; a list holds up to its `sce:max-count` of them with a count.
+ * A required string is held in a fixed array the size of what this node holds
+ * of it, the deployment's capacity or the bound (docs/adr/0077 §7), with its
+ * length beside it; a list holds as many of them as it holds, with a count. A
+ * decode of a frame inside every bound and past what is held reads the frame
+ * whole and answers SCE_FORGE_CODEC_CAPACITY_EXCEEDED after every other refusal.
  * An optional entry or parameter is the `sce_optional_<elem>_t` of its element
  * (sce/forge/optional.h), present when its `present` member is true: its `value`
  * is a number, a `bool` or an enum as it is, and a string the buffer of its
@@ -173,21 +185,21 @@ typedef struct {
 {% elif p.kind == "enum" %}
     {{ p.value_type }} {{ p.name }};
 {% else %}
-    char {{ p.name }}[{{ p.max_size }}];
+    char {{ p.name }}[{{ p.size_cap }}];
     size_t {{ p.name }}_len;
 {% endif %}
 {% endfor %}
 {% if e.separator %}
-    /* The values of the line, at most {{ e.max_values }}. */
-    char {{ e.value_member }}[{{ e.max_values }}][{{ e.max_size }}];
-    size_t {{ e.value_member }}_len[{{ e.max_values }}];
+    /* The values of the line, {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of them{% endif %}, {{ e.values_cap }} held. */
+    char {{ e.value_member }}[{{ e.values_cap }}][{{ e.size_cap }}];
+    size_t {{ e.value_member }}_len[{{ e.values_cap }}];
     size_t {{ e.value_member }}_count;
 {% elif e.kind == "enum" %}
     /* The value of the line. */
     {{ e.value_type }} {{ e.value_member }};
 {% else %}
     /* The value of the line. */
-    char {{ e.value_member }}[{{ e.max_size }}];
+    char {{ e.value_member }}[{{ e.size_cap }}];
     size_t {{ e.value_member }}_len;
 {% endif %}
 } {{ e.record_type }};
@@ -195,25 +207,25 @@ typedef struct {
 {% endfor %}
 typedef struct {
 {% for e in entries %}
-    /* Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}. */
+    /* Property `{{ e.property }}`{% if e.is_records or e.is_list %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines, {{ e.count_cap }} held{% if e.is_records %}, each a record{% endif %}{% elif e.is_values %}, a list of {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of{% endif %} values, {{ e.values_cap }} held{% endif %}{% if e.required %}, required{% endif %}. */
 {% if e.is_records %}
-    {{ e.record_type }} {{ e.name }}[{{ e.max_count }}];
+    {{ e.record_type }} {{ e.name }}[{{ e.count_cap }}];
     size_t {{ e.name }}_count;
 {% elif e.is_values %}
-    char {{ e.name }}[{{ e.max_values }}][{{ e.max_size }}];
-    size_t {{ e.name }}_len[{{ e.max_values }}];
+    char {{ e.name }}[{{ e.values_cap }}][{{ e.size_cap }}];
+    size_t {{ e.name }}_len[{{ e.values_cap }}];
     size_t {{ e.name }}_count;
 {% elif e.kind == "string" and e.is_list %}
-    char {{ e.name }}[{{ e.max_count }}][{{ e.max_size }}];
-    size_t {{ e.name }}_len[{{ e.max_count }}];
+    char {{ e.name }}[{{ e.count_cap }}][{{ e.size_cap }}];
+    size_t {{ e.name }}_len[{{ e.count_cap }}];
     size_t {{ e.name }}_count;
 {% elif e.kind == "enum" and e.is_list %}
-    {{ e.value_type }} {{ e.name }}[{{ e.max_count }}];
+    {{ e.value_type }} {{ e.name }}[{{ e.count_cap }}];
     size_t {{ e.name }}_count;
 {% elif e.optional_c %}
     {{ e.field_type }} {{ e.name }};
 {% elif e.kind == "string" %}
-    char {{ e.name }}[{{ e.max_size }}];
+    char {{ e.name }}[{{ e.size_cap }}];
     size_t {{ e.name }}_len;
 {% else %}
     {{ e.value_type }} {{ e.name }};
@@ -226,7 +238,7 @@ typedef struct {
 {% elif p.kind == "enum" %}
     {{ p.value_type }} {{ p.name }};
 {% else %}
-    char {{ p.name }}[{{ p.max_size }}];
+    char {{ p.name }}[{{ p.size_cap }}];
     size_t {{ p.name }}_len;
 {% endif %}
 {% endfor %}
@@ -253,9 +265,19 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     char enum_word[{{ enum_word_cap }}];
 {% endif %}
     sce_forge_codec_status_t s;
+    /* A value or a line past what this node holds: read on, and answered last. */
+    bool over = false;
+    /* Whether a line of a list is held, and the row it is read into: past what
+     * the list holds it is read into the last row, which a refused decode leaves
+     * holding nothing to read. */
+    bool held = false;
+    size_t at = 0;
 {% for e in entries %}
 {% if not (e.is_list or e.is_records) %}
     bool seen_{{ e.name }} = false;
+{% elif e.max_count is not none %}
+    /* The lines of `{{ e.property }}` read, held or not, which its bound counts. */
+    size_t lines_{{ e.name }} = 0;
 {% endif %}
 {% if not e.is_records %}
 {% for p in e.params %}
@@ -266,6 +288,8 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     (void)raw_u;
     (void)raw_i;
     (void)text_len;
+    (void)held;
+    (void)at;
     s = sce_forge_cl_reader_begin(&reader, sce_forge_cursor_peek(&c, sce_forge_cursor_remaining(&c)),
                                   sce_forge_cursor_remaining(&c), "{{ component }}");
     if (s != SCE_FORGE_CODEC_OK) {
@@ -285,9 +309,15 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% for e in entries %}
         {% if not loop.first %}else {% endif %}if (sce_forge_cl_property_is(&line, "{{ e.property }}")) {
 {% if e.is_list or e.is_records %}
-            if (v->{{ e.name }}_count >= {{ e.max_count }}U) {
+{% if e.max_count is not none %}
+            /* The count is judged on the line before its parameters are read. */
+            if (lines_{{ e.name }} == {{ e.count_bound }}) {
                 return SCE_FORGE_CODEC_LINE_TOO_MANY;
             }
+            ++lines_{{ e.name }};
+{% endif %}
+            held = v->{{ e.name }}_count < {{ e.count_cap }}U;
+            at = held ? v->{{ e.name }}_count : {{ e.count_cap }}U - 1U;
 {% else %}
             if (seen_{{ e.name }}) {
                 return SCE_FORGE_CODEC_LINE_TOO_MANY;
@@ -297,7 +327,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {#- The parameters of this line live in the record of the line, and the line is
     judged on them before its value is read. #}
             {
-                {{ e.record_type }} *rec = &v->{{ e.name }}[v->{{ e.name }}_count];
+                {{ e.record_type }} *rec = &v->{{ e.name }}[at];
 {% for p in e.params %}
                 bool seen_{{ p.name }} = false;
 {% endfor %}
@@ -325,7 +355,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
                     }
 {% endif %}
 {% else %}
-{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, " ~ holder ~ p.data_ref ~ ", &" ~ ((holder ~ p.len_ref) if p.len_ref else "text_len") ~ ")", "                    ") }}
+{{ note("sce_forge_cl_property_read_param_string(&line, " ~ p.size_bound ~ ", " ~ p.size_cap ~ "U, " ~ holder ~ p.data_ref ~ ", &" ~ ((holder ~ p.len_ref) if p.len_ref else "text_len") ~ ")", "                    ") }}
 {% endif %}
                     seen_{{ p.name }} = true;
 {% if not p.required %}
@@ -343,9 +373,19 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endfor %}
 {% endif %}
 {{ read_value(e) }}{% if e.is_records %}
-                v->{{ e.name }}_count++;
+                if (held) {
+                    v->{{ e.name }}_count++;
+                } else {
+                    over = true;
+                }
             }
-{% elif not e.is_list %}
+{% elif e.is_list %}
+            if (held) {
+                v->{{ e.name }}_count++;
+            } else {
+                over = true;
+            }
+{% else %}
             seen_{{ e.name }} = true;
 {% if e.optional_c %}
             v->{{ e.present_ref }} = true;
@@ -372,6 +412,10 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endfor %}
 {% endif %}
 {% endfor %}
+    /* A frame every rule admits and this node cannot hold. */
+    if (over) {
+        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+    }
     /* Only a component that decoded whole moves the cursor. */
     if (!sce_forge_cursor_advance(&c, sce_forge_cl_reader_consumed(&reader))) {
         return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -389,7 +433,8 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {{ step("sce_forge_cl_writer_begin(&out)", "    ") }}
 {% for e in entries %}
 {% if e.is_records %}
-    if (self->{{ e.name }}_count > {{ e.max_count }}U) {
+    /* More lines than the array holds, inside the bound since it is. */
+    if (self->{{ e.name }}_count > {{ e.count_cap }}U) {
         return SCE_FORGE_CODEC_LINE_TOO_MANY;
     }
 {% if e.required %}
@@ -405,7 +450,8 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {{ write_params(e, "            ", "rec->") }}{{ write_value(e, "            ", "rec->" ~ e.value_member, "rec->" ~ e.value_member ~ "_len") }}        }
     }
 {% elif e.is_list %}
-    if (self->{{ e.name }}_count > {{ e.max_count }}U) {
+    /* More lines than the array holds, inside the bound since it is. */
+    if (self->{{ e.name }}_count > {{ e.count_cap }}U) {
         return SCE_FORGE_CODEC_LINE_TOO_MANY;
     }
 {% if e.required %}

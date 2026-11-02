@@ -155,7 +155,7 @@ fn cbor_codec(m: &CodecModel) -> Result<u64, Unbounded> {
         }
     }
     Ok(
-        crate::forge::cbor_codec::max_encoded_bytes(m, crate::forge::cbor_codec::Measured::Bound)
+        crate::forge::cbor_codec::max_encoded_bytes(m, crate::forge::model::Measured::Bound)
             .expect("every string entry was found to have its bound above"),
     )
 }
@@ -193,10 +193,12 @@ fn content_line_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
         Some(SizedImport::Enum { longest_text }) => *longest_text,
         _ => 0,
     };
-    Ok(
-        crate::forge::content_line_codec::max_encoded_bytes_with(&codec.model, &longest_text)
-            .expect("every entry was found to have its bounds above"),
+    Ok(crate::forge::content_line_codec::max_encoded_bytes_with(
+        &codec.model,
+        &longest_text,
+        crate::forge::model::Measured::Bound,
     )
+    .expect("every entry was found to have its bounds above"))
 }
 
 /// A codec of byte-positioned fields: the fields in wire order, then the arm a
@@ -784,7 +786,7 @@ mod tests {
         assert_eq!(
             crate::forge::cbor_codec::max_encoded_bytes(
                 &codec.model,
-                crate::forge::cbor_codec::Measured::Bound
+                crate::forge::model::Measured::Bound
             ),
             Some(368)
         );

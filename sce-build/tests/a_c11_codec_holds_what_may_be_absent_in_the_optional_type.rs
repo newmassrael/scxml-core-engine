@@ -191,9 +191,11 @@ fn a_content_line_entry_and_parameter_that_may_be_absent_are_the_optional_struct
             "sce_optional_bool_t all_day;",
             "SCE_OPTIONAL_DECLARE_STRING(24)",
             "SCE_OPTIONAL_DECLARE_STRING(160)",
-            // The property's value, then its parameter.
-            "sce_forge_cl_property_read_string(&line, 24U, true, v->summary.value.data, &text_len)",
-            "sce_forge_cl_property_read_param_string(&line, 24U, v->organizer_cn.value.data, &text_len)",
+            // The property's value, then its parameter, each read to its bound
+            // into what is held of it, which is its bound with no capacity
+            // given (docs/adr/0077 §7).
+            "sce_forge_cl_property_read_string(&line, 24U, 24U, true, v->summary.value.data, &text_len)",
+            "sce_forge_cl_property_read_param_string(&line, 24U, 24U, v->organizer_cn.value.data, &text_len)",
             "v->summary.present = true;",
             "v->organizer_cn.present = true;",
             "v->sequence.value = (uint16_t)raw_u;",
@@ -208,7 +210,7 @@ fn a_content_line_entry_and_parameter_that_may_be_absent_are_the_optional_struct
             "sce_forge_cl_writer_bool(&out, self->all_day.value)",
             // A required text and a required parameter keep their arrays and their
             // lengths.
-            "sce_forge_cl_property_read_string(&line, 24U, false, v->uid, &v->uid_len)",
+            "sce_forge_cl_property_read_string(&line, 24U, 24U, false, v->uid, &v->uid_len)",
             "size_t dtstart_tzid_len;",
             // A list is its rows and its count, never the struct of one value.
             "size_t exdate_count;",

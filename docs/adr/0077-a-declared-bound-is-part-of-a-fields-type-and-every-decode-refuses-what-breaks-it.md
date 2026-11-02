@@ -446,6 +446,14 @@ are one value held two ways. So:
     allocated a value's bound up front, Go's list of values and Kotlin's text buffer: with no bound that is the
     largest integer, so they failed. A bound is a refusal threshold and never an allocation; both now grow as the line
     is read.
+  - *C11 at a deployment's capacity:* each container is held at the capacity a deployment gives it, by the id its Rust
+    tag is named by, or at its bound; one with neither is refused, naming it. The runtime's readers take a bound and a
+    capacity, as the CBOR ones do, and hold a text as Rust's `TextInto` does: the bound judged at each byte, UTF-8 at
+    each character, a character held whole or not at all, the rest read on and not held. A decode reads a frame past
+    a capacity whole, a line of a full list into its last row, and answers `CAPACITY_EXCEEDED` after every other
+    refusal, so C11 and Rust give one frame one answer. `..._MAX_BYTES` is measured at what is held (`Measured::Held`),
+    and a broadcast log's element at the bound (`Measured::Bound`). C11's CBOR reader still refuses at the byte past a
+    capacity, before a UTF-8 check that would come after; it is the next landing, to hold a map as this holds a line.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

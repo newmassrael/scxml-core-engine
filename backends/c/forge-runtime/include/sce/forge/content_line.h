@@ -327,36 +327,150 @@ static inline bool sce_forge_cl_property_param_is(const sce_forge_cl_property_t 
     return p->has_param && sce_forge_cl_unfolded_eq(p->raw, p->param_from, p->param_to, name);
 }
 
-/* Hand one byte of a parameter value to out[0, max_size). A byte is refused
- * when it is a control character or passes `max_size`, unless the scan is
- * `lenient`: then nothing is refused, no byte is stored past `max_size`, and `*n`
- * keeps counting, so a value longer than the buffer is told by `*n > max_size`
- * (docs/adr/0015: an enum's text is judged after the whole value is scanned). */
-static inline sce_forge_codec_status_t sce_forge_cl_param_byte(char *out, size_t max_size, size_t *n, int b,
-                                                               bool lenient) {
-    if (!lenient) {
+/* A text as a reader holds it while it unescapes it, one byte at a time
+ * (docs/adr/0077 §7). The bound the protocol states, `max_size` (`SIZE_MAX`
+ * where it states none), is judged at each byte: past it the line is
+ * SCE_FORGE_CODEC_LINE_TOO_LONG. Each character is held in out[0, capacity)
+ * once its bytes are whole and only if it fits; one that does not stops the
+ * holding and not the reading, so the rest of the text is still judged. A
+ * text that is not UTF-8 is judged at its end, after the bound, and before
+ * the capacity: a node that cannot hold a text tells it apart from a text no
+ * node may take. */
+typedef struct {
+    char *out;
+    size_t max_size;
+    size_t capacity;
+    /* The bytes read and the bytes held. */
+    size_t read;
+    size_t held;
+    /* The bytes of the character being read, and how many it takes (0
+     * between characters). */
+    uint8_t ch[4];
+    size_t ch_len;
+    size_t ch_need;
+    /* A byte no UTF-8 text holds where it stood. */
+    bool bad;
+    /* A character did not fit: the rest is read and not held. */
+    bool full;
+} sce_forge_cl_text_t;
+
+static inline void sce_forge_cl_text_begin(sce_forge_cl_text_t *t, char *out, size_t max_size, size_t capacity) {
+    t->out = out;
+    t->max_size = max_size;
+    t->capacity = capacity;
+    t->read = 0;
+    t->held = 0;
+    t->ch_len = 0;
+    t->ch_need = 0;
+    t->bad = false;
+    t->full = false;
+}
+
+/* One more byte of the text, unescaped. */
+static inline sce_forge_codec_status_t sce_forge_cl_text_push(sce_forge_cl_text_t *t, int b) {
+    const uint8_t byte = (uint8_t)b;
+    if (t->read == t->max_size) {
+        return SCE_FORGE_CODEC_LINE_TOO_LONG;
+    }
+    ++t->read;
+    if (t->bad) {
+        return SCE_FORGE_CODEC_OK;
+    }
+    if (t->ch_need == 0) {
+        if (byte <= 0x7Fu) {
+            t->ch_need = 1;
+        } else if (byte >= 0xC2u && byte <= 0xDFu) {
+            t->ch_need = 2;
+        } else if (byte >= 0xE0u && byte <= 0xEFu) {
+            t->ch_need = 3;
+        } else if (byte >= 0xF0u && byte <= 0xF4u) {
+            t->ch_need = 4;
+        } else {
+            t->bad = true;
+            return SCE_FORGE_CODEC_OK;
+        }
+        t->ch_len = 0;
+    }
+    t->ch[t->ch_len++] = byte;
+    if (t->ch_len < t->ch_need) {
+        return SCE_FORGE_CODEC_OK;
+    }
+    t->ch_need = 0;
+    if (!sce_forge_is_valid_utf8(t->ch, t->ch_len)) {
+        t->bad = true;
+        return SCE_FORGE_CODEC_OK;
+    }
+    if (!t->full) {
+        if (t->out != NULL && t->capacity - t->held >= t->ch_len) {
+            memcpy(t->out + t->held, t->ch, t->ch_len);
+            t->held += t->ch_len;
+        } else {
+            t->full = true;
+        }
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* The verdict of a text read whole, and the bytes held in `*len`: a text
+ * that is not UTF-8 is SCE_FORGE_CODEC_LINE_BAD_VALUE, and one that did not
+ * fit SCE_FORGE_CODEC_CAPACITY_EXCEEDED. */
+static inline sce_forge_codec_status_t sce_forge_cl_text_finish(const sce_forge_cl_text_t *t, size_t *len) {
+    if (len != NULL) {
+        *len = t->held;
+    }
+    if (t->bad || t->ch_need != 0) {
+        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+    }
+    if (t->full) {
+        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* A refusal of a node's capacity, noted in `*over`, and every other status as
+ * it is: a decode reads the frame on past what it cannot hold, and answers
+ * SCE_FORGE_CODEC_CAPACITY_EXCEEDED once every other refusal has had its
+ * turn (docs/adr/0077 §7). */
+static inline sce_forge_codec_status_t sce_forge_cl_note_capacity(sce_forge_codec_status_t s, bool *over) {
+    if (s == SCE_FORGE_CODEC_CAPACITY_EXCEEDED) {
+        *over = true;
+        return SCE_FORGE_CODEC_OK;
+    }
+    return s;
+}
+
+/* Where the bytes of a parameter value go: a string parameter's text, judged
+ * at each byte (`text`); an enum's word, held in word[0, cap) and counted on in
+ * `*n` past it, with nothing judged until the whole value is scanned
+ * (docs/adr/0015); or nowhere, when both are NULL and the value is skipped. */
+typedef struct {
+    sce_forge_cl_text_t *text;
+    char *word;
+    size_t cap;
+    size_t n;
+} sce_forge_cl_param_sink_t;
+
+static inline sce_forge_codec_status_t sce_forge_cl_param_byte(sce_forge_cl_param_sink_t *sink, int b) {
+    if (sink->text != NULL) {
         if (sce_forge_cl_is_control(b)) {
             return SCE_FORGE_CODEC_LINE_BAD_VALUE;
         }
-        if (*n == max_size) {
-            return SCE_FORGE_CODEC_LINE_TOO_LONG;
+        return sce_forge_cl_text_push(sink->text, b);
+    }
+    if (sink->word != NULL) {
+        if (sink->n < sink->cap) {
+            sink->word[sink->n] = (char)b;
         }
+        ++sink->n;
     }
-    if (*n < max_size) {
-        out[*n] = (char)b;
-    }
-    ++*n;
     return SCE_FORGE_CODEC_OK;
 }
 
 /* Scan one parameter value — a quoted string, or text up to `;`, `:`, `,` or
- * `"` — storing each byte of it in out[0, max_size) (NULL: skipped) and its
- * length in `*len`. `*more` is whether another value follows a `,`. `lenient`
- * is as for `sce_forge_cl_param_byte`. */
-static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forge_cl_property_t *p, char *out,
-                                                                        size_t max_size, size_t *len, bool *more,
-                                                                        bool lenient) {
-    size_t n = 0;
+ * `"` — handing each byte of it to `sink`. `*more` is whether another value
+ * follows a `,`. */
+static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forge_cl_property_t *p,
+                                                                        sce_forge_cl_param_sink_t *sink, bool *more) {
     int b;
     if (sce_forge_cl_scan_peek(&p->scan) == '"') {
         (void)sce_forge_cl_scan_bump(&p->scan);
@@ -368,8 +482,8 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forg
             if (b == '"') {
                 break;
             }
-            if (out != NULL) {
-                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(out, max_size, &n, b, lenient);
+            {
+                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(sink, b);
                 if (s != SCE_FORGE_CODEC_OK) {
                     return s;
                 }
@@ -385,16 +499,13 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forg
                 return SCE_FORGE_CODEC_LINE_MALFORMED;
             }
             (void)sce_forge_cl_scan_bump(&p->scan);
-            if (out != NULL) {
-                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(out, max_size, &n, b, lenient);
+            {
+                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(sink, b);
                 if (s != SCE_FORGE_CODEC_OK) {
                     return s;
                 }
             }
         }
-    }
-    if (len != NULL) {
-        *len = n;
     }
     b = sce_forge_cl_scan_peek(&p->scan);
     if (b == ',') {
@@ -409,17 +520,11 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forg
     return SCE_FORGE_CODEC_LINE_MALFORMED;
 }
 
-/* `sce_forge_cl_scan_param_value_as` that refuses a control character and a
- * value past `max_size`, which is how a string parameter is read. */
-static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_cl_property_t *p, char *out,
-                                                                     size_t max_size, size_t *len, bool *more) {
-    return sce_forge_cl_scan_param_value_as(p, out, max_size, len, more, false);
-}
-
 static inline sce_forge_codec_status_t sce_forge_cl_skip_param_value(sce_forge_cl_property_t *p) {
     bool more = true;
     while (more) {
-        const sce_forge_codec_status_t s = sce_forge_cl_scan_param_value(p, NULL, 0, NULL, &more);
+        sce_forge_cl_param_sink_t nowhere = {NULL, NULL, 0, 0};
+        const sce_forge_codec_status_t s = sce_forge_cl_scan_param_value_as(p, &nowhere, &more);
         if (s != SCE_FORGE_CODEC_OK) {
             return s;
         }
@@ -474,17 +579,25 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_next_param(sce_forg
     return SCE_FORGE_CODEC_OK;
 }
 
-/* Read the value of the parameter `next_param` stands on, into out[0,
- * max_size), its length in `*len`. A second value is
- * SCE_FORGE_CODEC_LINE_BAD_VALUE. */
-static inline sce_forge_codec_status_t
-sce_forge_cl_property_read_param_string(sce_forge_cl_property_t *p, size_t max_size, char *out, size_t *len) {
+/* Read the value of the parameter `next_param` stands on into out[0,
+ * capacity), its length in `*len`, held to `max_size` (`SIZE_MAX` for no bound)
+ * as `sce_forge_cl_text_t` holds a text. A second value is
+ * SCE_FORGE_CODEC_LINE_BAD_VALUE; a value that does not fit is read whole and
+ * is SCE_FORGE_CODEC_CAPACITY_EXCEEDED, which a decode notes and reads on past
+ * (`sce_forge_cl_note_capacity`). */
+static inline sce_forge_codec_status_t sce_forge_cl_property_read_param_string(sce_forge_cl_property_t *p,
+                                                                               size_t max_size, size_t capacity,
+                                                                               char *out, size_t *len) {
     bool more = false;
     sce_forge_codec_status_t s;
+    sce_forge_cl_text_t text;
+    sce_forge_cl_param_sink_t sink = {NULL, NULL, 0, 0};
     if (p->phase != SCE_FORGE_CL_PARAM_VALUE) {
         return SCE_FORGE_CODEC_LINE_MALFORMED;
     }
-    s = sce_forge_cl_scan_param_value(p, out, max_size, len, &more);
+    sce_forge_cl_text_begin(&text, out, max_size, capacity);
+    sink.text = &text;
+    s = sce_forge_cl_scan_param_value_as(p, &sink, &more);
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
     }
@@ -493,10 +606,7 @@ sce_forge_cl_property_read_param_string(sce_forge_cl_property_t *p, size_t max_s
     }
     p->has_param = false;
     p->phase = SCE_FORGE_CL_AT_SEPARATOR;
-    if (!sce_forge_is_valid_utf8((const uint8_t *)out, *len)) {
-        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
-    }
-    return SCE_FORGE_CODEC_OK;
+    return sce_forge_cl_text_finish(&text, len);
 }
 
 /* Stand at the value: skip the parameters still unread and step over `:`. */
@@ -513,106 +623,134 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_begin_value(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
-/* Read the value as a string into out[0, max_size), its length in `*len`. With
- * `text`, `\\`, `\;`, `\,`, `\n` and `\N` are escapes; an unescaped `;` or `,`
- * is itself. */
-static inline sce_forge_codec_status_t sce_forge_cl_property_read_string(sce_forge_cl_property_t *p, size_t max_size,
-                                                                         bool text, char *out, size_t *len) {
-    size_t n = 0;
-    sce_forge_codec_status_t s = sce_forge_cl_property_begin_value(p);
-    if (s != SCE_FORGE_CODEC_OK) {
-        return s;
+/* The next byte of a value, unescaped where it is a `text` (`\\`, `\;`, `\,`,
+ * `\n` and `\N`), into `*value`: SCE_FORGE_CODEC_OK, or the refusal of a bad
+ * escape or a control character. `*ended` is whether the value has no more
+ * bytes, and `*raw` the byte as the line holds it (a separator is told by it). */
+static inline sce_forge_codec_status_t sce_forge_cl_value_byte(sce_forge_cl_property_t *p, bool text, int *raw,
+                                                               int *value, bool *ended) {
+    const int b = sce_forge_cl_scan_bump(&p->scan);
+    *raw = b;
+    *ended = b < 0;
+    if (*ended) {
+        return SCE_FORGE_CODEC_OK;
     }
-    for (;;) {
-        int value;
-        const int b = sce_forge_cl_scan_bump(&p->scan);
-        if (b < 0) {
-            break;
+    *value = b;
+    if (text && b == '\\') {
+        const int e = sce_forge_cl_scan_bump(&p->scan);
+        if (e == '\\' || e == ';' || e == ',') {
+            *value = e;
+        } else if (e == 'n' || e == 'N') {
+            *value = '\n';
+        } else {
+            return SCE_FORGE_CODEC_LINE_BAD_ESCAPE;
         }
-        value = b;
-        if (text && b == '\\') {
-            const int e = sce_forge_cl_scan_bump(&p->scan);
-            if (e == '\\' || e == ';' || e == ',') {
-                value = e;
-            } else if (e == 'n' || e == 'N') {
-                value = '\n';
-            } else {
-                return SCE_FORGE_CODEC_LINE_BAD_ESCAPE;
-            }
-        } else if (sce_forge_cl_is_control(b)) {
-            return SCE_FORGE_CODEC_LINE_BAD_VALUE;
-        }
-        if (n == max_size) {
-            return SCE_FORGE_CODEC_LINE_TOO_LONG;
-        }
-        out[n++] = (char)value;
-    }
-    *len = n;
-    if (!sce_forge_is_valid_utf8((const uint8_t *)out, n)) {
+    } else if (sce_forge_cl_is_control(b)) {
         return SCE_FORGE_CODEC_LINE_BAD_VALUE;
     }
     return SCE_FORGE_CODEC_OK;
 }
 
+/* Read the value as a string into out[0, capacity), its length in `*len`,
+ * held to `max_size` (`SIZE_MAX` for no bound) as `sce_forge_cl_text_t` holds
+ * a text: one that does not fit is read whole and is
+ * SCE_FORGE_CODEC_CAPACITY_EXCEEDED. With `text`, `\\`, `\;`, `\,`, `\n` and
+ * `\N` are escapes; an unescaped `;` or `,` is itself. */
+static inline sce_forge_codec_status_t sce_forge_cl_property_read_string(sce_forge_cl_property_t *p, size_t max_size,
+                                                                         size_t capacity, bool text, char *out,
+                                                                         size_t *len) {
+    sce_forge_cl_text_t into;
+    sce_forge_codec_status_t s = sce_forge_cl_property_begin_value(p);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    sce_forge_cl_text_begin(&into, out, max_size, capacity);
+    for (;;) {
+        int raw = 0;
+        int value = 0;
+        bool ended = false;
+        s = sce_forge_cl_value_byte(p, text, &raw, &value, &ended);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+        if (ended) {
+            return sce_forge_cl_text_finish(&into, len);
+        }
+        s = sce_forge_cl_text_push(&into, value);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+    }
+}
+
 /* Read the value as a list of strings cut at `separator` (docs/adr/0014): at
- * most `max_values` of them, each at most `max_size` bytes. Part `i` is written
- * to `out + i * max_size`, its length to `lens[i]`, and the number of parts to
- * `*count`. The value is cut before it is unescaped: with `text` a separator
- * that a backslash precedes is part of the value, and with anything else every
- * separator cuts. The parts are judged left to right and the first failure is
- * the line's: a part past `max_values` is SCE_FORGE_CODEC_LINE_TOO_MANY, even
- * one that is empty or too long; an empty part is SCE_FORGE_CODEC_LINE_BAD_VALUE. */
+ * most `max_values` of them, each at most `max_size` bytes (`SIZE_MAX` for no
+ * bound of either). The list holds `values_capacity` parts and each part
+ * `size_capacity` bytes: part `i` is written to `out + i * size_capacity`, its
+ * length to `lens[i]`, and the number of parts held to `*count`. The value is
+ * cut before it is unescaped: with `text` a separator that a backslash
+ * precedes is part of the value, and with anything else every separator cuts.
+ * The parts are judged left to right and the first failure is the line's: a
+ * part past `max_values` is SCE_FORGE_CODEC_LINE_TOO_MANY, even one that is
+ * empty or too long; an empty part is SCE_FORGE_CODEC_LINE_BAD_VALUE. A part
+ * that does not fit, or one past `values_capacity`, is read on and not held,
+ * and the line is SCE_FORGE_CODEC_CAPACITY_EXCEEDED once it is read whole. */
 static inline sce_forge_codec_status_t sce_forge_cl_property_read_strings(sce_forge_cl_property_t *p, char separator,
-                                                                          size_t max_values, size_t max_size, bool text,
-                                                                          char *out, size_t *lens, size_t *count) {
-    size_t n = 0;
+                                                                          size_t max_values, size_t values_capacity,
+                                                                          size_t max_size, size_t size_capacity,
+                                                                          bool text, char *out, size_t *lens,
+                                                                          size_t *count) {
     size_t parts = 0;
+    bool over = false;
     sce_forge_codec_status_t s = sce_forge_cl_property_begin_value(p);
     *count = 0;
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
     }
     for (;;) {
-        int value;
-        const int b = sce_forge_cl_scan_bump(&p->scan);
-        if (b < 0 || b == (int)(unsigned char)separator) {
-            if (n == 0) {
-                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+        sce_forge_cl_text_t part;
+        size_t len = 0;
+        bool empty = true;
+        bool ended = false;
+        /* A part is held where the list still has room and nothing before it
+         * passed a capacity, as a list that refused one holds no more. */
+        char *at = (!over && *count < values_capacity) ? out + *count * size_capacity : NULL;
+        sce_forge_cl_text_begin(&part, at, max_size, size_capacity);
+        for (;;) {
+            int raw = 0;
+            int value = 0;
+            s = sce_forge_cl_value_byte(p, text, &raw, &value, &ended);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
             }
-            if (!sce_forge_is_valid_utf8((const uint8_t *)(out + parts * max_size), n)) {
-                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+            if (ended || raw == (int)(unsigned char)separator) {
+                break;
             }
-            lens[parts] = n;
-            ++parts;
-            *count = parts;
-            n = 0;
-            if (b < 0) {
-                return SCE_FORGE_CODEC_OK;
+            s = sce_forge_cl_text_push(&part, value);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
             }
-            /* A separator opens another part, which may not pass the bound. */
-            if (parts >= max_values) {
-                return SCE_FORGE_CODEC_LINE_TOO_MANY;
-            }
-            continue;
+            empty = false;
         }
-        value = b;
-        if (text && b == '\\') {
-            const int e = sce_forge_cl_scan_bump(&p->scan);
-            if (e == '\\' || e == ';' || e == ',') {
-                value = e;
-            } else if (e == 'n' || e == 'N') {
-                value = '\n';
-            } else {
-                return SCE_FORGE_CODEC_LINE_BAD_ESCAPE;
-            }
-        } else if (sce_forge_cl_is_control(b)) {
+        if (empty) {
             return SCE_FORGE_CODEC_LINE_BAD_VALUE;
         }
-        if (n == max_size) {
-            return SCE_FORGE_CODEC_LINE_TOO_LONG;
+        s = sce_forge_cl_note_capacity(sce_forge_cl_text_finish(&part, &len), &over);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
         }
-        out[parts * max_size + n] = (char)value;
-        ++n;
+        ++parts;
+        if (!over) {
+            lens[*count] = len;
+            ++*count;
+        }
+        if (ended) {
+            return over ? SCE_FORGE_CODEC_CAPACITY_EXCEEDED : SCE_FORGE_CODEC_OK;
+        }
+        /* A separator opens another part, which may not pass the bound. */
+        if (parts >= max_values) {
+            return SCE_FORGE_CODEC_LINE_TOO_MANY;
+        }
     }
 }
 
@@ -808,12 +946,14 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_read_param_enum(sce
                                                                              size_t count, char *word, size_t cap,
                                                                              uint64_t *out) {
     bool more = false;
-    size_t n = 0;
     sce_forge_codec_status_t s;
+    sce_forge_cl_param_sink_t sink = {NULL, NULL, 0, 0};
     if (p->phase != SCE_FORGE_CL_PARAM_VALUE) {
         return SCE_FORGE_CODEC_LINE_MALFORMED;
     }
-    s = sce_forge_cl_scan_param_value_as(p, word, cap, &n, &more, true);
+    sink.word = word;
+    sink.cap = cap;
+    s = sce_forge_cl_scan_param_value_as(p, &sink, &more);
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
     }
@@ -822,7 +962,7 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_read_param_enum(sce
     if (more) {
         return SCE_FORGE_CODEC_LINE_BAD_VALUE;
     }
-    return sce_forge_cl_enum_carrier_of(rows, count, word, cap, n, out);
+    return sce_forge_cl_enum_carrier_of(rows, count, word, cap, sink.n, out);
 }
 
 /* ── Writing ───────────────────────────────────────────────────────── */
