@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-peer-capi"
+version.workspace = true
+edition.workspace = true
+# The peer core it wraps (`sce-rust-peer`, through openmls) declares 1.91.
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The C ABI of the peer core of a device that holds a shared list: what an application lane links, with events, relay requests, responses and outcomes passed as JSON texts"
+publish = false
+
+# One peer core (ADR 0079) lives in `sce-rust-peer`; an application lane in another language reaches
+# it here, through `include/sce_peer.h`, and does not implement the trust layer or the relay's client
+# again. It follows `sce-mls-capi` in every convention, so a reviewer learns one set of rules. This is
+# the one crate of the peer core that holds `unsafe` code, at the boundary: every pointer a caller
+# gives is checked for null and read for the length it is given with, and a panic never crosses it.
+
+[lib]
+name = "sce_peer_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+sce-rust-peer = { path = "../peer" }
+sce-rust-relay = { path = "../relay" }
+sce-rust-trust = { path = "../trust" }
+serde_json = "1"

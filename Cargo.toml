@@ -30,6 +30,7 @@ members = [
     "backends/rust/mls",
     "backends/rust/mls-capi",
     "backends/rust/peer",
+    "backends/rust/peer-capi",
     "backends/rust/assurance",
     "sce-revision",
     "sce-specs",

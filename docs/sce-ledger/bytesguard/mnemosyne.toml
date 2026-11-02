@@ -163,6 +163,7 @@ scan_exclusions = [
     "backends/rust/mls-capi/",
     # The peer core of a device of a shared list (`sce-rust-peer`): no citation of any ledger.
     "backends/rust/peer/",
+    "backends/rust/peer-capi/",
     "backends/rust/assurance/",
     "sce-build/examples/",
     "tests/forge/expected/",

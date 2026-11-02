@@ -236,6 +236,7 @@ scan_exclusions = [
     # The peer core of a device of a shared list (`sce-rust-peer`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/peer/",
+    "backends/rust/peer-capi/",
     "backends/rust/assurance/",
     "sce-build/examples/",
     "sce-build/tests/",
