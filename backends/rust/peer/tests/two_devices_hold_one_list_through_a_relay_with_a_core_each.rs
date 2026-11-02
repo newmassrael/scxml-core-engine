@@ -659,7 +659,10 @@ fn a_sealed_state_is_refused_whole_under_another_key_changed_cut_or_for_another_
     changed[state.len() / 2] ^= 1;
 
     let untouched = Peer::open(LIST).standing();
-    let cases: [(&str, &str, u64, &[u8], DataKey, bool); 6] = [
+    // What is changed, the list and the node restored into, the bytes, the key, and whether the
+    // bytes are a sealed state that does not open (rather than none at all).
+    type Case<'a> = (&'a str, &'a str, u64, &'a [u8], DataKey, bool);
+    let cases: [Case; 6] = [
         (
             "another key",
             LIST,
