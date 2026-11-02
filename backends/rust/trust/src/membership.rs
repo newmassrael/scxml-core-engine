@@ -35,8 +35,14 @@ pub const NO_ENTRY: Hash = [0; 32];
 
 const DOMAIN: &str = "sce-trust/membership/1";
 
+/// The role from which a member may read.
+pub const READER: u8 = 1;
+
 /// The role from which a member may write.
 pub const WRITER: u8 = 2;
+
+/// The role from which a member may also do what an owner does: the highest a grant gives.
+pub const OWNER: u8 = 3;
 
 const LINK_DOMAIN: &str = "sce-trust/link/1";
 

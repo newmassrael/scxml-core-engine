@@ -13,16 +13,22 @@
 //! The administrator's device also makes the changes: [`Member::add_member`] and
 //! [`Member::remove_member`] write the entries of the log (the grant, and the entry that names the
 //! commit), make and merge the commit, and give back what is to go to the relay.
+//!
+//! The commit of a change is made before any entry of it is written. The log is append-only and an
+//! entry signed and appended cannot be taken back, while a commit made and not merged can: so a change
+//! the group refuses (a key package that is not the device's or not the list's, a node that is in no
+//! group) leaves the log as it was, and does not leave a member of the log the group does not hold,
+//! which would make the group's roster differ from the log's at every later commit.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use sce_rust_relay::{Courier, Link, Record, Round};
 use sce_rust_trust::encoding;
-use sce_rust_trust::membership::{Body, Entry};
+use sce_rust_trust::membership::{Body, Entry, Hash};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use sha2::{Digest, Sha256};
 
-use crate::{Applied, Device, MlsError};
+use crate::{Applied, Device, LogView, MlsError};
 
 /// What [`Member::advance`] did.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +71,34 @@ pub struct Followed {
     /// The second read of the relay, when the host had to make one for a commit it dropped. Its
     /// events (operations the host did not hold) are for the machine, as a round's are.
     pub reread: Option<Round>,
+}
+
+/// The log as it will be once the entry of a change is written: the device of `node` a member that
+/// signs with `key`, or taken off when `key` is `None`. What an administrator's commit is made
+/// against before that entry is written (the module's note).
+struct Prospect<'a> {
+    trust: &'a Trust,
+    node: u64,
+    key: Option<[u8; 32]>,
+}
+
+impl LogView for Prospect<'_> {
+    fn members(&self) -> Vec<(u64, [u8; 32])> {
+        let mut members: Vec<(u64, [u8; 32])> = LogView::members(self.trust)
+            .into_iter()
+            .filter(|(held, _)| *held != self.node)
+            .collect();
+        members.extend(self.key.map(|key| (self.node, key)));
+        members
+    }
+
+    fn commit_of(&self, epoch: u32) -> Option<Hash> {
+        self.trust.commit_of(epoch)
+    }
+
+    fn epoch(&self) -> u32 {
+        self.trust.epoch()
+    }
 }
 
 /// A device and its log.
@@ -326,8 +360,9 @@ impl Member {
     }
 
     /// The administrator's change: add the device of `node` (which signs with `key`) with the role
-    /// `role`, from its key package. Writes the grant (when the log has none for it), makes the
-    /// commit, writes the entry that names it, and merges. What it returns is for the relay.
+    /// `role`, from its key package. Makes the commit, writes the grant (when the log has none for
+    /// it with this key), writes the entry that names the commit, and merges. What it returns is for
+    /// the relay. A key package the group refuses leaves the log and the group as they were.
     pub fn add_member(
         &mut self,
         administrator: &Identity,
@@ -336,25 +371,34 @@ impl Member {
         key: PublicKey,
         package: &[u8],
     ) -> Result<Issued, MlsError> {
-        let mut entries = Vec::new();
-        if !self
+        let granted = self
             .trust
             .current_members()
             .iter()
-            .any(|(held, held_key)| *held == node && *held_key == key)
-        {
-            entries.push(self.append(
-                administrator,
-                Body::Grant {
-                    node,
-                    role,
-                    key,
-                    final_seq: None,
-                },
-            )?);
+            .any(|(held, held_key)| *held == node && *held_key == key);
+        let pending = self.stage_add(node, key, package)?;
+        let mut entries = Vec::new();
+        if !granted {
+            let grant = self.trust.grant_body(node, role, key);
+            entries.push(self.append_staged(administrator, grant)?);
         }
-        let pending = self.device.stage_add(&[package.to_vec()], &self.trust)?;
         self.finish(administrator, entries, pending)
+    }
+
+    /// The commit that adds the device of `package`, made against the log as it will be once the
+    /// device of `node` is a member that signs with `key` (the module's note).
+    fn stage_add(
+        &mut self,
+        node: u64,
+        key: PublicKey,
+        package: &[u8],
+    ) -> Result<crate::Pending, MlsError> {
+        let prospect = Prospect {
+            trust: &self.trust,
+            node,
+            key: Some(key.to_bytes()),
+        };
+        self.device.stage_add(&[package.to_vec()], &prospect)
     }
 
     /// The administrator's change: add a new device of a person, **linked** by the device of
@@ -373,7 +417,8 @@ impl Member {
         signature: [u8; 64],
         package: &[u8],
     ) -> Result<Issued, MlsError> {
-        let entries = vec![self.append(
+        let pending = self.stage_add(node, key, package)?;
+        let entries = vec![self.append_staged(
             administrator,
             Body::LinkedGrant {
                 node,
@@ -384,7 +429,6 @@ impl Member {
                 signature,
             },
         )?];
-        let pending = self.device.stage_add(&[package.to_vec()], &self.trust)?;
         self.finish(administrator, entries, pending)
     }
 
@@ -447,38 +491,41 @@ impl Member {
     }
 
     /// The administrator's change: take the device of `node` off, ending its chain at the last
-    /// operation this host has seen of it, and move the group to an epoch without it.
+    /// operation this host has seen of it, and move the group to an epoch without it. The commit
+    /// is made before the entry that takes the device off is written (the module's note).
     pub fn remove_member(
         &mut self,
         administrator: &Identity,
         node: u64,
     ) -> Result<Issued, MlsError> {
-        let key = self
+        let removal = self
             .trust
-            .current_members()
-            .into_iter()
-            .find(|(held, _)| *held == node)
-            .map(|(_, key)| key)
+            .removal_body(node)
             .ok_or_else(|| MlsError::NotInLog(format!("node {node} is no member")))?;
-        let entries = vec![self.append(
-            administrator,
-            Body::Grant {
-                node,
-                role: 0,
-                key,
-                final_seq: Some(self.trust.last_seq(node)),
-            },
-        )?];
-        let pending = self.device.stage_remove(&[node], &self.trust)?;
+        let prospect = Prospect {
+            trust: &self.trust,
+            node,
+            key: None,
+        };
+        let pending = self.device.stage_remove(&[node], &prospect)?;
+        let entries = vec![self.append_staged(administrator, removal)?];
         self.finish(administrator, entries, pending)
     }
 
     fn append(&self, administrator: &Identity, body: Body) -> Result<Entry, MlsError> {
-        let entry = self.trust.draft(body).sign(administrator).finish();
         self.trust
-            .append(&entry)
-            .map_err(|error| MlsError::NotInLog(format!("the log refused the entry: {error:?}")))?;
-        Ok(entry)
+            .administer(administrator, body)
+            .map_err(|error| MlsError::NotInLog(format!("the log refused the entry: {error:?}")))
+    }
+
+    /// An entry of a change whose commit is made and not merged: when the log refuses it, the
+    /// commit is given up, so that the device does not wait on a commit no entry will name.
+    fn append_staged(&mut self, administrator: &Identity, body: Body) -> Result<Entry, MlsError> {
+        let appended = self.append(administrator, body);
+        if appended.is_err() {
+            self.device.clear_pending()?;
+        }
+        appended
     }
 
     fn finish(
@@ -489,7 +536,7 @@ impl Member {
     ) -> Result<Issued, MlsError> {
         let epoch = u32::try_from(pending.epoch)
             .map_err(|_| MlsError::Malformed("the epoch is past what the log counts"))?;
-        entries.push(self.append(
+        entries.push(self.append_staged(
             administrator,
             Body::MlsEpoch {
                 epoch,

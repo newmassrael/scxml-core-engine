@@ -405,6 +405,55 @@ impl Trust {
         self.state().log.draft(body)
     }
 
+    /// An administrator's entry of the log: drafted after the head (the genesis, when the log holds
+    /// none), signed by `administrator`, appended here, and returned for the relay and every other
+    /// host. An entry that needs more signatures than one (a change to the administrators under a
+    /// quorum above one) is collected across hosts with [`Self::draft`] instead: here the log refuses
+    /// it, and nothing is appended.
+    pub fn administer(&self, administrator: &Identity, body: Body) -> Result<Entry, LogError> {
+        let entry = self.draft(body).sign(administrator).finish();
+        self.append(&entry)?;
+        Ok(entry)
+    }
+
+    /// The grant that makes the device of `node` a member with `role` that signs with `key`. It
+    /// carries where the device's chain ends (`final_seq`, the last operation of it this host has
+    /// admitted, [`Self::last_seq`]) when it takes writing away from a device that could write or
+    /// gives it another key, which the log requires of such a grant, and nothing otherwise.
+    pub fn grant_body(&self, node: u64, role: u8, key: PublicKey) -> Body {
+        let takes_writing_away = self.state().log.latest().any(|(held, era)| {
+            held == node && era.role >= WRITER && (role < WRITER || era.key != key)
+        });
+        Body::Grant {
+            node,
+            role,
+            key,
+            final_seq: takes_writing_away.then(|| self.last_seq(node)),
+        }
+    }
+
+    /// The grant that takes the device of `node` off, ending its chain at the last operation of it
+    /// this host has admitted; `None` when the log makes it no member now.
+    pub fn removal_body(&self, node: u64) -> Option<Body> {
+        let key = self
+            .current_members()
+            .into_iter()
+            .find(|(held, _)| *held == node)
+            .map(|(_, key)| key)?;
+        Some(Body::Grant {
+            node,
+            role: 0,
+            key,
+            final_seq: Some(self.last_seq(node)),
+        })
+    }
+
+    /// The hash of the list's genesis entry, which a person is invited with; `None` while the log
+    /// holds no entry.
+    pub fn genesis(&self) -> Option<Hash> {
+        self.state().log.hash_at(0)
+    }
+
     /// The position the next entry takes and the hash it names: what two hosts compare to know
     /// whether they hold the same log.
     pub fn head(&self) -> (u64, Hash) {
@@ -446,6 +495,14 @@ impl Trust {
     /// A host that has none (a hub) signs nothing of its own.
     pub fn set_identity(&self, node: u64, identity: Identity) {
         self.state().own = Some((node, identity));
+    }
+
+    /// This host's person, as [`Self::set_identity`] gave it: their node and their public key.
+    pub fn person(&self) -> Option<(u64, PublicKey)> {
+        self.state()
+            .own
+            .as_ref()
+            .map(|(node, identity)| (*node, identity.public()))
     }
 
     /// The number of the last operation this host has admitted from the device of `node`, 0 when
