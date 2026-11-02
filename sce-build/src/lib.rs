@@ -5604,19 +5604,12 @@ fn compute_codec_recursive_max_bytes(
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
-) -> u32 {
-    // Resolve a single import alias to the imported codec's full
-    // recursive max-bytes. Returns `None` on filesystem / parse / kind
-    // mismatch / cycle — caller (the variant / repeat / tlv branches
-    // below) skips that contribution, falling back to a 0 increment.
-    // Skipping is safe because the parent generator's eventual
-    // max-bytes pass would also skip on the same conditions.
-    fn resolve_import_max(
-        alias: &str,
-        imports: &[forge::model::ForgeImport],
-        base_dir: &Path,
-        visited: &mut HashSet<PathBuf>,
-    ) -> Option<u32> {
+) -> u64 {
+    // The generator's formula (`CodecModel::frame_bytes_with`), each body
+    // resolved by reading its document and recursing. An import that cannot be
+    // read, is another kind or closes a cycle counts for nothing, as the
+    // generator's pass counts an import it holds no figure for.
+    cm.frame_bytes_with(|alias| {
         with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
             Some(compute_codec_recursive_max_bytes(
                 inner.model,
@@ -5625,48 +5618,7 @@ fn compute_codec_recursive_max_bytes(
                 inner.visited,
             ))
         })
-    }
-
-    // Mirrors generator.rs render_codec's mutually-exclusive branches:
-    // variant codecs add the worst-case arm body; non-variant codecs
-    // add the per-field repeat / tlv-chain body sums. A codec with
-    // both is rare in practice and the parent generator itself does
-    // not combine them today — staying byte-identical to that formula
-    // keeps the helper's output usable as a drop-in for the parent
-    // pass on any leaf (sanity invariant: imports get the same value
-    // the parent would compute if it rendered the codec directly).
-    if let Some(v) = &cm.variant {
-        let arm_body_max = v
-            .arms
-            .iter()
-            .chain(v.default_arm.iter())
-            .filter_map(|arm| resolve_import_max(&arm.body_alias, imports, base_dir, visited))
-            .max()
-            .unwrap_or(0);
-        cm.max_frame_bytes() + arm_body_max
-    } else {
-        let repeat_body_max: u32 = cm
-            .fields
-            .iter()
-            .filter(|f| f.is_repeat())
-            .filter_map(|f| {
-                let alias = f.repeat_body_alias.as_deref()?;
-                let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
-                Some(body_max.saturating_mul(f.storage_entries()))
-            })
-            .sum();
-        let tlv_chain_body_max: u32 = cm
-            .fields
-            .iter()
-            .filter(|f| f.is_tlv_chain())
-            .filter_map(|f| {
-                let alias = f.tlv_chain_body_alias.as_deref()?;
-                let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
-                Some(body_max.saturating_mul(f.storage_entries()))
-            })
-            .sum();
-        cm.max_frame_bytes() + repeat_body_max + tlv_chain_body_max
-    }
+    })
 }
 
 /// Whether a codec's generated Rust struct holds any borrowed (`&'a`)
@@ -6693,7 +6645,7 @@ fn validate_link_pool_framer_resolution(
             // branch above.
             None => continue,
         };
-        if pool_slot_size < framer_max_bytes {
+        if u64::from(pool_slot_size) < framer_max_bytes {
             return Err(Located::new(
                 ValidationError::LinkPoolSlotSmallerThanFramerMax {
                     link_name: link.name.clone(),

@@ -386,11 +386,13 @@ struct {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if max_bytes_fit %}
     /// Worst-case encoded byte count for this codec — the upper bound
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
     static constexpr std::size_t MAX_ENCODED_BYTES = {{ max_bytes }};
+{% endif %}
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -511,9 +513,15 @@ struct {{ struct_name }} {
     }
 
 {% if encode_can_refuse %}
+{% if max_bytes_fit %}
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
+{% else %}
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a `VectorSink`. Returns the
+{% endif %}
     /// freshly-encoded byte vector, or `std::nullopt` when `encode`
     /// refuses the value before its first byte: a gated field and the
     /// `sce:present-if` that gates it contradict each other
@@ -524,7 +532,9 @@ struct {{ struct_name }} {
     /// sink.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec({{ params_first_arg }}) const {
         std::vector<std::uint8_t> _sce_v;
+{% if max_bytes_fit %}
         _sce_v.reserve(MAX_ENCODED_BYTES);
+{% endif %}
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
         if (encode(_sce_sink{{ params_first_arg_with_comma }})) {
             return std::nullopt;
@@ -532,14 +542,22 @@ struct {{ struct_name }} {
         return _sce_v;
     }
 {% else %}
+{% if max_bytes_fit %}
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
+{% else %}
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a `VectorSink`. Returns the
+{% endif %}
     /// freshly-encoded byte vector. Callers targeting zero-alloc hot
     /// paths should call `encode` directly against a caller-owned sink.
     [[nodiscard]] std::vector<std::uint8_t> encode_to_vec({{ params_first_arg }}) const {
         std::vector<std::uint8_t> _sce_v;
+{% if max_bytes_fit %}
         _sce_v.reserve(MAX_ENCODED_BYTES);
+{% endif %}
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
         (void)encode(_sce_sink{{ params_first_arg_with_comma }});
         return _sce_v;

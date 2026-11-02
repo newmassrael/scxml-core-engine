@@ -1,0 +1,74 @@
+# Mutation cases for "a frame past u32 states no size constant".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_frame_past_u32_states_no_size_constant.cases`.
+#
+# A field at its length's whole width makes a codec's largest frame pass `u32`
+# (docs/adr/0077 §7). No target holds a buffer of that size, so a backend states
+# no constant of it and its heap facade reserves nothing. A defect here is a
+# constant that does not compile on a 32-bit target, or a facade that asks for
+# gigabytes on every encode.
+#
+# The oracle is `a_frame_past_u32_states_no_constant_and_reserves_nothing` in
+# `sce-build/tests/forge_conformance.rs`, which generates such a codec on Rust,
+# C++ and Go and compiles the Rust one.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/model.rs tools/codegen/templates/forge/rust/codec.rs.jinja2 tools/codegen/templates/forge/cpp/codec.h.jinja2 tools/codegen/templates/forge/go/codec.go.jinja2
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+# Every frame called one a target can state: the constant is written for a frame
+# past `u32`. Killed by the Rust text (`MAX_ENCODED_BYTES`).
+mutation_case "a frame past u32 is stated as a constant" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''    bytes <= u64::from(u32::MAX)''',
+     r'''    bytes <= u64::MAX''')
+PY
+
+# The Rust facade reserves the constant whatever the frame. Killed by the Rust
+# text (`Vec::new()`) and by the compile, which finds no constant.
+mutation_case "the Rust facade reserves a frame past u32" <<'PY'
+edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
+     r'''if max_bytes_fit else "Vec::new()" %}''',
+     r'''if true else "Vec::new()" %}''')
+PY
+
+# The C++ facade reserves a frame past `u32`. Killed by the C++ text (`.reserve(`).
+mutation_case "the C++ facade reserves a frame past u32" <<'PY'
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''{% if max_bytes_fit %}
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+{% endif %}
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        if (encode(''',
+     r'''        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        if (encode(''')
+edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
+     r'''{% if max_bytes_fit %}
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+{% endif %}
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        (void)encode(''',
+     r'''        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        (void)encode(''')
+PY
+
+# The Go facade makes a slice of a frame past `u32`. Killed by the Go text
+# (`make([]byte, 0)`).
+mutation_case "the Go facade makes a slice of a frame past u32" <<'PY'
+edit("tools/codegen/templates/forge/go/codec.go.jinja2",
+     r'''func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) []byte {
+	_dst := make([]byte, 0{% if max_bytes_fit %}, {{ max_bytes }}{% endif %})''',
+     r'''func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) []byte {
+	_dst := make([]byte, 0, {{ max_bytes }})''')
+edit("tools/codegen/templates/forge/go/codec.go.jinja2",
+     r'''func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) ([]byte, error) {
+	_dst := make([]byte, 0{% if max_bytes_fit %}, {{ max_bytes }}{% endif %})''',
+     r'''func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) ([]byte, error) {
+	_dst := make([]byte, 0, {{ max_bytes }})''')
+PY

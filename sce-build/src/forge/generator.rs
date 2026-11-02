@@ -290,7 +290,7 @@ pub struct ImportContext {
     /// arm body. `None` for non-codec imports and for codec imports
     /// whose model failed to parse during enrichment.
     #[serde(skip)]
-    pub codec_max_bytes: Option<u32>,
+    pub codec_max_bytes: Option<u64>,
 
     /// For codec imports: the imported codec's FIRST `<sce:flags>`-
     /// bearing field at `byte_offset = 0` — captured as `(field_id,
@@ -10111,65 +10111,20 @@ fn render_codec(
     // would under-reserve and trigger a reallocation on the first body
     // append. The body's max comes from each arm import's enrichment-
     // populated `codec_max_bytes` (see `validate_and_enrich_imports`).
-    let max_bytes = if let Some(v) = &m.variant {
-        let body_max = v
-            .arms
+    // A list contributes its entries times its body the same way (B2, B3).
+    let max_bytes = m.frame_bytes_with(|alias| {
+        imports
             .iter()
-            .chain(v.default_arm.iter())
-            .filter_map(|arm| {
-                imports
-                    .iter()
-                    .find(|i| i.alias == arm.body_alias)
-                    .and_then(|i| i.codec_max_bytes)
-            })
-            .max()
-            .unwrap_or(0);
-        m.max_frame_bytes() + body_max
-    } else {
-        // RFC §synth-5-B B2 repeat primitive: each repeat field contributes
-        // `max_count * imported_codec.max_frame_bytes()` to the parent's
-        // encode-buffer worst case. `model::CodecModel::max_frame_bytes`
-        // accounts for the field's *direct* bytes but skips the body
-        // sizing because imports are only known after enrichment —
-        // closing the gap here keeps `Vec<u8>::with_capacity` / `vector::
-        // reserve` from growing on the first element.
-        let repeat_body_max: u32 = m
-            .fields
-            .iter()
-            .filter(|f| f.is_repeat())
-            .filter_map(|f| {
-                let alias = f.repeat_body_alias.as_deref()?;
-                let body_max = imports
-                    .iter()
-                    .find(|i| i.alias == alias)
-                    .and_then(|i| i.codec_max_bytes)?;
-                Some(body_max.saturating_mul(f.storage_entries()))
-            })
-            .sum();
-        // RFC §synth-5-B B3 TLV chain primitive: each tlv-chain field
-        // contributes `max_depth * imported_codec.max_frame_bytes()`
-        // — same shape as repeat but bounded by `max_depth` instead
-        // of `max_count`. `max_depth` is parser-mandatory (the
-        // dedicated `codec/tlv-chain-depth-unspecified` diagnostic
-        // rejects missing values), so resolve_max_count's fallback is
-        // not reachable here. Applies on all 6 backends since the
-        // all-backend closures lifted the cpp/kotlin/go/python gate.
-        let tlv_chain_body_max: u32 = m
-            .fields
-            .iter()
-            .filter(|f| f.is_tlv_chain())
-            .filter_map(|f| {
-                let alias = f.tlv_chain_body_alias.as_deref()?;
-                let body_max = imports
-                    .iter()
-                    .find(|i| i.alias == alias)
-                    .and_then(|i| i.codec_max_bytes)?;
-                Some(body_max.saturating_mul(f.storage_entries()))
-            })
-            .sum();
-        m.max_frame_bytes() + repeat_body_max + tlv_chain_body_max
-    };
+            .find(|i| i.alias == alias)
+            .and_then(|i| i.codec_max_bytes)
+    });
     ctx.insert("max_bytes".into(), max_bytes.into());
+    // A frame past what every target's size type states has no constant and no
+    // reservation: a buffer grows to what is written (docs/adr/0077 §7).
+    ctx.insert(
+        "max_bytes_fit".into(),
+        crate::forge::model::frame_bytes_fit_every_target(max_bytes).into(),
+    );
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
     // Single SSOT flag the decode/encode templates branch on to choose the
     // streaming cursor body over the positional `raw[byte_off]` body. One

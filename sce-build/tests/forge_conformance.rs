@@ -14706,6 +14706,60 @@ pub fn copied(frame: &[u8]) -> Option<CodecZenohRequestOwned<Mcu>> {
     .expect("a deployment answers for every field its set declares");
 }
 
+/// A field at its length's whole width (a `u32` length, the protocol's bound,
+/// docs/adr/0077 §7) makes a frame past `u32`. The largest frame is counted
+/// without overflow, a backend that states it as a constant states none, and a
+/// heap facade reserves nothing and grows to what is written: no target holds
+/// a buffer of that size. Before, the count overflowed, panicking in a debug
+/// generator and wrapping to a small wrong figure in a release one.
+#[test]
+fn a_frame_past_u32_states_no_constant_and_reserves_nothing() {
+    const WIDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_wide_payload">
+  <datamodel>
+    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload_len" sce:type="uint32" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="4294967295"/>
+  </datamodel>
+</scxml>
+"#;
+    use sce_build::generator::Language;
+    let compile = |language: Language| {
+        sce_build::compile_forge_with_imports(
+            WIDE,
+            sce_build::DocumentLabel::symmetric("codec_wide_payload"),
+            language,
+            &resource_dir(),
+            &golden_options(language),
+        )
+        .unwrap_or_else(|e| panic!("{language:?}: the codec generates: {e}"))
+        .files
+    };
+    let text = |files: &[(String, String)], ext: &str| {
+        files
+            .iter()
+            .find(|(name, _)| name.starts_with("codec_wide_payload") && name.ends_with(ext))
+            .map(|(_, text)| text.clone())
+            .unwrap_or_else(|| panic!("the codec's {ext} file"))
+    };
+    let rust = compile(Language::Rust);
+    let rust_text = text(&rust, ".rs");
+    assert!(!rust_text.contains("MAX_ENCODED_BYTES"), "{rust_text}");
+    assert!(
+        rust_text.contains("let mut _sce_v: Vec<u8> = Vec::new();"),
+        "{rust_text}"
+    );
+    let cpp = text(&compile(Language::Cpp), ".h");
+    assert!(!cpp.contains("MAX_ENCODED_BYTES"), "{cpp}");
+    assert!(!cpp.contains(".reserve("), "{cpp}");
+    let go = text(&compile(Language::Go), ".go");
+    assert!(go.contains("_dst := make([]byte, 0)"), "{go}");
+    rustc_run_generated_set(rust, "wide_payload", "build", RustcProfile::Alloc)
+        .expect("a codec whose largest frame passes u32 compiles");
+}
+
 /// A codec the build compiles under a `cfg` of its own is answered for under the
 /// same one, which the caller names (docs/adr/0077 §7).
 #[test]

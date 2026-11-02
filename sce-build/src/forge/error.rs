@@ -2146,7 +2146,7 @@ pub enum ValidationError {
         /// codec (matches `ImportContext::codec_max_bytes`, which
         /// already folds variant arm bodies / repeat / TLV chain
         /// per RFC §synth-5-B).
-        framer_max_bytes: u32,
+        framer_max_bytes: u64,
     },
 
     /// RFC §synth-5-C / §synth-5-E cross-resolution: a

@@ -2241,6 +2241,15 @@ pub(crate) fn vle_cap_bytes(width_bits: u32) -> u32 {
     (width_bits - 1).div_ceil(7)
 }
 
+/// Whether `bytes`, a codec's largest frame ([`CodecModel::max_frame_bytes`]),
+/// is a size every target the generated code builds for can state: one that
+/// fits `u32`, the narrowest `usize` and `size_t` among them. A larger frame has
+/// no buffer one could reserve for it, so a backend states no constant of it and
+/// reserves nothing for it, and a buffer grows to what is written.
+pub fn frame_bytes_fit_every_target(bytes: u64) -> bool {
+    bytes <= u64::from(u32::MAX)
+}
+
 /// A single named bit-range on a `<sce:flags>` carrier field — RFC §synth-5-B
 /// flags primitive. `bit` is the LSB position within the carrier's natural
 /// integer width (0 = LSB), validated at parse time against the
@@ -3405,18 +3414,58 @@ impl CodecModel {
     ///   - `tlv-chain { max_depth, .. }` (RFC §synth-5-B B3): contributes 0
     ///     here for the same reason — generator adds `max_depth *
     ///     imported_codec.max_frame_bytes()` post-enrichment.
-    pub fn max_frame_bytes(&self) -> u32 {
-        let var_max: u32 = self
-            .fields
+    ///
+    /// Counted in `u64` and saturating, as [`crate::forge::codec_size`] counts:
+    /// a field's bound is its protocol's and may be its length's whole width, a
+    /// `u32` (docs/adr/0077 §7), so a frame of such a field and anything beside it
+    /// passes `u32`. [`frame_bytes_fit_every_target`] says whether the figure is
+    /// one a generated constant can state.
+    pub fn max_frame_bytes(&self) -> u64 {
+        self.fields
             .iter()
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
-                BitSize::Vle { width_bits } => vle_cap_bytes(*width_bits),
+                BitSize::Vle { width_bits } => u64::from(vle_cap_bytes(*width_bits)),
                 BitSize::Repeat { .. } | BitSize::TlvChain { .. } => 0,
-                _ => f.storage_bytes(),
+                _ => u64::from(f.storage_bytes()),
             })
-            .sum();
-        self.min_frame_bytes() + var_max
+            .fold(u64::from(self.min_frame_bytes()), u64::saturating_add)
+    }
+
+    /// The largest frame of this codec with what it holds of other codecs:
+    /// [`Self::max_frame_bytes`], and the widest arm's body for a variant, or for
+    /// each `<sce:repeat>` and `<sce:tlv-chain>` the entries a form that stores
+    /// it holds times its body. `body_bytes` answers the largest frame of the
+    /// codec an alias imports, `None` where it cannot say, and such a body counts
+    /// for nothing. Saturating, as [`Self::max_frame_bytes`] is.
+    ///
+    /// The one formula for the figure: the generator reads it with the imports
+    /// it was handed and the import enrichment with the documents it reads.
+    pub fn frame_bytes_with(&self, mut body_bytes: impl FnMut(&str) -> Option<u64>) -> u64 {
+        let own = self.max_frame_bytes();
+        if let Some(v) = &self.variant {
+            let widest = v
+                .arms
+                .iter()
+                .chain(v.default_arm.iter())
+                .filter_map(|arm| body_bytes(&arm.body_alias))
+                .max()
+                .unwrap_or(0);
+            return own.saturating_add(widest);
+        }
+        self.fields
+            .iter()
+            .filter_map(|f| {
+                let alias = if f.is_repeat() {
+                    f.repeat_body_alias.as_deref()?
+                } else if f.is_tlv_chain() {
+                    f.tlv_chain_body_alias.as_deref()?
+                } else {
+                    return None;
+                };
+                Some(body_bytes(alias)?.saturating_mul(u64::from(f.storage_entries())))
+            })
+            .fold(own, u64::saturating_add)
     }
 
     /// Whether the codec has any variable-length field. Drives the

@@ -9,6 +9,10 @@
     any other shape keeps its body in `decode` and gets a `decode_into` that
     stores the result. Same branch order as the decode body below. #}
 {%- set decode_in_place = (not has_no_fields) and (has_variant or needs_streaming) %}
+{#- The heap facade reserves the largest frame where a target can state it, and
+    otherwise grows to what is written: a frame past `u32` (a field at its
+    length's whole width, docs/adr/0077 §7) is no buffer to reserve. #}
+{%- set encode_vec = "Vec::with_capacity(Self::MAX_ENCODED_BYTES)" if max_bytes_fit else "Vec::new()" %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -474,11 +478,13 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     // the carrier still occupies its declared bytes.
 {{ flags.accessors(fields, true) }}
 {% endif %}
+{% if max_bytes_fit %}
     /// Worst-case encoded byte count for this codec — the upper bound
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
+{% endif %}
 
 {% if encode_may_fail %}
     /// Encode `self` into the caller-owned sink. Returns the value's refusal
@@ -491,9 +497,15 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
+{% if max_bytes_fit %}
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
+{% else %}
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
+{% endif %}
     /// `VecSink`. Returns the freshly-encoded byte vector, or the error
     /// `encode` refuses a value with: one the encoding cannot carry (a
     /// length past its type, a list past its bound) or one a gate
@@ -506,7 +518,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = {{ encode_vec }};
         let mut _sce_sink = VecSink::new(&mut _sce_v);
         self.encode(&mut _sce_sink{{ encode_args_with_comma }})?;
         Ok(_sce_v)
@@ -521,9 +533,15 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         {{ struct_name }}::encode_source(self, w{{ encode_args_with_comma }})
     }
 
+{% if max_bytes_fit %}
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
+{% else %}
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
+{% endif %}
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -535,7 +553,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = {{ encode_vec }};
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ encode_args_with_comma }});
         _sce_v
     }
@@ -729,9 +747,11 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
         Ok(())
     }
 
+{% if max_bytes_fit %}
     /// Worst-case encoded byte count for this codec, as
     /// [`{{ struct_name }}::MAX_ENCODED_BYTES`].
     pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
+{% endif %}
 
     /// Encode what this view says into the caller-owned sink: the bytes
     /// [`{{ struct_name }}::encode`] writes for the value [`Self::into_builder`]
@@ -748,7 +768,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// value it cannot carry.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = {{ encode_vec }};
         let mut _sce_sink = VecSink::new(&mut _sce_v);
         self.encode(&mut _sce_sink{{ encode_args_with_comma }})?;
         Ok(_sce_v)
@@ -762,7 +782,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// value (docs/adr/0065).
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ encode_params_after_first_arg }}) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = {{ encode_vec }};
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v){{ encode_args_with_comma }});
         _sce_v
     }

@@ -502,3 +502,18 @@ Landing: the commit that adds this section.
   an upper camel case type name, are refused as usage.
 - A deployment holds every field inline. A heap node's policy limit has no container yet: on `Heap` a field grows to its
   bound.
+
+## A frame past `u32` has no size constant (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A field at its length's whole width, `sce:max-size="4294967295"` for a `u32` length, makes a codec's largest frame
+  pass `u32`. The generator counted that figure in `u32`: a debug build panicked and a release build wrapped to a small
+  wrong number. It is now counted in `u64`.
+- A codec whose largest frame passes `u32`, the narrowest `usize` and `size_t` of any target, states no
+  `MAX_ENCODED_BYTES` in Rust (on the codec or its view) or C++, and its heap facade reserves nothing:
+  `encode_to_vec` starts from an empty vector and `EncodeToBytes` from an empty slice, each growing to what is written.
+  No target holds a buffer of that size, so a constant of it would only be a reservation of gigabytes.
+- A site that passed such a codec's `MAX_ENCODED_BYTES` as a reserve hint stops compiling. Size from the value or from
+  your transport's frame size instead. A codec whose largest frame fits `u32` is generated as before.
+- `ImportContext::codec_max_bytes` and `LinkPoolSlotSmallerThanFramerMax::framer_max_bytes` are `u64`.
