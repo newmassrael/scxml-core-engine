@@ -20,14 +20,14 @@ mutation_oracles backends/rust/relay/tests/a_relay_keeps_what_members_signed_and
 
 mutation_case "A courier does not give the relay the proof of a device's conflict" <<'PY'
 edit("backends/rust/relay/src/client.rs",
-     "            if self.evidence_sent.contains(&data) {",
-     "            if true {")
+     "                    .is_some_and(|(_, data)| self.state.evidence_sent.contains(data))",
+     "                    .is_some()")
 PY
 
 mutation_case "A courier tells the machine an operation that is held only as proof" <<'PY'
 edit("backends/rust/relay/src/client.rs",
-     "                    if (taken.new || redeliver) && taken.applied {",
-     "                    if taken.new || redeliver {")
+     "                if (taken.new || redeliver) && taken.applied {",
+     "                if taken.new || redeliver {")
 PY
 
 mutation_case "A courier does not say that the machine is to forget what the host stopped holding" <<'PY'
