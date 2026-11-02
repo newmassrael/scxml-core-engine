@@ -1,0 +1,234 @@
+# ADR 0079 — A device holds a shared list through one peer core with one C ABI, and the core does no I/O itself
+
+- Status: Proposed (2026-11-02). Written at the owner's order of that day, under the rule of 2026-10-26 and
+  2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Accepted when the
+  owner accepts it; the order of work below starts with ADR 0042's own steps, which this ADR does not change.
+- Date: 2026-11-02
+- Related:
+  - ADR 0034 (a shared list is held by its members, and the hub only relays), whose section 6 already rules that
+    cryptography is one Rust implementation behind a C ABI;
+  - ADR 0042 (the shared record list is a standard part), steps 2 and 3;
+  - ADR 0043 (a child session is a machine of the deploy, and its parent gives it its mesh endpoint);
+  - ADR 0046 (a change to a shared list is one unit);
+  - `docs/SCE_SHARED_LIST_TRUST.md`, `docs/SCE_SHARED_LIST_MLS.md` (section 6, the other lanes);
+  - the owner's decision of 2026-10-18 that the Mesh's transport for deployment is a downstream zenoh
+    implementation (called here the deployment transport).
+- Scope: what a device runs to hold a shared list with other devices through a relay: the boundary between the
+  machine (generated in the application's language) and the host's trust, key and relay code; the one C ABI an
+  application lane links; how the relay is reached; where a device's secrets live; and the order in which the
+  pieces that exist are joined. Not in scope: the relay's own storage and hosting, the cryptographic review, the
+  user interface of linking a device.
+
+## Context
+
+Every piece a device needs to hold a shared list exists, and they do not yet make one thing an application can use.
+
+- **The trust layer** (`sce-rust-trust`, type `Trust`) admits another device's operations (`take_operation`, and as
+  the mesh `Admission`) and signs its own (as the mesh `Sealer`); it keeps the membership log, the per-device chains,
+  checkpoints and settlement, and saves and restores its state as text. It knows the events it secures **by name**:
+  `SIGNED_EVENTS = ["todo.write", "todo.supersede"]`, `FLOOR_EVENT = "todo.floor"`, and the signed bytes of a write
+  and a note are laid out from those events' fields (`message.rs`). Those are the events of the test fixture
+  `todo_peer`. The standard part an application invokes, `sce:std/shared/record_list.scxml` (ADR 0042), speaks
+  `record_list.*`, which the trust layer does not accept.
+- **The relay** (`sce-rust-relay`) verifies, keeps and hands back signed records; its protocol is request and
+  response JSON texts (`protocol::VERSION = 1`). A host reaches it through a `Courier<L: Link>`, where
+  `Link::call(&Request) -> Result<Response, LinkError>` is synchronous; the WebSocket link (`WssLink`) owns a
+  current-thread runtime and blocks on each call. The relay admits only what `Trust::take_operation` admits, so it is
+  as bound to `todo.*` as the trust layer is.
+- **The group key** (`sce-rust-mls`) is reached by other languages through `sce-rust-mls-capi`, a hand-written C
+  header checked against the exports, opaque handles, `int32_t` statuses with a per-thread message, buffers owned
+  by the library, an ABI version, and one recorded scenario replayed from C, C++, Python, Go and Kotlin (JNA).
+  Nothing else of the device has a C ABI.
+- **The Mesh** (`sce-rust-mesh`) carries a machine's `<send>` through a `Sealer`, a router and a
+  `Transport::transmit(peer, bytes)`, and takes what arrives through `receive`, `Admission` and `peer_ready`. Its
+  WebSocket binding (`wss`) is the one in this repository; the owner decided that deployment runs on the
+  deployment transport, a downstream project that depends on this repository, so its adapter cannot live here.
+- **The world** runs `todo_peer` with `Trust`, `Courier` and an in-process relay between Rust devices
+  (`a_shared_list_runs_through_a_relay_with_no_hub_machine.rs`, and the MLS variant). A Kotlin copy shares the to-do
+  list with Rust copies without the trust layer or a relay.
+
+An application that generates its machine in Kotlin (a phone) or Swift, and later in Rust for a desktop and the web,
+needs all of this on its devices. What is missing is not a mechanism but a **shape**: which side of a boundary each
+piece is on, what crosses it, who drives time and I/O, and in what order the existing pieces are joined so that the
+protocol exists once.
+
+## Decision
+
+**A device holds a shared list through one peer core: one Rust library that composes the trust layer, the group key,
+the relay's client side and the device's saved state, written once and reached by every lane through one C ABI. The
+core performs no I/O and starts no thread; the host gives it bytes and time and carries away the bytes it emits. The
+machine, generated in the application's language, stays where it is and talks to the core only in the record list's
+own events.**
+
+### 1. Two sides, one boundary
+
+| Side | Holds | Written in |
+|---|---|---|
+| The machine | the record list and the application's rules: registers, observed-remove sets, digest, merge (ADR 0042, 0046) | the application's language, generated from the documents |
+| The peer core | identity, membership log, per-device chains, sealing and opening, MLS, checkpoints and settlement, the relay's client protocol, the device's saved state | Rust, once |
+
+What crosses the boundary is exactly what ADR 0034 section 3 says the host maps: the machine's outbound
+`record_list.write` and `record_list.supersede` (addressed to `#hub` or `#people`) become the core's operations; an
+operation the core admits becomes the inbound event the machine takes. Both are the event's name and its payload as
+JSON text, the form the Mesh and the relay already use. The machine is not changed by having a core behind it, and a
+machine with no core (a single device, the scenarios) runs as it runs today.
+
+This is the textbook separation of an application's replicated data type from its authentication and delivery
+layer: the merge is commutative and needs no trust, and the trust needs no knowledge of what is merged beyond the
+fields it signs.
+
+### 2. The trust layer secures the standard part, and the protocol exists once
+
+Before the core is built, ADR 0042's own order of work is completed:
+
+1. ADR 0042 step 1 is verified (the standard part on every backend `todo_peer` runs on).
+2. ADR 0042 step 2: `todo_peer` is rebuilt on the standard part, and its duplicated body is deleted in the same
+   change, so the protocol exists once.
+3. ADR 0042 step 3: the trust layer and the relay name the standard part's events. The table of signed events, the
+   floor event and the field layout of the signed bytes are read from **one declaration that belongs to the standard
+   part** (its event schemas), not written as names in `message.rs`. A list built on the standard part is secured
+   without the trust layer learning the application.
+
+The signed bytes keep their domain separation and layout rules (`sce-trust/event/1`, length-prefixed parts, the
+list's name and the event's name first); the event names in them change, which is a new domain version, since a
+signature must not verify under two meanings.
+
+### 3. The core is sans-I/O
+
+The core is a state machine over inputs and outputs, in the manner of protocol libraries that leave I/O to their
+host (QUIC's and TLS's state-machine cores are the reference examples):
+
+- **Inputs:** an outbound event from the machine; a response or pushed record from the relay; the current time
+  (wall clock and monotonic), given with every call; a request to start a round (`sync`, `resync`, `reread`).
+- **Outputs:** an inbound event for the machine; a request for the relay, as the protocol's text; the instant at
+  which the core next wants to be called; refusals, each with its reason (ADR 0046's refusal is the model).
+- The core reads no clock, opens no socket, spawns no thread and blocks on nothing. A round is a sequence of
+  requests the core emits and responses the host returns; the host may hold a response for minutes, lose the
+  connection, or be suspended by its operating system, and the core resumes from what it was given.
+
+Why: a phone's operating system decides when an application may run (a scheduled background job, a push, the
+foreground) and kills it without notice; a core that owns a runtime fights that, a core that is driven fits it. The
+same core then runs under a test's virtual clock and network in the world, deterministically, which is how the
+protocol is verified at all. The present `Courier` keeps its synchronous `Link` form as a convenience for Rust hosts,
+built over the sans-I/O core, and `WssLink` becomes one transport among others (section 5) rather than the only way a
+round can run.
+
+### 4. One C ABI, the conventions of the MLS ABI
+
+`sce-rust-peer-capi` is the one ABI an application lane links. It follows `sce-rust-mls-capi` exactly, so a reviewer
+learns one set of rules:
+
+- a hand-written C header kept equal to the exports by a test; an ABI version constant in the header and the crate;
+- opaque handles created and freed by the library, used by one thread at a time;
+- every function returns `int32_t`, 0 for success; the reason is per thread (`sce_peer_last_error`); a panic is
+  caught and reported and never crosses the boundary;
+- buffers the library returns are the library's and are freed by a call;
+- events, relay requests and relay responses cross as UTF-8 JSON texts in the forms the Mesh and the relay already
+  define; no structure is laid out twice in C.
+
+The group key's functions are inside the core and are not called by an application lane separately; the MLS ABI
+stays as the surface the group's own replay tests drive. One recorded scenario of two devices, a relay and a removal
+is replayed through the peer ABI from C, Kotlin (JNA), Swift, Python and Go, as the MLS scenario is; a lane whose
+toolchain is missing is skipped unless the tools are required.
+
+Bindings are thin and written per lane over the C header (a Kotlin class over JNA, a Swift module over a module map),
+not generated by a second interface language: the C header is the contract, and every lane, including those a
+generator does not serve, reads the same one.
+
+### 5. The relay is reached through a transport the core does not know
+
+The relay's protocol is transport-independent: a request text, a response text, and records the relay pushes. A
+transport carries those texts and says when it is connected; it knows nothing of what they mean.
+
+- **WebSocket** (`/sce-relay/1`, the existing `serve` and `WssLink`) is the reference binding: it is in this
+  repository, it is what the world and the relay's own tests use, and it is the fallback for a deployment that has
+  no other.
+- **The deployment transport** (a downstream zenoh implementation) is what deployment runs on, by the owner's
+  decision. Since it depends on this repository, its adapter (the relay's request and response over its key space,
+  and the Mesh `Transport` where the Mesh is used) is a crate in that project, written against the transport trait
+  defined here.
+- A transport is Rust where it can be, linked with the core into the native library an application ships, and
+  driven through the same ABI, so that framing, authentication and reconnection are not written again in each host
+  language. A host language gives only what it alone has: the network's reachability, and the permission to run.
+
+The token that binds a device to a list at the relay (`token.rs`) is carried by the transport's authentication, as it
+is by the WebSocket's `Authorization` today.
+
+### 6. A device's secrets are one sealed state, wrapped by the platform's key store
+
+The core holds a device's secrets (its identity seed, its MLS state, the keys of the epochs it holds, its chain
+position) and saves them as one opaque state it seals with a key the host gives it. The host keeps the sealed state
+in its own storage and keeps the wrapping key in the platform's key store (Android Keystore, iOS Keychain, the
+desktop's key store), where it is not exportable. The core never calls a platform API; the platform's key store never
+sees a protocol secret in the clear. The passphrase backup of `sce-rust-trust::backup` is the recovery path, and is
+the application's to offer.
+
+### 7. A replay of the application's own log does not write twice
+
+An application that keeps its own command log as its original rebuilds its machine by replaying it from the start,
+and the machine sends its writes again. The core makes sealing **idempotent on the write's identity** (register and
+stamp): a write it has already sealed and published is recognised and produces no new operation, so a device's chain
+never grows by a replay, and never signs two different things at one number (which ADR 0034 freezes a device for).
+Operations of other devices that the core admitted are kept by the core and handed to the machine again after a
+replay; since the merge is commutative, the order in which a replayed device takes its own writes and the admitted
+ones does not change what it holds.
+
+### 8. Verification
+
+- The world runs the core on every device of a list, with the relay, under the virtual network: a Rust device, a
+  Kotlin device through the C ABI, and the relay's own policy, with loss, delay, reordering, a device suspended
+  mid-round, a relay that withholds and a relay that forges. The present `todo_peer` relay tests move to the
+  standard part in ADR 0042 step 2 and are the first of these.
+- The C ABI's recorded scenario is replayed from every lane that has a toolchain.
+- The core's state machine is fuzzed on its inputs (events, responses, times), as the trust layer is.
+- ADR 0034's rule stands: nothing built on this is called production until the independent cryptographic review is
+  done.
+
+## Order of work
+
+1. ADR 0042 steps 1 to 3 (section 2), in that ADR's order.
+2. The sans-I/O peer core, with `Courier` rebuilt on it; the world's relay tests pass unchanged.
+3. Idempotent sealing on replay (section 7), with a world test that replays a device's log against a relay.
+4. The C ABI and its recorded scenario, replayed from C, Kotlin, Swift, Python and Go.
+5. The transport trait; the WebSocket binding on it; the deployment transport's adapter in its own repository.
+6. The world test with a Kotlin device through the ABI (section 8).
+7. The sealed device state and the key-store wrapping, specified for each platform lane.
+
+An application starts linking the core after step 4 and ships it after step 6; the review gate of ADR 0034 decides
+when it is called production.
+
+## Alternatives considered
+
+- **Each language implements the trust layer and the relay client.** It is what a machine generated in five
+  languages would invite. Rejected: it is five places for one flaw in exactly the code that most needs one place, and
+  ADR 0034 section 6 already rules it out for the group key.
+- **The core owns its I/O and a runtime** (as `WssLink` does today). Simplest to call from Rust. Rejected: it fights
+  every mobile operating system's control of when an application runs, makes deterministic tests depend on real
+  time, and ties the core to one transport.
+- **A generated interface language for the bindings** (a binding generator that emits Kotlin and Swift). It writes
+  less by hand. Rejected as the contract: it serves some lanes and not C, Python and Go, adds a second definition of
+  the boundary, and the MLS ABI has already shown that a hand-written header checked by a test is cheap to keep. A
+  generator may later write the thin per-lane wrappers over the same header without becoming the contract.
+- **The transport written in each host language** (a Kotlin WebSocket, a Swift one). Rejected: framing,
+  authentication, keepalive and reconnection would be written once per language, and the deployment transport is a
+  Rust library in any case.
+- **Peer-to-peer without a relay.** Rejected by ADR 0034: devices are not online together, and the relay is what
+  lets them not be.
+- **Securing the record list beside `todo.*` instead of replacing it** (two tables of signed events). Rejected:
+  ADR 0042 step 2 exists so that the protocol is not held twice; a second table would undo it.
+
+## Consequences
+
+- An application links one native library per platform and one C header, and writes only a thin binding, its key-
+  store wrapping and its scheduling. Its machine is unchanged.
+- The trust layer's event names, the signed bytes' domain version and the relay's admission change once, with
+  ADR 0042 step 3; recorded fixtures signed under the old names are re-recorded.
+- `Courier` and `WssLink` stop being the only path a round can take; Rust hosts keep them as a convenience.
+- The deployment transport's project gains an adapter crate that depends on the transport trait defined here.
+- A device's chain no longer depends on its host never replaying; replay is safe by construction.
+
+## Open questions for the owner
+
+- Whether the deployment transport's client side builds for Android and iOS targets as a Rust library; if not,
+  which of the two (making it build, or the WebSocket binding as the mobile transport until it does) comes first.
+- Where the first relay is hosted (the two servers measured on 2026-10-18 are the candidates).
