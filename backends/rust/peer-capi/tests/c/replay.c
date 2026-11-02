@@ -3,15 +3,19 @@
 
 /*
  * Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
- * C ABI, from C, with no relay: the cores of two devices are made, given the machine's sends, the
- * rounds' answers and a save, and every text a core gives (each request, each outcome, the save, the
- * reason of a refusal) must be the recorded one.
+ * C ABI, from C, with no relay: the cores of two devices are made, given the administrator's acts, the
+ * machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
+ * outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
  *
  * The scenario is read as whitespace-separated tokens (the Rust test writes them from the JSON file).
  * A text is written as x followed by its UTF-8 bytes in hex (so "x" is the empty text). First the
- * list and the number of devices, then a line per device: <node> <seed> <genesis or ->. Then one line
- * per step, each naming its device by its place:
+ * list and the number of devices, then a line per device: <node> <seed> <genesis or -> <administrator's
+ * seed or ->. Then one line per step, each naming its device by its place:
  *   make <d>
+ *   open <d> <untrusted|trusted_hub> <genesis>   the list opened, and the hash of its genesis in hex
+ *   grant <d> <node> <role> <key>                 the key in hex
+ *   remove <d> <node>
+ *   standing <d> <text>
  *   restore <d> <text> <count>
  *   outbound <d> <event> <data> <taken|held|not_signed|refused> <reason>
  *   start <d> <sync|resync|reread>
@@ -143,6 +147,37 @@ static int32_t kept_of(const char *name) {
     return -1;
 }
 
+static int32_t profile_of(const char *name) {
+    if (strcmp(name, "untrusted") == 0) {
+        return SCE_PEER_PROFILE_UNTRUSTED;
+    }
+    if (strcmp(name, "trusted_hub") == 0) {
+        return SCE_PEER_PROFILE_TRUSTED_HUB;
+    }
+    die("a profile the replay does not know");
+    return -1;
+}
+
+/* A copy of a token, for the caller to free. */
+static char *copy_of(const char *token) {
+    size_t n = strlen(token);
+    char *copy = malloc(n + 1);
+    memcpy(copy, token, n + 1);
+    return copy;
+}
+
+/* The bytes as lowercase hex, NUL-terminated, for the caller to free. */
+static char *hex_of(const uint8_t *bytes, size_t n) {
+    static const char digits[] = "0123456789abcdef";
+    char *text = malloc(2 * n + 1);
+    for (size_t i = 0; i < n; i++) {
+        text[2 * i] = digits[bytes[i] >> 4];
+        text[2 * i + 1] = digits[bytes[i] & 0x0f];
+    }
+    text[2 * n] = '\0';
+    return text;
+}
+
 static int32_t kind_of(const char *name) {
     if (strcmp(name, "sync") == 0) {
         return SCE_PEER_ROUND_SYNC;
@@ -186,6 +221,7 @@ int main(int argc, char **argv) {
     uint64_t nodes[MAX_DEVICES];
     uint8_t *seeds[MAX_DEVICES];
     uint8_t *geneses[MAX_DEVICES];
+    uint8_t *administrators[MAX_DEVICES];
     ScePeer *peers[MAX_DEVICES] = {NULL};
     for (unsigned long d = 0; d < devices; d++) {
         size_t n;
@@ -200,6 +236,14 @@ int main(int argc, char **argv) {
             geneses[d] = unhex(genesis, &n);
             if (n != 32) {
                 die("a genesis hash is not 32 bytes");
+            }
+        }
+        char *administrator = need();
+        administrators[d] = NULL;
+        if (strcmp(administrator, "-") != 0) {
+            administrators[d] = unhex(administrator, &n);
+            if (n != 32) {
+                die("an administrator's seed is not 32 bytes");
             }
         }
     }
@@ -217,6 +261,9 @@ int main(int argc, char **argv) {
                 die("the core is not made");
             }
             check(sce_peer_set_identity(peers[d], nodes[d], seeds[d]), "set_identity");
+            if (administrators[d] != NULL) {
+                check(sce_peer_set_administrator(peers[d], administrators[d]), "set_administrator");
+            }
             steps++;
             continue;
         }
@@ -225,7 +272,29 @@ int main(int argc, char **argv) {
             die("the device's core is not made");
         }
         ScePeerBuf out = {NULL, 0};
-        if (strcmp(op, "restore") == 0) {
+        if (strcmp(op, "open") == 0) {
+            int32_t profile = profile_of(need());
+            char *want = copy_of(need());
+            uint8_t genesis[32];
+            check(sce_peer_open_list(peer, profile, genesis), "open_list");
+            expect_text(hex_of(genesis, sizeof genesis), want, "the genesis");
+        } else if (strcmp(op, "grant") == 0) {
+            uint64_t node = strtoull(need(), NULL, 10);
+            uint32_t role = (uint32_t)strtoul(need(), NULL, 10);
+            size_t n;
+            uint8_t *key = unhex(need(), &n);
+            if (n != 32) {
+                die("a key is not 32 bytes");
+            }
+            check(sce_peer_grant(peer, node, role, key), "grant");
+            free(key);
+        } else if (strcmp(op, "remove") == 0) {
+            check(sce_peer_remove_member(peer, strtoull(need(), NULL, 10)), "remove_member");
+        } else if (strcmp(op, "standing") == 0) {
+            char *want = text_of(need());
+            check(sce_peer_standing(peer, &out), "standing");
+            expect_text(taken(out), want, "the standing");
+        } else if (strcmp(op, "restore") == 0) {
             char *saved = text_of(need());
             uint64_t want = strtoull(need(), NULL, 10);
             uint64_t count = UINT64_MAX;
@@ -289,6 +358,7 @@ int main(int argc, char **argv) {
         sce_peer_free(peers[d]);
         free(seeds[d]);
         free(geneses[d]);
+        free(administrators[d]);
     }
     free(list);
     free(script);

@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
-// C ABI, from Swift, with no relay: the cores of two devices are made, given the machine's sends, the
-// rounds' answers and a save, and every text a core gives (each request, each outcome, the save, the
-// reason of a refusal) must be the recorded one.
+// C ABI, from Swift, with no relay: the cores of two devices are made, given the administrator's acts,
+// the machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
+// outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
 //
 // The header is reached as the Clang module `CScePeer` (include/module.modulemap), the binding a
 // Swift host writes over the C header. The scenario is read as the whitespace-separated tokens the C
@@ -107,6 +107,25 @@ final class Replayer {
         }
     }
 
+    func profile(_ name: Substring) -> Int32 {
+        switch name {
+        case "untrusted": return Int32(SCE_PEER_PROFILE_UNTRUSTED)
+        case "trusted_hub": return Int32(SCE_PEER_PROFILE_TRUSTED_HUB)
+        default: die("a profile the replay does not know")
+        }
+    }
+
+    /// The bytes as lowercase hex.
+    func hex(_ bytes: [UInt8]) -> String {
+        let digits = Array("0123456789abcdef")
+        var text = ""
+        for byte in bytes {
+            text.append(digits[Int(byte >> 4)])
+            text.append(digits[Int(byte & 0x0f)])
+        }
+        return text
+    }
+
     func kind(_ name: Substring) -> Int32 {
         switch name {
         case "sync": return Int32(SCE_PEER_ROUND_SYNC)
@@ -130,6 +149,7 @@ final class Replayer {
         var nodes: [UInt64] = []
         var seeds: [[UInt8]] = []
         var geneses: [[UInt8]?] = []
+        var administrators: [[UInt8]?] = []
         for _ in 0..<devices {
             nodes.append(number())
             let seed = unhex(need())
@@ -146,6 +166,16 @@ final class Replayer {
                     die("a genesis hash is not 32 bytes")
                 }
                 geneses.append(hash)
+            }
+            let administrator = need()
+            if administrator == "-" {
+                administrators.append(nil)
+            } else {
+                let seed = unhex(administrator)
+                guard seed.count == 32 else {
+                    die("an administrator's seed is not 32 bytes")
+                }
+                administrators.append(seed)
             }
         }
 
@@ -170,6 +200,9 @@ final class Replayer {
                 }
                 peers[device] = core
                 check(sce_peer_set_identity(core, nodes[device], seeds[device]), "set_identity")
+                if let administrator = administrators[device] {
+                    check(sce_peer_set_administrator(core, administrator), "set_administrator")
+                }
                 steps += 1
                 continue
             }
@@ -178,6 +211,28 @@ final class Replayer {
             }
             var out = ScePeerBuf()
             switch op {
+            case "open":
+                let chosen = profile(need())
+                let want = String(need())
+                var genesis = [UInt8](repeating: 0, count: 32)
+                check(sce_peer_open_list(peer, chosen, &genesis), "open_list")
+                expect(hex(genesis), want, "the genesis")
+            case "grant":
+                let node = number()
+                guard let role = UInt32(exactly: number()) else {
+                    die("a role is not a 32-bit number")
+                }
+                let key = unhex(need())
+                guard key.count == 32 else {
+                    die("a key is not 32 bytes")
+                }
+                check(sce_peer_grant(peer, node, role, key), "grant")
+            case "remove":
+                check(sce_peer_remove_member(peer, number()), "remove_member")
+            case "standing":
+                let want = text()
+                check(sce_peer_standing(peer, &out), "standing")
+                expect(taken(out), want, "the standing")
             case "restore":
                 let saved = text()
                 let want = number()

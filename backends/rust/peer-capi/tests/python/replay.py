@@ -4,18 +4,20 @@
 
 usage: replay.py <libsce_peer_capi> <scenario.json>
 
-The cores of two devices are made, given the machine's sends, the rounds' answers and a save, with
-no relay, and every text a core gives (each request, each outcome, the save, the reason of a
-refusal) must be the recorded one.
+The cores of two devices are made, given the administrator's acts, the machine's sends, the rounds'
+answers and a save, with no relay, and every text a core gives (each request, each outcome, each
+standing, the genesis, the save, the reason of a refusal) must be the recorded one.
 """
 
 import ctypes
 import json
 import sys
 
+ABI_VERSION = 2
 OK = 0
 KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}
+PROFILES = {"untrusted": 0, "trusted_hub": 1}
 
 
 class Buf(ctypes.Structure):
@@ -36,6 +38,11 @@ def load(path):
         "sce_peer_invited": (vp, [cp, u8p]),
         "sce_peer_free": (None, [vp]),
         "sce_peer_set_identity": (ctypes.c_int32, [vp, ctypes.c_uint64, u8p]),
+        "sce_peer_set_administrator": (ctypes.c_int32, [vp, u8p]),
+        "sce_peer_open_list": (ctypes.c_int32, [vp, ctypes.c_int32, u8p]),
+        "sce_peer_grant": (ctypes.c_int32, [vp, ctypes.c_uint64, ctypes.c_uint32, u8p]),
+        "sce_peer_remove_member": (ctypes.c_int32, [vp, ctypes.c_uint64]),
+        "sce_peer_standing": (ctypes.c_int32, [vp, bufp]),
         "sce_peer_outbound": (
             ctypes.c_int32,
             [vp, cp, cp, ctypes.POINTER(ctypes.c_int32), bufp],
@@ -63,7 +70,7 @@ def main():
     lib = load(sys.argv[1])
     with open(sys.argv[2], encoding="utf-8") as file:
         scenario = json.load(file)
-    assert lib.sce_peer_abi_version() == 1, "the library is another ABI version"
+    assert lib.sce_peer_abi_version() == ABI_VERSION, "the library is another ABI version"
     steps = 0
 
     def die(what):
@@ -107,13 +114,30 @@ def main():
                 lib.sce_peer_set_identity(peers[at], device["node"], raw(bytes.fromhex(device["seed"]))),
                 "set_identity",
             )
+            if device.get("administrator") is not None:
+                check(
+                    lib.sce_peer_set_administrator(peers[at], raw(bytes.fromhex(device["administrator"]))),
+                    "set_administrator",
+                )
             steps += 1
             continue
         peer = peers[at]
         if not peer:
             die("the device's core is not made")
         out = Buf()
-        if op == "restore":
+        if op == "open":
+            genesis = (ctypes.c_uint8 * 32)()
+            check(lib.sce_peer_open_list(peer, PROFILES[step["profile"]], genesis), "open_list")
+            expect(bytes(genesis).hex(), step["genesis"], "the genesis")
+        elif op == "grant":
+            key = raw(bytes.fromhex(step["key"]))
+            check(lib.sce_peer_grant(peer, step["node"], step["role"], key), "grant")
+        elif op == "remove":
+            check(lib.sce_peer_remove_member(peer, step["node"]), "remove_member")
+        elif op == "standing":
+            check(lib.sce_peer_standing(peer, ctypes.byref(out)), "standing")
+            expect(taken(out), step["text"], "the standing")
+        elif op == "restore":
             count = ctypes.c_uint64(2**64 - 1)
             check(lib.sce_peer_restore(peer, step["text"].encode(), ctypes.byref(count)), "restore")
             if count.value != step["count"]:

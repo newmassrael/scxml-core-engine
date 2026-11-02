@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
-// C ABI, from C++, with no relay: the cores of two devices are made, given the machine's sends, the
-// rounds' answers and a save, and every text a core gives (each request, each outcome, the save, the
-// reason of a refusal) must be the recorded one.
+// C ABI, from C++, with no relay: the cores of two devices are made, given the administrator's acts,
+// the machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
+// outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
 //
 // The scenario is read as the whitespace-separated tokens the C replay reads (the Rust test writes
 // them from the JSON file); tests/c/replay.c describes them.
@@ -107,6 +107,27 @@ int32_t kept_of(const std::string &name) {
     die("an answer to a send the replay does not know");
 }
 
+int32_t profile_of(const std::string &name) {
+    if (name == "untrusted") {
+        return SCE_PEER_PROFILE_UNTRUSTED;
+    }
+    if (name == "trusted_hub") {
+        return SCE_PEER_PROFILE_TRUSTED_HUB;
+    }
+    die("a profile the replay does not know");
+}
+
+// The bytes as lowercase hex.
+std::string hex_of(const uint8_t *bytes, size_t n) {
+    static const char digits[] = "0123456789abcdef";
+    std::string text;
+    for (size_t i = 0; i < n; i++) {
+        text += digits[bytes[i] >> 4];
+        text += digits[bytes[i] & 0x0f];
+    }
+    return text;
+}
+
 int32_t kind_of(const std::string &name) {
     if (name == "sync") {
         return SCE_PEER_ROUND_SYNC;
@@ -152,6 +173,7 @@ struct Device {
     uint64_t node = 0;
     std::vector<uint8_t> seed;
     std::optional<std::vector<uint8_t>> genesis;
+    std::optional<std::vector<uint8_t>> administrator;
     Peer peer;
 };
 
@@ -188,6 +210,13 @@ int main(int argc, char **argv) {
                 die("a genesis hash is not 32 bytes");
             }
         }
+        const std::string administrator = tokens.need();
+        if (administrator != "-") {
+            device.administrator = unhex(administrator);
+            if (device.administrator->size() != 32) {
+                die("an administrator's seed is not 32 bytes");
+            }
+        }
     }
 
     std::string op;
@@ -204,6 +233,9 @@ int main(int argc, char **argv) {
                 die("the core is not made");
             }
             check(sce_peer_set_identity(device.peer.get(), device.node, device.seed.data()), "set_identity");
+            if (device.administrator) {
+                check(sce_peer_set_administrator(device.peer.get(), device.administrator->data()), "set_administrator");
+            }
             steps++;
             continue;
         }
@@ -212,7 +244,27 @@ int main(int argc, char **argv) {
             die("the device's core is not made");
         }
         ScePeerBuf out{nullptr, 0};
-        if (op == "restore") {
+        if (op == "open") {
+            const int32_t profile = profile_of(tokens.need());
+            const std::string want = tokens.need();
+            uint8_t genesis[32] = {0};
+            check(sce_peer_open_list(peer, profile, genesis), "open_list");
+            expect_text(hex_of(genesis, sizeof genesis), want, "the genesis");
+        } else if (op == "grant") {
+            const uint64_t node = tokens.number();
+            const uint32_t role = static_cast<uint32_t>(tokens.number());
+            const std::vector<uint8_t> key = unhex(tokens.need());
+            if (key.size() != 32) {
+                die("a key is not 32 bytes");
+            }
+            check(sce_peer_grant(peer, node, role, key.data()), "grant");
+        } else if (op == "remove") {
+            check(sce_peer_remove_member(peer, tokens.number()), "remove_member");
+        } else if (op == "standing") {
+            const std::string want = tokens.text();
+            check(sce_peer_standing(peer, &out), "standing");
+            expect_text(taken(out), want, "the standing");
+        } else if (op == "restore") {
             const std::string saved = tokens.text();
             const uint64_t want = tokens.number();
             uint64_t count = UINT64_MAX;

@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Replays the recorded scenario of the peer core through the C ABI, from Go (cgo): the cores of two
-// devices are made, given the machine's sends, the rounds' answers and a save, with no relay, and
-// every text a core gives (each request, each outcome, the save, the reason of a refusal) must be the
-// recorded one.
+// devices are made, given the administrator's acts, the machine's sends, the rounds' answers and a
+// save, with no relay, and every text a core gives (each request, each outcome, each standing, the
+// genesis, the save, the reason of a refusal) must be the recorded one.
 //
 // usage: go run replay.go <scenario.json>   (CGO_CFLAGS and CGO_LDFLAGS name the header and library)
 package main
@@ -24,21 +24,27 @@ import (
 )
 
 type device struct {
-	Node    uint64  `json:"node"`
-	Seed    string  `json:"seed"`
-	Genesis *string `json:"genesis"`
+	Node          uint64  `json:"node"`
+	Seed          string  `json:"seed"`
+	Genesis       *string `json:"genesis"`
+	Administrator *string `json:"administrator"`
 }
 
 type step struct {
-	Device int    `json:"device"`
-	Op     string `json:"op"`
-	Text   string `json:"text"`
-	Count  uint64 `json:"count"`
-	Event  string `json:"event"`
-	Data   string `json:"data"`
-	Kept   string `json:"kept"`
-	Reason string `json:"reason"`
-	Kind   string `json:"kind"`
+	Device  int    `json:"device"`
+	Op      string `json:"op"`
+	Text    string `json:"text"`
+	Count   uint64 `json:"count"`
+	Event   string `json:"event"`
+	Data    string `json:"data"`
+	Kept    string `json:"kept"`
+	Reason  string `json:"reason"`
+	Kind    string `json:"kind"`
+	Profile string `json:"profile"`
+	Genesis string `json:"genesis"`
+	Node    uint64 `json:"node"`
+	Role    uint32 `json:"role"`
+	Key     string `json:"key"`
 }
 
 type scenario struct {
@@ -117,6 +123,17 @@ func keptOf(name string) C.int32_t {
 	return -1
 }
 
+func profileOf(name string) C.int32_t {
+	switch name {
+	case "untrusted":
+		return C.SCE_PEER_PROFILE_UNTRUSTED
+	case "trusted_hub":
+		return C.SCE_PEER_PROFILE_TRUSTED_HUB
+	}
+	fail("a profile the replay does not know: %s", name)
+	return -1
+}
+
 func kindOf(name string) C.int32_t {
 	switch name {
 	case "sync":
@@ -170,6 +187,10 @@ func main() {
 			}
 			seed := unhex(d.Seed)
 			check(C.sce_peer_set_identity(peers[s.Device], C.uint64_t(d.Node), ptr(seed)), "set_identity")
+			if d.Administrator != nil {
+				administrator := unhex(*d.Administrator)
+				check(C.sce_peer_set_administrator(peers[s.Device], ptr(administrator)), "set_administrator")
+			}
 			steps++
 			continue
 		}
@@ -179,6 +200,19 @@ func main() {
 		}
 		var out C.ScePeerBuf
 		switch s.Op {
+		case "open":
+			genesis := make([]byte, 32)
+			check(C.sce_peer_open_list(peer, profileOf(s.Profile), ptr(genesis)), "open_list")
+			expect(hex.EncodeToString(genesis), s.Genesis, "the genesis")
+		case "grant":
+			key := unhex(s.Key)
+			check(C.sce_peer_grant(peer, C.uint64_t(s.Node), C.uint32_t(s.Role), ptr(key)), "grant")
+		case "remove":
+			check(C.sce_peer_remove_member(peer, C.uint64_t(s.Node)), "remove_member")
+		case "standing":
+			check(C.sce_peer_standing(peer, &out), "standing")
+			standing, _ := taken(out)
+			expect(standing, s.Text, "the standing")
 		case "restore":
 			saved := cstring(s.Text)
 			var count C.uint64_t

@@ -2,9 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
-// C ABI, from Kotlin with JNA: the cores of two devices are made, given the machine's sends, the
-// rounds' answers and a save, with no relay, and every text a core gives (each request, each outcome,
-// the save, the reason of a refusal) must be the recorded one.
+// C ABI, from Kotlin with JNA: the cores of two devices are made, given the administrator's acts, the
+// machine's sends, the rounds' answers and a save, with no relay, and every text a core gives (each
+// request, each outcome, each standing, the genesis, the save, the reason of a refusal) must be the
+// recorded one.
 //
 // usage: Replay <libsce_peer_capi> <scenario.json>
 
@@ -28,9 +29,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
+private const val ABI_VERSION = 2
 private const val OK = 0
 private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused" to 3)
 private val KINDS = mapOf("sync" to 0, "resync" to 1, "reread" to 2)
+private val PROFILES = mapOf("untrusted" to 0, "trusted_hub" to 1)
 
 /** `ScePeerBuf` of `include/sce_peer.h`: a buffer the library made (a `size_t` is a C long here). */
 @Structure.FieldOrder("ptr", "len")
@@ -52,6 +55,11 @@ interface ScePeerLib : Library {
     fun sce_peer_invited(list: String, genesis: ByteArray): Pointer?
     fun sce_peer_free(peer: Pointer)
     fun sce_peer_set_identity(peer: Pointer, node: Long, seed: ByteArray): Int
+    fun sce_peer_set_administrator(peer: Pointer, seed: ByteArray): Int
+    fun sce_peer_open_list(peer: Pointer, profile: Int, genesis: ByteArray): Int
+    fun sce_peer_grant(peer: Pointer, node: Long, role: Int, key: ByteArray): Int
+    fun sce_peer_remove_member(peer: Pointer, node: Long): Int
+    fun sce_peer_standing(peer: Pointer, out: Buf): Int
     fun sce_peer_outbound(peer: Pointer, event: String, data: String, kept: IntByReference, reason: Buf): Int
     fun sce_peer_start(peer: Pointer, kind: Int): Int
     fun sce_peer_poll_request(peer: Pointer, out: Buf): Int
@@ -64,6 +72,9 @@ interface ScePeerLib : Library {
 
 private fun unhex(text: String): ByteArray =
     ByteArray(text.length / 2) { text.substring(2 * it, 2 * it + 2).toInt(16).toByte() }
+
+private fun hex(bytes: ByteArray): String =
+    bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
 fun main(args: Array<String>) {
     if (args.size != 2) {
@@ -102,7 +113,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    if (lib.sce_peer_abi_version() != 1) die("the library is another ABI version")
+    if (lib.sce_peer_abi_version() != ABI_VERSION) die("the library is another ABI version")
     val list = scenario.getValue("list").jsonPrimitive.content
     val devices = scenario.getValue("devices").jsonArray.map { it.jsonObject }
     val peers = arrayOfNulls<Pointer>(devices.size)
@@ -126,6 +137,11 @@ fun main(args: Array<String>) {
             val node = device.getValue("node").jsonPrimitive.long
             val seed = unhex(device.getValue("seed").jsonPrimitive.content)
             check(lib.sce_peer_set_identity(core, node, seed), "set_identity")
+            val administrator = device["administrator"]
+            if (administrator != null && administrator !is JsonNull) {
+                val key = unhex(administrator.jsonPrimitive.content)
+                check(lib.sce_peer_set_administrator(core, key), "set_administrator")
+            }
             steps++
             continue
         }
@@ -133,6 +149,25 @@ fun main(args: Array<String>) {
         val text = { name: String -> step.getValue(name).jsonPrimitive.content }
         val out = Buf()
         when (op) {
+            "open" -> {
+                val profile = PROFILES[text("profile")] ?: die("a profile the replay does not know")
+                val genesis = ByteArray(32)
+                check(lib.sce_peer_open_list(peer, profile, genesis), "open_list")
+                expect(hex(genesis), text("genesis"), "the genesis")
+            }
+            "grant" -> {
+                val node = step.getValue("node").jsonPrimitive.long
+                val role = step.getValue("role").jsonPrimitive.int
+                check(lib.sce_peer_grant(peer, node, role, unhex(text("key"))), "grant")
+            }
+            "remove" -> {
+                val node = step.getValue("node").jsonPrimitive.long
+                check(lib.sce_peer_remove_member(peer, node), "remove_member")
+            }
+            "standing" -> {
+                check(lib.sce_peer_standing(peer, out), "standing")
+                expect(taken(out), text("text"), "the standing")
+            }
             "restore" -> {
                 val count = LongByReference(-1)
                 check(lib.sce_peer_restore(peer, text("text"), count), "restore")

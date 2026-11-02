@@ -2,28 +2,28 @@
 //
 // The recorded scenario every lane replays through the peer core's C ABI
 // (`tests/fixtures/two_devices_and_a_relay.json`). Two devices of one list run through the ABI
-// against the real relay in this process: alice's, which holds the administrator's key and opens the
-// list, and bob's, invited with the hash of the genesis and granted writing. Every call each device's
-// core is given and every text it gives back is recorded in order: the machine's sends and what the
-// core did with each (taken, held, not signed, refused and why), each request the core puts to the
-// relay and the relay's answer, a failure of the transport, the outcome each machine is told, and
-// bob's save, after which his core is made again and restored from it. What it shows: bob's writes
-// and his note reach alice's machine; a restored device signs nothing new until its chain is read
-// back, and gives a write it holds as held; another content under a stamp a device signed is
-// refused; a round that loses its transport ends, and the next goes on.
+// against the real relay in this process: alice's, which holds the administrator's key, opens the
+// list and grants bob writing, and bob's, invited with the hash of the genesis alice's core gave.
+// Every call each device's core is given and every text it gives back is recorded in order: the
+// administrator's acts and the genesis the opening gave, the machine's sends and what the core did
+// with each (taken, held, not signed, refused and why), each request the core puts to the relay and
+// the relay's answer, a failure of the transport, the outcome each machine is told, what each device
+// stands at, and bob's save, after which his core is made again and restored from it. What it shows:
+// a list is opened and a device admitted through the ABI alone; bob's writes and his note reach
+// alice's machine; a restored device says it waits for its own chain, signs nothing new until the
+// chain is read back, and gives a write it holds as held; another content under a stamp a device
+// signed is refused; a round that loses its transport ends, and the next goes on; and a device taken
+// off is refused by the relay, so that what it writes afterwards reaches no one.
 //
 // The core does no I/O, so a lane replays the scenario with no relay: it makes the same calls,
-// compares each request, outcome and save the core gives with the recording, and gives the core the
-// recorded answers. Everything in it is deterministic (Ed25519 signs deterministically, and nothing
-// here reads a clock or draws a random number), so a run now records the same scenario, and a test
-// fails when the recording and a fresh run differ: the file cannot drift from the library. The
-// list's MLS group is not in it, since MLS draws randomness and a run would not record the same
-// texts twice; the group's own C ABI has its own recorded scenario
-// (`backends/rust/mls/tests/fixtures/join_and_remove.json`).
-//
-// The administrator's entries of the log (the genesis and the grants) are made with the trust, as
-// `Peer` exposes no operation for them: alice's device starts from a save that holds them, made here
-// by `Peer::save`, which the replay restores.
+// compares each request, outcome, standing, genesis and save the core gives with the recording, and
+// gives the core the recorded answers. Everything in it is deterministic (Ed25519 signs
+// deterministically, and nothing here reads a clock or draws a random number), so a run now records
+// the same scenario, and a test fails when the recording and a fresh run differ: the file cannot
+// drift from the library. The list's MLS group is not in it, since MLS draws randomness and a run
+// would not record the same texts twice; the group's own C ABI has its own recorded scenario
+// (`backends/rust/mls/tests/fixtures/join_and_remove.json`), and the administrator's acts on a group
+// through this ABI are held by `the_administrators_acts_on_a_group_go_through_the_abi`.
 //
 // The scenario is recorded again with `SCE_PEER_SCENARIO=write cargo test -p sce-rust-peer-capi
 // --test the_recorded_scenario_is_what_a_fresh_run_records -- the_recorded_scenario_is_what`.
@@ -34,7 +34,6 @@ use std::ffi::{CStr, CString};
 use std::path::Path;
 
 use sce_peer_capi::*;
-use sce_rust_peer::Peer;
 use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::Identity;
@@ -66,21 +65,22 @@ fn person(node: u64) -> Identity {
     Identity::from_seed(seed_of(node))
 }
 
-/// The administrator's key, which alice's device holds.
-fn administrator() -> Identity {
-    Identity::from_seed([9; 32])
-}
+/// The seed of the administrator's key, which alice's device holds.
+const ADMINISTRATOR: [u8; 32] = [9; 32];
 
+/// The genesis a list with one administrator, a quorum of one and a hub that is not trusted has:
+/// what alice's core is to write when it opens the list, made here by hand.
 fn genesis() -> Entry {
+    let administrator = Identity::from_seed(ADMINISTRATOR);
     Log::genesis_draft(
         LIST,
         Body::Genesis {
-            administrators: vec![administrator().public()],
+            administrators: vec![administrator.public()],
             quorum: 1,
             profile: Profile::Untrusted,
         },
     )
-    .sign(&administrator())
+    .sign(&administrator)
     .finish()
 }
 
@@ -111,33 +111,15 @@ fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
     .to_string()
 }
 
-/// What alice's device keeps before the scenario begins: the genesis and the grants of alice
-/// (administering) and bob (writing), which the administrator signed.
-fn opening_save() -> String {
-    let alice = Peer::open(LIST);
-    let trust = alice.trust();
-    trust.append(&genesis()).unwrap();
-    for (node, role) in [(ALICE, 3u8), (BOB, 2)] {
-        let entry = trust
-            .draft(Body::Grant {
-                node,
-                role,
-                key: person(node).public(),
-                final_seq: None,
-            })
-            .sign(&administrator())
-            .finish();
-        trust.append(&entry).unwrap();
-    }
-    alice.save()
-}
-
-/// The devices of the scenario: each one's node, the seed of its person's key, and the hash of the
-/// genesis it was invited with (none for the device that opens the list).
+/// The devices of the scenario: each one's node, the seed of its person's key, the hash of the
+/// genesis it was invited with (none for the device that opens the list), and the seed of the
+/// administrator's key it holds (none for a device that holds none).
 fn devices() -> Value {
     json!([
-        {"node": ALICE, "seed": hex(&seed_of(ALICE)), "genesis": null},
-        {"node": BOB, "seed": hex(&seed_of(BOB)), "genesis": hex(&genesis().hash())},
+        {"node": ALICE, "seed": hex(&seed_of(ALICE)), "genesis": null,
+         "administrator": hex(&ADMINISTRATOR)},
+        {"node": BOB, "seed": hex(&seed_of(BOB)), "genesis": hex(&genesis().hash()),
+         "administrator": null},
     ])
 }
 
@@ -181,7 +163,8 @@ fn text(value: &str) -> CString {
 struct Core(*mut ScePeer);
 
 impl Core {
-    /// The core of `device` (an entry of [`devices`]), made and given its person.
+    /// The core of `device` (an entry of [`devices`]), made and given its person, and the
+    /// administrator's key when it holds one.
     fn make(device: &Value) -> Self {
         let list = text(LIST);
         let seed = unhex(device["seed"].as_str().unwrap());
@@ -202,7 +185,56 @@ impl Core {
             unsafe { sce_peer_set_identity(peer, node, seed.as_ptr()) },
             "set_identity",
         );
+        if let Some(administrator) = device["administrator"].as_str() {
+            let administrator = unhex(administrator);
+            // SAFETY: a live handle, and a seed of 32 bytes.
+            check(
+                unsafe { sce_peer_set_administrator(peer, administrator.as_ptr()) },
+                "set_administrator",
+            );
+        }
         Core(peer)
+    }
+
+    /// The list opened with the hub's profile `profile`, and the hash of its genesis, in hex.
+    fn open(&mut self, profile: &str) -> String {
+        let profile = match profile {
+            "untrusted" => SCE_PEER_PROFILE_UNTRUSTED,
+            "trusted_hub" => SCE_PEER_PROFILE_TRUSTED_HUB,
+            other => panic!("{other} is no profile"),
+        };
+        let mut genesis = [0u8; 32];
+        // SAFETY: a live handle, and a place valid for a write of 32 bytes.
+        check(
+            unsafe { sce_peer_open_list(self.0, profile, genesis.as_mut_ptr()) },
+            "open_list",
+        );
+        hex(&genesis)
+    }
+
+    /// The device of `node`, which signs with the key `key` (in hex), granted `role`.
+    fn grant(&mut self, node: u64, role: u32, key: &str) {
+        let key = unhex(key);
+        // SAFETY: a live handle, and a key of 32 bytes.
+        check(
+            unsafe { sce_peer_grant(self.0, node, role, key.as_ptr()) },
+            "grant",
+        );
+    }
+
+    fn remove(&mut self, node: u64) {
+        // SAFETY: a live handle.
+        check(
+            unsafe { sce_peer_remove_member(self.0, node) },
+            "remove_member",
+        );
+    }
+
+    fn standing(&mut self) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, and a place valid for a write.
+        check(unsafe { sce_peer_standing(self.0, &mut out) }, "standing");
+        taken(out).expect("a standing is a text")
     }
 
     /// What the core did with a send of the machine, and why when it refused it.
@@ -347,6 +379,33 @@ impl Recording {
         self.steps.push(json!({"device": device, "op": "make"}));
     }
 
+    fn open(&mut self, device: usize, profile: &str) -> String {
+        let genesis = self.core(device).open(profile);
+        self.steps
+            .push(json!({"device": device, "op": "open", "profile": profile, "genesis": genesis}));
+        genesis
+    }
+
+    fn grant(&mut self, device: usize, node: u64, role: u32, key: &[u8]) {
+        let key = hex(key);
+        self.core(device).grant(node, role, &key);
+        self.steps
+            .push(json!({"device": device, "op": "grant", "node": node, "role": role, "key": key}));
+    }
+
+    fn remove(&mut self, device: usize, node: u64) {
+        self.core(device).remove(node);
+        self.steps
+            .push(json!({"device": device, "op": "remove", "node": node}));
+    }
+
+    fn standing(&mut self, device: usize) -> Value {
+        let standing = self.core(device).standing();
+        self.steps
+            .push(json!({"device": device, "op": "standing", "text": standing}));
+        serde_json::from_str(&standing).expect("a standing is JSON")
+    }
+
     fn restore(&mut self, device: usize, saved: &str) -> u64 {
         let count = self.core(device).restore(saved);
         self.steps
@@ -418,7 +477,7 @@ impl Recording {
 
     fn into_scenario(self) -> Value {
         json!({
-            "version": 1,
+            "version": 2,
             "list": LIST,
             "devices": self.devices,
             "steps": self.steps,
@@ -443,23 +502,42 @@ fn refused(outcome: &Value) -> usize {
         .len()
 }
 
+/// The nodes a standing names as members, as texts.
+fn members(standing: &Value) -> Vec<String> {
+    standing["members"]
+        .as_array()
+        .expect("a standing names the members")
+        .iter()
+        .map(|member| member["node"].as_str().unwrap().to_string())
+        .collect()
+}
+
 /// The scenario, run now against the relay.
 fn record() -> Value {
     let mut run = Recording::new();
 
-    // Alice's device opens the list from what it keeps: the genesis and the grants. Restored, it
-    // signs nothing new before a round has read its own chain back from the relay.
+    // Alice's device opens the list as its administrator: the genesis is the one a list with her
+    // administrator's key, a quorum of one and a hub that is not trusted has, which is what bob is
+    // invited with, and her person is its first member, with the highest role. She grants bob
+    // writing, and her round gives the relay the genesis and the two grants.
     run.make(AT_ALICE);
-    assert_eq!(run.restore(AT_ALICE, &opening_save()), 0);
     assert_eq!(
-        run.outbound(AT_ALICE, WRITE, &write(9, ALICE, 500, 1)),
-        "refused",
-        "a restored device signs nothing new before its chain is read back"
+        run.open(AT_ALICE, "untrusted"),
+        hex(&genesis().hash()),
+        "the genesis bob is invited with"
     );
-    let opened = run.round(AT_ALICE, "sync");
-    assert_eq!(opened["outcome"], "ended", "{opened}");
-    assert_eq!(refused(&opened), 0, "{opened}");
-    assert_eq!(opened["pushed"], 3, "the genesis and two grants: {opened}");
+    let opened = run.standing(AT_ALICE);
+    assert_eq!(opened["administrator"], true, "{opened}");
+    assert_eq!(opened["role"], 3, "{opened}");
+    assert_eq!(opened["awaits_own_chain"], false, "{opened}");
+    assert_eq!(members(&opened), vec!["1"], "{opened}");
+    run.grant(AT_ALICE, BOB, 2, &person(BOB).public().to_bytes());
+    let granted = run.standing(AT_ALICE);
+    assert_eq!(members(&granted), vec!["1", "2"], "{granted}");
+    let given = run.round(AT_ALICE, "sync");
+    assert_eq!(given["outcome"], "ended", "{given}");
+    assert_eq!(refused(&given), 0, "{given}");
+    assert_eq!(given["pushed"], 3, "the genesis and two grants: {given}");
 
     // Bob's device, invited with the hash of the genesis, reads the log.
     run.make(AT_BOB);
@@ -497,11 +575,14 @@ fn record() -> Value {
     assert_eq!(named(&told, SUPERSEDE), 1, "{told}");
 
     // Bob's device is saved, stopped and started again from its save, and his machine, built again
-    // from his application's own log, sends his writes again: what the core holds comes back held,
-    // a new write waits until a round has read his chain back, and then is taken.
+    // from his application's own log, sends his writes again: the core says it waits for his own
+    // chain, what it holds comes back held, a new write waits until a round has read his chain back,
+    // and then is taken.
     let saved = run.save(AT_BOB);
     run.make(AT_BOB);
     assert_eq!(run.restore(AT_BOB, &saved), 3, "his three operations");
+    let waiting = run.standing(AT_BOB);
+    assert_eq!(waiting["awaits_own_chain"], true, "{waiting}");
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
         "held"
@@ -514,6 +595,8 @@ fn record() -> Value {
     let back = run.round(AT_BOB, "sync");
     assert_eq!(refused(&back), 0, "{back}");
     assert_eq!(back["pushed"], 0, "{back}");
+    let read_back = run.standing(AT_BOB);
+    assert_eq!(read_back["awaits_own_chain"], false, "{read_back}");
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 2000, 20)),
         "held"
@@ -541,6 +624,33 @@ fn record() -> Value {
     assert_eq!(named(&told, WRITE), 1, "bob's new write: {told}");
     assert_eq!(refused(&told), 0, "{told}");
 
+    // Alice takes bob off: his chain ends at the last operation of his her device holds, and her
+    // round gives the relay the entry.
+    run.remove(AT_ALICE, BOB);
+    let taken_off = run.standing(AT_ALICE);
+    assert_eq!(members(&taken_off), vec!["1"], "{taken_off}");
+    let removed = run.round(AT_ALICE, "sync");
+    assert_eq!(refused(&removed), 0, "{removed}");
+    assert_eq!(removed["pushed"], 1, "the removal: {removed}");
+
+    // Bob's machine writes before his device has read that he is off, and his core signs it. His
+    // round reads the removal, and the relay, which lets a device the log took off read and give
+    // nothing, refuses him: the write reaches no one, and alice's machine is told nothing of it.
+    assert_eq!(
+        run.outbound(AT_BOB, WRITE, &write(3, BOB, 4000, 40)),
+        "taken"
+    );
+    let cut = run.round(AT_BOB, "sync");
+    assert_eq!(cut["outcome"], "ended", "{cut}");
+    assert_eq!(cut["pushed"], 0, "{cut}");
+    assert_eq!(refused(&cut), 1, "the relay's refusal: {cut}");
+    let off = run.standing(AT_BOB);
+    assert_eq!(off["role"], 0, "{off}");
+    assert_eq!(members(&off), vec!["1"], "{off}");
+    let after = run.round(AT_ALICE, "sync");
+    assert_eq!(named(&after, WRITE), 0, "{after}");
+    assert_eq!(refused(&after), 0, "{after}");
+
     run.into_scenario()
 }
 
@@ -558,6 +668,11 @@ fn replay(scenario: &Value) -> usize {
                 .unwrap_or_else(|| panic!("step {at} has no `{name}`"))
                 .to_string()
         };
+        let number = |name: &str| -> u64 {
+            step[name]
+                .as_u64()
+                .unwrap_or_else(|| panic!("step {at} has no `{name}`"))
+        };
         if step["op"] == "make" {
             cores[device] = None;
             cores[device] = Some(Core::make(&devices[device]));
@@ -567,11 +682,15 @@ fn replay(scenario: &Value) -> usize {
             .as_mut()
             .unwrap_or_else(|| panic!("step {at}: the device's core is not made"));
         match step["op"].as_str().unwrap() {
-            "restore" => assert_eq!(
-                core.restore(&field("text")),
-                step["count"].as_u64().unwrap(),
-                "step {at}"
+            "open" => assert_eq!(core.open(&field("profile")), field("genesis"), "step {at}"),
+            "grant" => core.grant(
+                number("node"),
+                u32::try_from(number("role")).unwrap(),
+                &field("key"),
             ),
+            "remove" => core.remove(number("node")),
+            "standing" => assert_eq!(core.standing(), field("text"), "step {at}"),
+            "restore" => assert_eq!(core.restore(&field("text")), number("count"), "step {at}"),
             "outbound" => assert_eq!(
                 core.outbound(&field("event"), &field("data")),
                 (field("kept"), field("reason")),
