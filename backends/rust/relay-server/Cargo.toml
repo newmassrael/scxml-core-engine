@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-relay-server"
+version.workspace = true
+edition.workspace = true
+# The relay it runs (`sce-rust-relay`, through `sce-rust-trust`) declares 1.87.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The relay of a shared list as a server process: one configuration file, a durable store, TLS or a proxy in front, a key made and kept on disk, and a stop that finishes what it began"
+publish = false
+
+# The program a relay is deployed as (`docs/SCE_RELAY_DEPLOY.md`). It is a crate of its own rather
+# than a binary of `sce-rust-relay`, so that what a process needs and a library does not (a
+# configuration parser, the command line, signals, PEM files, the service manager's readiness
+# message) is not in the graph of the library a phone links through the peer core's C ABI.
+
+[[bin]]
+name = "sce-relay"
+path = "src/main.rs"
+
+[dependencies]
+# The relay, its server with TLS (`serve`), and its file store.
+sce-rust-relay = { path = "../relay", features = ["serve"] }
+tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "signal", "sync", "time", "macros"] }
+# The configuration file, read as a document so that a key nobody reads is refused by name.
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
+# A certificate chain and a private key from the PEM files a certificate authority hands out.
+rustls-pki-types = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+# A list's first entry, which the tests give a running relay and read back after it restarted.
+sce-rust-trust = { path = "../trust" }
+
+[lints]
+workspace = true
