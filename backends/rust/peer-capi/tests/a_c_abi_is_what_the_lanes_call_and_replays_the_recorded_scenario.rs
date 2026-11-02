@@ -657,3 +657,37 @@ fn the_scenario_replays_from_python() {
         steps_of(&scenario),
     );
 }
+
+#[test]
+fn the_scenario_replays_from_go() {
+    if !have("go", "version") {
+        return;
+    }
+    let scenario = scenario();
+    let library = library();
+    let dir = scratch("go");
+    std::fs::copy(
+        Path::new(MANIFEST).join("tests/go/replay.go"),
+        dir.join("replay.go"),
+    )
+    .unwrap();
+    let include = Path::new(MANIFEST).join("include");
+    let libdir = library.parent().unwrap();
+    replay_in(
+        Command::new("go")
+            .current_dir(&dir)
+            .env("CGO_ENABLED", "1")
+            .env("GO111MODULE", "off")
+            .env("CGO_CFLAGS", format!("-I{}", include.display()))
+            .env(
+                "CGO_LDFLAGS",
+                format!("-L{0} -lsce_peer_capi -Wl,-rpath,{0}", libdir.display()),
+            )
+            .arg("run")
+            .arg("replay.go")
+            .arg(scenario_path()),
+        "the Go replay",
+        steps_of(&scenario),
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
