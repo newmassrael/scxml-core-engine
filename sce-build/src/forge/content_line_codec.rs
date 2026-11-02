@@ -266,7 +266,15 @@ fn entries_context(
     let literal = |bound: Option<u32>| -> Option<String> {
         match (l.language(), bound) {
             (Language::C11 | Language::Swift, None) => None,
-            (lang, bound) => Some(bound_literal(lang, bound)),
+            (lang @ (Language::C11 | Language::Swift), Some(_)) => Some(bound_literal(lang, bound)),
+            (
+                lang @ (Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python),
+                bound,
+            ) => Some(bound_literal(lang, bound)),
         }
     };
     let struct_name = l
