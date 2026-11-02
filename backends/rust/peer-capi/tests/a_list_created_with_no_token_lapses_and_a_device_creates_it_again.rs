@@ -202,13 +202,14 @@ fn write(id: u32, node: u64) -> CString {
 unsafe fn send(peer: *mut ScePeer, id: u32, node: u64) {
     let mut kept = -1;
     let mut reason = empty();
+    let data = write(id, node);
     // SAFETY: a live handle, NUL-terminated texts, places valid for a write.
     unsafe {
         assert_eq!(
             sce_peer_outbound(
                 peer,
                 c"record_list.write".as_ptr(),
-                write(id, node).as_ptr(),
+                data.as_ptr(),
                 &mut kept,
                 &mut reason
             ),
