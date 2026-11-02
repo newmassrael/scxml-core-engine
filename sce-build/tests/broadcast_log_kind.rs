@@ -6355,13 +6355,11 @@ fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the
     // is a codec the Swift codec emitter does not write, and a log over it would name a
     // struct that no unit declares. Each case is a shape the emitter names by itself.
     let xml = event_ring();
-    let payload = codec_with("event_record", "", BOUNDED_FIELDS);
     let cbor = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
     );
-    let cases: [(&str, String, &str); 3] = [
+    let cases: [(&str, String, &str); 2] = [
         ("a flag input", flag_input_codec(), "a flag input"),
-        ("a variable payload", payload, "field 'payload'"),
         ("a CBOR map", cbor, "cbor"),
     ];
     for (what, codec, construct) in cases {
@@ -6403,6 +6401,24 @@ fn swift_stores_an_element_whose_codec_writes_a_bit_field() {
         )
         .is_ok(),
         "a log over an element with a bit field generates in Swift"
+    );
+}
+
+#[test]
+fn swift_stores_an_element_whose_codec_holds_a_variable_payload() {
+    // The Swift codec emitter reads and writes a byte string whose length varies,
+    // so the element's struct is one a unit declares and a log over it generates.
+    let payload = codec_with("event_record", "", BOUNDED_FIELDS);
+    assert!(
+        compile_documents(
+            Language::Swift,
+            &[
+                ("event_ring.scxml", &event_ring()),
+                ("event_record.scxml", &payload)
+            ],
+        )
+        .is_ok(),
+        "a log over an element with a variable payload generates in Swift"
     );
 }
 
