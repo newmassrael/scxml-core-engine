@@ -166,6 +166,11 @@ old encode, the old encode and its templates are removed in the same landing.
    each with its abstract type, its bound (R1, R2, R7) and its law (R8), and whether it may be absent. The Rust
    printer spells them, and the bounds' Rust spelling left `codec_totality` for the printer. The regeneration
    changed no file. `sce-build/tests/encode_plan.rs` pins what the plan says of each shape.
+   *The derived numbers landed 2026-11-03:* each length, count and encoded length as what it measures (the bytes of a
+   field with its `length-arith` offset, the entries of a list, the encoded length of a body), whether each measure
+   may be absent, and how the number goes into its element (checked, widened or cast, and what the field holds where
+   nothing it measures is there). The other derivations are still read off the roles until their part lands. The
+   regeneration changed no file.
 3. The oracle's byte cases for every shape (§5), held first by Rust.
 4. C++, then Go, Kotlin, Python and C11, each by §6, with its runtime's counting sink, refinements and walk. C++ comes
    first because it is the engine's own language and its type system carries a refinement as a type, as Rust's

@@ -11,7 +11,11 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::encode_plan::{Automaton, Bound, EncodePlan, LawInput, Presence, Value};
+use sce_build::forge::codec_roles::ElementId;
+use sce_build::forge::encode_plan::{
+    Absent, Automaton, Bound, Derive, EncodePlan, LawInput, Measured, Narrow, Number, NumberInto,
+    Offset, Presence, Value,
+};
 use sce_build::{encode_plan_file, ForgeCompileOptions};
 
 fn resource(stem: &str) -> PathBuf {
@@ -132,6 +136,105 @@ fn the_fields_a_gate_decides_are_presented_by_their_group_within_their_bounds() 
         };
         assert_eq!(bound.most, Some(4));
     });
+}
+
+/// The derived number of `element` in the plan of `stem`, given to `read`.
+fn with_number<R>(stem: &str, element: ElementId, read: impl FnOnce(&Number<'_>) -> R) -> R {
+    with_plan(stem, |plan| {
+        let numbers: Vec<&Number<'_>> = plan
+            .derivations
+            .iter()
+            .filter(|d| d.element == element)
+            .filter_map(|d| match &d.by {
+                Derive::Number(number) => Some(number),
+                Derive::Roles(_) => None,
+            })
+            .collect();
+        let [number] = numbers.as_slice() else {
+            panic!("{stem}: `{element}` is not one derived number");
+        };
+        read(number)
+    })
+}
+
+fn field_element(id: &str) -> ElementId {
+    ElementId::Field(id.to_string())
+}
+
+#[test]
+fn a_count_of_a_gated_list_is_zero_where_the_list_is_not_there() {
+    with_number(
+        "codec_repeat_present_if_basic",
+        field_element("num_elems"),
+        |number| {
+            let [measure] = number.measures.as_slice() else {
+                panic!("the count measures one list");
+            };
+            assert!(matches!(measure.of, Measured::Entries { list } if list.id == "elems"));
+            assert!(measure.gated);
+            assert!(number.free());
+            // At most 32 entries fit a `uint8` with nothing to check.
+            assert!(matches!(
+                number.into,
+                NumberInto::Field {
+                    narrow: Narrow::Cast,
+                    absent: Absent::Zero,
+                    ..
+                }
+            ));
+        },
+    );
+}
+
+/// The wire holds the length less one, and the type of the content holds a
+/// byte or more (docs/adr/0077 §3), so the subtraction is never negative.
+#[test]
+fn a_length_less_one_of_content_that_is_never_empty_needs_no_check() {
+    with_number(
+        "codec_zenoh_scout",
+        ElementId::Flag {
+            field: "cbyte".to_string(),
+            flag: "zid_len_m1".to_string(),
+        },
+        |number| {
+            let [measure] = number.measures.as_slice() else {
+                panic!("the length measures one field");
+            };
+            let Measured::Bytes { field, offset } = &measure.of else {
+                panic!("the length measures bytes");
+            };
+            assert_eq!(field.id, "zid");
+            assert_eq!(*offset, Offset::Less { by: 1, held: true });
+            assert!(matches!(number.into, NumberInto::Flag));
+        },
+    );
+}
+
+#[test]
+fn an_encoded_length_measures_the_body_and_widens_into_a_64_bit_field() {
+    with_number(
+        "codec_zenoh_decl_ext_keyexpr",
+        field_element("total_length"),
+        |number| {
+            let [measure] = number.measures.as_slice() else {
+                panic!("the length measures one body");
+            };
+            assert!(matches!(
+                measure.of,
+                Measured::Encoded { body, .. } if body.id == "inner"
+            ));
+            assert!(!measure.gated);
+            assert!(number.fixed());
+            assert!(matches!(
+                number.into,
+                NumberInto::Field {
+                    narrow: Narrow::Widened,
+                    absent: Absent::Never,
+                    ..
+                }
+            ));
+        },
+    );
 }
 
 #[test]

@@ -26,7 +26,10 @@ use crate::forge::codec_roles::{
     InputCheck, InputSource, InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind};
-use crate::forge::encode_plan::{self, Automaton, EncodePlan, Law, Value};
+use crate::forge::encode_plan::{
+    self, Absent, Automaton, Derive, EncodePlan, Law, Measured, Narrow, Number, NumberInto, Offset,
+    Value,
+};
 use std::collections::BTreeSet;
 
 pub(super) mod cbor;
@@ -3684,34 +3687,32 @@ impl<'a> Plan<'a> {
             derived.flags.entry(carrier.id.clone()).or_default();
         }
         self.count_lists(lines);
-        for (id, by) in self.encode.roles.derived() {
-            for derivation in by {
-                match derivation {
-                    Derivation::LengthOf { contents } => {
-                        self.derive_length(id, contents, lines, &mut derived)
-                    }
-                    Derivation::CountOf { lists } => {
-                        self.derive_count(id, lists, lines, &mut derived)
-                    }
-                    Derivation::EncodedLengthOf { bodies } => {
-                        self.derive_encoded_length(id, bodies, lines, &mut derived)
-                    }
-                    Derivation::VariantTag { .. } => {
-                        self.derive_variant_tag(id, lines, &mut derived)
-                    }
-                    Derivation::ParentTag { .. } => self.derive_parent_tag(id, lines, &mut derived),
-                    Derivation::PresenceOf { gated } => {
-                        self.derive_presence(id, gated, lines, &mut derived)
-                    }
-                    Derivation::BoundInput { binders } => {
-                        self.derive_bound_input(id, binders, lines, &mut derived)
-                    }
-                    Derivation::ArmOf { gates } => {
-                        self.derive_arm_flag(id, gates, lines, &mut derived)
-                    }
-                    // The end flag of a chain is the entries' to set, as each is
-                    // written (`streamed`), and no value of this codec's own.
-                    Derivation::ChainContinuation { .. } => {}
+        for planned in &self.encode.derivations {
+            let id = &planned.element;
+            let derivation = match &planned.by {
+                Derive::Number(number) => {
+                    self.derive_number(id, number, lines, &mut derived);
+                    continue;
+                }
+                Derive::Roles(derivation) => derivation,
+            };
+            match derivation {
+                Derivation::VariantTag { .. } => self.derive_variant_tag(id, lines, &mut derived),
+                Derivation::ParentTag { .. } => self.derive_parent_tag(id, lines, &mut derived),
+                Derivation::PresenceOf { gated } => {
+                    self.derive_presence(id, gated, lines, &mut derived)
+                }
+                Derivation::BoundInput { binders } => {
+                    self.derive_bound_input(id, binders, lines, &mut derived)
+                }
+                Derivation::ArmOf { gates } => self.derive_arm_flag(id, gates, lines, &mut derived),
+                // The end flag of a chain is the entries' to set, as each is
+                // written (`streamed`), and no value of this codec's own.
+                Derivation::ChainContinuation { .. } => {}
+                Derivation::LengthOf { .. }
+                | Derivation::CountOf { .. }
+                | Derivation::EncodedLengthOf { .. } => {
+                    unreachable!("the plan holds a derived number")
                 }
             }
         }
@@ -3730,54 +3731,70 @@ impl<'a> Plan<'a> {
         }
     }
 
-    fn derive_length(
+    /// The local that holds the measure `index` of the number held in `local`,
+    /// computed into `lines` (0 while the content is absent), with the test that
+    /// its content is there where it may not be.
+    fn measure(
         &self,
-        id: &ElementId,
-        contents: &[codec_roles::Measured],
+        measure: &encode_plan::Measure<'_>,
+        index: usize,
+        local: &str,
+        derived: &Derived,
         lines: &mut Vec<String>,
-        derived: &mut Derived,
-    ) {
-        let local = self.local("_d_", id);
-        // Every field that names this element says its number; they agree or
-        // there is no frame that says both.
-        let mut numbers: Vec<Measure> = Vec::new();
-        for (index, content) in contents.iter().enumerate() {
-            let Some(field) = self.m().fields.iter().find(|f| f.id == content.field) else {
-                continue;
-            };
-            let number = format!("_n{local}_{index}");
-            // The wire holds `count - arith`: a number that cannot be negative,
-            // and is not where the content's type holds at least `arith` bytes
-            // (docs/adr/0077 §3). A length plus a constant cannot pass `usize`,
-            // since a slice is at most `isize::MAX` bytes.
-            let held = codec_totality::held_to_offset(field, &self.m().fields, content.arith);
-            let measure = |count: &str| match content.arith {
-                0 => count.to_string(),
-                arith if held => format!("{count} - {arith}"),
-                arith if arith > 0 => format!(
-                    "{count}.checked_sub({arith}).ok_or({})?",
-                    self.refuse(RefusalKind::LengthOutOfRange, &content.field)
-                ),
-                arith => format!("{count} + {}", -arith),
-            };
-            // A field gated off has no content to measure, so its length is the
-            // wire's zero and not the arithmetic of an empty field.
-            let value = if field.present_if.is_some() {
-                format!(
-                    "match {} {{\n    Some(_v) => {},\n    None => 0,\n}}",
-                    self.read_src(field),
-                    measure("_v.len()")
-                )
-            } else {
-                measure(&self.byte_count(field))
-            };
-            lines.push(format!("let {number}: usize = {value};"));
-            numbers.push(Measure {
-                number,
-                present: self.presence_test(field),
-            });
+    ) -> Measure {
+        match &measure.of {
+            Measured::Bytes { field, offset } => {
+                self.measure_bytes(field, *offset, index, local, lines)
+            }
+            Measured::Entries { list } => Measure {
+                number: self.count_local(list),
+                present: self.presence_test(list),
+            },
+            Measured::Encoded {
+                body,
+                codec,
+                refuses,
+            } => self.measure_encoded(body, codec, *refuses, derived, lines),
         }
-        self.derive_number(id, &local, numbers, lines, derived);
+    }
+
+    /// How many bytes `field` holds, as the wire's length of it (`offset`).
+    fn measure_bytes(
+        &self,
+        field: &CodecField,
+        offset: Offset,
+        index: usize,
+        local: &str,
+        lines: &mut Vec<String>,
+    ) -> Measure {
+        let number = format!("_n{local}_{index}");
+        // A length plus a constant cannot pass `usize`, since a slice is at most
+        // `isize::MAX` bytes.
+        let measure = |count: &str| match offset {
+            Offset::None => count.to_string(),
+            Offset::Less { by, held: true } => format!("{count} - {by}"),
+            Offset::Less { by, held: false } => format!(
+                "{count}.checked_sub({by}).ok_or({})?",
+                self.refuse(RefusalKind::LengthOutOfRange, &field.id)
+            ),
+            Offset::More { by } => format!("{count} + {by}"),
+        };
+        // A field gated off has no content to measure, so its length is the
+        // wire's zero and not the arithmetic of an empty field.
+        let value = if field.present_if.is_some() {
+            format!(
+                "match {} {{\n    Some(_v) => {},\n    None => 0,\n}}",
+                self.read_src(field),
+                measure("_v.len()")
+            )
+        } else {
+            measure(&self.byte_count(field))
+        };
+        lines.push(format!("let {number}: usize = {value};"));
+        Measure {
+            number,
+            present: self.presence_test(field),
+        }
     }
 
     /// The test that `field` is there, for a field that may not be.
@@ -3816,117 +3833,92 @@ impl<'a> Plan<'a> {
         }
     }
 
-    fn derive_count(
+    /// How many bytes the embedded `body`, of the codec imported as `codec`,
+    /// encodes to: the body written into a sink that counts, which is the length
+    /// the body's own encode gives it and cannot differ from it. The length of a
+    /// body that is not there is the wire's zero.
+    fn measure_encoded(
         &self,
-        id: &ElementId,
-        lists: &[String],
+        body: &CodecField,
+        codec: &str,
+        refuses: bool,
+        derived: &Derived,
         lines: &mut Vec<String>,
-        derived: &mut Derived,
-    ) {
-        let local = self.local("_d_", id);
-        // The lists that name this element agree in size or no frame says both;
-        // one held with another is of its count already (docs/adr/0065 §6 R5).
-        let numbers: Vec<Measure> = lists
-            .iter()
-            .filter(|list| !self.encode.roles.counted_with_another(list))
-            .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
-            .map(|field| Measure {
-                number: self.count_local(field),
-                present: self.presence_test(field),
-            })
-            .collect();
-        self.derive_number(id, &local, numbers, lines, derived);
-    }
-
-    /// The element `id` holds how many bytes the embedded `bodies` encode to:
-    /// the body written into a sink that counts, which is the length the body's
-    /// own encode gives it and cannot differ from it.
-    fn derive_encoded_length(
-        &self,
-        id: &ElementId,
-        bodies: &[String],
-        lines: &mut Vec<String>,
-        derived: &mut Derived,
-    ) {
-        let local = self.local("_d_", id);
-        let mut numbers: Vec<Measure> = Vec::new();
-        for body in bodies {
-            let Some(field) = self.m().fields.iter().find(|f| &f.id == body) else {
-                continue;
-            };
-            let child = self
-                .child(field)
-                .expect("`check` found the codec a body holds");
-            let accessor = self.accessor(field);
-            let size = format!("_s_{accessor}");
-            let args = child_alias(field)
-                .map(|alias| self.thread_args(alias, derived))
-                .unwrap_or_default();
-            // The body's own count ([`count_function`]): with nothing to handle
-            // for a body that cannot refuse, and its refusal passed on for one
-            // that can.
-            let alias = child_alias(field).unwrap_or_default();
-            let count = format!(
-                "{}::count_source(_v{args}){}",
-                child.type_name,
-                if self.child_may_fail(alias) {
-                    self.child_write(alias, &field.id)
-                } else {
-                    ""
-                }
-            );
-            let read = self.read_src(field);
-            lines.push(if field.present_if.is_some() {
-                format!(
-                    "let {size}: usize = match {read} {{\n    Some(_v) => {count},\n    None => 0,\n}};"
-                )
+    ) -> Measure {
+        let child = self.child_of_plan(codec);
+        let size = format!("_s_{}", self.accessor(body));
+        let args = self.thread_args(codec, derived);
+        // The body's own count ([`count_function`]): with nothing to handle for
+        // a body that cannot refuse, and its refusal passed on for one that can.
+        let count = format!(
+            "{}::count_source(_v{args}){}",
+            child.type_name,
+            if refuses {
+                self.child_write(codec, &body.id)
             } else {
-                format!("let {size}: usize = {{\n    let _v = {read};\n    {count}\n}};")
-            });
-            // The length of a body that is not there is the wire's zero.
-            numbers.push(Measure {
-                number: size,
-                present: None,
-            });
+                ""
+            }
+        );
+        let read = self.read_src(body);
+        lines.push(if body.present_if.is_some() {
+            format!(
+                "let {size}: usize = match {read} {{\n    Some(_v) => {count},\n    None => 0,\n}};"
+            )
+        } else {
+            format!("let {size}: usize = {{\n    let _v = {read};\n    {count}\n}};")
+        });
+        Measure {
+            number: size,
+            present: None,
         }
-        self.derive_number(id, &local, numbers, lines, derived);
     }
 
     /// The derived number `n`, a `usize`, as the type `ty` of the field
-    /// `element` it is written into (docs/adr/0065 §5): checked where the
-    /// totality analysis names a refusal there, widened where the field is 64
-    /// bits, and converted with nothing to check where the number's bound (the
-    /// `max-count` its list was held to above) fits the field.
-    fn narrow_number(&self, element: &str, ty: &SceType, n: &str) -> String {
+    /// `element` it is written into, as the plan says (docs/adr/0065 §5).
+    fn narrow_number(&self, element: &str, ty: &SceType, narrow: Narrow, n: &str) -> String {
         let rust = self.l().type_name(ty);
-        if self
-            .encode
-            .totality
-            .refuses(RefusalKind::LengthOutOfRange, element)
-        {
-            format!(
+        match narrow {
+            Narrow::Checked => format!(
                 "{rust}::try_from({n}).map_err(|_| {})?",
                 self.refuse(RefusalKind::LengthOutOfRange, element)
-            )
-        } else if *ty == SceType::Uint64 {
-            format!("::sce_forge_runtime::codec::widen_usize({n})")
-        } else {
-            format!("{n} as {rust}")
+            ),
+            Narrow::Widened => format!("::sce_forge_runtime::codec::widen_usize({n})"),
+            Narrow::Cast => format!("{n} as {rust}"),
         }
     }
 
-    /// The element `id` holds the number the `measures` say.
-    ///
-    /// What is always there fixes the number, and anything that is there beside
-    /// it says the same or there is no frame that says both. When all that is
-    /// measured may be absent, the number is derived while some of it is there;
-    /// when none is, the wire still holds a number, and the source states it
-    /// ([`codec_totality::stated_when_absent`]).
+    /// The element `id` holds the derived number `planned` (docs/adr/0081 §1):
+    /// what is always there fixes it, and anything that is there beside it says
+    /// the same or there is no frame that says both. When all that is measured
+    /// may be absent, the number is derived while some of it is there, and the
+    /// plan says what the element holds when none is.
     fn derive_number(
+        &self,
+        id: &ElementId,
+        planned: &Number<'_>,
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
+        let local = self.local("_d_", id);
+        let measures: Vec<Measure> = planned
+            .measures
+            .iter()
+            .enumerate()
+            .map(|(index, measure)| self.measure(measure, index, &local, derived, lines))
+            .collect();
+        self.combine(id, &local, measures, &planned.into, lines, derived);
+    }
+
+    /// The element `id`, held in `local`, holds the number the `measures` say,
+    /// which goes `into` it: the first measure always there fixes it, and every
+    /// other one there says the same; where all may be absent, it is the first
+    /// one there.
+    fn combine(
         &self,
         id: &ElementId,
         local: &str,
         measures: Vec<Measure>,
+        into: &NumberInto<'_>,
         lines: &mut Vec<String>,
         derived: &mut Derived,
     ) {
@@ -3983,28 +3975,32 @@ impl<'a> Plan<'a> {
             }
             free = Some(one);
         }
-        match id {
-            ElementId::Field(name) => {
-                let field = self
-                    .m()
-                    .fields
-                    .iter()
-                    .find(|f| &f.id == name)
-                    .expect("a derived field is a field of the codec");
+        match (into, id) {
+            (
+                NumberInto::Field {
+                    field,
+                    narrow,
+                    absent,
+                },
+                _,
+            ) => {
                 let ty = self.l().type_name(&field.sce_type);
-                let narrow = |n: &str| self.narrow_number(&element, &field.sce_type, n);
-                match &free {
-                    None => lines.push(format!("let {local}: {ty} = {};", narrow(&number))),
+                let narrow = |n: &str| self.narrow_number(&element, &field.sce_type, *narrow, n);
+                match (&free, absent) {
+                    (None, _) => lines.push(format!("let {local}: {ty} = {};", narrow(&number))),
+                    (Some(_), Absent::Never) => {
+                        unreachable!("the plan says what a free number's field holds")
+                    }
                     // Gated beside its content, it is written only where there
                     // is content, and then the content says it.
-                    Some(one) if !self.stated(field) => lines.push(format!(
+                    (Some(one), Absent::Zero) => lines.push(format!(
                         "let {local}: {ty} = {};",
                         narrow(&format!("{one}.unwrap_or(0)"))
                     )),
                     // Derived while there is content, and what the group holds
                     // on the side where there is not (docs/adr/0065 §6 R4b):
                     // the two sides are apart, so it is never said twice.
-                    Some(one) if self.encode.roles.group_of(&field.id).is_some() => {
+                    (Some(one), Absent::Group) => {
                         lines.push(format!(
                             "let {local}: {ty} = match {one} {{\n    Some(_n) => {},\n    None => {}.unwrap_or_default(),\n}};",
                             narrow("_n"),
@@ -4014,7 +4010,7 @@ impl<'a> Plan<'a> {
                     // Derived while there is content, and what the source states
                     // while there is not; a source that states a number beside
                     // content says it twice and must say the same.
-                    Some(one) => {
+                    (Some(one), Absent::Stated) => {
                         let read = self.read_src(field);
                         lines.push(format!(
                             "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {};\n        if {read}.is_some_and(|_s| _s != _d) {{\n            return Err({});\n        }}\n        _d\n    }}\n    None => {read}.unwrap_or_default(),\n}};",
@@ -4023,9 +4019,9 @@ impl<'a> Plan<'a> {
                         ));
                     }
                 }
-                derived.fields.insert(name.clone(), local.to_string());
+                derived.fields.insert(field.id.clone(), local.to_string());
             }
-            ElementId::Flag { field, flag } => {
+            (NumberInto::Flag, ElementId::Flag { field, flag }) => {
                 // With none of it there, the carrier keeps the bits the source
                 // presents.
                 let (value, kind) = match free {
@@ -4043,7 +4039,7 @@ impl<'a> Plan<'a> {
                         kind,
                     });
             }
-            ElementId::Variant => unreachable!("a length or a count is not the variant"),
+            (NumberInto::Flag, _) => unreachable!("a number goes into a flag it names"),
         }
     }
 
@@ -4177,7 +4173,7 @@ impl<'a> Plan<'a> {
                 present: Some(format!("{said}.is_some()")),
             });
         }
-        self.derive_number(id, &local, measures, lines, derived);
+        self.combine(id, &local, measures, &NumberInto::Flag, lines, derived);
     }
 
     fn derive_presence(

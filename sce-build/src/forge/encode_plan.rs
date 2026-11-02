@@ -10,12 +10,21 @@
 //! This module therefore names no type of a target language, and imports no
 //! generator context that spells one.
 //!
-//! The plan holds, so far, the interface: the elements a value presents, each
-//! with its abstract type, the refinement its type carries (docs/adr/0065 §6 R1,
-//! R2, R8), and whether it may be absent (docs/adr/0058 §1).
+//! The plan holds, so far:
+//!
+//! - the interface: the elements a value presents, each with its abstract type,
+//!   the refinement its type carries (docs/adr/0065 §6 R1, R2, R8), and whether
+//!   it may be absent (docs/adr/0058 §1);
+//! - the derived numbers: each length, count and encoded length, what it
+//!   measures, and how the number goes into the element that holds it.
+//!
+//! The other derivations are still read off the roles by each printer
+//! ([`Derive::Roles`]) until the plan holds them.
 
-use crate::forge::codec_roles::{self, BindSite, CodecRoles, GateGroup, InputValue};
-use crate::forge::codec_totality::{self, Totality};
+use crate::forge::codec_roles::{
+    self, BindSite, CodecRoles, Derivation, ElementId, GateGroup, InputValue,
+};
+use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{CodecField, CodecModel, SceType};
 
@@ -31,6 +40,161 @@ pub struct EncodePlan<'m> {
     /// order. A field a gate group holds is presented by its group
     /// ([`EncodePlan::groups`]).
     pub elements: Vec<Element<'m>>,
+    /// Each derived element and how the encode computes it, in the order of
+    /// the roles, each derivation of an element apart.
+    pub derivations: Vec<Derived<'m>>,
+}
+
+/// A derived element and one derivation of it.
+pub struct Derived<'m> {
+    /// The element.
+    pub element: ElementId,
+    /// How the encode computes it.
+    pub by: Derive<'m>,
+}
+
+/// How the encode computes a derived element.
+pub enum Derive<'m> {
+    /// A length, a count or an encoded length.
+    Number(Number<'m>),
+    /// A derivation the plan does not hold yet, which a printer reads off the
+    /// roles.
+    Roles(Derivation),
+}
+
+/// A derived number (docs/adr/0058 §1): what it measures, and how it goes into
+/// the element that holds it.
+///
+/// The number is what is measured. Every measure that is there says the same
+/// number, or no frame says them all, and the encode refuses the value with
+/// [`RefusalKind::InconsistentSource`]. A measure always there fixes the number;
+/// where every measure may be absent, the number is the first one there, and
+/// [`NumberInto`] says what the element holds when none is.
+pub struct Number<'m> {
+    /// What it measures, in the order the declarations name it.
+    pub measures: Vec<Measure<'m>>,
+    /// Where the number goes.
+    pub into: NumberInto<'m>,
+}
+
+impl Number<'_> {
+    /// Whether some measure is always there, which then fixes the number.
+    pub fn fixed(&self) -> bool {
+        self.measures.iter().any(|m| !m.gated)
+    }
+
+    /// Whether every measure may be absent, and one is there at times: the
+    /// number is then the first one there, and there may be none.
+    pub fn free(&self) -> bool {
+        !self.fixed() && !self.measures.is_empty()
+    }
+}
+
+/// One thing a derived number measures.
+pub struct Measure<'m> {
+    /// What it is.
+    pub of: Measured<'m>,
+    /// Whether it may be absent, and the number is then not its.
+    pub gated: bool,
+}
+
+/// What a derived number measures.
+pub enum Measured<'m> {
+    /// How many bytes the bytes or text `field` holds, less what its
+    /// `sce:length-arith` adds (`offset`).
+    Bytes {
+        /// The bytes or text.
+        field: &'m CodecField,
+        /// How the wire's number differs from the count of bytes.
+        offset: Offset,
+    },
+    /// How many entries the list `list` holds.
+    Entries {
+        /// The list.
+        list: &'m CodecField,
+    },
+    /// How many bytes the embedded body `body` encodes to, the codec imported
+    /// as `codec`. A body that is absent encodes to none, so the measure is
+    /// always there.
+    Encoded {
+        /// The embedded body.
+        body: &'m CodecField,
+        /// The import alias of its codec.
+        codec: &'m str,
+        /// Whether the body's encode can refuse a value, whose refusal the
+        /// count then passes on.
+        refuses: bool,
+    },
+}
+
+/// How the wire's length differs from the count of bytes it measures: the wire
+/// holds `count - arith` (`sce:length-arith`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Offset {
+    /// The wire holds the count.
+    None,
+    /// The wire holds the count less `by`. Where the content's type holds at
+    /// least `by` bytes (`held`, docs/adr/0077 §3) that is never negative;
+    /// otherwise a count below `by` is refused with
+    /// [`RefusalKind::LengthOutOfRange`] at the content.
+    Less {
+        /// What is taken off.
+        by: u32,
+        /// Whether the content's type holds at least `by` bytes.
+        held: bool,
+    },
+    /// The wire holds the count plus `by`.
+    More {
+        /// What is added.
+        by: u32,
+    },
+}
+
+/// Where a derived number goes.
+pub enum NumberInto<'m> {
+    /// Into the field `field`.
+    Field {
+        /// The field.
+        field: &'m CodecField,
+        /// How the number becomes a value of the field's type.
+        narrow: Narrow,
+        /// What the field holds where nothing it measures is there.
+        absent: Absent,
+    },
+    /// Into a flag of a carrier, which keeps the bits the value presents where
+    /// the number is free ([`Number::free`]) and nothing it measures is there.
+    Flag,
+}
+
+/// How a derived number becomes a value of the type of the field it goes into
+/// (docs/adr/0065 §5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Narrow {
+    /// The number may not fit: one that does not is refused with
+    /// [`RefusalKind::LengthOutOfRange`] at the field.
+    Checked,
+    /// The field is 64 bits wide, which holds every number.
+    Widened,
+    /// The number's bound fits the field, so nothing is checked.
+    Cast,
+}
+
+/// What a field that holds a derived number holds where nothing it measures is
+/// there.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Absent {
+    /// Something it measures is always there ([`Number::fixed`]), or it
+    /// measures nothing and holds zero.
+    Never,
+    /// Zero: the field is gated beside its content and written only where
+    /// there is content.
+    Zero,
+    /// What the group that holds the field holds on the side where its content
+    /// is not (docs/adr/0065 §6 R4b).
+    Group,
+    /// What the value states (docs/adr/0058 §1, [`Presence::Stated`]). A value
+    /// that states it where there is content must state the derived number.
+    Stated,
 }
 
 /// One element a value presents by an accessor of its own.
@@ -149,11 +313,13 @@ impl<'m> EncodePlan<'m> {
                 presence: presence(model, &roles, field),
             })
             .collect();
+        let derivations = derivations(model, &roles, &totality, imports);
         EncodePlan {
             model,
             roles,
             totality,
             elements,
+            derivations,
         }
     }
 
@@ -237,6 +403,147 @@ pub fn list_bound(field: &CodecField, fields: &[CodecField]) -> Bound {
     Bound {
         least: codec_totality::list_least(field),
         most: codec_totality::list_bound(field, fields),
+    }
+}
+
+/// Each derived element of `model` and how the encode computes it, in the order
+/// of the roles.
+fn derivations<'m>(
+    model: &'m CodecModel,
+    roles: &CodecRoles,
+    totality: &Totality,
+    imports: &[ImportContext],
+) -> Vec<Derived<'m>> {
+    let field = |id: &str| model.fields.iter().find(|f| f.id == id);
+    let mut out = Vec::new();
+    for (element, by) in roles.derived() {
+        for derivation in by {
+            let measures: Option<Vec<Measure<'m>>> = match derivation {
+                Derivation::LengthOf { contents } => Some(
+                    contents
+                        .iter()
+                        .filter_map(|content| {
+                            let field = field(&content.field)?;
+                            Some(Measure {
+                                of: Measured::Bytes {
+                                    field,
+                                    offset: offset(field, &model.fields, content.arith),
+                                },
+                                gated: field.present_if.is_some(),
+                            })
+                        })
+                        .collect(),
+                ),
+                // A list held with another is of its count already
+                // (docs/adr/0065 §6 R5).
+                Derivation::CountOf { lists } => Some(
+                    lists
+                        .iter()
+                        .filter(|list| !roles.counted_with_another(list))
+                        .filter_map(|list| field(list))
+                        .map(|list| Measure {
+                            of: Measured::Entries { list },
+                            gated: list.present_if.is_some(),
+                        })
+                        .collect(),
+                ),
+                Derivation::EncodedLengthOf { bodies } => Some(
+                    bodies
+                        .iter()
+                        .filter_map(|body| field(body))
+                        .map(|body| {
+                            let codec = codec_totality::child_alias(body)
+                                .expect("a body whose length is derived holds a codec");
+                            Measure {
+                                of: Measured::Encoded {
+                                    body,
+                                    codec,
+                                    refuses: imports.iter().any(|i| {
+                                        i.alias == codec
+                                            && i.kind == "codec"
+                                            && i.codec_source_can_refuse
+                                    }),
+                                },
+                                gated: false,
+                            }
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            };
+            out.push(Derived {
+                element: element.clone(),
+                by: match measures {
+                    Some(measures) => {
+                        Derive::Number(number(model, roles, totality, element, measures))
+                    }
+                    None => Derive::Roles(derivation.clone()),
+                },
+            });
+        }
+    }
+    out
+}
+
+/// The derived number of `element` that `measures` say.
+fn number<'m>(
+    model: &'m CodecModel,
+    roles: &CodecRoles,
+    totality: &Totality,
+    element: &ElementId,
+    measures: Vec<Measure<'m>>,
+) -> Number<'m> {
+    let mut number = Number {
+        measures,
+        into: NumberInto::Flag,
+    };
+    number.into = match element {
+        ElementId::Field(name) => {
+            let field = model
+                .fields
+                .iter()
+                .find(|f| &f.id == name)
+                .expect("a derived field is a field of the codec");
+            let narrow = if totality.refuses(RefusalKind::LengthOutOfRange, &element.to_string()) {
+                Narrow::Checked
+            } else if field.sce_type == SceType::Uint64 {
+                Narrow::Widened
+            } else {
+                Narrow::Cast
+            };
+            let absent = if !number.free() {
+                Absent::Never
+            } else if !codec_totality::stated(model, roles, field) {
+                Absent::Zero
+            } else if roles.group_of(&field.id).is_some() {
+                Absent::Group
+            } else {
+                Absent::Stated
+            };
+            NumberInto::Field {
+                field,
+                narrow,
+                absent,
+            }
+        }
+        ElementId::Flag { .. } => NumberInto::Flag,
+        ElementId::Variant => unreachable!("a length or a count is not the variant"),
+    };
+    number
+}
+
+/// How the wire's length of the content `field` differs from its count of
+/// bytes, for an `sce:length-arith` of `arith`.
+fn offset(field: &CodecField, fields: &[CodecField], arith: i32) -> Offset {
+    match arith {
+        0 => Offset::None,
+        arith if arith > 0 => Offset::Less {
+            by: arith.unsigned_abs(),
+            held: codec_totality::held_to_offset(field, fields, arith),
+        },
+        arith => Offset::More {
+            by: arith.unsigned_abs(),
+        },
     }
 }
 
