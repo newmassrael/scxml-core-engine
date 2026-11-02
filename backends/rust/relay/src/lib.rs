@@ -14,8 +14,8 @@
 //! * [`token`] - the login-bound token that names a device of one list, and nothing about a person.
 //! * [`limits`] - the allowance of each device and the bounds on a request and a reply.
 //! * [`store`] - the append-only record a relay starts from, checked again as it is read.
-//! * [`client`] - a host's courier to a relay, the link it speaks over, and the sealer for a host
-//!   that has no hub.
+//! * [`client`] - a host's courier to a relay, the round it makes as a state machine that does no
+//!   I/O itself, the link it speaks over, and the sealer for a host that has no hub.
 //! * `serve` (feature) - the WebSocket binding that carries the request and response texts.
 //!
 //! A relay is generic over where it keeps its records and over how it is reached, and is specific
@@ -36,8 +36,8 @@ pub mod token;
 pub mod serve;
 
 pub use client::{
-    Courier, CourierError, CourierState, DirectLink, Keep, Link, LinkError, Publication, Round,
-    RoundKind, RoundMachine, Step,
+    Courier, CourierError, CourierState, DirectLink, Keep, Kept, Link, LinkError, Publication,
+    Round, RoundKind, RoundMachine, Step,
 };
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;

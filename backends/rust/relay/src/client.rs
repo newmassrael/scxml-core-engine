@@ -13,9 +13,16 @@
 //! each record in as it would from anyone ([`Trust::take_operation`]), and returns the events the
 //! machine is to be told.
 //!
+//! A round is a [`RoundMachine`]: a state machine that says which request it wants put to the relay
+//! and is given the answer, and that reads no clock, opens nothing and waits on nothing. A
+//! `Courier` is that machine driven over a synchronous link, for a Rust host that has one; a host
+//! whose transport or operating system decides when it may run drives the machine itself, and the
+//! state a courier keeps between rounds ([`CourierState`]) is changed only where a step of a round
+//! was completed, so that a round that does not end costs nothing but the round.
+//!
 //! A host connected to several relays has one `Trust` and a courier for each: what one relay did
 //! not pass on, another gives. A host that has no hub puts [`Keep`] behind its machine, so that what
-//! the machine sends is signed and remembered by the host and is carried by the courier.
+//! the machine sends is signed and remembered by the host ([`keep`]) and is carried by the courier.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -1254,254 +1261,62 @@ impl<L: Link> Courier<L> {
         self.state.cursor = cursor;
     }
 
-    fn ask(&mut self, request: &Request) -> Result<Response, CourierError> {
-        Ok(self.link.call(request)?)
-    }
-
     /// One round: the logs level, the relay given what it lacks, the host given what it lacks.
     pub fn sync(&mut self) -> Result<Round, CourierError> {
-        self.round(false)
+        self.round(RoundKind::Sync)
     }
 
     /// A round that reads everything the relay holds from the start and tells the machine every
     /// operation, the ones the host held already included: a machine that lost its state is told
     /// the list again.
     pub fn resync(&mut self) -> Result<Round, CourierError> {
-        self.state.cursor = 0;
-        self.round(true)
+        self.round(RoundKind::Resync)
     }
 
     /// A round that reads everything the relay holds from the start and tells the machine only what
     /// the host did not hold: for a host's MLS device that was not given a commit the first time (a
     /// feed does not give a record twice), and whose machine is not to be told the list again.
     pub fn reread(&mut self) -> Result<Round, CourierError> {
-        self.state.cursor = 0;
-        self.round(false)
+        self.round(RoundKind::Reread)
     }
 
-    fn round(&mut self, redeliver: bool) -> Result<Round, CourierError> {
-        let mut round = Round::default();
-        self.exchange_log(&mut round)?;
-        retry_parked(&self.trust, &mut self.state.parked, &mut round);
-        if self.push(&mut round)? {
-            self.pull(redeliver, &mut round)?;
-            // An amendment raised the last operation accepted of a device taken off: what the host
-            // refused of it before is true now, so it reads what the relay holds again from the
-            // start (the operations it already holds are not told to the machine twice).
-            let amends = amendments(&self.trust);
-            if amends > self.state.amendments_seen {
-                self.state.amendments_seen = amends;
-                self.state.cursor = 0;
-                self.pull(false, &mut round)?;
-            }
-        }
-        round.evicted = self.trust.take_evicted();
-        round.restored = self.trust.take_restored();
-        let len = self.trust.log_len();
-        if len != self.state.roster_len || redeliver {
-            self.state.roster_len = len;
-            let roster = if self.state.hub {
-                self.trust.hub_role_events()
-            } else {
-                self.trust.role_events()
-            };
-            round.events.splice(0..0, roster);
-        }
-        Ok(round)
+    fn round(&mut self, kind: RoundKind) -> Result<Round, CourierError> {
+        let state = std::mem::take(&mut self.state);
+        let machine = RoundMachine::start(kind, state, self.trust.clone());
+        self.run(machine)
     }
 
-    /// Take the relay's entries in and give it the ones it lacks.
-    fn exchange_log(&mut self, round: &mut Round) -> Result<(), CourierError> {
-        let relay_len = loop {
-            let from = self.trust.log_len();
-            let Response::Entries { entries, len } = self.expect(Request::Entries { from })? else {
-                return Err(CourierError::Unexpected(
-                    "it did not answer with entries".to_string(),
-                ));
-            };
-            for text in entries {
-                match Entry::from_json(&text) {
-                    Some(entry) => {
-                        if let Err(error) = self.trust.append(&entry) {
-                            round
-                                .refused
-                                .push(format!("an entry of the relay: {error:?}"));
-                        }
-                    }
-                    None => round
-                        .refused
-                        .push("an entry of the relay is not one".to_string()),
+    /// Drive `machine` over the link to its end, and keep the state it leaves.
+    fn run(&mut self, mut machine: RoundMachine) -> Result<Round, CourierError> {
+        let outcome = loop {
+            match machine.poll() {
+                Step::Request(request) => {
+                    let answer = self.link.call(&request);
+                    machine.respond(answer);
                 }
+                Step::Done(outcome) => break outcome,
             }
-            let now = self.trust.log_len();
-            // Go on while the relay has more and the last call took some of it in.
-            if now < len && now > from {
-                continue;
-            }
-            break len;
         };
-        let held = self.trust.entries();
-        let start = usize::try_from(relay_len)
-            .unwrap_or(held.len())
-            .min(held.len());
-        for entry in &held[start..] {
-            match self.expect(Request::Append {
-                entry: entry.to_json(),
-            })? {
-                Response::Appended { .. } => round.pushed += 1,
-                other => return Err(CourierError::Unexpected(format!("{other:?}"))),
-            }
-        }
-        Ok(())
+        self.state = machine.into_state();
+        outcome
     }
 
-    /// Ask, and turn a refusal of the whole request into an error.
-    fn expect(&mut self, request: Request) -> Result<Response, CourierError> {
-        match self.ask(&request)? {
-            Response::Refused { code, reason } => Err(CourierError::Relay { code, reason }),
-            other => Ok(other),
-        }
-    }
-
-    /// Give the relay what it lacks. `false` when the relay will not let this device read yet (it
-    /// is not a member), in which case there is nothing to read either.
-    fn push(&mut self, round: &mut Round) -> Result<bool, CourierError> {
-        let heads = match self.ask(&Request::Heads)? {
-            Response::Heads { heads, .. } => heads,
-            Response::Refused {
-                code: Code::Forbidden,
-                reason,
-            } => {
-                round.stalled = true;
-                round.refused.push(reason);
-                return Ok(false);
-            }
-            Response::Refused { code, reason } => return Err(CourierError::Relay { code, reason }),
-            other => return Err(CourierError::Unexpected(format!("{other:?}"))),
-        };
-        let theirs: BTreeMap<u64, u64> = heads.iter().map(|head| (head.node, head.seq)).collect();
-        'devices: for head in self.trust.heads() {
-            let held = theirs.get(&head.node).copied().unwrap_or(0);
-            if head.seq <= held {
-                continue;
-            }
-            for (event, data) in self.trust.operations(head.node, held + 1, head.seq) {
-                match self.ask(&Request::Submit { event, data })? {
-                    Response::Accepted { new, .. } => round.pushed += usize::from(new),
-                    Response::Refused {
-                        code: Code::Forbidden,
-                        reason,
-                    } => {
-                        // A reader holds operations and may not write them anywhere.
-                        round.refused.push(reason);
-                        break 'devices;
-                    }
-                    Response::Refused { reason, .. } => {
-                        round.refused.push(reason);
-                        continue 'devices;
-                    }
-                    other => return Err(CourierError::Unexpected(format!("{other:?}"))),
-                }
-            }
-        }
-        // What shows that a device signed conflicting operations is given to the relay too, so that a
-        // host that was not given both of them is given them by the relay: the proof is no host's own
-        // knowledge. Each is given once from this courier; the relay holds it already when it was.
-        for (event, data) in self.trust.evidence() {
-            if self.state.evidence_sent.contains(&data) {
-                continue;
-            }
-            match self.ask(&Request::Submit {
-                event,
-                data: data.clone(),
-            })? {
-                Response::Accepted { new, .. } => {
-                    round.pushed += usize::from(new);
-                    self.state.evidence_sent.insert(data);
-                }
-                Response::Refused { reason, .. } => round.refused.push(reason),
-                other => return Err(CourierError::Unexpected(format!("{other:?}"))),
-            }
-        }
-        for checkpoint in self.trust.checkpoints() {
-            match self.ask(&Request::Checkpoint {
-                checkpoint: checkpoint.to_json(),
-            })? {
-                Response::Accepted { new, .. } => round.pushed += usize::from(new),
-                Response::Refused { reason, .. } => round.refused.push(reason),
-                other => return Err(CourierError::Unexpected(format!("{other:?}"))),
-            }
-        }
-        Ok(true)
-    }
-
-    /// Read what the relay holds after the cursor, and take each record in. A record that names
-    /// an entry of the log the host lacks stops the round after one more try at the log, and the
-    /// cursor stays before it.
-    fn pull(&mut self, redeliver: bool, round: &mut Round) -> Result<(), CourierError> {
-        loop {
-            let Response::Feed {
-                records,
-                next,
-                more,
-            } = self.expect(Request::Feed {
-                cursor: self.state.cursor,
-                limit: FEED_BATCH,
-            })?
-            else {
-                return Err(CourierError::Unexpected(
-                    "it did not answer with a feed".to_string(),
-                ));
-            };
-            let base = self.state.cursor;
-            for (index, record) in records.iter().enumerate() {
-                let mut retried = false;
-                loop {
-                    match take(
-                        &self.trust,
-                        &mut self.state.parked,
-                        record,
-                        redeliver,
-                        round,
-                    ) {
-                        Taken::Done => break,
-                        Taken::Behind if !retried => {
-                            retried = true;
-                            let before = self.trust.log_len();
-                            self.exchange_log(round)?;
-                            if self.trust.log_len() == before {
-                                self.state.cursor = base + index as u64;
-                                round.stalled = true;
-                                return Ok(());
-                            }
-                        }
-                        Taken::Behind => {
-                            self.state.cursor = base + index as u64;
-                            round.stalled = true;
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-            self.state.cursor = next;
-            if !more {
-                return Ok(());
-            }
-        }
+    fn publish(&mut self, publication: Publication) -> Result<(), CourierError> {
+        let state = std::mem::take(&mut self.state);
+        let machine = RoundMachine::publish(&publication, state, self.trust.clone());
+        self.run(machine).map(|_| ())
     }
 
     /// Leave a key package of this host's device for an administrator to add it with.
     pub fn publish_key_package(&mut self, package: &[u8]) -> Result<(), CourierError> {
-        self.publish(Request::PublishKeyPackage {
-            data: encoding::encode(package),
-        })
+        self.publish(Publication::KeyPackage(package.to_vec()))
     }
 
     /// Give the relay the commit that begins `epoch` (the log names its hash).
     pub fn publish_commit(&mut self, epoch: u32, commit: &[u8]) -> Result<(), CourierError> {
-        self.publish(Request::PublishCommit {
+        self.publish(Publication::Commit {
             epoch,
-            data: encoding::encode(commit),
+            commit: commit.to_vec(),
         })
     }
 
@@ -1512,47 +1327,36 @@ impl<L: Link> Courier<L> {
         node: u64,
         welcome: &[u8],
     ) -> Result<(), CourierError> {
-        self.publish(Request::PublishWelcome {
+        self.publish(Publication::Welcome {
             epoch,
             node,
-            data: encoding::encode(welcome),
+            welcome: welcome.to_vec(),
         })
-    }
-
-    fn publish(&mut self, request: Request) -> Result<(), CourierError> {
-        match self.expect(request)? {
-            Response::Accepted { .. } => Ok(()),
-            other => Err(CourierError::Unexpected(format!("{other:?}"))),
-        }
     }
 
     /// This host's person says what their copy held of everything up to `before` (the digest the
     /// machine computed), and the relay is given it. The same round gives the relay the operations
     /// the checkpoint names, so that a member who reads it can fetch them.
     pub fn publish_checkpoint(&mut self, before: i64, digest: u32) -> Result<(), CourierError> {
-        let checkpoint = self.trust.checkpoint(before, digest).map_err(|error| {
-            CourierError::Unexpected(format!("no checkpoint could be made: {error:?}"))
-        })?;
-        let mut round = Round::default();
-        self.push(&mut round)?;
-        match self.expect(Request::Checkpoint {
-            checkpoint: checkpoint.to_json(),
-        })? {
-            Response::Accepted { .. } => Ok(()),
-            other => Err(CourierError::Unexpected(format!("{other:?}"))),
-        }
+        self.publish(Publication::Checkpoint { before, digest })
     }
 
     /// The word the machine is told that an instant is settled, when the checkpoints this host
     /// holds make a settlement of it.
     pub fn floor_event(&self, before: i64, digest: u32) -> Option<(String, String)> {
-        self.trust.settlement(before, digest)?;
-        Some((
-            message::FLOOR_EVENT.to_string(),
-            // As the machine writes it: a 64-bit number as text, a 32-bit one as a number.
-            format!("{{\"before\":\"{before}\",\"hash\":{digest}}}"),
-        ))
+        floor_event(&self.trust, before, digest)
     }
+}
+
+/// The word a machine is told that an instant is settled, when the checkpoints `trust` holds make a
+/// settlement of it.
+pub fn floor_event(trust: &Trust, before: i64, digest: u32) -> Option<(String, String)> {
+    trust.settlement(before, digest)?;
+    Some((
+        message::FLOOR_EVENT.to_string(),
+        // As the machine writes it: a 64-bit number as text, a 32-bit one as a number.
+        format!("{{\"before\":\"{before}\",\"hash\":{digest}}}"),
+    ))
 }
 
 enum Taken {
@@ -1636,9 +1440,33 @@ fn take(
     }
 }
 
+/// What became of what a machine sent, kept by a host that has no hub ([`keep`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kept {
+    /// Signed and remembered: the operation is in the host's [`Trust`], and a courier carries it to
+    /// the relay.
+    Taken,
+    /// It is not an event that is signed: nothing is kept, and a relay carries nothing of it.
+    NotSigned,
+    /// The host would not sign it, and why.
+    Refused(String),
+}
+
+/// Sign and remember what a machine sent to `target`, as the host of a machine that has no hub
+/// does: the one place a send becomes an operation of the host's chain, whether through [`Keep`]
+/// behind a Mesh endpoint or through a host that is given the machine's sends itself.
+pub fn keep(trust: &Trust, target: &str, event: &str, data: &str) -> Kept {
+    let mut sealer = trust.clone();
+    match sealer.seal(target, event, data) {
+        Ok(Some(_)) => Kept::Taken,
+        Ok(None) => Kept::NotSigned,
+        Err(reason) => Kept::Refused(reason),
+    }
+}
+
 /// What stands behind the machine of a host that has no hub. The host signs and remembers what the
-/// machine sends (the operation is in its [`Trust`] from then on), and the machine's send is not
-/// delivered to any peer: the courier carries it to the relay.
+/// machine sends (the operation is in its [`Trust`] from then on, [`keep`]), and the machine's send
+/// is not delivered to any peer: the courier carries it to the relay.
 pub struct Keep {
     inner: Trust,
 }
@@ -1651,14 +1479,14 @@ impl Keep {
 
 impl Sealer for Keep {
     fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
-        match self.inner.seal(target, event, data) {
-            Ok(Some(_)) => Err(format!(
+        match keep(&self.inner, target, event, data) {
+            Kept::Taken => Err(format!(
                 "{event}: kept for the relay, which carries what a member signed"
             )),
-            Ok(None) => Err(format!(
+            Kept::NotSigned => Err(format!(
                 "{event}: this host has no hub, and a relay carries only what a member signed"
             )),
-            Err(reason) => Err(reason),
+            Kept::Refused(reason) => Err(reason),
         }
     }
 }
