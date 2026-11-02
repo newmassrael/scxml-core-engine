@@ -1,7 +1,8 @@
 # ADR 0042 - A shared record list is a standard part, and an application writes only its rules
 
-- Status: Accepted (2026-10-20); step 1 verified (2026-11-02); step 3 in progress before step 2
-  (the owner's order of 2026-11-02, "The order of steps 2 and 3" below)
+- Status: Accepted (2026-10-20); step 1 verified (2026-11-02); step 3 landed before step 2
+  (2026-11-02, the owner's order of that day, "The order of steps 2 and 3" below); step 2 follows
+  ADR 0043
 - Date: 2026-10-20
 - Scope: a new standard statechart `sce:std/shared/record_list.scxml` and its schemas under
   `stdlib/shared/`; `sce-build/tests/fixtures/static_datamodel/todo_peer.scxml` and the documents
@@ -114,7 +115,12 @@ scenarios (`83c95878f1`):
 | C11 | W3C SCXML Compliance Tests, C11 job | `c11_integration_static_scalars`, which replays them (`test_static_scalars.c`) |
 | C++ | C++ Test Suite | `static_datamodel_lowered` (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`) |
 
-`todo_peer` is untouched. Step 3 is in progress before step 2 (below); step 2 is not started.
+`todo_peer` is untouched. Step 3 landed before step 2 (below, 2026-11-02): the trust layer and the
+relay sign, admit and carry `record_list.write`, `record_list.supersede`, `record_list.floor` and
+`record_list.role` only, under the event domain `sce-trust/event/2`, with the second revision's
+`parts`, `atWallTime` and `atCounter` signed; the table they follow is held to the standard part's
+schemas by `the_trust_layer_signs_what_the_record_list_declares`; the world's trust, relay and MLS
+tests run the standard list as copies a host starts. Step 2 is not started.
 
 ### The order of steps 2 and 3 (the owner's order, 2026-11-02)
 
