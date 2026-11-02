@@ -18,8 +18,12 @@ reviewer learns one set of rules:
   of a text a function gives; a function added alone does not, since a lane built against the number
   before calls none of it. A status is appended and never renumbered. The version is 2: the outcome
   holds `owed` and the save holds what the relay is owed (sections 5 and 6), which came with the
-  administrator's acts (section 7);
-- a handle (`ScePeer`) is made and freed by the library and used by one thread at a time;
+  administrator's acts (section 7). The links, the run over a link and its cancellation (section 11)
+  came after as functions and statuses added alone, which no function of before takes or returns,
+  and left it 2;
+- a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
+  one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
+  run's cancellation, telling a link the network changed);
 - a function that does something returns `int32_t`, `SCE_PEER_OK` (0) or a status, and says why in
   `sce_peer_last_error()`, a text the library owns, per thread, good until the thread's next call;
 - a pointer is checked for null and read for exactly the length it comes with; a text given to the
@@ -68,12 +72,16 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_NULL_ARGUMENT` | 20 | a pointer, a handle or a place for the result is null |
 | `SCE_PEER_ERR_BAD_TEXT` | 21 | a text is not UTF-8 |
 | `SCE_PEER_ERR_PANIC` | 22 | the library panicked; the panic was caught |
-| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role) |
+| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role); an address a link cannot be made to |
+| `SCE_PEER_ERR_CANCELLED` | 24 | `sce_peer_run` stopped because its cancellation was raised; the exchange ended as a failure of the link, and its outcome waits (section 11) |
+| `SCE_PEER_ERR_DEADLINE` | 25 | `sce_peer_run` stopped because its deadline passed, with the same end |
 
 A refusal by the trust of what the machine sent, and a failure of the transport or the relay in a
 round, are not statuses: they are answers, in the answer to a send and in the outcome (sections 4
-and 5). An administrator's act that is refused wrote nothing: what can refuse it is asked, and the
-group's commit is made, before an entry of the log is written (section 7).
+and 5). A run that stopped says why in its status, and its outcome is a failure of the link as
+well, so a host that reads only outcomes reads it there. An administrator's act that is refused
+wrote nothing: what can refuse it is asked, and the group's commit is made, before an entry of the
+log is written (section 7).
 
 ## 3. Functions
 
@@ -103,6 +111,15 @@ group's commit is made, before an entry of the log is written (section 7).
 | `sce_peer_floor_event(peer, before, digest, out)` | `Peer::floor_event` | the event that says an instant is settled; empty when it is not |
 | `sce_peer_save(peer, out)` | `Peer::save` | what the device keeps, as one text |
 | `sce_peer_restore(peer, saved, count)` | `Peer::restore` | takes a save back into a core just made for the list, after its person was given again |
+| `sce_peer_link_wss(base, token)` | `WssLink::new` | a link to the relay over its WebSocket binding (section 11); null on failure |
+| `sce_peer_link_host(exchange, release, context)` | a `Transport` over the host's function | a link whose transport the host carries itself (section 11); null when `exchange` is null |
+| `sce_peer_link_free(link)` | | frees a link, releasing a host's context; null is ignored |
+| `sce_peer_link_network_changed(link)` | the link's `Transport::network` raised | the device's network changed; any thread, at any time |
+| `sce_peer_link_take_notices(link, out)` | `Transport::take_notices` | what became of the connection and what the relay pushed, as one JSON array; empty when nothing |
+| `sce_peer_reply(reply, text, len)` | | from a host's transport: the response of the exchange, or the reason it has none |
+| `sce_peer_cancel_new()`, `sce_peer_cancel_free(cancel)` | a `Signal` | a cancellation of a run, and freeing it |
+| `sce_peer_cancel_raise(cancel)` | `Signal::raise` | cancels the run given it; any thread, at any time |
+| `sce_peer_run(peer, link, within_ms, cancel)` | `drive` | runs the exchange begun on the core over the link, on the calling thread, to its end, its deadline or its cancellation |
 
 ## 4. A send of the machine
 
@@ -277,3 +294,70 @@ The ABI has one function per operation of `Peer` a host needs, and nothing `Peer
   core yet.
 - **The time.** Nothing the core does depends on the time today; when it comes to, it enters as an
   argument of the calls that need it (ADR 0079 section 3), and the ABI's version moves.
+
+## 11. A run over a link the library holds
+
+A lane may carry the texts itself (section 5). It need not: the library holds a link to the relay,
+and runs an exchange of the core over it, so that the framing, the device's authentication and the
+reconnection are written once, in Rust, and the host gives only what it alone has, the network's
+reachability and the permission to run (ADR 0079 section 5). The link is one of the transports of
+`docs/SCE_SHARED_LIST_RELAY.md` section 9, and the run is the one driver every transport is run by.
+
+- `sce_peer_link_wss(base, token)` is the relay's WebSocket binding at `base` (`ws://host:port` or
+  `wss://host:port`), presenting `token`, the token the device's login earned. Nothing is dialled
+  until a run asks; the link dials again after anything that did not come to a response and after
+  the network changed. A token the relay refuses at the upgrade comes back as the relay's refusal
+  (`failure: "relay"`, `code: "unauthorized"`), as one that expires on an open connection does: the
+  host asks its application for a new token and makes a new link. Only `ws://` runs today: the
+  library links `rustls` with no cryptographic provider, so the first exchange over `wss://` panics
+  inside the library and the run is `SCE_PEER_ERR_PANIC`, until a provider is chosen (ADR 0079,
+  Status of the plan).
+- `sce_peer_link_host(exchange, release, context)` is a transport the host carries itself, for a
+  host whose platform has the only usable network stack, or a test. `exchange` is
+  `int32_t (*)(void *context, const uint8_t *request, size_t len, uint64_t timeout_ms, ScePeerReply
+  *reply)`: it carries the request (`len` bytes of UTF-8, not NUL-terminated, valid for the call),
+  gives the response text with `sce_peer_reply(reply, text, len)` (copied), and returns
+  `SCE_PEER_TRANSPORT_ANSWERED` (0); or it returns `SCE_PEER_TRANSPORT_LINK` (1, not carried),
+  `_UNAUTHORIZED` (2, the token was refused), `_DEADLINE` (3) or `_CANCELLED` (4), with the reason
+  given by `sce_peer_reply` when there is one. It may take at most `timeout_ms` (`UINT64_MAX` when
+  the run has no deadline). `release`, which may be null, is called once with `context` when the link
+  is freed.
+- `sce_peer_run(peer, link, within_ms, cancel)` runs the exchange begun on the core
+  (`sce_peer_start`, a publication) over the link **on the calling thread, blocking**, until it ends,
+  `within_ms` milliseconds pass (`UINT64_MAX`: no deadline) or `cancel` (which may be null) is
+  raised. It returns `SCE_PEER_OK` when the exchange ended, whatever it came to (and at once when
+  none runs), and `SCE_PEER_ERR_CANCELLED` or `SCE_PEER_ERR_DEADLINE` when it stopped; either way the
+  outcome is then taken with `sce_peer_take_outcome`. A run that stopped, or whose transport failed,
+  leaves an outcome of a failure of the link (`"the exchange was cancelled"`, `"the deadline passed
+  before the relay answered"`, `"the network changed"`, or the transport's words), and what the
+  exchange took in is handed over by the next round, as section 5 says of any exchange that does not
+  end.
+- `sce_peer_cancel_new()` makes a cancellation, `sce_peer_cancel_raise(cancel)` raises it, and it
+  stays raised: a host makes one for each run it may want to stop.
+- `sce_peer_link_network_changed(link)` says the device's network changed (an interface came or
+  went, the system said the path is another): the link gives its connection up, and an exchange that
+  waits fails as the link's failure, so the next round dials on the new path.
+- `sce_peer_link_take_notices(link, out)` gives a JSON array, oldest first, of what became of the
+  connection and what the relay pushed since it was last asked: `{"notice": "connected"}`,
+  `{"notice": "lost", "reason": text}`, `{"notice": "pushed", "text": text}`; an empty buffer when
+  there is none. A push is a reason to begin a round, never an input of the core; version 1 of the
+  relay protocol pushes nothing. A host's own transport gives no notices: its host knows them.
+
+**Threads.** A run uses the core and the link on the thread that called it, and no other thread
+uses either until it returns, but for two calls any thread may make at any time, the run's
+included: `sce_peer_cancel_raise` on the run's cancellation and `sce_peer_link_network_changed` on its
+link. A host's `exchange` is called on the running thread, one call at a time, and calls nothing of
+the library on that link or core but `sce_peer_reply`; its context is used from whichever thread
+runs, until `release`. A link and a cancellation are freed only when no run uses them.
+
+**Why a blocking run with a deadline, and not a run the host pumps.** A phone's operating system
+runs an application's background work as a bounded job on a thread of its own: Android's
+WorkManager calls `doWork()` on a background thread and stops the worker when its time is up
+(`onStopped()`, on another thread), and iOS gives a background task an expiration handler, called on
+another thread, before it suspends the application. A run that blocks on the job's thread, ends by
+the job's deadline, and is cancelled from the expiration handler is that shape exactly, in every
+host language, with nothing to integrate. A pumped run would hand the host the transport's event
+loop (its sockets, its timers, its wakers) to fit into each language's own, which is the per-language
+transport code ADR 0079 section 5 rules out. A host that wants to drive each request itself still
+can, with the calls of section 5 and a transport of its own; the core is the same exchange either
+way.

@@ -252,6 +252,31 @@ when it is called production.
   `Peer::trust` stays, for what a host reads of the trust; `Peer::group_mut` is gone. Not done: a list with several
   administrators, a linked device and an amendment through the core, and a removal from a list whose keys an
   administrator draws, which the core refuses.
+- **Step 5** landed in this repository 2026-11-02. The transport trait is `Transport` of a crate of its own,
+  `sce-rust-relay-transport`, with no dependency beyond the standard library, so that a binding written elsewhere
+  depends on the contract alone: a request text out and the response text back by a deadline and until a
+  cancellation another thread raises (`Signal`), what became of the connection and what the relay pushed
+  (`Notice`), and the signal the host raises when the network changed; a relay's refusal is a response, and an
+  error says only that the answer did not come back (`TransportError`: the link, the token refused at the
+  endpoint, the deadline, the cancellation). Its contract is `docs/SCE_SHARED_LIST_RELAY.md` section 9. The
+  core and a transport are joined by one driver (`sce_rust_relay::drive`) over an `Exchange`, which both
+  `RoundMachine` and `Peer` are; `Courier` is that driver over its `Link` with no deadline, every transport is
+  a `Link`, and every existing relay and world test passed unedited but one assertion: a token refused at the
+  WebSocket upgrade is now read as the relay's refusal of the token (`unauthorized`), the answer to one that
+  expires on an open connection, where it was a failure of the link. The WebSocket binding's client
+  (`wss::WssLink`, feature `wss`, which `serve` includes) is the reference transport: it gives up its
+  connection after anything that did not come to a response and when the network changed, and dials again on
+  the next exchange. The C ABI gains a link the library holds (`sce_peer_link_wss`, and `sce_peer_link_host`
+  for a transport a host carries through one function it gives), a run of the core over it that blocks on the
+  calling thread by a deadline (`sce_peer_run`), a cancellation any thread raises (`sce_peer_cancel_*`), the
+  network's change (`sce_peer_link_network_changed`) and the link's notices; all added alone, so the ABI's
+  version stays 2 (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 11, where the choice of a blocking run over a
+  pumped one is argued from the bounded background jobs of both mobile systems). The deployment transport's
+  adapter is written in that transport's own repository against `sce-rust-relay-transport`; nothing of it is
+  here. Not done: a lane's replay of a run over a link (the Rust tests hold it through the ABI); `wss://`, for
+  which the workspace links `rustls` with no cryptographic provider, so a choice of one (and what it costs a
+  mobile target to build) is still to be made and only `ws://` runs; and a relay that pushes, which protocol
+  version 1 does not.
 - Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
   again before `restore`; section 6 (step 7) seals them.
 
