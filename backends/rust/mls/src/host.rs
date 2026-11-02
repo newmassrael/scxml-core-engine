@@ -28,7 +28,16 @@ use sce_rust_trust::membership::{Body, Entry, Hash};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use sha2::{Digest, Sha256};
 
-use crate::{Applied, Device, LogView, MlsError};
+use crate::{take_bytes, take_length, take_number, take_part, Applied, Device, LogView, MlsError};
+
+/// What each row of [`Member::held_to_bytes`] is.
+const HELD_COMMIT: u8 = 0;
+const HELD_WELCOME: u8 = 1;
+const HELD_PACKAGE: u8 = 2;
+const HELD_REFUSED: u8 = 3;
+const HELD_OVERFLOWED: u8 = 4;
+/// The bytes of a row that is its number alone.
+const NOTHING: &[u8] = &[];
 
 /// What [`Member::advance`] did.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +152,106 @@ impl Member {
 
     pub fn trust(&self) -> &Trust {
         &self.trust
+    }
+
+    /// The node of the device.
+    pub fn node(&self) -> u64 {
+        self.node
+    }
+
+    /// What the member holds beside its device ([`Device::to_bytes`]), for the host's store: the
+    /// group's messages it was given and waits for the log to let it use (the commits of each epoch,
+    /// the Welcomes for its device, the key packages of other devices), the ones it refused, and the
+    /// epochs it dropped a commit of at the limit. A relay's feed does not give a record twice, so a
+    /// member made again without them would wait for good for a Welcome or a commit it had read, and
+    /// an administrator's device would have no key package to admit a device with.
+    /// [`Self::take_held`] takes it back.
+    pub fn held_to_bytes(&self) -> Vec<u8> {
+        let mut rows: Vec<(u8, u64, &[u8])> = Vec::new();
+        for (epoch, held) in &self.commits {
+            rows.extend(
+                held.values()
+                    .map(|bytes| (HELD_COMMIT, u64::from(*epoch), bytes.as_slice())),
+            );
+        }
+        for (epoch, held) in &self.welcomes {
+            rows.extend(
+                held.iter()
+                    .map(|bytes| (HELD_WELCOME, u64::from(*epoch), bytes.as_slice())),
+            );
+        }
+        for (node, held) in &self.packages {
+            rows.extend(
+                held.iter()
+                    .map(|bytes| (HELD_PACKAGE, *node, bytes.as_slice())),
+            );
+        }
+        rows.extend(
+            self.refused
+                .iter()
+                .map(|id| (HELD_REFUSED, 0, id.as_slice())),
+        );
+        rows.extend(
+            self.overflowed
+                .iter()
+                .map(|epoch| (HELD_OVERFLOWED, u64::from(*epoch), NOTHING)),
+        );
+        let mut out = Vec::new();
+        out.extend_from_slice(&(rows.len() as u64).to_be_bytes());
+        for (kind, number, bytes) in rows {
+            out.push(kind);
+            out.extend_from_slice(&number.to_be_bytes());
+            out.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+            out.extend_from_slice(bytes);
+        }
+        out
+    }
+
+    /// Take back what [`Self::held_to_bytes`] wrote, into a member just made. Every row is read
+    /// before any is taken, so that bytes that are not what a member writes change nothing.
+    pub fn take_held(&mut self, kept: &[u8]) -> Result<(), MlsError> {
+        const MALFORMED: MlsError =
+            MlsError::Malformed("what the member kept is not what a member writes");
+        let mut commits: BTreeMap<u32, BTreeMap<[u8; 32], Vec<u8>>> = BTreeMap::new();
+        let mut welcomes: BTreeMap<u32, Vec<Vec<u8>>> = BTreeMap::new();
+        let mut packages: BTreeMap<u64, Vec<Vec<u8>>> = BTreeMap::new();
+        let mut refused = BTreeSet::new();
+        let mut overflowed = BTreeSet::new();
+        let mut rest = kept;
+        let count = take_length(&mut rest).ok_or(MALFORMED)?;
+        for _ in 0..count {
+            let kind = take_bytes(&mut rest, 1)
+                .and_then(<[u8]>::first)
+                .copied()
+                .ok_or(MALFORMED)?;
+            let number = take_number(&mut rest).ok_or(MALFORMED)?;
+            let bytes = take_part(&mut rest).ok_or(MALFORMED)?.to_vec();
+            let epoch = u32::try_from(number).map_err(|_| MALFORMED);
+            match kind {
+                HELD_COMMIT => {
+                    let hash: [u8; 32] = Sha256::digest(&bytes).into();
+                    commits.entry(epoch?).or_default().insert(hash, bytes);
+                }
+                HELD_WELCOME => welcomes.entry(epoch?).or_default().push(bytes),
+                HELD_PACKAGE => packages.entry(number).or_default().push(bytes),
+                HELD_REFUSED => {
+                    refused.insert(<[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| MALFORMED)?);
+                }
+                HELD_OVERFLOWED => {
+                    overflowed.insert(epoch?);
+                }
+                _ => return Err(MALFORMED),
+            }
+        }
+        if !rest.is_empty() {
+            return Err(MALFORMED);
+        }
+        self.commits = commits;
+        self.welcomes = welcomes;
+        self.packages = packages;
+        self.refused = refused;
+        self.overflowed = overflowed;
+        Ok(())
     }
 
     /// The key packages the relay holds of the device of `node`, the newest last.
@@ -551,5 +660,95 @@ impl Member {
             commit: pending.commit,
             welcome: pending.welcome,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LIST: &str = "home";
+
+    fn member() -> Member {
+        Member::new(
+            Device::new(LIST, 1, Identity::from_seed([1; 32])),
+            Trust::open(LIST),
+            1,
+        )
+    }
+
+    fn data(bytes: &[u8]) -> String {
+        encoding::encode(bytes)
+    }
+
+    #[test]
+    fn what_a_member_holds_beside_its_device_is_kept_and_taken_back() {
+        let mut held = member();
+        held.absorb(&[
+            Record::KeyPackage {
+                node: 5,
+                data: data(&[5, 5]),
+            },
+            Record::Commit {
+                epoch: 3,
+                data: data(&[3]),
+            },
+            Record::Commit {
+                epoch: 3,
+                data: data(&[4]),
+            },
+            Record::Welcome {
+                epoch: 2,
+                node: 1,
+                data: data(&[2]),
+            },
+            Record::Welcome {
+                epoch: 2,
+                node: 9,
+                data: data(&[9]),
+            },
+        ]);
+        held.refused.insert([7; 32]);
+        held.overflowed.insert(4);
+        let kept = held.held_to_bytes();
+
+        let mut again = member();
+        again.take_held(&kept).unwrap();
+        assert_eq!(again.key_packages_of(5), [vec![5u8, 5]].as_slice());
+        assert_eq!(again.commits, held.commits);
+        assert_eq!(again.commits.get(&3).map(BTreeMap::len), Some(2));
+        assert_eq!(again.welcomes, held.welcomes);
+        assert_eq!(
+            again.welcomes.get(&2).map(Vec::as_slice),
+            Some([vec![2u8]].as_slice()),
+            "only the Welcome for its own device"
+        );
+        assert_eq!(again.refused, held.refused);
+        assert_eq!(again.overflowed, held.overflowed);
+        assert_eq!(again.held_to_bytes(), kept);
+    }
+
+    #[test]
+    fn bytes_that_are_not_what_a_member_kept_change_nothing() {
+        let mut held = member();
+        held.absorb(&[Record::KeyPackage {
+            node: 5,
+            data: data(&[5]),
+        }]);
+        let kept = held.held_to_bytes();
+        let mut longer = kept.clone();
+        longer.push(0);
+        let mut unknown = kept.clone();
+        unknown[8] = 9;
+        for bytes in [&kept[..kept.len() - 1], &longer[..], &unknown[..], &[][..]] {
+            let mut again = member();
+            again.absorb(&[Record::KeyPackage {
+                node: 6,
+                data: data(&[6]),
+            }]);
+            assert!(again.take_held(bytes).is_err(), "{bytes:?}");
+            assert_eq!(again.key_packages_of(6), [vec![6u8]].as_slice());
+            assert!(again.key_packages_of(5).is_empty());
+        }
     }
 }

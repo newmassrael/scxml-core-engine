@@ -267,6 +267,12 @@ impl Device {
         GroupId::from_slice(self.list.as_bytes())
     }
 
+    /// The key the device signs with: the one the log gave its node. What the device's host keeps
+    /// to make it again from [`Self::to_bytes`] ([`Self::from_bytes`]).
+    pub fn identity(&self) -> &Identity {
+        &self.signer.0
+    }
+
     fn credential(&self) -> CredentialWithKey {
         CredentialWithKey {
             credential: BasicCredential::new(identity_bytes(&self.list, self.node)).into(),
@@ -681,26 +687,12 @@ impl Device {
 /// The rows [`Device::to_bytes`] wrote, or `Malformed` when the bytes are not that.
 fn read_rows(bytes: &[u8]) -> Result<std::collections::HashMap<Vec<u8>, Vec<u8>>, MlsError> {
     const MALFORMED: MlsError = MlsError::Malformed("the kept state is not what a device writes");
-    fn take<'a>(rest: &mut &'a [u8], length: usize) -> Result<&'a [u8], MlsError> {
-        if rest.len() < length {
-            return Err(MALFORMED);
-        }
-        let (head, tail) = rest.split_at(length);
-        *rest = tail;
-        Ok(head)
-    }
-    fn number(rest: &mut &[u8]) -> Result<usize, MlsError> {
-        let bytes: [u8; 8] = take(rest, 8)?.try_into().map_err(|_| MALFORMED)?;
-        usize::try_from(u64::from_be_bytes(bytes)).map_err(|_| MALFORMED)
-    }
     let mut rest = bytes;
-    let count = number(&mut rest)?;
+    let count = take_length(&mut rest).ok_or(MALFORMED)?;
     let mut rows = std::collections::HashMap::new();
     for _ in 0..count {
-        let key_length = number(&mut rest)?;
-        let key = take(&mut rest, key_length)?.to_vec();
-        let value_length = number(&mut rest)?;
-        let value = take(&mut rest, value_length)?.to_vec();
+        let key = take_part(&mut rest).ok_or(MALFORMED)?.to_vec();
+        let value = take_part(&mut rest).ok_or(MALFORMED)?.to_vec();
         if rows.insert(key, value).is_some() {
             return Err(MALFORMED);
         }
@@ -710,4 +702,31 @@ fn read_rows(bytes: &[u8]) -> Result<std::collections::HashMap<Vec<u8>, Vec<u8>>
     } else {
         Err(MALFORMED)
     }
+}
+
+/// The next `length` bytes of `rest`, which then begins after them; `None` when it holds fewer. What
+/// the device's kept state and the member's are read with.
+pub(crate) fn take_bytes<'a>(rest: &mut &'a [u8], length: usize) -> Option<&'a [u8]> {
+    if rest.len() < length {
+        return None;
+    }
+    let (head, tail) = rest.split_at(length);
+    *rest = tail;
+    Some(head)
+}
+
+/// The next number of `rest`, eight bytes big-endian.
+pub(crate) fn take_number(rest: &mut &[u8]) -> Option<u64> {
+    Some(u64::from_be_bytes(take_bytes(rest, 8)?.try_into().ok()?))
+}
+
+/// The next number of `rest` as a length this machine can hold.
+pub(crate) fn take_length(rest: &mut &[u8]) -> Option<usize> {
+    usize::try_from(take_number(rest)?).ok()
+}
+
+/// The next part of `rest`: its length, then its bytes.
+pub(crate) fn take_part<'a>(rest: &mut &'a [u8]) -> Option<&'a [u8]> {
+    let length = take_length(rest)?;
+    take_bytes(rest, length)
 }
