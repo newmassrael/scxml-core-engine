@@ -38,8 +38,8 @@ pub fn lowers(lang: Language) -> bool {
         | Language::Cpp
         | Language::Go
         | Language::Python
-        | Language::C11 => true,
-        Language::Swift => false,
+        | Language::C11
+        | Language::Swift => true,
     }
 }
 
@@ -56,6 +56,14 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
             "codec '{}' is sce:encoding=\"cbor\", which has no {lang:?} generation yet",
             m.name
         ));
+    }
+    if lang == Language::Swift {
+        if let Some(what) = crate::forge::generator::swift_cbor_unlowered(m) {
+            return Some(format!(
+                "codec '{}': {what} has no Swift lowering yet",
+                m.name
+            ));
+        }
     }
     if lang == Language::C11 {
         if let Some(e) = m.cbor_entries.iter().find(|e| {
@@ -97,7 +105,7 @@ pub fn render(
         Language::Go => render_go(env, m, imports),
         Language::Python => render_python(env, m, imports),
         Language::C11 => render_c(env, m, imports),
-        Language::Swift => unreachable!("`lowers` is false for swift, so `refusal` returned above"),
+        Language::Swift => render_swift(env, m, imports),
     }
 }
 
@@ -379,6 +387,42 @@ fn render_kotlin(
             } else {
                 "null".to_string()
             }
+            .into();
+        }
+    }
+    render_in_key_order(&l, env, ctx)
+}
+
+fn render_swift(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Swift, imports);
+    // Owned values, as every Swift codec holds them: a text string is a `String` and a byte string a
+    // `[UInt8]`. A required entry starts at its type's zero and is filled in by decode; an optional
+    // one starts absent, so `{Name}()` is the infallible initializer every codec offers.
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
+    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
+        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
+            entry["default"] = if !e.is_required() {
+                "nil"
+            } else {
+                match kind(e) {
+                    "bool" => "false",
+                    "text" => "\"\"",
+                    "bytes" | "bytes_exact" => "[]",
+                    _ => "0",
+                }
+            }
+            .into();
+            // A negative number is no CBOR unsigned integer, which encode refuses and does not wrap.
+            entry["signed"] = matches!(
+                e.present_type(),
+                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
+            )
             .into();
         }
     }

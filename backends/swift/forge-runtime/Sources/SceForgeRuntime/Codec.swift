@@ -38,6 +38,20 @@ public enum CodecError: Error, Equatable, Sendable {
     /// or absent where the input says it is: the value and the input contradict each other, so no
     /// frame is written.
     case presentIfMismatch
+    /// The input is not a map a CBOR codec reads: not a definite-length map, an indefinite length or
+    /// a reserved head, a key given twice, or an entry of the wrong major type
+    /// (`Cbor`, SCE_FORGE.md §4.6.1).
+    case cborMalformed
+    /// The map lacks an entry of a bare type, one that is not `optional<T>`.
+    case cborRequiredKeyMissing
+    /// A byte string is not its entry's exact `sce:length`: on a decode, the length the map says; on
+    /// an encode, the length of the value.
+    case cborWrongLength
+    /// The value of a key the codec does not declare nests deeper than `Cbor.maxSkipDepth`.
+    case cborTooDeep
+    /// A value does not fit its entry's type or `sce:max-size`: on a decode, the number or the length
+    /// the map says; on an encode, the value, refused before the first byte is written.
+    case cborOutOfRange
 }
 
 /// The byte order of one field on the wire.

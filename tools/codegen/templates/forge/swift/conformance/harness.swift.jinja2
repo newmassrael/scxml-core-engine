@@ -126,6 +126,17 @@ private func oracleBytes(_ value: JSONValue?) throws -> [UInt8] {
     try oracleArray(value).map { try oracleInteger($0, as: UInt8.self) }
 }
 
+/// A value the oracle may leave out: an entry of a map that is not on the wire. The oracle writes
+/// an absent one as `null`, or leaves its key out, and `read` is not asked about either.
+private func oracleOptional<T>(_ value: JSONValue?, _ read: (JSONValue?) throws -> T) rethrows -> T? {
+    switch value {
+    case nil, .null?:
+        return nil
+    default:
+        return try read(value)
+    }
+}
+
 private func expectClose(_ actual: Double, _ expected: Double, _ label: String) {
     #expect(abs(actual - expected) <= tolerance, "\(label): actual=\(actual) expected=\(expected) tol=\(tolerance)")
 }

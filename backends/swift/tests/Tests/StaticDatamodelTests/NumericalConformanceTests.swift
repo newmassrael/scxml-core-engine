@@ -126,6 +126,17 @@ private func oracleBytes(_ value: JSONValue?) throws -> [UInt8] {
     try oracleArray(value).map { try oracleInteger($0, as: UInt8.self) }
 }
 
+/// A value the oracle may leave out: an entry of a map that is not on the wire. The oracle writes
+/// an absent one as `null`, or leaves its key out, and `read` is not asked about either.
+private func oracleOptional<T>(_ value: JSONValue?, _ read: (JSONValue?) throws -> T) rethrows -> T? {
+    switch value {
+    case nil, .null?:
+        return nil
+    default:
+        return try read(value)
+    }
+}
+
 private func expectClose(_ actual: Double, _ expected: Double, _ label: String) {
     #expect(abs(actual - expected) <= tolerance, "\(label): actual=\(actual) expected=\(expected) tol=\(tolerance)")
 }
@@ -4955,6 +4966,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtTimestamp.frameLength
+}
+
+// MARK: - codec: codec_cbor_map
+
+@Test func codecCborMapMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_cbor_map")
+    #expect(!cases.isEmpty, "codec_cbor_map: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_cbor_map case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecCborMap(
+            source: try oracleText(decoded.member("source")),
+            id: try oracleBytes(decoded.member("id")),
+            pattern: try oracleInteger(decoded.member("pattern"), as: UInt8.self),
+            payload: try oracleBytes(decoded.member("payload")),
+            deadline: try oracleOptional(decoded.member("deadline")) { try oracleInteger($0, as: UInt64.self) },
+            urgent: try oracleOptional(decoded.member("urgent")) { try oracleTruth($0) }
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_cbor_map case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecCborMap.decode(&cursor)
+        #expect(roundTripped == value, "codec_cbor_map case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_cbor_map case \(index) decode consumed the frame and nothing else")
+    }
 }
 
 // MARK: - codec: codec_flags_basic

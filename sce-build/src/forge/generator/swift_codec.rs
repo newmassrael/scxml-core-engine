@@ -48,7 +48,7 @@ pub(super) fn unlowered(
 ) -> Option<String> {
     match m.encoding {
         CodecEncoding::Positional => {}
-        CodecEncoding::Cbor => return Some("a `sce:encoding=\"cbor\"` codec".to_string()),
+        CodecEncoding::Cbor => return cbor_unlowered(m),
         CodecEncoding::ContentLine => {
             return Some("a `sce:encoding=\"content-line\"` codec".to_string())
         }
@@ -76,6 +76,43 @@ pub(super) fn unlowered(
         .iter()
         .find_map(|f| field_unlowered(m, f, element))
         .or_else(|| flags_unlowered(m))
+}
+
+/// What of the `sce:encoding="cbor"` codec `m` the Swift codec does not lower yet; `None` for one it
+/// does.
+///
+/// It is a struct with one property per entry, so an entry may not be named for a member the struct
+/// has, and the entries that are enumerations are named: an enum entry reads its carrier and converts
+/// it to the enum, which the CBOR emitter does not spell for Swift yet.
+pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
+    for e in &m.cbor_entries {
+        if matches!(e.present_type(), SceType::Enum(_)) {
+            return Some(format!("the CBOR entry '{}', an enum", e.id));
+        }
+        if MEMBERS.contains(&e.id.as_str()) {
+            return Some(format!(
+                "the CBOR entry '{}', named for a member of the struct",
+                e.id
+            ));
+        }
+    }
+    None
+}
+
+/// What of the codec `m` the Swift codec does not lower yet when another document holds it as an
+/// element (an embedded codec, the entries of a list or a chain, the element of a log) and not as a
+/// document of its own. A codec of another encoding is a document of its own: a CBOR map is
+/// self-delimiting, but it has no fixed length for the document that holds it to add to its own, and
+/// is held by no other document yet.
+pub(super) fn element_unlowered(
+    m: &CodecModel,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    match m.encoding {
+        CodecEncoding::Positional => unlowered(m, element),
+        CodecEncoding::Cbor => Some("a `sce:encoding=\"cbor\"` codec".to_string()),
+        CodecEncoding::ContentLine => Some("a `sce:encoding=\"content-line\"` codec".to_string()),
+    }
 }
 
 /// The members a codec struct has besides its fields and the flags its fields carry.
@@ -765,6 +802,10 @@ pub(super) fn render(
     m: &CodecModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    // A codec that writes one CBOR map has none of the positional codec's layout to render.
+    if m.encoding == CodecEncoding::Cbor {
+        return crate::forge::cbor_codec::render(env, m, imports, Language::Swift);
+    }
     let l = LangCtx::new(crate::generator::Language::Swift, imports);
     let sequential = is_sequential(m);
     // The bits of an entry's value that are its identifier, for each chain that leaves flags out of it.

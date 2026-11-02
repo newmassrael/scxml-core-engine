@@ -28162,7 +28162,13 @@ pub(crate) fn swift_codec_unlowered(
     m: &CodecModel,
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    swift_codec::unlowered(m, element)
+    swift_codec::element_unlowered(m, element)
+}
+
+/// What of the CBOR codec `m` the Swift codec does not lower yet, for the shared refusal
+/// ([`crate::forge::cbor_codec::refusal`]) that the generator and the conformance schedule both read.
+pub(crate) fn swift_cbor_unlowered(m: &CodecModel) -> Option<String> {
+    swift_codec::cbor_unlowered(m)
 }
 
 /// The refusal of the codec `m` for the Swift construct `construct` it holds
@@ -32769,8 +32775,10 @@ impl LangCtx {
             crate::generator::Language::Rust
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
-            crate::generator::Language::Cpp | crate::generator::Language::Kotlin => id.to_string(),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_field_id"),
+            // A Swift struct names a field as the document does.
+            crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Swift => id.to_string(),
         }
     }
 

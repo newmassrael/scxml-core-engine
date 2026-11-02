@@ -21,7 +21,11 @@
 
         let value = {{ f.name | to_pascal_case }}(
 {% for field in f.fields %}
+{% if field.optional %}
+            {{ field.name }}: try oracleOptional(decoded.member("{{ field.name }}")) { {{ "$0" | swift_unmarshal(field.type) }} }{{ "," if not loop.last }}
+{% else %}
             {{ field.name }}: {{ ("decoded.member(\"" ~ field.name ~ "\")") | swift_unmarshal(field.type) }}{{ "," if not loop.last }}
+{% endif %}
 {% endfor %}
         )
 

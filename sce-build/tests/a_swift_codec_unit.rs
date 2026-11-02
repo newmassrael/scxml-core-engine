@@ -949,15 +949,97 @@ fn an_embedded_codec_bounded_by_a_length_is_read_from_those_bytes_alone() {
 
 #[test]
 fn what_the_swift_codec_does_not_write_is_refused_by_name() {
-    for (document, what) in [
-        ("codec_cbor_map", "cbor"),
-        ("codec_content_line_enums", "content-line"),
-    ] {
-        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
-            .expect_err(&format!("{document} must be refused, not written"));
-        assert!(
-            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
-            "{document} is refused, but not by name ({what}): {refusal}"
-        );
-    }
+    let refusal = swift_of("tests/forge/resources/codec_content_line_enums.scxml")
+        .expect_err("a content-line codec must be refused, not written");
+    assert!(
+        refusal.contains("has no Swift lowering yet") && refusal.contains("content-line"),
+        "a content-line codec is refused, but not by name: {refusal}"
+    );
+}
+
+#[test]
+fn a_cbor_codec_is_a_struct_of_its_entries_read_in_any_order_and_written_by_key() {
+    let code = swift_of("tests/forge/resources/codec_cbor_map.scxml")
+        .expect("a CBOR codec of scalars, text and bytes is written");
+    // A required entry starts at its type's zero; an optional one is absent.
+    assert!(
+        code.contains("\n    public var source: String = \"\"\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("\n    public var deadline: UInt64? = nil\n"),
+        "{code}"
+    );
+    // The decode takes each key where it finds it, skips one it does not declare, and holds a key
+    // given twice to be no map this codec reads.
+    assert!(
+        code.contains("case 12:\n                // A key given twice is not one map entry.\n                if deadline_held != nil { throw CodecError.cborMalformed }\n                deadline_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))"),
+        "{code}"
+    );
+    assert!(
+        code.contains("default:\n                try Cbor.skip(&reader)"),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "guard let source_value = source_held else { throw CodecError.cborRequiredKeyMissing }"
+        ),
+        "a required entry the map lacks is refused: {code}"
+    );
+    // The encode writes the entries in ascending key order, whatever the order they were declared in.
+    let encode = code
+        .split("public func encode")
+        .nth(1)
+        .expect("the codec has an encode");
+    let at = |key: &str| {
+        encode
+            .find(&format!("Cbor.writeUint({key}, to: &frame)"))
+            .unwrap_or_else(|| panic!("the encode writes key {key}: {code}"))
+    };
+    assert!(
+        at("0") < at("1")
+            && at("1") < at("3")
+            && at("3") < at("5")
+            && at("5") < at("7")
+            && at("7") < at("12"),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "var count: UInt64 = 4\n        if self.deadline != nil { count += 1 }\n        if self.urgent != nil { count += 1 }"
+        ),
+        "an absent entry is not counted: {code}"
+    );
+}
+
+#[test]
+fn a_cbor_entry_is_held_to_the_bound_its_document_declares_before_a_byte_is_written() {
+    let code = swift_of("tests/forge/resources/codec_cbor_map.scxml")
+        .expect("a CBOR codec of scalars, text and bytes is written");
+    assert!(
+        code.contains("if value.utf8.count > 64 { throw CodecError.cborOutOfRange }"),
+        "a text is bounded in bytes: {code}"
+    );
+    assert!(
+        code.contains("if value.count > 256 { throw CodecError.cborOutOfRange }"),
+        "{code}"
+    );
+    assert!(
+        code.contains("if value.count != 16 { throw CodecError.cborWrongLength }"),
+        "a byte string of an exact length is not one of another: {code}"
+    );
+    assert!(
+        code.contains("try sink.writeBytes(frame)"),
+        "the map is handed to the sink in one write, so a refusal has written nothing: {code}"
+    );
+}
+
+#[test]
+fn a_cbor_codec_that_has_an_enum_entry_is_refused_by_name() {
+    let refusal = swift_of("stdlib/mesh/envelope.scxml")
+        .expect_err("a CBOR codec with an enum entry is not written");
+    assert!(
+        refusal.contains("an enum") && refusal.contains("has no Swift lowering yet"),
+        "{refusal}"
+    );
 }
